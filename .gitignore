@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# uv / venv
+.venv/
+venv/
+
+# Environment & secrets (never commit; use SOPS+age or OpenBao)
+.env
+.env.*
+*.key
+*.age
+!*.age.pub
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local data / corpora (never commit documents)
+data/
+corpus/
+*.pdf
+
+# OS
+.DS_Store
