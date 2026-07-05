@@ -1,0 +1,8 @@
+# Governance surfaces — owned by @MWest2020, the human merge gate (Habitat v0 rule).
+# Agents (builder/reviewer/security) must never modify these; reviewer hard-fails
+# on any diff that touches them. Changes here require Mark's explicit review.
+
+/CLAUDE.md              @MWest2020
+/.claude/agents/        @MWest2020
+/CODEOWNERS             @MWest2020
+/.github/workflows/     @MWest2020
