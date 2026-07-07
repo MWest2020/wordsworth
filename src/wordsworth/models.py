@@ -40,3 +40,15 @@ class AuditRecord(Base):
     # the same predecessor, so a fork fails at insert time.
     prev_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+
+class DocumentText(Base):
+    """Derived working data: the ANONYMIZED text only. Never clear PII, so it is
+    mutable (not the append-only audit table) and holds nothing sensitive."""
+
+    __tablename__ = "document_texts"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), primary_key=True
+    )
+    anonymized_text: Mapped[str] = mapped_column(String, nullable=False)
