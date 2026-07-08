@@ -70,19 +70,6 @@ SHALL be recorded in the transition's audit payload.
 - **THEN** the document transitions to `failed` with the error reason, and is
   NOT classified as `unprocessable_ocr`
 
-### Requirement: Stub downstream transitions
-
-The `index` transition SHALL exist and produce an audit record while performing
-no domain work; its real behaviour is delivered by a later change. The `extract`
-and `anonymize` transitions are no longer stubs — see "Text extraction" and
-"Anonymization step".
-
-#### Scenario: Index remains a stub
-
-- **WHEN** the index step runs on an `anonymized` document
-- **THEN** the document moves to `indexed` and an audit record is written, with
-  no indexing performed
-
 ### Requirement: Text extraction
 
 The `extract` transition SHALL pull the document's text with pypdf and hold it in
@@ -122,4 +109,24 @@ clear-text store.
 
 - **WHEN** a document reaches `anonymized`
 - **THEN** the only stored text for that document is the anonymized text
+
+### Requirement: Indexing transition
+
+The `anonymize → index → indexed` transition SHALL read the document's persisted
+anonymized text and push it to the injected `SearchIndex` before transitioning to
+`indexed`. Indexing SHALL be idempotent (upsert by document id). Index failure
+SHALL be treated as transient: it SHALL NOT mark the document `failed`, the run
+SHALL NOT commit, and re-processing SHALL complete indexing.
+
+#### Scenario: Indexed document reaches the index
+
+- **WHEN** the index step runs on an `anonymized` document
+- **THEN** its anonymized text is present in the search index and the document
+  moves to `indexed`
+
+#### Scenario: Index outage is retryable, not a failure
+
+- **WHEN** the search index is unavailable during the index step
+- **THEN** the document is not marked `failed`, nothing from that run commits, and
+  re-processing with a healthy index completes indexing
 
