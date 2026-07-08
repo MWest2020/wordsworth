@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import text
 
 from wordsworth.db import init_schema, make_engine, make_session_factory
+from wordsworth.models import Base
 
 _PG_IMAGE = "postgres:16-alpine"
 _CONTAINER = "wordsworth-test-pg"
@@ -58,9 +59,7 @@ def database_url() -> str:
 @pytest.fixture
 def session_factory(database_url):
     engine = make_engine(database_url)
-    with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS audit_records CASCADE"))
-        conn.execute(text("DROP TABLE IF EXISTS documents CASCADE"))
+    Base.metadata.drop_all(engine)  # drops all known tables in FK order
     init_schema(engine)
     return make_session_factory(engine)
 
@@ -100,3 +99,15 @@ def scanned_pdf() -> bytes:
 @pytest.fixture
 def corrupt_pdf() -> bytes:
     return b"this is definitely not a pdf at all"
+
+
+# Valid BSN (elfproef) and the canonical valid Dutch IBAN, plus an email.
+PII_BSN = "123456782"
+PII_IBAN = "NL91ABNA0417164300"
+PII_EMAIL = "jan.jansen@haarlem.nl"
+
+
+@pytest.fixture
+def born_digital_pii_pdf() -> bytes:
+    line = f"Aanvrager BSN {PII_BSN} IBAN {PII_IBAN} email {PII_EMAIL} einde."
+    return _pdf(lambda c: c.drawString(72, 800, line))

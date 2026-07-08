@@ -18,8 +18,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import audit
+from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
-from .models import AuditRecord, Document
+from .extraction import ExtractionError, extract_text
+from .models import AuditRecord, Document, DocumentText
 from .profiling import ProfilingError, profile_pdf
 from .states import State, is_allowed
 
@@ -65,15 +67,36 @@ def register(session: Session, object_key: str) -> Document:
     return doc
 
 
+def get_anonymized_text(session: Session, document_id: UUID) -> str | None:
+    row = session.get(DocumentText, document_id)
+    return row.anonymized_text if row else None
+
+
+def _extract_or_fail(session: Session, document_id: UUID, pdf_bytes: bytes) -> str | None:
+    try:
+        return extract_text(pdf_bytes)
+    except ExtractionError as exc:
+        transition(session, document_id, State.FAILED, step="extract",
+                   payload={"error": str(exc)})
+        return None
+
+
 def process(
     session: Session,
     document_id: UUID,
     pdf_bytes: bytes,
     threshold: int | None = None,
+    anonymizer: Anonymizer | None = None,
 ) -> State:
-    """Advance one document from its current state until terminal. Resumable."""
+    """Advance one document from its current state until terminal. Resumable.
+
+    Extracted clear text is held in memory only; on resume from `extracted` it is
+    re-derived from the source PDF, never read from a clear-text store.
+    """
     threshold = threshold if threshold is not None else settings.born_digital_threshold
+    anonymizer = anonymizer or DeterministicAnonymizer()
     state = current_state(session, document_id)
+    text: str | None = None
 
     if state == State.REGISTERED:
         try:
@@ -91,13 +114,27 @@ def process(
         )
         state = target
 
-    # Stub transitions — real work lands in later changes.
     if state == State.EXTRACTABLE:
-        transition(session, document_id, State.EXTRACTED, step="extract", payload={"stub": True})
+        text = _extract_or_fail(session, document_id, pdf_bytes)
+        if text is None:
+            return State.FAILED
+        transition(session, document_id, State.EXTRACTED, step="extract",
+                   payload={"chars": len(text)})
         state = State.EXTRACTED
+
     if state == State.EXTRACTED:
-        transition(session, document_id, State.ANONYMIZED, step="anonymize", payload={"stub": True})
+        if text is None:  # resume: re-derive deterministically, not from a store
+            text = _extract_or_fail(session, document_id, pdf_bytes)
+            if text is None:
+                return State.FAILED
+        result = anonymizer.anonymize(text)
+        session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))
+        session.flush()
+        transition(session, document_id, State.ANONYMIZED, step="anonymize",
+                   payload=result.counts)
         state = State.ANONYMIZED
+
+    # Stub transition — real indexing lands in change (d).
     if state == State.ANONYMIZED:
         transition(session, document_id, State.INDEXED, step="index", payload={"stub": True})
         state = State.INDEXED
