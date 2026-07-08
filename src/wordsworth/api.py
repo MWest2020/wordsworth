@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.orm import Session, sessionmaker
 
+from .embedder import Embedder
 from .pipeline import current_state
 from .search_index import SearchIndex
 
@@ -15,6 +16,7 @@ from .search_index import SearchIndex
 def create_app(
     session_factory: sessionmaker[Session] | None = None,
     search_index: SearchIndex | None = None,
+    embedder: Embedder | None = None,
 ) -> FastAPI:
     app = FastAPI(title="wordsworth")
 
@@ -37,6 +39,20 @@ def create_app(
         @app.get("/search")
         def search(q: str, size: int = 10) -> dict:
             hits = search_index.search(q, size=size)
-            return {"query": q, "hits": [vars(h) for h in hits]}
+            return {"query": q, "hits": [_hit(h) for h in hits]}
+
+        if embedder is not None:
+
+            @app.get("/hybrid")
+            def hybrid(q: str, size: int = 10) -> dict:
+                from .hybrid import hybrid_search
+
+                hits = hybrid_search(search_index, embedder, q, size=size)
+                return {"query": q, "hits": [_hit(h) for h in hits]}
 
     return app
+
+
+def _hit(h) -> dict:
+    # Omit the raw vector from API responses; expose the useful fields only.
+    return {"document_id": h.document_id, "score": h.score, "object_key": h.object_key}

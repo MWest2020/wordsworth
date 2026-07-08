@@ -17,7 +17,7 @@ def os_index():
         pytest.skip("OpenSearch not reachable")
     name = "wordsworth_test"
     client.indices.delete(index=name, ignore=[404])
-    index = OpenSearchIndex(client, name)
+    index = OpenSearchIndex(client, name, dim=64)
     index.ensure_ready()
     yield index
     client.indices.delete(index=name, ignore=[404])

@@ -5,7 +5,8 @@ from wordsworth.states import State
 
 
 def test_end_to_end_three_terminal_states(session, born_digital_pdf,
-                                          scanned_pdf, corrupt_pdf, mem_index):
+                                          scanned_pdf, corrupt_pdf, mem_index,
+                                          fake_embedder):
     fixtures = {
         "born": born_digital_pdf,
         "scan": scanned_pdf,
@@ -19,7 +20,8 @@ def test_end_to_end_three_terminal_states(session, born_digital_pdf,
 
     finals = {}
     for name, (did, data) in ids.items():
-        finals[name] = process(session, did, data, search_index=mem_index)
+        finals[name] = process(session, did, data, search_index=mem_index,
+                               embedder=fake_embedder)
         session.commit()
 
     assert finals["born"] == State.INDEXED

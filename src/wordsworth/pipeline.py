@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from . import audit
 from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
+from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
 from .models import AuditRecord, Document, DocumentText
 from .profiling import ProfilingError, profile_pdf
@@ -88,6 +89,12 @@ def _default_index() -> SearchIndex:
     return OpenSearchIndex.from_config()
 
 
+def _default_embedder() -> Embedder:
+    from .embedder import OllamaEmbedder
+
+    return OllamaEmbedder.from_config()
+
+
 def process(
     session: Session,
     document_id: UUID,
@@ -95,6 +102,7 @@ def process(
     threshold: int | None = None,
     anonymizer: Anonymizer | None = None,
     search_index: SearchIndex | None = None,
+    embedder: Embedder | None = None,
 ) -> State:
     """Advance one document from its current state until terminal. Resumable.
 
@@ -146,12 +154,15 @@ def process(
         anonymized = get_anonymized_text(session, document_id) or ""
         doc = session.get(Document, document_id)
         index = search_index or _default_index()
+        embed = embedder or _default_embedder()
+        # Failed embedding is a hard error (no null vector); it propagates like an
+        # index outage: nothing commits, the document stays anonymized for retry.
+        vector = embed.embed([anonymized])[0]
         index.ensure_ready()
-        # Idempotent (upsert by id). If this raises (index down), it propagates:
-        # nothing commits, the document stays `anonymized` and is retried later.
-        index.index(str(document_id), anonymized, doc.object_key)
+        # Idempotent (upsert by id) so a crash between index and commit is safe.
+        index.index(str(document_id), anonymized, doc.object_key, vector=vector)
         transition(session, document_id, State.INDEXED, step="index",
-                   payload={"chars": len(anonymized)})
+                   payload={"chars": len(anonymized), "dim": len(vector)})
         state = State.INDEXED
 
     return state

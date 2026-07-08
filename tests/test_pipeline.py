@@ -36,14 +36,16 @@ def test_atomic_no_partial_persist(session_factory):
         assert count == 0
 
 
-def test_process_resumes_from_current_state(session, born_digital_pdf, mem_index):
+def test_process_resumes_from_current_state(session, born_digital_pdf, mem_index,
+                                            fake_embedder):
     doc = register(session, "k")
     # Simulate a prior partial run that already profiled the document.
     transition(session, doc.id, State.EXTRACTABLE, step="profile",
                payload={"chars": 50, "pages": 1, "bytes": 10})
     session.commit()
     # Resume: text is re-derived from the source PDF (no clear-text store).
-    final = process(session, doc.id, born_digital_pdf, search_index=mem_index)
+    final = process(session, doc.id, born_digital_pdf, search_index=mem_index,
+                    embedder=fake_embedder)
     session.commit()
     assert final == State.INDEXED
     assert current_state(session, doc.id) == State.INDEXED

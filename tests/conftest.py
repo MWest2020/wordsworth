@@ -77,6 +77,13 @@ def mem_index():
     return InMemoryIndex()
 
 
+@pytest.fixture
+def fake_embedder():
+    from wordsworth.embedder import DeterministicEmbedder
+
+    return DeterministicEmbedder(dim=64)
+
+
 # --- PDF fixtures -----------------------------------------------------------
 
 def _pdf(draw) -> bytes:
