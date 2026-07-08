@@ -70,6 +70,13 @@ def session(session_factory):
         yield s
 
 
+@pytest.fixture
+def mem_index():
+    from wordsworth.search_index import InMemoryIndex
+
+    return InMemoryIndex()
+
+
 # --- PDF fixtures -----------------------------------------------------------
 
 def _pdf(draw) -> bytes:

@@ -19,5 +19,13 @@ class Settings:
         """Minimum extractable characters per page to count as born-digital."""
         return int(os.environ.get("WORDSWORTH_BORN_DIGITAL_THRESHOLD", "10"))
 
+    @property
+    def opensearch_url(self) -> str:
+        return os.environ.get("WORDSWORTH_OPENSEARCH_URL", "http://localhost:9200")
+
+    @property
+    def opensearch_index(self) -> str:
+        return os.environ.get("WORDSWORTH_OPENSEARCH_INDEX", "wordsworth")
+
 
 settings = Settings()

@@ -20,10 +20,10 @@ def _anonymize_payload(session, document_id):
     ).scalar_one()
 
 
-def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf):
+def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf, mem_index):
     doc = register(session, "pii")
     session.commit()
-    final = process(session, doc.id, born_digital_pii_pdf)
+    final = process(session, doc.id, born_digital_pii_pdf, search_index=mem_index)
     session.commit()
 
     assert final == State.INDEXED
@@ -37,24 +37,25 @@ def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf):
     assert ok is True and bad is None
 
 
-def test_injected_anonymizer_is_used(session, born_digital_pdf):
+def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index):
     class MarkerAnonymizer:
         def anonymize(self, text):
             return AnonymizationResult(text="MARKER", counts={"custom": 7})
 
     doc = register(session, "inject")
     session.commit()
-    process(session, doc.id, born_digital_pdf, anonymizer=MarkerAnonymizer())
+    process(session, doc.id, born_digital_pdf, anonymizer=MarkerAnonymizer(),
+            search_index=mem_index)
     session.commit()
 
     assert get_anonymized_text(session, doc.id) == "MARKER"
     assert _anonymize_payload(session, doc.id) == {"custom": 7}
 
 
-def test_only_anonymized_text_is_stored(session, born_digital_pii_pdf):
+def test_only_anonymized_text_is_stored(session, born_digital_pii_pdf, mem_index):
     doc = register(session, "onlyanon")
     session.commit()
-    process(session, doc.id, born_digital_pii_pdf)
+    process(session, doc.id, born_digital_pii_pdf, search_index=mem_index)
     session.commit()
     rows = session.execute(select(DocumentText)).scalars().all()
     assert len(rows) == 1
