@@ -23,6 +23,7 @@ from .config import settings
 from .extraction import ExtractionError, extract_text
 from .models import AuditRecord, Document, DocumentText
 from .profiling import ProfilingError, profile_pdf
+from .search_index import SearchIndex
 from .states import State, is_allowed
 
 
@@ -81,12 +82,19 @@ def _extract_or_fail(session: Session, document_id: UUID, pdf_bytes: bytes) -> s
         return None
 
 
+def _default_index() -> SearchIndex:
+    from .opensearch_index import OpenSearchIndex
+
+    return OpenSearchIndex.from_config()
+
+
 def process(
     session: Session,
     document_id: UUID,
     pdf_bytes: bytes,
     threshold: int | None = None,
     anonymizer: Anonymizer | None = None,
+    search_index: SearchIndex | None = None,
 ) -> State:
     """Advance one document from its current state until terminal. Resumable.
 
@@ -134,9 +142,16 @@ def process(
                    payload=result.counts)
         state = State.ANONYMIZED
 
-    # Stub transition — real indexing lands in change (d).
     if state == State.ANONYMIZED:
-        transition(session, document_id, State.INDEXED, step="index", payload={"stub": True})
+        anonymized = get_anonymized_text(session, document_id) or ""
+        doc = session.get(Document, document_id)
+        index = search_index or _default_index()
+        index.ensure_ready()
+        # Idempotent (upsert by id). If this raises (index down), it propagates:
+        # nothing commits, the document stays `anonymized` and is retried later.
+        index.index(str(document_id), anonymized, doc.object_key)
+        transition(session, document_id, State.INDEXED, step="index",
+                   payload={"chars": len(anonymized)})
         state = State.INDEXED
 
     return state
