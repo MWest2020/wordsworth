@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, LargeBinary, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -52,3 +52,17 @@ class DocumentText(Base):
         UUID(as_uuid=True), ForeignKey("documents.id"), primary_key=True
     )
     anonymized_text: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class PiiMapping(Base):
+    """Separated encrypted mapping store: pseudonym -> AES-GCM ciphertext of the
+    original PII. Holds only ciphertext, never clear PII, and never lives in the
+    document. One row per pseudonym."""
+
+    __tablename__ = "pii_mappings"
+
+    pseudonym: Mapped[str] = mapped_column(String, primary_key=True)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    key_id: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

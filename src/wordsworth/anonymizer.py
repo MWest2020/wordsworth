@@ -24,11 +24,13 @@ class Anonymizer(Protocol):
 
 
 class DeterministicAnonymizer:
-    """Interim driver: high-precision deterministic PII only (email, IBAN, BSN)."""
+    """Interim driver: high-precision deterministic PII only (BSN, IBAN, email),
+    replaced irreversibly with typed placeholders."""
 
     def anonymize(self, text: str) -> AnonymizationResult:
         counts: dict[str, int] = {}
-        text, counts["email"] = detectors.redact_email(text)
-        text, counts["iban"] = detectors.redact_iban(text)
-        text, counts["bsn"] = detectors.redact_bsn(text)
+        for label, pattern, validate in detectors.DETECTORS:
+            text, counts[label] = detectors.substitute(
+                text, pattern, lambda v, label=label: f"[{label.upper()}]", validate
+            )
         return AnonymizationResult(text=text, counts=counts)
