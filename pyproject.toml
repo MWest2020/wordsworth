@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2",
     "pypdf>=6.14.2",
     "sqlalchemy>=2",
+    "zeef",
 ]
 
 [build-system]
@@ -24,6 +25,9 @@ build-backend = "uv_build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.uv.sources]
+zeef = { git = "https://github.com/MWest2020/zeef" }
 
 [dependency-groups]
 dev = [

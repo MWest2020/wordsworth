@@ -60,11 +60,13 @@ def test_roundtrip_and_audit_logged(session):
     assert ok is True and bad is None
 
 
-def test_injectable_into_pipeline(session, born_digital_pii_pdf, mem_index):
+def test_injectable_into_pipeline(session, born_digital_pii_pdf, mem_index,
+                                  fake_embedder):
     doc = register(session, "pdf")
     session.commit()
     final = process(session, doc.id, born_digital_pii_pdf,
-                    anonymizer=_pseudo(session), search_index=mem_index)
+                    anonymizer=_pseudo(session), search_index=mem_index,
+                    embedder=fake_embedder)
     session.commit()
     assert final == State.INDEXED
 

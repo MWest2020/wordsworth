@@ -21,3 +21,18 @@ def test_search_endpoint_returns_ranked_hits():
     body = response.json()
     assert body["query"] == "parkeren"
     assert body["hits"][0]["document_id"] == "d1"
+
+
+def test_hybrid_endpoint_returns_ranked_hits():
+    from wordsworth.embedder import DeterministicEmbedder
+
+    emb = DeterministicEmbedder(dim=64)
+    index = InMemoryIndex()
+    for doc_id, text in [("d1", "parkeren in Haarlem"), ("d2", "iets over honden")]:
+        index.index(doc_id, text, doc_id, vector=emb.embed([text])[0])
+    client = TestClient(create_app(search_index=index, embedder=emb))
+    response = client.get("/hybrid", params={"q": "parkeren"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["hits"][0]["document_id"] == "d1"
+    assert "vector" not in body["hits"][0]  # raw vectors are not exposed

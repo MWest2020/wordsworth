@@ -27,5 +27,17 @@ class Settings:
     def opensearch_index(self) -> str:
         return os.environ.get("WORDSWORTH_OPENSEARCH_INDEX", "wordsworth")
 
+    @property
+    def ollama_url(self) -> str:
+        return os.environ.get("WORDSWORTH_OLLAMA_URL", "http://localhost:11434")
+
+    @property
+    def embedding_model(self) -> str:
+        return os.environ.get("WORDSWORTH_EMBEDDING_MODEL", "bge-m3")
+
+    @property
+    def embedding_dim(self) -> int:
+        return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
+
 
 settings = Settings()
