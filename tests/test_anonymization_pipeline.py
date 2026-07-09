@@ -3,7 +3,7 @@ from sqlalchemy import select
 from wordsworth import audit
 from wordsworth.anonymizer import AnonymizationResult
 from wordsworth.models import AuditRecord, DocumentText
-from wordsworth.pipeline import get_anonymized_text, process, register
+from wordsworth.pipeline import get_anonymized_text, ingest, process
 from wordsworth.states import State
 
 # Same values the born_digital_pii_pdf fixture embeds.
@@ -21,10 +21,10 @@ def _anonymize_payload(session, document_id):
 
 
 def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf,
-                                                mem_index, fake_embedder):
-    doc = register(session, "pii")
+                                                mem_index, fake_embedder, mem_store):
+    doc = ingest(session, mem_store, born_digital_pii_pdf)
     session.commit()
-    final = process(session, doc.id, born_digital_pii_pdf, search_index=mem_index,
+    final = process(session, doc.id, mem_store, search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()
 
@@ -39,14 +39,15 @@ def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf,
     assert ok is True and bad is None
 
 
-def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index, fake_embedder):
+def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index,
+                                     fake_embedder, mem_store):
     class MarkerAnonymizer:
         def anonymize(self, text):
             return AnonymizationResult(text="MARKER", counts={"custom": 7})
 
-    doc = register(session, "inject")
+    doc = ingest(session, mem_store, born_digital_pdf)
     session.commit()
-    process(session, doc.id, born_digital_pdf, anonymizer=MarkerAnonymizer(),
+    process(session, doc.id, mem_store, anonymizer=MarkerAnonymizer(),
             search_index=mem_index, embedder=fake_embedder)
     session.commit()
 
@@ -55,10 +56,10 @@ def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index, fake_
 
 
 def test_only_anonymized_text_is_stored(session, born_digital_pii_pdf, mem_index,
-                                        fake_embedder):
-    doc = register(session, "onlyanon")
+                                        fake_embedder, mem_store):
+    doc = ingest(session, mem_store, born_digital_pii_pdf)
     session.commit()
-    process(session, doc.id, born_digital_pii_pdf, search_index=mem_index,
+    process(session, doc.id, mem_store, search_index=mem_index,
             embedder=fake_embedder)
     session.commit()
     rows = session.execute(select(DocumentText)).scalars().all()
