@@ -1,13 +1,13 @@
 {
-  "role": "builder",
+  "role": "reviewer",
   "change": "add-evaluation-harness",
-  "run_id": "builder-add-evaluation-harness-20260709-074246",
+  "run_id": "reviewer-add-evaluation-harness-20260709-074916",
   "repo": "https://github.com/MWest2020/wordsworth.git",
   "verdict": "ok",
   "subtype": "success",
-  "total_cost_usd": "1.3692630000000001",
-  "num_turns": "29",
+  "total_cost_usd": "0.60556",
+  "num_turns": "14",
   "claude_exit": "0",
-  "finished_at": "2026-07-09T07:49:11Z",
-  "diff_hash": "eb42143bc55b4afd411fa43c4c9e53690511e611e4fe2f407ff8e1175dad4373"
+  "finished_at": "2026-07-09T07:51:13Z",
+  "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
