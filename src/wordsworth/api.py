@@ -8,8 +8,15 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.orm import Session, sessionmaker
 
+from .config import settings as default_settings
 from .embedder import Embedder
 from .pipeline import current_state
+from .rate_limit import (
+    EXEMPT_PATHS,
+    RateLimitMiddleware,
+    TokenBucket,
+    limiters_from_settings,
+)
 from .search_index import SearchIndex
 
 
@@ -17,8 +24,21 @@ def create_app(
     session_factory: sessionmaker[Session] | None = None,
     search_index: SearchIndex | None = None,
     embedder: Embedder | None = None,
+    rate_limiters: dict[str, TokenBucket] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="wordsworth")
+
+    # Per-client rate limiting on the read endpoints; /health & /metrics exempt.
+    # Built from settings by default; tests may inject their own limiters.
+    limiters = (
+        rate_limiters
+        if rate_limiters is not None
+        else limiters_from_settings(default_settings)
+    )
+    if limiters:
+        app.add_middleware(
+            RateLimitMiddleware, limiters=limiters, exempt=EXEMPT_PATHS
+        )
 
     @app.get("/health")
     def health() -> dict[str, str]:

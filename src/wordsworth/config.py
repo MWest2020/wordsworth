@@ -39,5 +39,27 @@ class Settings:
     def embedding_dim(self) -> int:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
+    @property
+    def rate_limit_enabled(self) -> bool:
+        return os.environ.get("WORDSWORTH_RATE_LIMIT_ENABLED", "true").lower() == "true"
+
+    @property
+    def rate_limit_rate(self) -> float:
+        """Tokens/sec for the light read endpoints (/search, /hybrid)."""
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_RATE", "5"))
+
+    @property
+    def rate_limit_burst(self) -> float:
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_BURST", "10"))
+
+    @property
+    def rate_limit_ask_rate(self) -> float:
+        """Tokens/sec for the CPU-heavy /ask endpoint — limited more tightly."""
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_ASK_RATE", "1"))
+
+    @property
+    def rate_limit_ask_burst(self) -> float:
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_ASK_BURST", "3"))
+
 
 settings = Settings()
