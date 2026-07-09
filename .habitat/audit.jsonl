@@ -1,0 +1,1 @@
+{"ts": "2026-07-09T21:20:32Z", "role": "builder", "change": "add-ocr", "run_id": "builder-add-ocr-20260709-211002", "verdict": "ok", "subtype": "success", "cost": "2.5146899999999994", "turns": "52", "diff_hash": "25e1a4fbdaee47eba524f53d651b111e1354cd48d7a9136488030e147cc72d50", "prev_hash": "", "entry_hash": "12fb3e59a4893e65284af5068015efb2971683e67f9064013b4b3f68f76dfa8e"}
