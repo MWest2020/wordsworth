@@ -20,6 +20,11 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_BORN_DIGITAL_THRESHOLD", "10"))
 
     @property
+    def ocr_language(self) -> str:
+        """Tesseract language model for OCR recovery (Dutch corpus default)."""
+        return os.environ.get("WORDSWORTH_OCR_LANGUAGE", "nld")
+
+    @property
     def opensearch_url(self) -> str:
         return os.environ.get("WORDSWORTH_OPENSEARCH_URL", "http://localhost:9200")
 
