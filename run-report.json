@@ -1,0 +1,13 @@
+{
+  "role": "builder",
+  "change": "add-audit-worm-export",
+  "run_id": "builder-add-audit-worm-export-20260709-081944",
+  "repo": "https://github.com/MWest2020/wordsworth.git",
+  "verdict": "ok",
+  "subtype": "success",
+  "total_cost_usd": "2.6832305000000005",
+  "num_turns": "49",
+  "claude_exit": "0",
+  "finished_at": "2026-07-09T08:28:46Z",
+  "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
