@@ -71,7 +71,6 @@ def deanonymize(
     state = _current_state(session, document_id)
     if state is None:
         raise ValueError("unknown document")
-    key = key_provider.current_key()
     revealed: list[str] = []
 
     def repl(match: re.Match[str]) -> str:
@@ -79,6 +78,9 @@ def deanonymize(
         mapping = mapping_store.get(pseudonym)
         if mapping is None:
             return pseudonym
+        # Select the key by the mapping's stored key_id, so entries written
+        # under any version (pre- or post-rotation) decrypt correctly.
+        key = key_provider.key(mapping.key_id)
         revealed.append(pseudonym)
         return decrypt(key.material, mapping.ciphertext, mapping.nonce)
 
