@@ -1,0 +1,55 @@
+<!doctype html><html lang=nl><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1"><title>Habitat run builder-add-rag-20260709-083139</title>
+<style>
+:root{color-scheme:light dark}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:2rem;
+ max-width:60rem;margin-inline:auto;line-height:1.5}
+h1{font-size:1.4rem;margin:0 0 .25rem}
+.sub{color:#888;margin-bottom:1.5rem}
+.badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-weight:600;font-size:.85rem}
+.ok{background:#1b7f3b;color:#fff}.bad{background:#b3261e;color:#fff}
+.grid{display:flex;gap:2rem;flex-wrap:wrap;margin:1rem 0}
+.grid div{font-size:.9rem}.grid b{display:block;color:#888;font-weight:500}
+pre{background:#8881;padding:1rem;border-radius:.5rem;overflow-x:auto;font-size:.85rem}
+table{border-collapse:collapse;width:100%;font-size:.8rem}
+th,td{text-align:left;padding:.4rem .5rem;border-bottom:1px solid #8883}
+code{font-family:ui-monospace,monospace}
+.v-ok{color:#1b7f3b;font-weight:700}.v-bad{color:#b3261e;font-weight:700}
+</style></head><body>
+<h1>builder · add-rag <span class="badge ok">ok</span></h1>
+<div class=sub>Habitat run-rapport · 2026-07-09T08:36:18Z</div>
+<div class=grid>
+ <div><b>verdict</b>ok</div><div><b>kosten (USD)</b>1.5369990000000004</div>
+ <div><b>turns</b>40</div>
+</div>
+<h2>Diff-samenvatting</h2><pre>openspec/changes/add-rag/tasks.md  | 16 +++----
+ src/wordsworth/api.py              | 12 +++++
+ src/wordsworth/config.py           |  5 ++
+ src/wordsworth/generator.py        | 97 ++++++++++++++++++++++++++++++++++++++
+ src/wordsworth/opensearch_index.py |  5 +-
+ src/wordsworth/rag.py              | 41 ++++++++++++++++
+ src/wordsworth/search_index.py     |  6 ++-
+ tests/test_api.py                  | 20 ++++++++
+ tests/test_generator.py            | 29 ++++++++++++
+ tests/test_rag.py                  | 70 +++++++++++++++++++++++++++
+ 10 files changed, 290 insertions(+), 11 deletions(-)</pre>
+<h2>Audit-hashketen</h2>
+<p class=sub>Herberekend in je browser — geen server, geen CDN.</p>
+<table><thead><tr><th>run</th><th>rol</th><th>verdict</th><th>entry_hash</th><th>keten</th></tr></thead>
+<tbody id=rows></tbody></table>
+<script>
+const FIELDS=["prev_hash", "ts", "role", "change", "run_id", "verdict", "subtype", "diff_hash", "cost", "turns"], CHAIN=[{"ts": "2026-07-09T08:36:18Z", "role": "builder", "change": "add-rag", "run_id": "builder-add-rag-20260709-083139", "verdict": "ok", "subtype": "success", "cost": "1.5369990000000004", "turns": "40", "diff_hash": "a24116e18d0f7cad5251fa570c04ea44f894e25f9ad2a71c1284d958d80a164a", "prev_hash": "", "entry_hash": "08764b22ea88a3173303963be8d1cff5f3a8b372bc5f471ca511210837efd9ee"}];
+const payload=e=>FIELDS.map(f=>String(e[f]??"")).join("|");
+async function sha(s){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));
+ return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+(async()=>{const tb=document.getElementById("rows");let prev="";
+ for(const e of CHAIN){const calc=await sha(payload(e));
+  const ok=calc===e.entry_hash && e.prev_hash===prev;
+  const tr=document.createElement("tr");
+  // textContent (nooit innerHTML) — audit-waarden worden niet als HTML uitgevoerd
+  const mk=(t,cls)=>{const td=document.createElement("td");td.textContent=t;if(cls)td.className=cls;tr.appendChild(td)};
+  mk(e.run_id);mk(e.role);mk(e.verdict);mk((e.entry_hash||"").slice(0,12)+"\u2026");
+  mk(ok?"\u2713 geldig":"\u2717 gebroken", ok?"v-ok":"v-bad");
+  tb.appendChild(tr);prev=e.entry_hash;}
+})();
+</script></body></html>

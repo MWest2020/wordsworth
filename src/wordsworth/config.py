@@ -39,5 +39,10 @@ class Settings:
     def embedding_dim(self) -> int:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
+    @property
+    def llm_model(self) -> str:
+        """Local generation model (Ollama). RAG only; no cloud in the critical path."""
+        return os.environ.get("WORDSWORTH_LLM_MODEL", "llama3.1")
+
 
 settings = Settings()
