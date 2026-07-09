@@ -89,11 +89,16 @@ def verify_chain(session: Session) -> tuple[bool, int | None]:
     return True, None
 
 
-def export_jsonl(session: Session) -> str:
-    """Derived, append-only JSONL view: same records, same hashes."""
+def export_jsonl(session: Session, *, after_seq: int = 0) -> str:
+    """Derived, append-only JSONL view: same records, same hashes.
+
+    ``after_seq`` yields only records past that seq, for incremental export.
+    ``after_seq=0`` (the default) yields the full chain."""
     lines = []
     records = session.execute(
-        select(AuditRecord).order_by(AuditRecord.seq)
+        select(AuditRecord)
+        .where(AuditRecord.seq > after_seq)
+        .order_by(AuditRecord.seq)
     ).scalars().all()
     for r in records:
         lines.append(

@@ -39,5 +39,18 @@ class Settings:
     def embedding_dim(self) -> int:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
+    @property
+    def audit_worm_bucket(self) -> str:
+        """S3 Object Lock bucket the audit chain is exported to (WORM)."""
+        return os.environ.get("WORDSWORTH_AUDIT_WORM_BUCKET", "wordsworth-audit-worm")
+
+    @property
+    def audit_worm_retention_days(self) -> int:
+        """Default bewaartermijn in days for exported audit objects.
+
+        Ten years by default (the tamper-evidence requirement); callers MAY pass
+        a different retention per bewaartermijn."""
+        return int(os.environ.get("WORDSWORTH_AUDIT_WORM_RETENTION_DAYS", str(365 * 10)))
+
 
 settings = Settings()
