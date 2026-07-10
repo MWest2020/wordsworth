@@ -1,13 +1,13 @@
 {
-  "role": "builder",
+  "role": "reviewer",
   "change": "add-ocr",
-  "run_id": "builder-add-ocr-20260709-211002",
+  "run_id": "reviewer-add-ocr-20260710-083836",
   "repo": "https://github.com/MWest2020/wordsworth.git",
   "verdict": "ok",
   "subtype": "success",
-  "total_cost_usd": "2.5146899999999994",
-  "num_turns": "52",
+  "total_cost_usd": "0.8004745",
+  "num_turns": "24",
   "claude_exit": "0",
-  "finished_at": "2026-07-09T21:20:32Z",
-  "diff_hash": "25e1a4fbdaee47eba524f53d651b111e1354cd48d7a9136488030e147cc72d50"
+  "finished_at": "2026-07-10T08:41:57Z",
+  "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
