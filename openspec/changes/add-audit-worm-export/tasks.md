@@ -1,6 +1,7 @@
 # Tasks — add-audit-worm-export
 
 Done = green: every task ships with its tests. NOTE: unchecked — for a Habitat builder.
+DEPENDS ON: add-object-storage (S3 Object Lock bucket) — build that first.
 
 ## 1. WORM export
 - [ ] 1.1 Export derived JSONL to an S3 Object Lock (compliance-mode) bucket with
