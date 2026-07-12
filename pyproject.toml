@@ -11,6 +11,7 @@ dependencies = [
     "boto3>=1.43.44",
     "cryptography>=49.0.0",
     "fastapi>=0.139.0",
+    "ocrmypdf>=17.8.0",
     "opensearch-py>=3.2.0",
     "psycopg[binary]>=3",
     "pydantic>=2",
