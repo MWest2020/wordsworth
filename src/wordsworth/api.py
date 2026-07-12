@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from sqlalchemy.orm import Session, sessionmaker
 
 from .embedder import Embedder
@@ -33,6 +33,14 @@ def create_app(
             if state is None:
                 raise HTTPException(status_code=404, detail="unknown document")
             return {"document_id": str(document_id), "state": state.value}
+
+        @app.get("/metrics")
+        def metrics() -> Response:
+            from .metrics import CONTENT_TYPE, render_metrics
+
+            with session_factory() as session:
+                body = render_metrics(session)
+            return Response(content=body, media_type=CONTENT_TYPE)
 
     if search_index is not None:
 

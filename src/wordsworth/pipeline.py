@@ -26,6 +26,7 @@ from .models import AuditRecord, Document, DocumentText
 from .profiling import ProfilingError, profile_pdf
 from .search_index import SearchIndex
 from .states import State, is_allowed
+from .structured_log import log_transition
 
 
 def current_state(session: Session, document_id: UUID) -> State | None:
@@ -36,6 +37,15 @@ def current_state(session: Session, document_id: UUID) -> State | None:
         .limit(1)
     ).scalar_one_or_none()
     return State(to_state) if to_state else None
+
+
+def _last_ts(session: Session, document_id: UUID):
+    return session.execute(
+        select(AuditRecord.ts)
+        .where(AuditRecord.document_id == document_id)
+        .order_by(AuditRecord.seq.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
 
 def transition(
@@ -51,7 +61,8 @@ def transition(
         return None  # idempotent no-op
     if not is_allowed(frm, to_state):
         raise ValueError(f"illegal transition {frm} -> {to_state}")
-    return audit.append(
+    prev_ts = _last_ts(session, document_id)
+    record = audit.append(
         session,
         document_id=document_id,
         from_state=frm.value if frm else None,
@@ -59,6 +70,18 @@ def transition(
         step=step,
         payload=payload,
     )
+    duration_ms = (
+        (record.ts - prev_ts).total_seconds() * 1000 if prev_ts is not None else None
+    )
+    log_transition(
+        document_id=document_id,
+        from_state=frm.value if frm else None,
+        to_state=to_state.value,
+        step=step,
+        duration_ms=duration_ms,
+        level="error" if to_state == State.FAILED else "info",
+    )
+    return record
 
 
 def register(session: Session, object_key: str) -> Document:
