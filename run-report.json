@@ -1,13 +1,13 @@
 {
-  "role": "builder",
+  "role": "security",
   "change": "add-rate-limiting",
-  "run_id": "builder-add-rate-limiting-20260709-075514",
+  "run_id": "security-add-rate-limiting-20260712-183449",
   "repo": "https://github.com/MWest2020/wordsworth.git",
   "verdict": "ok",
   "subtype": "success",
-  "total_cost_usd": "1.1157970000000001",
-  "num_turns": "25",
+  "total_cost_usd": "0.5734559999999999",
+  "num_turns": "13",
   "claude_exit": "0",
-  "finished_at": "2026-07-09T07:59:29Z",
+  "finished_at": "2026-07-12T18:37:14Z",
   "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
