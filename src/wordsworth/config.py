@@ -39,5 +39,30 @@ class Settings:
     def embedding_dim(self) -> int:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
+    # --- Object storage (S3-compatible: SeaweedFS PoC / Ceph RGW target) ---
+
+    @property
+    def s3_endpoint_url(self) -> str | None:
+        """S3 endpoint. None uses AWS defaults; set for SeaweedFS/Ceph RGW."""
+        return os.environ.get("WORDSWORTH_S3_ENDPOINT_URL") or None
+
+    @property
+    def s3_bucket(self) -> str:
+        return os.environ.get("WORDSWORTH_S3_BUCKET", "wordsworth")
+
+    @property
+    def s3_region(self) -> str:
+        return os.environ.get("WORDSWORTH_S3_REGION", "us-east-1")
+
+    @property
+    def s3_access_key(self) -> str | None:
+        """Secret: injected into the env by SOPS+age or OpenBao. Never hardcoded."""
+        return os.environ.get("WORDSWORTH_S3_ACCESS_KEY") or None
+
+    @property
+    def s3_secret_key(self) -> str | None:
+        """Secret: injected into the env by SOPS+age or OpenBao. Never hardcoded."""
+        return os.environ.get("WORDSWORTH_S3_SECRET_KEY") or None
+
 
 settings = Settings()

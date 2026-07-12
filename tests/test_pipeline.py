@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import func, select
 
 from wordsworth.models import Document
-from wordsworth.pipeline import current_state, process, register, transition
+from wordsworth.pipeline import current_state, ingest, process, register, transition
 from wordsworth.states import State
 
 
@@ -37,14 +37,14 @@ def test_atomic_no_partial_persist(session_factory):
 
 
 def test_process_resumes_from_current_state(session, born_digital_pdf, mem_index,
-                                            fake_embedder):
-    doc = register(session, "k")
+                                            fake_embedder, mem_store):
+    doc = ingest(session, mem_store, born_digital_pdf)
     # Simulate a prior partial run that already profiled the document.
     transition(session, doc.id, State.EXTRACTABLE, step="profile",
                payload={"chars": 50, "pages": 1, "bytes": 10})
     session.commit()
-    # Resume: text is re-derived from the source PDF (no clear-text store).
-    final = process(session, doc.id, born_digital_pdf, search_index=mem_index,
+    # Resume: bytes are re-fetched from the object store by key (no clear-text store).
+    final = process(session, doc.id, mem_store, search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()
     assert final == State.INDEXED

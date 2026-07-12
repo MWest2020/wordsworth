@@ -84,6 +84,13 @@ def fake_embedder():
     return DeterministicEmbedder(dim=64)
 
 
+@pytest.fixture
+def mem_store():
+    from wordsworth.object_store import InMemoryObjectStore
+
+    return InMemoryObjectStore()
+
+
 # --- PDF fixtures -----------------------------------------------------------
 
 def _pdf(draw) -> bytes:
