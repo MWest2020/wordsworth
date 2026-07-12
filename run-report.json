@@ -1,13 +1,13 @@
 {
-  "role": "builder",
+  "role": "reviewer",
   "change": "add-object-storage",
-  "run_id": "builder-add-object-storage-20260709-084634",
+  "run_id": "reviewer-add-object-storage-20260712-181607",
   "repo": "https://github.com/MWest2020/wordsworth.git",
   "verdict": "ok",
   "subtype": "success",
-  "total_cost_usd": "3.2702679999999993",
-  "num_turns": "63",
+  "total_cost_usd": "0.786509",
+  "num_turns": "22",
   "claude_exit": "0",
-  "finished_at": "2026-07-09T08:56:00Z",
+  "finished_at": "2026-07-12T18:18:55Z",
   "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
