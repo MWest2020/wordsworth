@@ -62,4 +62,3 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
   BSN elfproef, IBAN mod-97).
 - [zeef](https://github.com/MWest2020/zeef) (EUPL-1.2) — ranking (local Ollama
   embeddings, cosine, UPGMA clustering, append-only audit-JSONL).
-</content>
