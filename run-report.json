@@ -1,13 +1,13 @@
 {
-  "role": "builder",
+  "role": "reviewer",
   "change": "apply-docs-contract",
-  "run_id": "builder-apply-docs-contract-20260712-185653",
+  "run_id": "reviewer-apply-docs-contract-20260712-185931",
   "repo": "https://github.com/MWest2020/wordsworth.git",
   "verdict": "ok",
   "subtype": "success",
-  "total_cost_usd": "0.6664555000000001",
-  "num_turns": "17",
+  "total_cost_usd": "0.448444",
+  "num_turns": "8",
   "claude_exit": "0",
-  "finished_at": "2026-07-12T18:59:03Z",
-  "diff_hash": "00f9cd890c5abe1c7f472a5d4790e0b45177d8f4397286986d5d4ed99cfcab26"
+  "finished_at": "2026-07-12T19:01:04Z",
+  "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }
