@@ -17,4 +17,3 @@ under `openspec/`.
 
 - [reference/](reference/architecture.md) — facts: pipeline architecture,
   invariants, stack, and configuration.
-</content>
