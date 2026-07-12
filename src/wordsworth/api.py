@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Response
 from sqlalchemy.orm import Session, sessionmaker
 
 from .embedder import Embedder
+from .generator import Generator
 from .pipeline import current_state
 from .search_index import SearchIndex
 
@@ -17,6 +18,7 @@ def create_app(
     session_factory: sessionmaker[Session] | None = None,
     search_index: SearchIndex | None = None,
     embedder: Embedder | None = None,
+    generator: Generator | None = None,
 ) -> FastAPI:
     app = FastAPI(title="wordsworth")
 
@@ -57,6 +59,16 @@ def create_app(
 
                 hits = hybrid_search(search_index, embedder, q, size=size)
                 return {"query": q, "hits": [_hit(h) for h in hits]}
+
+            if generator is not None:
+
+                @app.get("/ask")
+                def ask(q: str, k: int = 5) -> dict:
+                    from .rag import ask as run_ask
+
+                    answer = run_ask(q, search_index, embedder, generator, k=k)
+                    return {"query": q, "answer": answer.text,
+                            "citations": answer.citations}
 
     return app
 

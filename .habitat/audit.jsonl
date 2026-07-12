@@ -1,0 +1,1 @@
+{"ts": "2026-07-09T08:36:18Z", "role": "builder", "change": "add-rag", "run_id": "builder-add-rag-20260709-083139", "verdict": "ok", "subtype": "success", "cost": "1.5369990000000004", "turns": "40", "diff_hash": "a24116e18d0f7cad5251fa570c04ea44f894e25f9ad2a71c1284d958d80a164a", "prev_hash": "", "entry_hash": "08764b22ea88a3173303963be8d1cff5f3a8b372bc5f471ca511210837efd9ee"}

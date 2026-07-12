@@ -77,10 +77,11 @@ class OpenSearchIndex:
             return []
         docs = self._client.mget(
             body={"ids": fused}, index=self._index,
-            _source=["object_key", "vector"],
+            _source=["object_key", "vector", "text"],
         )["docs"]
         by_id = {d["_id"]: d.get("_source", {}) for d in docs if d.get("found")}
         return [
-            Hit(doc_id, 0.0, by_id[doc_id].get("object_key"), by_id[doc_id].get("vector"))
+            Hit(doc_id, 0.0, by_id[doc_id].get("object_key"),
+                by_id[doc_id].get("vector"), by_id[doc_id].get("text"))
             for doc_id in fused if doc_id in by_id
         ]

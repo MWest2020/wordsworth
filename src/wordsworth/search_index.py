@@ -20,6 +20,7 @@ class Hit:
     score: float
     object_key: str | None = None
     vector: list[float] | None = None
+    text: str | None = None  # de-identified index text (RAG sources)
 
 
 @runtime_checkable
@@ -73,4 +74,7 @@ class InMemoryIndex:
         )
         knn_ids = [doc_id for doc_id, _ in knn]
         fused = fuse_ranked_ids([lexical_ids, knn_ids])[:recall]
-        return [Hit(d, 0.0, self._docs[d][1], self._docs[d][2]) for d in fused]
+        return [
+            Hit(d, 0.0, self._docs[d][1], self._docs[d][2], self._docs[d][0])
+            for d in fused
+        ]
