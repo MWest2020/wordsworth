@@ -5,9 +5,9 @@ SOFT DEPENDENCY: `/ask` arrives with add-rag, `/metrics` with add-observability;
 build config-driven so this change works before and after those land.
 
 ## 1. Limiter
-- [ ] 1.1 `rate_limit.py`: token-bucket + `RateLimitStore` interface + in-memory store
-- [ ] 1.2 Config: per-endpoint/global rate + burst
-- [ ] 1.3 Tests: within-limit passes; over-limit rejected; bucket refills over time
+- [x] 1.1 `rate_limit.py`: token-bucket + `RateLimitStore` interface + in-memory store
+- [x] 1.2 Config: per-endpoint/global rate + burst
+- [x] 1.3 Tests: within-limit passes; over-limit rejected; bucket refills over time
 
 ## 2. Middleware
 - [ ] 2.1 API middleware, config-driven limited/exempt sets (not a hardcoded route

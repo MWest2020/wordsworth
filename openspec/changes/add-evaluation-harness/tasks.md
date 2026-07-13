@@ -4,9 +4,9 @@ Done = green: every task ships with its tests in the same builder run.
 NOTE: unchecked — for a Habitat builder to implement.
 
 ## 1. Metrics
-- [ ] 1.1 `metrics.py`: pure `r_precision`, `recall_at_k`, `average_precision`,
+- [x] 1.1 `metrics.py`: pure `r_precision`, `recall_at_k`, `average_precision`,
       `ndcg_at_k` per the exact definitions in design.md (graded qrels; >0 = relevant)
-- [ ] 1.2 Tests: hand-computed examples for each metric; earlier hits raise AP;
+- [x] 1.2 Tests: hand-computed examples for each metric; earlier hits raise AP;
       ideal order -> NDCG 1.0; no-relevant -> 0.0 for all
 
 ## 2. Runner
@@ -19,9 +19,9 @@ NOTE: unchecked — for a Habitat builder to implement.
       relevant doc ranked deeper than `k` still contributes to MAP/R-Precision
 
 ## 3. Collection loaders
-- [ ] 3.1 `collection.py`: `load_qrels` (TREC format) + `load_queries` (TSV) ->
+- [x] 3.1 `collection.py`: `load_qrels` (TREC format) + `load_queries` (TSV) ->
       in-memory dicts
-- [ ] 3.2 Tests: round-trip parse of small fixture files; graded relevance preserved
+- [x] 3.2 Tests: round-trip parse of small fixture files; graded relevance preserved
 
 ## 4. End-to-end (synthetic)
 - [ ] 4.1 Evaluate an in-memory ranker (e.g. InMemoryIndex.search or hybrid with

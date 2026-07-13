@@ -3,9 +3,9 @@
 Done = green: every task ships with its tests. NOTE: unchecked — for a Habitat builder.
 
 ## 1. Metrics
-- [ ] 1.1 `GET /metrics` (Prometheus text): documents per state, transitions per
+- [x] 1.1 `GET /metrics` (Prometheus text): documents per state, transitions per
       step, failed counts — derived from the audit table
-- [ ] 1.2 Tests: per-state counts match processed documents
+- [x] 1.2 Tests: per-state counts match processed documents
 
 ## 2. Structured logging
 - [ ] 2.1 JSON log line on each ACTUAL transition (document_id, step, from, to,

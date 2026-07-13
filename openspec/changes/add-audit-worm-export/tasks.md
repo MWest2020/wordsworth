@@ -21,4 +21,4 @@ DEPENDS ON: add-object-storage (S3 Object Lock bucket) — build that first.
       first `prev_hash` is rejected
 
 ## 3. Retention
-- [ ] 3.1 Retention period configurable per bewaartermijn
+- [x] 3.1 Retention period configurable per bewaartermijn

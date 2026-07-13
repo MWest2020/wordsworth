@@ -7,7 +7,7 @@ from wordsworth.anonymizer import Anonymizer
 from wordsworth.keys import StubKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord
-from wordsworth.pipeline import get_anonymized_text, process, register
+from wordsworth.pipeline import get_anonymized_text, ingest, process, register
 from wordsworth.pseudonymizer import Pseudonymizer, deanonymize
 from wordsworth.states import State
 
@@ -61,10 +61,10 @@ def test_roundtrip_and_audit_logged(session):
 
 
 def test_injectable_into_pipeline(session, born_digital_pii_pdf, mem_index,
-                                  fake_embedder):
-    doc = register(session, "pdf")
+                                  fake_embedder, mem_store):
+    doc = ingest(session, mem_store, born_digital_pii_pdf)
     session.commit()
-    final = process(session, doc.id, born_digital_pii_pdf,
+    final = process(session, doc.id, mem_store,
                     anonymizer=_pseudo(session), search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()

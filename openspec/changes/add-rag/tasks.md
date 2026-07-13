@@ -4,10 +4,10 @@ Done = green: every task ships with its tests in the same builder run.
 NOTE: unchecked — for a Habitat builder to implement.
 
 ## 1. Generator seam
-- [ ] 1.1 `generator.py`: `Generator` protocol, `Source`, `Answer` (text +
+- [x] 1.1 `generator.py`: `Generator` protocol, `Source`, `Answer` (text +
       citations); `OllamaGenerator` (local LLM via stdlib HTTP, config URL+model);
       deterministic test double
-- [ ] 1.2 Tests: injected generator is used; local-model-unavailable fails loudly
+- [x] 1.2 Tests: injected generator is used; local-model-unavailable fails loudly
       (no cloud fallback)
 
 ## 2. RAG flow + grounding guard
@@ -27,4 +27,4 @@ NOTE: unchecked — for a Habitat builder to implement.
 - [ ] 3.2 Test: ask endpoint returns answer + verified citations
 
 ## 4. Config
-- [ ] 4.1 Local LLM URL + model (Ollama) settings
+- [x] 4.1 Local LLM URL + model (Ollama) settings

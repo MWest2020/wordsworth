@@ -40,4 +40,81 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
 
+    # --- add-object-storage ---
+    # --- Object storage (S3-compatible: SeaweedFS PoC / Ceph RGW target) ---
+
+    @property
+    def s3_endpoint_url(self) -> str | None:
+        """S3 endpoint. None uses AWS defaults; set for SeaweedFS/Ceph RGW."""
+        return os.environ.get("WORDSWORTH_S3_ENDPOINT_URL") or None
+
+    @property
+    def s3_bucket(self) -> str:
+        return os.environ.get("WORDSWORTH_S3_BUCKET", "wordsworth")
+
+    @property
+    def s3_region(self) -> str:
+        return os.environ.get("WORDSWORTH_S3_REGION", "us-east-1")
+
+    @property
+    def s3_access_key(self) -> str | None:
+        """Secret: injected into the env by SOPS+age or OpenBao. Never hardcoded."""
+        return os.environ.get("WORDSWORTH_S3_ACCESS_KEY") or None
+
+    @property
+    def s3_secret_key(self) -> str | None:
+        """Secret: injected into the env by SOPS+age or OpenBao. Never hardcoded."""
+        return os.environ.get("WORDSWORTH_S3_SECRET_KEY") or None
+
+    # --- add-ocr ---
+    @property
+    def ocr_language(self) -> str:
+        """Tesseract language model for OCR recovery (Dutch corpus default)."""
+        return os.environ.get("WORDSWORTH_OCR_LANGUAGE", "nld")
+
+    # --- add-audit-worm-export ---
+    @property
+    def audit_worm_bucket(self) -> str:
+        """S3 Object Lock bucket the audit chain is exported to (WORM)."""
+        return os.environ.get("WORDSWORTH_AUDIT_WORM_BUCKET", "wordsworth-audit-worm")
+
+    @property
+    def audit_worm_retention_days(self) -> int:
+        """Default bewaartermijn in days for exported audit objects.
+
+        Ten years by default (the tamper-evidence requirement); callers MAY pass
+        a different retention per bewaartermijn."""
+        return int(os.environ.get("WORDSWORTH_AUDIT_WORM_RETENTION_DAYS", str(365 * 10)))
+
+    # --- add-rag ---
+    @property
+    def llm_model(self) -> str:
+        """Local generation model (Ollama). RAG only; no cloud in the critical path."""
+        return os.environ.get("WORDSWORTH_LLM_MODEL", "llama3.1")
+
+    # --- add-rate-limiting ---
+    @property
+    def rate_limit_enabled(self) -> bool:
+        return os.environ.get("WORDSWORTH_RATE_LIMIT_ENABLED", "true").lower() == "true"
+
+    @property
+    def rate_limit_rate(self) -> float:
+        """Tokens/sec for the light read endpoints (/search, /hybrid)."""
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_RATE", "5"))
+
+    @property
+    def rate_limit_burst(self) -> float:
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_BURST", "10"))
+
+    @property
+    def rate_limit_ask_rate(self) -> float:
+        """Tokens/sec for the CPU-heavy /ask endpoint — limited more tightly."""
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_ASK_RATE", "1"))
+
+    @property
+    def rate_limit_ask_burst(self) -> float:
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_ASK_BURST", "3"))
+
+
+
 settings = Settings()
