@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: EUPL-1.2
+# CI: draait de volledige testsuite incl. de DB- en object-store-integratietests
+# tegen echte service-containers (Postgres + SeaweedFS). Sluit de tests die lokaal
+# skippen als docker/testcontainers ontbreken.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Postgres als service-container: de default-CMD start de server, geconfigureerd
+    # via env. (SeaweedFS kan dit niet — dat vereist `weed server -s3`, en GHA-services
+    # kunnen het commando niet overriden → die start ik als expliciete stap hieronder.)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wordsworth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      WORDSWORTH_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wordsworth
+      WORDSWORTH_S3_ENDPOINT_URL: http://localhost:8333
+      WORDSWORTH_S3_ACCESS_KEY: any
+      WORDSWORTH_S3_SECRET_KEY: any
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SeaweedFS starten (S3-gateway op 8333)
+        run: |
+          docker run -d --name seaweedfs -p 8333:8333 \
+            chrislusf/seaweedfs:4.39 server -s3 -dir=/tmp
+          echo "wachten tot de S3-gateway antwoordt..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:8333; then echo "up na ${i}s"; break; fi
+            sleep 1
+          done
+
+      - name: uv installeren
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.15"
+
+      - name: Dependencies syncen
+        run: uv sync --frozen
+
+      - name: Testsuite draaien
+        run: uv run pytest -q
