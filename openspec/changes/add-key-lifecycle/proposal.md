@@ -14,6 +14,8 @@ re-encrypt the mappings without touching a single document.
   entry from the old key to the new, updating `key_id`; documents are untouched.
 - Deanonymization SHALL select the decryption key by the mapping's stored
   `key_id` (already persisted), so old and rotated mappings both decrypt.
+- Rotation SHALL be audited in a **separate key-lifecycle stream** (not the
+  document hash-chain, whose records require a `document_id`).
 
 ## Capabilities
 

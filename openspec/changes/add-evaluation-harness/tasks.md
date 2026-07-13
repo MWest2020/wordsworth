@@ -11,9 +11,12 @@ NOTE: unchecked — for a Habitat builder to implement.
 
 ## 2. Runner
 - [ ] 2.1 `harness.py`: `evaluate(search, queries, qrels, k=10) -> report`
-      (per-query metrics + aggregate means); depends only on the callable
+      (per-query metrics with `ap` + aggregate means with `map`); does NOT
+      truncate the ranking to `k` before R-Precision/AP; depends only on the
+      callable
 - [ ] 2.2 Tests: a trivial/stub ranker over a synthetic collection yields the
-      expected per-query and aggregate numbers; a second ranker scores worse
+      expected per-query and aggregate numbers; a second ranker scores worse; a
+      relevant doc ranked deeper than `k` still contributes to MAP/R-Precision
 
 ## 3. Collection loaders
 - [ ] 3.1 `collection.py`: `load_qrels` (TREC format) + `load_queries` (TSV) ->
@@ -22,5 +25,6 @@ NOTE: unchecked — for a Habitat builder to implement.
 
 ## 4. End-to-end (synthetic)
 - [ ] 4.1 Evaluate an in-memory ranker (e.g. InMemoryIndex.search or hybrid with
-      the deterministic embedder) over a small synthetic Dutch collection; assert
-      sane, reproducible metrics. No external services required.
+      the deterministic embedder) over a small synthetic Dutch collection; the
+      adapter requests sufficient depth (large `size`/`recall`, not default 10);
+      assert sane, reproducible metrics. No external services required.

@@ -41,10 +41,25 @@ document ids`), a set of queries, and qrels, and SHALL produce per-query metrics
 and their means. It SHALL depend on nothing but the callable — no database,
 search engine, or embedding service.
 
+The ranker callable SHALL return a ranking deep enough for the metrics to be
+correct — at least `max(k, max R over queries)`, ideally the full ranking —
+because R-Precision needs the top-R (R may exceed `k`) and Average Precision
+needs the ranks of all relevant documents. Retrieval depth is therefore distinct
+from the metric cutoff `k`: truncating the ranking to `k` would deflate MAP and
+R-Precision. Per-query results SHALL report Average Precision under the key `ap`;
+the aggregate mean of AP SHALL be reported as `map`.
+
 #### Scenario: Evaluate an arbitrary ranker
 
 - **WHEN** the runner is given a ranker callable, queries, and qrels
-- **THEN** it returns per-query metrics and aggregate means over the queries
+- **THEN** it returns per-query metrics (with `ap` per query) and aggregate means
+  over the queries (with `map` as the mean AP)
+
+#### Scenario: Shallow ranking does not silently deflate MAP
+
+- **WHEN** a query has relevant documents ranked deeper than `k`
+- **THEN** those documents still contribute to Average Precision and R-Precision
+  because the ranker is run to a depth beyond `k`, not truncated to it
 
 #### Scenario: Same harness evaluates different rankers
 

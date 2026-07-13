@@ -11,15 +11,19 @@ NOTE: unchecked — for a Habitat builder to implement.
       (no cloud fallback)
 
 ## 2. RAG flow + grounding guard
-- [ ] 2.1 `rag.py`: `ask(query, index, embedder, generator, k)` — hybrid retrieve
-      -> build Source[] from de-identified hit text -> generate -> verify citations
-- [ ] 2.2 Grounding guard: drop citations not in the retrieved source ids; empty
-      valid set -> "no grounded answer" result (never fabricated prose)
-- [ ] 2.3 Tests: sources are exactly the top-k hybrid hits; invented citation
-      dropped; all-invalid -> ungrounded result; sources carry de-identified text
+- [ ] 2.1 `rag.py`: `ask(session, query, index, embedder, generator, k)` — hybrid
+      retrieve -> build Source[] by fetching each passage via
+      `get_anonymized_text(session, hit.document_id)` (hits carry no text) ->
+      generate -> verify citations
+- [ ] 2.2 Grounding guard: `valid = {s.document_id for s in sources}`; drop
+      citations not in it; empty valid set -> "no grounded answer" result (never
+      fabricated prose)
+- [ ] 2.3 Tests: sources are exactly the top-k hybrid hits; source text is the
+      de-identified `anonymized_text`; invented citation dropped; all-invalid ->
+      ungrounded result
 
 ## 3. API
-- [ ] 3.1 `GET /ask?q=` endpoint (generator + index + embedder injected)
+- [ ] 3.1 `GET /ask?q=` endpoint (session + generator + index + embedder injected)
 - [ ] 3.2 Test: ask endpoint returns answer + verified citations
 
 ## 4. Config

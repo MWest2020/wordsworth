@@ -32,12 +32,27 @@ list[doc_id]`. For each query id present in qrels: run `search`, compute the fou
 metrics, collect. Report shape:
 
 ```
-{"per_query": {qid: {"r_precision","recall@10","map"(=AP),"ndcg@10"}},
+{"per_query": {qid: {"r_precision","recall@10","ap","ndcg@10"}},
  "aggregate": {"r_precision","recall@10","map","ndcg@10"}}   # means over queries
 ```
 
+Note the naming: **per-query is `ap`** (Average Precision for that query);
+**aggregate is `map`** (the mean of AP). MAP is by definition the mean, so it
+only exists at the aggregate level.
+
+### Retrieval depth is not the metric cutoff `k`
+
+`k` is the cutoff for Recall@k and NDCG@k only. R-Precision needs the top-R (R can
+exceed `k`) and AP needs the ranks of *all* relevant docs, so the `search`
+callable MUST return a ranking deep enough — `max(k, max R)` at least, ideally the
+full ranking. If `search` returns only `k` ids, relevant docs beyond rank `k`
+count as absent and MAP/R-Precision come out deflated. The runner does NOT
+truncate the ranking to `k` before computing R-Precision/AP.
+
 The ranker is a plain callable, so BM25 (`index.search`), hybrid
-(`hybrid.hybrid_search` adapted to return ids), or any future ranker plugs in.
+(`hybrid.hybrid_search` adapted to return ids), or any future ranker plugs in —
+but the adapter MUST request sufficient depth (a large `size`/`recall`, not the
+default 10), e.g. `lambda q: [h.document_id for h in index.search(q, size=DEPTH)]`.
 The harness imports no database/OpenSearch/Ollama.
 
 ## On-disk collection format (so real data drops in)

@@ -43,13 +43,19 @@ content.
 
 ### Requirement: Only de-identified text reaches the model
 
-The sources handed to the model SHALL come from the anonymized/pseudonymized
-index; clear PII SHALL never be sent to the model.
+The sources handed to the model SHALL come from the de-identified store; clear
+PII SHALL never be sent to the model. Hybrid retrieval returns hits carrying
+`document_id`/score/`object_key`/vector but NOT passage text, so `Source.text`
+SHALL be resolved separately — by reading `DocumentText.anonymized_text` per hit
+via a session (reusing `get_anonymized_text`). Both that column and the index
+`text` field hold only anonymized/pseudonymized text, so the PII invariant holds;
+raw document text SHALL NOT be read.
 
 #### Scenario: Model input carries no clear PII
 
 - **WHEN** sources are built for a query
-- **THEN** their text is the de-identified index text, not raw document text
+- **THEN** each source's text is the de-identified `DocumentText.anonymized_text`
+  for its hit, not raw document text
 
 ### Requirement: Ask API
 

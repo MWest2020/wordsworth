@@ -21,10 +21,23 @@ non-commercial. **CyberArk/Conjur are banned.** Recovery = restore the key
 material from escrow; because mappings carry `key_id`, restored keys decrypt their
 entries.
 
-## Boundaries
+## Rotation audit goes to a separate stream, not the document chain
 
-Every deanonymization is already audit-logged (from change b). Rotation itself
-SHOULD emit an audit record (rotation event). No key material is ever logged.
+Every deanonymization is already audit-logged (from change b) against its
+`document_id`. Rotation is different: it is system-wide and has no document. The
+document audit table *is* the document state machine and its `document_id` is
+mandatory (NOT NULL FK) — bolting a document-less rotation event onto it would
+force either a synthetic document or a nullable `document_id`, both of which
+break that invariant. So rotation emits to a **separate append-only
+key-lifecycle audit stream** (the reused `zeef` audit-JSONL pattern fits),
+recording old/new `key_id` + actor. No key material is ever logged.
+
+## Re-encryption reads by key_id and updates in place
+
+`MappingStore` today exposes only `put`/`get(pseudonym)`; `reencrypt` needs a
+list-by-`key_id` read to walk the entries under `old_id`, so the store's read
+surface is extended. Re-encryption updates each row in place — it does NOT route
+through `put`, which is idempotent and skips existing pseudonyms.
 
 ## Not in scope
 

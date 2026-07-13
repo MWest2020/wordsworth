@@ -16,10 +16,20 @@ class ObjectStore(Protocol):
 
 ## Ingest and fetch
 
-Ingest: `put` the PDF under a content-addressed or uuid key, record it as the
-document's `object_key`. `process(document_id, ...)` fetches bytes via
-`store.get(object_key)` rather than receiving `pdf_bytes` directly — closing the
-PoC shortcut. Resume/re-processing re-fetches deterministically by key.
+The `documents.object_key` column and `register(session, object_key)` already
+exist and record the key — reuse them. What is missing: `register` today takes a
+pre-made key string and never touches bytes. Ingest must `put` the PDF (under a
+content-addressed or uuid key) and record that key — either by extending
+`register` to accept bytes or a new `ingest` function that puts then registers;
+pick one seam, don't duplicate the key column.
+
+`process` fetches bytes via `store.get(object_key)` rather than receiving
+`pdf_bytes` directly — closing the PoC shortcut. The `ObjectStore` SHALL be an
+injected parameter on `process`, matching the existing seam pattern
+(`anonymizer` / `search_index` / `embedder` are already optional params). The
+`process` docstring's resume note ("re-derived from the source PDF") must change
+to "re-fetched from the object store by key". Resume/re-processing re-fetches
+deterministically by key.
 
 ## Sovereignty (invariants)
 

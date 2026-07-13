@@ -9,8 +9,12 @@ PoC backend, Ceph RGW the sovereign target — both behind the S3 seam.
 
 - Introduce an **`ObjectStore` protocol** (put / get / exists) with an **S3
   driver** (boto3, any S3-compatible endpoint) and an in-memory test double.
-- **Ingest stores** the PDF and records its object key; **`process` fetches** the
-  bytes by key instead of receiving them directly (removes the PoC shortcut).
+- **Ingest stores** the PDF bytes and records its object key; **`process` fetches**
+  the bytes by key instead of receiving them directly (removes the PoC shortcut).
+  The `object_key` column and `register` already record the key — reuse them; the
+  delta is putting/fetching bytes, not the key column.
+- A **missing object is a hard error** (`get` raises, never empty bytes) — the
+  no-silent-fallbacks invariant.
 - Credentials/endpoint come from SOPS+age or OpenBao — never hardcoded, never
   client-side, never commercial.
 

@@ -5,6 +5,11 @@
 The system SHALL provide adapters that expose BM25 and hybrid search as the
 harness's `search(query) -> ranked document ids` callable, each returning the
 documents' external ids (`object_key`) so results align with the qrels namespace.
+Adapters SHALL retrieve to a configurable **depth** (at least `max(k, max R)`),
+distinct from the metric cutoff `k`, so R-Precision and MAP are not deflated by
+truncation. The hybrid adapter SHALL raise `recall` to that depth as well, since
+`hybrid_search` caps results at `recall`. A null `object_key` SHALL NOT be emitted
+into the ranking.
 
 #### Scenario: BM25 adapter returns ranked external ids
 
@@ -15,6 +20,12 @@ documents' external ids (`object_key`) so results align with the qrels namespace
 
 - **WHEN** the hybrid adapter is called with a query
 - **THEN** it returns the ranked external ids from hybrid retrieval
+
+#### Scenario: Adapters retrieve beyond the metric cutoff
+
+- **WHEN** an adapter is built with a depth greater than `k`
+- **THEN** it returns more than `k` ranked ids (and the hybrid adapter's `recall`
+  is at least that depth), so relevant documents beyond rank `k` are scored
 
 ### Requirement: Evaluation run over a real collection
 

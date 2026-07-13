@@ -7,10 +7,15 @@ cloud in the critical path.
 ## What Changes
 
 - Introduce an **`OcrEngine` protocol** (driver/protocol pattern) with a local
-  engine (e.g. tesseract/ocrmypdf, Dutch language). No cloud.
-- Add an **OCR recovery step**: an `unprocessable_ocr` document is run through OCR
-  to produce text; if OCR yields usable text it becomes `extractable`, otherwise
-  it stays `unprocessable_ocr`. OCR engine failure is a loud error, not a silent skip.
+  engine (tesseract + Dutch model via **ocrmypdf**) that produces a **text-layer
+  PDF**, not raw text — so the recovered doc reuses the existing `profile_pdf` and
+  `extract_text` path unchanged. No cloud.
+- Add an **OCR recovery step**: `unprocessable_ocr` becomes non-terminal (gains
+  edges to `extractable`/`failed`). A scanned document is OCR'd; if the text-layer
+  PDF clears the threshold its bytes replace the stored bytes and it becomes
+  `extractable`, otherwise it stays `unprocessable_ocr`. Every OCR attempt is
+  audited (even a non-recovering one). OCR engine failure is a loud error, not a
+  silent skip.
 
 ## Capabilities
 
@@ -20,6 +25,9 @@ cloud in the critical path.
 
 ## Impact
 
-- New dependency: a local OCR engine (tesseract + Dutch model / ocrmypdf).
-- Adds an outgoing edge from `unprocessable_ocr` in the lifecycle; every
-  transition remains an audit record. Does not touch `CLAUDE.md`, `.claude/agents/`, CI.
+- New dependency: a local OCR engine (ocrmypdf + tesseract + Dutch model).
+- De-terminalizes `unprocessable_ocr` (removes it from `TERMINAL`, adds outgoing
+  edges); recovery replaces the stored PDF bytes with the OCR'd text-layer PDF.
+  Every OCR attempt is an audit record (success transitions; a non-recovering
+  attempt is an access-style record). Does not touch `CLAUDE.md`,
+  `.claude/agents/`, CI.

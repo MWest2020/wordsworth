@@ -13,7 +13,20 @@ Options for the builder (decide at implement time): either OpenAnonymiser fully
 replaces the interim driver, or a composite runs the deterministic detectors
 first (guaranteed structured-PII precision) then OpenAnonymiser for entities.
 Recommended: composite — keep the audited elfproef/mod-97 guarantees, add ML
-entity coverage on top. Counts merged per type.
+entity coverage on top.
+
+The composite MUST resolve the overlap between the two engines (Presidio also
+recognises email/IBAN — the same types the deterministic pass owns):
+
+- **Deterministic types are authoritative.** For the types the deterministic
+  driver handles (BSN, IBAN, email), its result wins; any OpenAnonymiser
+  detection of those same types is ignored, so an entity is never counted or
+  replaced twice (no `[[EMAIL]]`, no inflated counts).
+- **Placeholders are preserved.** The second pass runs over the already-redacted
+  text; the opaque deterministic placeholders (`[BSN]` etc.) MUST NOT be
+  re-detected, altered, or split by GLiNER/Presidio.
+- **Counts merge disjointly** — deterministic types from the first pass, entity
+  types (names, etc.) from the second; no type is summed across both.
 
 ## Invariants
 
@@ -22,6 +35,10 @@ entity coverage on top. Counts merged per type.
   critical path).
 - **Hard failure** — if OpenAnonymiser errors, raise; never emit un-redacted text.
 - **Irreversible** — placeholders carry no mapping (pseudonymization is separate).
+- **License-compatible** — OpenAnonymiser is EUPL-1.2, but the GLiNER model
+  weights (`gliner_multi_pii-v1`) carry their own licence; it MUST be verified
+  compatible before the model ships (the EUPL/license invariant covers model
+  dependencies, not just code).
 
 ## Blocked-on note
 

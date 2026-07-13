@@ -11,7 +11,10 @@ keeps the comparison honest and legible to third parties.
 
 - Add **ranker adapters** exposing our search as the harness's `search(query) ->
   ranked doc ids` callable: one for **BM25** (`index.search`) and one for
-  **hybrid** (`hybrid_search`), each returning the documents' external ids.
+  **hybrid** (`hybrid_search`), each returning the documents' external ids and
+  retrieving to a configurable **depth** (≥ `max(k, max R)`, not the metric
+  cutoff `k`; hybrid raises `recall` to match) so MAP/R-Precision are not
+  deflated.
 - Add an **evaluation run**: load the thesis collection (TREC qrels + TSV queries
   via the harness loaders), run each configuration over the indexed corpus,
   compute the four metrics, and emit a **report** (per-config aggregates), runnable

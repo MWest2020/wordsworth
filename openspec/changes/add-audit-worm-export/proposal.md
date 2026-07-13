@@ -22,6 +22,10 @@ verifiable against the database.
 
 ## Impact
 
-- Depends on `object-storage` (S3 Object Lock; Ceph RGW / SeaweedFS support it).
-  Reuses the existing derived JSONL export and the chain verifier. Read-only over
-  the audit table (never mutates it). Does not touch `CLAUDE.md`, `.claude/agents/`, CI.
+- Depends on `object-storage` (S3 Object Lock; Ceph RGW / SeaweedFS support it),
+  whose `ObjectStore` seam this change extends to carry Object-Lock retention.
+  Extends the derived JSONL export (`since_seq` bound) and adds a fragment
+  verifier seeded from the prior export's tail (the existing `verify_chain` walks
+  the whole DB from genesis and cannot verify an incremental fragment). Read-only
+  over the audit table (never mutates it). Does not touch `CLAUDE.md`,
+  `.claude/agents/`, CI.

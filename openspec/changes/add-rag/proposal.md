@@ -35,7 +35,9 @@ path.
 ## Impact
 
 - New module surface: `generator`, `rag`; config for the local LLM (Ollama URL +
-  model). Reuses hybrid search for retrieval.
+  model). Reuses hybrid search for retrieval. Because hits carry no passage text,
+  `ask` takes a session and resolves each source's text from the de-identified
+  `DocumentText.anonymized_text` (reusing `get_anonymized_text`).
 - Local LLM only; if the model is unavailable the endpoint fails loudly (no cloud
   fallback). The LLM never sees clear PII (index is de-identified).
 - Optional feature; the pipeline and search paths are unchanged. Does not touch

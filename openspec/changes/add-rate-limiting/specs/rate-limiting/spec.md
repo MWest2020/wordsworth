@@ -2,9 +2,18 @@
 
 ### Requirement: Per-client rate limiting
 
-The API SHALL rate-limit requests per client (API key or source IP) using a
-token-bucket with configurable rate and burst, applied to the read endpoints
-(`/search`, `/hybrid`, `/ask`). `/health` and `/metrics` SHALL be exempt.
+The API SHALL rate-limit requests per client using a token-bucket with
+configurable rate and burst. The limited and exempt endpoint sets SHALL be
+**config-driven**, not a hardcoded route list: the limiter applies to the read
+endpoints that exist (`/search`, `/hybrid`, and `/ask` once `add-rag` adds it)
+and exempts a configurable set including `/health` and `/metrics` (the latter
+arrives with `add-observability`). The middleware SHALL match by path and be
+inert for routes not registered in a given app instance (routes are registered
+conditionally, e.g. an app built without a search index has no `/search`).
+
+The client key SHALL be the API key when present, else the source IP. Until an
+authentication/API-key mechanism exists, no API key is available, so keying is
+**source-IP only**; the API-key branch is ready but dormant.
 
 #### Scenario: Requests within the limit succeed
 
@@ -13,8 +22,9 @@ token-bucket with configurable rate and burst, applied to the read endpoints
 
 #### Scenario: Monitoring endpoints are never limited
 
-- **WHEN** `/health` or `/metrics` is called repeatedly
-- **THEN** they are not rate-limited
+- **WHEN** an endpoint in the configured exempt set (e.g. `/health`, `/metrics`)
+  is called repeatedly
+- **THEN** it is not rate-limited
 
 ### Requirement: 429 when exceeded
 

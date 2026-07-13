@@ -17,6 +17,14 @@ change. Replacement SHALL be irreversible.
 - **WHEN** text contains a personal name recognised by OpenAnonymiser
 - **THEN** the name is replaced in the output
 
+#### Scenario: Structured PII is not double-counted by the composite
+
+- **WHEN** the composite driver processes text containing structured PII (e.g. an
+  email) that both engines can recognise
+- **THEN** the deterministic result is authoritative — the entity is replaced and
+  counted once, its placeholder is preserved, and OpenAnonymiser does not
+  re-process or re-count that type
+
 ### Requirement: Local inference, hard failure
 
 Inference SHALL be local (no cloud). If anonymization fails, it SHALL raise — the

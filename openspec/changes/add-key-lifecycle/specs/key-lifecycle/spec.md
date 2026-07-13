@@ -42,3 +42,20 @@ material from escrow.
 
 - **WHEN** a key is recovered from escrow
 - **THEN** mappings encrypted under that key id decrypt successfully
+
+### Requirement: Rotation is audited in a separate key-lifecycle stream
+
+Rotation SHALL emit an audit event to a **separate, append-only key-lifecycle
+audit stream** — NOT to the document hash-chain. The document audit trail is the
+document state machine (its records carry a mandatory `document_id`), and a
+system-wide key rotation has no document; it SHALL NOT be forced into that chain
+via a synthetic document or a nullable `document_id`. The rotation event SHALL
+record the old and new `key_id` and the actor, and SHALL NOT log any key
+material.
+
+#### Scenario: Rotation records old and new key id without key material
+
+- **WHEN** the key provider is rotated
+- **THEN** the key-lifecycle audit stream gains an event naming the old and new
+  `key_id` and the actor, no key material is present, and the document
+  hash-chain is unchanged

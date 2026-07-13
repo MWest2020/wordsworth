@@ -36,11 +36,15 @@ class Generator(Protocol):
 
 ## Flow
 
-`ask(query, index, embedder, generator, k)`:
+`ask(session, query, index, embedder, generator, k)`:
 1. `hits = hybrid_search(index, embedder, query, size=k)` — deterministic sources.
-2. Build `Source[]` from the hits' de-identified text.
+2. Build `Source[]`: hits carry `document_id` but NOT text, so fetch each
+   passage from the de-identified store —
+   `get_anonymized_text(session, hit.document_id)` (reuse, don't re-query the
+   index). This is why `ask` takes a `session`.
 3. `answer = generator.generate(query, sources)`.
-4. **Guard**: `answer.citations = [c for c in answer.citations if c in {s.document_id}]`.
+4. **Guard**: `valid = {s.document_id for s in sources}`;
+   `answer.citations = [c for c in answer.citations if c in valid]`.
    If empty and the answer asserts content, return a "no grounded answer" result.
 5. Return the answer + verified citations.
 
