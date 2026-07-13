@@ -11,6 +11,7 @@ not commit, so a transition and its audit record commit (or roll back) together.
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 from uuid import UUID
 
@@ -23,9 +24,11 @@ from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
 from .models import AuditRecord, Document, DocumentText
+from .object_store import ObjectStore
 from .profiling import ProfilingError, profile_pdf
 from .search_index import SearchIndex
 from .states import State, is_allowed
+from .structured_log import log_transition
 
 
 def current_state(session: Session, document_id: UUID) -> State | None:
@@ -36,6 +39,15 @@ def current_state(session: Session, document_id: UUID) -> State | None:
         .limit(1)
     ).scalar_one_or_none()
     return State(to_state) if to_state else None
+
+
+def _last_ts(session: Session, document_id: UUID):
+    return session.execute(
+        select(AuditRecord.ts)
+        .where(AuditRecord.document_id == document_id)
+        .order_by(AuditRecord.seq.desc())
+        .limit(1)
+    ).scalar_one_or_none()
 
 
 def transition(
@@ -51,7 +63,8 @@ def transition(
         return None  # idempotent no-op
     if not is_allowed(frm, to_state):
         raise ValueError(f"illegal transition {frm} -> {to_state}")
-    return audit.append(
+    prev_ts = _last_ts(session, document_id)
+    record = audit.append(
         session,
         document_id=document_id,
         from_state=frm.value if frm else None,
@@ -59,6 +72,18 @@ def transition(
         step=step,
         payload=payload,
     )
+    duration_ms = (
+        (record.ts - prev_ts).total_seconds() * 1000 if prev_ts is not None else None
+    )
+    log_transition(
+        document_id=document_id,
+        from_state=frm.value if frm else None,
+        to_state=to_state.value,
+        step=step,
+        duration_ms=duration_ms,
+        level="error" if to_state == State.FAILED else "info",
+    )
+    return record
 
 
 def register(session: Session, object_key: str) -> Document:
@@ -67,6 +92,18 @@ def register(session: Session, object_key: str) -> Document:
     session.flush()
     transition(session, doc.id, State.REGISTERED, step="register")
     return doc
+
+
+def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes) -> Document:
+    """Store the PDF in object storage under a content-addressed key, then register
+    the document against that key. `process` later fetches the bytes back by key —
+    this closes the PoC shortcut of passing raw bytes across the pipeline seam.
+
+    Content-addressing (sha256) makes the key deterministic, so re-ingesting the
+    same bytes is idempotent at the object layer."""
+    key = "documents/" + hashlib.sha256(pdf_bytes).hexdigest()
+    store.put(key, pdf_bytes)
+    return register(session, key)
 
 
 def get_anonymized_text(session: Session, document_id: UUID) -> str | None:
@@ -98,7 +135,7 @@ def _default_embedder() -> Embedder:
 def process(
     session: Session,
     document_id: UUID,
-    pdf_bytes: bytes,
+    store: ObjectStore,
     threshold: int | None = None,
     anonymizer: Anonymizer | None = None,
     search_index: SearchIndex | None = None,
@@ -106,17 +143,30 @@ def process(
 ) -> State:
     """Advance one document from its current state until terminal. Resumable.
 
-    Extracted clear text is held in memory only; on resume from `extracted` it is
-    re-derived from the source PDF, never read from a clear-text store.
+    Source bytes are fetched from object storage by the document's recorded key —
+    never received directly. Resume/re-processing re-fetches deterministically by
+    the same key. Extracted clear text is held in memory only; on resume from
+    `extracted` it is re-derived from those bytes, never read from a clear-text
+    store.
     """
     threshold = threshold if threshold is not None else settings.born_digital_threshold
     anonymizer = anonymizer or DeterministicAnonymizer()
+    doc = session.get(Document, document_id)
     state = current_state(session, document_id)
     text: str | None = None
+    raw: bytes | None = None
+
+    def pdf() -> bytes:
+        # Lazy fetch-by-key: fetched once, only when a step actually needs bytes
+        # (a terminal document does no work and never touches the store).
+        nonlocal raw
+        if raw is None:
+            raw = store.get(doc.object_key)
+        return raw
 
     if state == State.REGISTERED:
         try:
-            metric = profile_pdf(pdf_bytes, threshold)
+            metric = profile_pdf(pdf(), threshold)
         except ProfilingError as exc:
             transition(
                 session, document_id, State.FAILED,
@@ -131,7 +181,7 @@ def process(
         state = target
 
     if state == State.EXTRACTABLE:
-        text = _extract_or_fail(session, document_id, pdf_bytes)
+        text = _extract_or_fail(session, document_id, pdf())
         if text is None:
             return State.FAILED
         transition(session, document_id, State.EXTRACTED, step="extract",
@@ -140,7 +190,7 @@ def process(
 
     if state == State.EXTRACTED:
         if text is None:  # resume: re-derive deterministically, not from a store
-            text = _extract_or_fail(session, document_id, pdf_bytes)
+            text = _extract_or_fail(session, document_id, pdf())
             if text is None:
                 return State.FAILED
         result = anonymizer.anonymize(text)
@@ -152,7 +202,6 @@ def process(
 
     if state == State.ANONYMIZED:
         anonymized = get_anonymized_text(session, document_id) or ""
-        doc = session.get(Document, document_id)
         index = search_index or _default_index()
         embed = embedder or _default_embedder()
         # Failed embedding is a hard error (no null vector); it propagates like an

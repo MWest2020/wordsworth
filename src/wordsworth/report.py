@@ -29,6 +29,30 @@ _PROFILE_PAGES = text(
     "WHERE step = 'profile' AND payload ? 'pages'"
 )
 
+# Wall-clock span of the run, from the first to the last audit record.
+_SPAN = text("SELECT min(ts) AS lo, max(ts) AS hi FROM audit_records")
+
+# Per-stage timing: the gap between each transition and the previous one for the
+# same document, grouped by step. The first (register) transition has no
+# predecessor, so its NULL gap drops out — leaving the real pipeline stages.
+_STAGE_TIMING = text(
+    """
+    SELECT step,
+           count(*) AS n,
+           avg(dur_ms) AS mean_ms,
+           percentile_cont(0.95) WITHIN GROUP (ORDER BY dur_ms) AS p95_ms
+    FROM (
+        SELECT step,
+               EXTRACT(EPOCH FROM (
+                   ts - lag(ts) OVER (PARTITION BY document_id ORDER BY seq)
+               )) * 1000 AS dur_ms
+        FROM audit_records
+    ) d
+    WHERE dur_ms IS NOT NULL
+    GROUP BY step
+    """
+)
+
 
 def run_report(session: Session) -> dict[str, Any]:
     current = {row.to_state: row.n for row in session.execute(_CURRENT_STATES)}
@@ -50,10 +74,32 @@ def run_report(session: Session) -> dict[str, Any]:
             "avg": round(sum(pages) / len(pages), 2),
         }
 
+    total = sum(current.values())
+    span = session.execute(_SPAN).one()
+    elapsed_hours = None
+    docs_per_hour = None
+    if span.lo is not None and span.hi is not None:
+        seconds = (span.hi - span.lo).total_seconds()
+        elapsed_hours = round(seconds / 3600, 6)
+        if seconds > 0:
+            docs_per_hour = round(total / (seconds / 3600), 2)
+
+    stage_timing = {
+        row.step: {
+            "count": row.n,
+            "mean_ms": round(float(row.mean_ms), 3),
+            "p95_ms": round(float(row.p95_ms), 3),
+        }
+        for row in session.execute(_STAGE_TIMING)
+    }
+
     return {
-        "total_documents": sum(current.values()),
+        "total_documents": total,
         "current_states": current,
         "profile_outcomes": outcomes,
         "born_digital_share": share,
         "pages": page_stats,
+        "elapsed_hours": elapsed_hours,
+        "docs_per_hour": docs_per_hour,
+        "stage_timing": stage_timing,
     }

@@ -5,11 +5,19 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from sqlalchemy.orm import Session, sessionmaker
 
+from .config import settings as default_settings
 from .embedder import Embedder
+from .generator import Generator
 from .pipeline import current_state
+from .rate_limit import (
+    EXEMPT_PATHS,
+    RateLimitMiddleware,
+    TokenBucket,
+    limiters_from_settings,
+)
 from .search_index import SearchIndex
 
 
@@ -17,8 +25,22 @@ def create_app(
     session_factory: sessionmaker[Session] | None = None,
     search_index: SearchIndex | None = None,
     embedder: Embedder | None = None,
+    generator: Generator | None = None,
+    rate_limiters: dict[str, TokenBucket] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="wordsworth")
+
+    # Per-client rate limiting on the read endpoints; /health & /metrics exempt.
+    # Built from settings by default; tests may inject their own limiters.
+    limiters = (
+        rate_limiters
+        if rate_limiters is not None
+        else limiters_from_settings(default_settings)
+    )
+    if limiters:
+        app.add_middleware(
+            RateLimitMiddleware, limiters=limiters, exempt=EXEMPT_PATHS
+        )
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -33,6 +55,14 @@ def create_app(
             if state is None:
                 raise HTTPException(status_code=404, detail="unknown document")
             return {"document_id": str(document_id), "state": state.value}
+
+        @app.get("/metrics")
+        def metrics() -> Response:
+            from .metrics import CONTENT_TYPE, render_metrics
+
+            with session_factory() as session:
+                body = render_metrics(session)
+            return Response(content=body, media_type=CONTENT_TYPE)
 
     if search_index is not None:
 
@@ -49,6 +79,16 @@ def create_app(
 
                 hits = hybrid_search(search_index, embedder, q, size=size)
                 return {"query": q, "hits": [_hit(h) for h in hits]}
+
+            if generator is not None:
+
+                @app.get("/ask")
+                def ask(q: str, k: int = 5) -> dict:
+                    from .rag import ask as run_ask
+
+                    answer = run_ask(q, search_index, embedder, generator, k=k)
+                    return {"query": q, "answer": answer.text,
+                            "citations": answer.citations}
 
     return app
 
