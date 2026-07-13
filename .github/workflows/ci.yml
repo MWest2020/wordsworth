@@ -52,6 +52,12 @@ jobs:
             sleep 1
           done
 
+      - name: Git-auth voor privé-dependency (MWest2020/zeef)
+        env:
+          GH_READ_PAT: ${{ secrets.GH_READ_PAT }}
+        run: |
+          git config --global url."https://x-access-token:${GH_READ_PAT}@github.com/".insteadOf "https://github.com/"
+
       - name: uv installeren
         uses: astral-sh/setup-uv@v5
         with:
