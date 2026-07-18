@@ -4,7 +4,10 @@
 present in qrels, computes the four metrics, and returns per-query values plus
 aggregate means over the queries. It depends on nothing but the callable — no
 database, search engine, or embedding service. A qrels query id with no query
-text is a hard error, not a silent skip (no silent fallbacks)."""
+text is a hard error, not a silent skip (no silent fallbacks).
+
+Per-query Average Precision is keyed `ap`; its mean over queries is keyed `map`
+in the aggregate (MAP exists only at the aggregate level)."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -15,7 +18,13 @@ Ranker = Callable[[str], list[str]]
 Qrels = Mapping[str, Mapping[str, int]]
 Queries = Mapping[str, str]
 
-_METRICS = ("r_precision", "recall@10", "map", "ndcg@10")
+# (per-query key, aggregate key) — identical except AP, whose mean is MAP.
+_METRICS = (
+    ("r_precision", "r_precision"),
+    ("recall@10", "recall@10"),
+    ("ap", "map"),
+    ("ndcg@10", "ndcg@10"),
+)
 
 
 def evaluate(
@@ -33,7 +42,7 @@ def evaluate(
         per_query[qid] = {
             "r_precision": r_precision(ranked, dict(query_rels)),
             "recall@10": recall_at_k(ranked, dict(query_rels), k),
-            "map": average_precision(ranked, dict(query_rels)),
+            "ap": average_precision(ranked, dict(query_rels)),
             "ndcg@10": ndcg_at_k(ranked, dict(query_rels), k),
         }
     return {"per_query": per_query, "aggregate": _aggregate(per_query)}
@@ -42,8 +51,8 @@ def evaluate(
 def _aggregate(per_query: dict[str, dict[str, float]]) -> dict[str, float]:
     n = len(per_query)
     if n == 0:
-        return {metric: 0.0 for metric in _METRICS}
+        return {agg_key: 0.0 for _, agg_key in _METRICS}
     return {
-        metric: sum(row[metric] for row in per_query.values()) / n
-        for metric in _METRICS
+        agg_key: sum(row[pq_key] for row in per_query.values()) / n
+        for pq_key, agg_key in _METRICS
     }
