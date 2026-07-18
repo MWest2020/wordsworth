@@ -94,14 +94,20 @@ class CachingEmbedder:
 QUERY_PREFIX = "q:"
 
 
-def query_key(mode: str, size: int, query: str) -> str:
-    return f"{QUERY_PREFIX}{mode}:{size}:{query}"
+def query_key(mode: str, size: int, recall: int, query: str) -> str:
+    """Key over *every* output-affecting parameter of a search: mode, size,
+    recall (the RRF candidate-set size changes which hits cosine gets to order),
+    and the query text. Omitting any of them would let one call serve a result
+    computed under different parameters — caching must never change outputs.
+    The free-text query goes last so the fixed segments stay unambiguous."""
+    return f"{QUERY_PREFIX}{mode}:{size}:{recall}:{query}"
 
 
 def cached_query(
     cache: Cache,
     mode: str,
     size: int,
+    recall: int,
     query: str,
     recompute: Callable[[], Any],
     *,
@@ -112,7 +118,7 @@ def cached_query(
     or model change. Invalidate the whole family with `cache.invalidate(QUERY_PREFIX)`.
     A miss recomputes exactly what the uncached path would; the cache only saves work.
     """
-    key = query_key(mode, size, query)
+    key = query_key(mode, size, recall, query)
     if not bypass:
         cached = cache.get(key)
         if cached is not None:
