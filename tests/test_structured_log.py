@@ -1,6 +1,6 @@
 import json
 
-from wordsworth.pipeline import process, register
+from wordsworth.pipeline import ingest, process
 from wordsworth.states import State
 from wordsworth.structured_log import log_transition
 
@@ -38,13 +38,13 @@ def test_failed_transition_logs_at_error_level():
 
 
 def test_pipeline_transition_emits_structured_line(
-    session, born_digital_pdf, mem_index, fake_embedder, caplog
+    session, born_digital_pdf, mem_store, mem_index, fake_embedder, caplog
 ):
-    doc = register(session, "born")
+    doc = ingest(session, mem_store, born_digital_pdf)
     session.commit()
     with caplog.at_level("INFO", logger="wordsworth.pipeline"):
         final = process(
-            session, doc.id, born_digital_pdf,
+            session, doc.id, mem_store,
             search_index=mem_index, embedder=fake_embedder,
         )
     session.commit()

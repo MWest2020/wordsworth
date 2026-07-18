@@ -2,26 +2,27 @@ from fastapi.testclient import TestClient
 
 from wordsworth.api import create_app
 from wordsworth.metrics import render_metrics
-from wordsworth.pipeline import process, register
+from wordsworth.pipeline import ingest, process
 
 
-def _build(session_factory, fixtures, mem_index, fake_embedder):
+def _build(session_factory, fixtures, mem_store, mem_index, fake_embedder):
     with session_factory() as s:
-        for name, data in fixtures:
-            doc = register(s, name)
+        for data in fixtures:
+            doc = ingest(s, mem_store, data)
             s.commit()
-            process(s, doc.id, data, search_index=mem_index, embedder=fake_embedder)
+            process(s, doc.id, mem_store, search_index=mem_index,
+                    embedder=fake_embedder)
             s.commit()
 
 
 def test_metrics_per_state_counts_match_documents(
     session_factory, born_digital_pdf, scanned_pdf, corrupt_pdf,
-    mem_index, fake_embedder,
+    mem_store, mem_index, fake_embedder,
 ):
     _build(
         session_factory,
-        [("born", born_digital_pdf), ("scan", scanned_pdf), ("bad", corrupt_pdf)],
-        mem_index, fake_embedder,
+        [born_digital_pdf, scanned_pdf, corrupt_pdf],
+        mem_store, mem_index, fake_embedder,
     )
     client = TestClient(create_app(session_factory=session_factory))
     resp = client.get("/metrics")
@@ -38,9 +39,9 @@ def test_metrics_per_state_counts_match_documents(
 
 
 def test_render_metrics_has_prometheus_help_and_type(
-    session_factory, born_digital_pdf, mem_index, fake_embedder,
+    session_factory, born_digital_pdf, mem_store, mem_index, fake_embedder,
 ):
-    _build(session_factory, [("born", born_digital_pdf)], mem_index, fake_embedder)
+    _build(session_factory, [born_digital_pdf], mem_store, mem_index, fake_embedder)
     with session_factory() as s:
         body = render_metrics(s)
     assert "# HELP wordsworth_documents_total" in body
