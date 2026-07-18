@@ -26,5 +26,11 @@ Fixes #16, #17, #18.
 ## 3. Reconcile with store-based process (#18)
 - [ ] 3.1 Recovery + OCR tests use the store-based `process(session, id, store, …)`
       (bytes via the injected `ObjectStore`), not bytes-as-3rd-arg
-- [ ] 3.2 Recovery-flow tests exercise the full extract→index path and are not
+- [ ] 3.2 Same defect class elsewhere: `tests/test_metrics.py`,
+      `tests/test_structured_log.py`, `tests/test_throughput_report.py` also pass
+      bytes as the 3rd `process` arg (`AttributeError: 'bytes' object has no
+      attribute 'get'` when the DB-gated suite actually runs) — reconcile those
+      call sites with the store-based `process` too (mechanical call-site fix; no
+      behavior change to metrics/logging/reporting themselves)
+- [ ] 3.3 Recovery-flow tests exercise the full extract→index path and are not
       silently skipped when they would catch content loss
