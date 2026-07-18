@@ -31,3 +31,5 @@ really key rotations.
 - Corrects `src/wordsworth/key_lifecycle.py` (drop `SYSTEM_DOCUMENT_ID` /
   `_ensure_system_document`; write to the key-lifecycle stream). No document or
   document-audit schema change. Does not touch `CLAUDE.md`, `.claude/agents/`, CI.
+- Archive-order: archive only after `add-key-lifecycle` is archived — the baseline
+  `openspec/specs/` does not carry this capability until then.

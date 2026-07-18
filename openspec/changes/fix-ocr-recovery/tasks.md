@@ -11,9 +11,12 @@ Fixes #16, #17, #18.
       `extract_text` (pypdf)
 
 ## 2. Recovery persists + re-classifies + audits (#16, #17)
-- [ ] 2.1 Recovery replaces the stored object bytes with the OCR'd text-layer PDF
-      via the `ObjectStore`, then re-classifies with `profile_pdf(ocr_bytes, …)`;
-      at/above threshold → transition to `extractable`, else stay
+- [ ] 2.1 Recovery stores the OCR'd text-layer PDF via the `ObjectStore` under its
+      own content-addressed key (`documents/` + sha256 of the OCR'd bytes) and
+      updates `documents.object_key`; the original scan object is kept. Then
+      re-classify with `profile_pdf(ocr_bytes, …)`; at/above threshold →
+      transition to `extractable` (audit payload carries old+new object keys),
+      else stay
 - [ ] 2.2 Audit every attempt: on "stay", append an access-style record
       (from=to=unprocessable_ocr, step="ocr", metric payload) — not a no-op
 - [ ] 2.3 Tests: usable OCR → extractable AND the extract→index path reads the OCR

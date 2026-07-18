@@ -25,3 +25,5 @@ corrected **before** the query cache is wired in.
 - Corrects `query_key`/`cached_query` in `src/wordsworth/cache.py`. Embedding
   cache (per-element, explicit model id, no cached failures) is already correct.
   Does not touch `CLAUDE.md`, `.claude/agents/`, or CI.
+- Archive-order: archive only after `add-caching` is archived — the baseline
+  `openspec/specs/` does not carry this capability until then.

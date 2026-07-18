@@ -1,11 +1,11 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Rotation is audited in a separate key-lifecycle stream
 
 Rotation SHALL emit an audit event to a **separate, append-only key-lifecycle
 audit stream** — NOT to the document hash-chain. Rotation SHALL NOT create or
-reuse a synthetic/sentinel document, and `documents.document_id` SHALL remain a
-NOT-NULL foreign key carrying only real documents. The rotation event SHALL record
+reuse a synthetic/sentinel document, and the audit table's `document_id` SHALL
+remain a NOT-NULL foreign key carrying only real documents. The rotation event SHALL record
 the old and new `key_id`, the number of mappings re-encrypted, and the actor, and
 SHALL NOT log any key material.
 

@@ -22,3 +22,5 @@ math and the aggregate mean are correct.
 - Corrects the per-query key in `src/wordsworth/eval/harness.py` and the tests
   that assert `per_query[...]["map"]`. Metric functions unchanged. Does not touch
   `CLAUDE.md`, `.claude/agents/`, or CI.
+- Archive-order: archive only after `add-evaluation-harness` is archived — the baseline
+  `openspec/specs/` does not carry this capability until then.

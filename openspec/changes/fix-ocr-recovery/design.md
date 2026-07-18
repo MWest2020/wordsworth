@@ -4,11 +4,18 @@
 
 ocrmypdf already produces a searchable PDF (`out.pdf`) with a text layer. The bug
 is that the built engine discards it and returns only the sidecar `.txt`. The fix:
-`OcrEngine.ocr(pdf_bytes) -> bytes` returns that text-layer PDF. Recovery writes it
-back through the `ObjectStore` under the document's existing `object_key` (replacing
-the scanned original), so the normal path — `profile_pdf` then `extract_text`
-(pypdf) — reads the OCR text with no OCR-specific extract branch. This is what makes
-a recovered doc flow "like any other document".
+`OcrEngine.ocr(pdf_bytes) -> bytes` returns that text-layer PDF. Recovery stores it
+through the `ObjectStore` under its **own content-addressed key** and updates
+`documents.object_key` to point at it, so the normal path — `profile_pdf` then
+`extract_text` (pypdf) — fetches the OCR'd PDF with no OCR-specific extract branch.
+This is what makes a recovered doc flow "like any other document".
+
+Not under the existing key: object keys are content-addressed (`documents/` +
+sha256 of the bytes, `pipeline.py`). Overwriting the scanned original's key with
+different bytes would break `key == sha256(bytes)` and destroy the source scan —
+unauditable and unrecoverable (no re-OCR with a better engine later). The audit
+record of a recovering attempt carries old and new object keys, so the switch is
+traceable.
 
 Re-classification therefore runs `profile_pdf(ocr_pdf_bytes, threshold)` on the
 text-layer PDF (a real PDF), not on raw text — the built code could only count
