@@ -1,14 +1,15 @@
-from wordsworth.pipeline import process, register
+from wordsworth.pipeline import ingest, process
 from wordsworth.report import run_report
 
 
 def test_report_includes_throughput_and_stage_timing(
-    session, born_digital_pdf, scanned_pdf, mem_index, fake_embedder,
+    session, born_digital_pdf, scanned_pdf, mem_store, mem_index, fake_embedder,
 ):
-    for name, data in [("born", born_digital_pdf), ("scan", scanned_pdf)]:
-        doc = register(session, name)
+    for data in [born_digital_pdf, scanned_pdf]:
+        doc = ingest(session, mem_store, data)
         session.commit()
-        process(session, doc.id, data, search_index=mem_index, embedder=fake_embedder)
+        process(session, doc.id, mem_store, search_index=mem_index,
+                embedder=fake_embedder)
         session.commit()
 
     report = run_report(session)
