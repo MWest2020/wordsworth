@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: EUPL-1.2
-# CI: draait de volledige testsuite incl. de DB- en object-store-integratietests
-# tegen echte service-containers (Postgres + SeaweedFS). Sluit de tests die lokaal
-# skippen als docker/testcontainers ontbreken.
+# CI: draait de volledige testsuite incl. de DB-, object-store- en
+# search-integratietests tegen echte service-containers (Postgres + SeaweedFS +
+# OpenSearch). Sluit de tests die lokaal skippen als docker/testcontainers
+# ontbreken.
 name: ci
 
 on:
@@ -32,6 +33,21 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # OpenSearch voor de BM25/hybrid/RAG-integratietests (skippen anders stil —
+      # issue #23). Security-plugin uit, single-node, bescheiden heap.
+      opensearch:
+        image: opensearchproject/opensearch:2
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: "true"
+          OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -sf http://localhost:9200 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
 
     env:
       WORDSWORTH_TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/wordsworth
@@ -52,11 +68,9 @@ jobs:
             sleep 1
           done
 
-      - name: Git-auth voor privé-dependency (MWest2020/zeef)
-        env:
-          GH_READ_PAT: ${{ secrets.GH_READ_PAT }}
-        run: |
-          git config --global url."https://x-access-token:${GH_READ_PAT}@github.com/".insteadOf "https://github.com/"
+      # NB: de eerdere PAT-rewrite voor zeef is verwijderd — zeef is publiek, en de
+      # globale insteadOf brak bij een lege/verlopen PAT juist ALLE github-fetches
+      # (de 403 uit de eerste run van deze workflow).
 
       - name: uv installeren
         uses: astral-sh/setup-uv@v5
