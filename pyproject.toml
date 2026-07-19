@@ -11,7 +11,9 @@ dependencies = [
     "boto3>=1.43.44",
     "cryptography>=49.0.0",
     "fastapi>=0.139.0",
+    "nl-core-news-lg",
     "ocrmypdf>=17.8.0",
+    "openanonymizer",
     "opensearch-py>=3.2.0",
     "psycopg[binary]>=3",
     "pydantic>=2",
@@ -30,6 +32,8 @@ addopts = "-ra"
 
 [tool.uv.sources]
 zeef = { git = "https://github.com/MWest2020/zeef" }
+openanonymizer = { git = "https://github.com/MWest2020/OpenAnonymiser_light" }
+nl-core-news-lg = { url = "https://github.com/explosion/spacy-models/releases/download/nl_core_news_lg-3.8.0/nl_core_news_lg-3.8.0-py3-none-any.whl" }
 
 [dependency-groups]
 dev = [
