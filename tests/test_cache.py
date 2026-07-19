@@ -128,7 +128,23 @@ def test_caching_embedder_matches_uncached_output():
 
 
 def test_query_key_shape():
-    assert query_key("hybrid", 10, "parkeren") == "q:hybrid:10:parkeren"
+    assert query_key("hybrid", 10, 50, "parkeren") == "q:hybrid:10:50:parkeren"
+
+
+def test_query_key_includes_recall():
+    # recall changes the RRF candidate set, so it must change the key (#20)
+    k50, k100 = query_key("hybrid", 10, 50, "p"), query_key("hybrid", 10, 100, "p")
+    assert k50 != k100
+
+
+def test_different_recall_never_serves_the_others_result():
+    cache = LruCache()
+    assert cached_query(cache, "hybrid", 10, 50, "p", lambda: ["r@50"]) == ["r@50"]
+    # not served from the recall=50 entry:
+    assert cached_query(cache, "hybrid", 10, 100, "p", lambda: ["r@100"]) == ["r@100"]
+    # and both entries stay independently retrievable afterwards
+    assert cached_query(cache, "hybrid", 10, 50, "p", lambda: ["x"]) == ["r@50"]
+    assert cached_query(cache, "hybrid", 10, 100, "p", lambda: ["x"]) == ["r@100"]
 
 
 def test_miss_recomputes_then_hit_is_served():
@@ -139,15 +155,15 @@ def test_miss_recomputes_then_hit_is_served():
         calls["n"] += 1
         return ["doc-1", "doc-2"]
 
-    first = cached_query(cache, "bm25", 10, "parkeren", recompute)
-    second = cached_query(cache, "bm25", 10, "parkeren", recompute)
+    first = cached_query(cache, "bm25", 10, 50, "parkeren", recompute)
+    second = cached_query(cache, "bm25", 10, 50, "parkeren", recompute)
     assert first == second == ["doc-1", "doc-2"]
     assert calls["n"] == 1  # second served from cache
 
 
 def test_miss_recomputes_identically_to_uncached():
     cache = LruCache()
-    result = cached_query(cache, "bm25", 5, "q", lambda: ["a", "b"])
+    result = cached_query(cache, "bm25", 5, 50, "q", lambda: ["a", "b"])
     assert result == ["a", "b"]  # equals what the bare recompute returns
 
 
@@ -159,9 +175,9 @@ def test_invalidation_forces_recompute():
         counter["n"] += 1
         return counter["n"]
 
-    assert cached_query(cache, "bm25", 10, "q", recompute) == 1
+    assert cached_query(cache, "bm25", 10, 50, "q", recompute) == 1
     cache.invalidate(QUERY_PREFIX)  # e.g. after a re-index
-    assert cached_query(cache, "bm25", 10, "q", recompute) == 2
+    assert cached_query(cache, "bm25", 10, 50, "q", recompute) == 2
 
 
 def test_bypass_forces_recompute_and_refreshes():
@@ -172,10 +188,10 @@ def test_bypass_forces_recompute_and_refreshes():
         counter["n"] += 1
         return counter["n"]
 
-    assert cached_query(cache, "bm25", 10, "q", recompute) == 1
-    assert cached_query(cache, "bm25", 10, "q", recompute, bypass=True) == 2
+    assert cached_query(cache, "bm25", 10, 50, "q", recompute) == 1
+    assert cached_query(cache, "bm25", 10, 50, "q", recompute, bypass=True) == 2
     # bypass refreshed the entry, so a normal read now serves the new value
-    assert cached_query(cache, "bm25", 10, "q", recompute) == 2
+    assert cached_query(cache, "bm25", 10, 50, "q", recompute) == 2
 
 
 def _sha(text: str) -> str:

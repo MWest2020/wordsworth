@@ -20,7 +20,9 @@ def test_report_shape_and_perfect_ranker():
     assert set(report) == {"per_query", "aggregate"}
     assert set(report["per_query"]) == {"q1", "q2"}
     for row in report["per_query"].values():
-        assert set(row) == {"r_precision", "recall@10", "map", "ndcg@10"}
+        assert set(row) == {"r_precision", "recall@10", "ap", "ndcg@10"}
+    # Aggregate carries MAP (the mean of per-query AP), never a per-query `ap`.
+    assert set(report["aggregate"]) == {"r_precision", "recall@10", "map", "ndcg@10"}
     for value in report["aggregate"].values():
         assert value == pytest.approx(1.0)
 
@@ -31,11 +33,13 @@ def test_aggregate_is_the_mean_over_queries():
     # q1: rel {d1,d2}, ranked [d9,d1]. r_prec top2 = 1/2; recall = 1/2; AP = 0.5/2.
     assert per_query["q1"]["r_precision"] == pytest.approx(0.5)
     assert per_query["q1"]["recall@10"] == pytest.approx(0.5)
-    assert per_query["q1"]["map"] == pytest.approx(0.25)
+    assert per_query["q1"]["ap"] == pytest.approx(0.25)
     # q2 missed its only relevant doc -> all zero.
-    assert per_query["q2"]["map"] == 0.0
-    expected_map = (per_query["q1"]["map"] + per_query["q2"]["map"]) / 2
+    assert per_query["q2"]["ap"] == 0.0
+    expected_map = (per_query["q1"]["ap"] + per_query["q2"]["ap"]) / 2
     assert report["aggregate"]["map"] == pytest.approx(expected_map)
+    # MAP is aggregate-only; per-query rows never carry a `map` key.
+    assert all("map" not in row for row in per_query.values())
 
 
 def test_same_harness_scores_a_worse_ranker_lower():
