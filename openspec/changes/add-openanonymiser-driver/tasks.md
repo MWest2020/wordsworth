@@ -1,7 +1,8 @@
 # Tasks — add-openanonymiser-driver
 
 Done = green: every task ships with its tests. NOTE: unchecked — for a Habitat builder.
-BLOCKED until OpenAnonymiser is reachable from the build environment (Mark).
+UNBLOCKED (2026-07-19): use the fork `MWest2020/OpenAnonymiser_light` (package
+`OpenAnonymizer`); see proposal Impact for the git-dep + uv-sources pitfalls.
 
 ## 1. Driver
 - [ ] 1.1 `openanonymiser_driver.py`: `OpenAnonymiserAnonymizer` implementing the
