@@ -36,3 +36,11 @@ without an `object_key` is a hard error (no silent fallbacks).
 
 The run is deterministic and read-only: it writes nothing to the corpus, the
 index, or the audit trail.
+
+## Operator tooling
+
+`scripts/eval/` holds the run scripts: `ingest_eval_corpus.py` (register a
+corpus keyed on the qrels doc ids and push it through the pipeline into a
+dedicated index) and `make_smoke_collection.py` (a synthetic pipe-cleaner
+collection). See `scripts/eval/README.md` for the end-to-end procedure and
+infrastructure notes.
