@@ -1,0 +1,28 @@
+# Expose the Wordsworth API on the Tailscale network (tailnet-internal, NOT
+# public). Reachable from any machine on the tailnet at the MagicDNS name below.
+# This is durable (kept open within Tailscale), not a temporary test tunnel.
+#
+# Requires the Tailscale Kubernetes operator on alma
+# (https://tailscale.com/kb/1236/kubernetes-operator). The operator watches for
+# Services of loadBalancerClass "tailscale" and joins them to the tailnet.
+#
+# After apply, find the tailnet name/IP:
+#   kubectl -n wordsworth get svc wordsworth-api-ts -o wide
+# then reach it from any tailnet machine: http://wordsworth.<tailnet>.ts.net:8000/health
+#
+# Alternative if the operator isn't installed: `tailscale serve` on a node, or a
+# sidecar tailscale container — see the KB. The ClusterIP Service in 30-api.yaml
+# stays as the in-cluster address; this only adds tailnet reachability.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordsworth-api-ts
+  namespace: wordsworth
+  annotations:
+    tailscale.com/hostname: "wordsworth"   # → wordsworth.<tailnet>.ts.net
+spec:
+  type: LoadBalancer
+  loadBalancerClass: tailscale
+  selector: { app: wordsworth, component: api }
+  ports:
+    - { port: 8000, targetPort: 8000 }

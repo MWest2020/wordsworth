@@ -1,0 +1,55 @@
+# Corpus volume + a loader pod to fill it. Flow:
+#   1) apply this; 2) copy the PDFs into the loader; 3) delete the loader;
+#   4) run the ingest Job (40-ingest-job.yaml), which mounts the same PVC readOnly.
+#
+#   kubectl -n wordsworth cp ./corpus/. wordsworth-corpus-loader:/corpus/
+#   kubectl -n wordsworth delete pod wordsworth-corpus-loader
+#
+# The PVC is ReadWriteOnce, so the loader must be gone before the ingest Job
+# runs. If alma's storageClass is node-local (e.g. local-path), the ingest Job
+# lands on the PV's node automatically; for networked storage (Ceph RBD/RWX) it
+# is unconstrained. Set storageClassName to alma's class (or leave unset for the
+# cluster default).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wordsworth-corpus
+  namespace: wordsworth
+spec:
+  accessModes: ["ReadWriteOnce"]   # RWX if the storage supports it (loader+ingest concurrent)
+  resources:
+    requests:
+      storage: 5Gi                 # size to the corpus
+  # storageClassName: <alma-storageclass>
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: wordsworth-corpus-loader
+  namespace: wordsworth
+  labels: { app: wordsworth, job: corpus-loader }
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000                  # PVC files owned by gid 1000 → ingest (uid 1000) can read
+    seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: loader
+      image: busybox:1.37
+      command: ["sh", "-c", "echo 'corpus loader ready — kubectl cp into /corpus, then delete me'; sleep 86400"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+      volumeMounts:
+        - { name: corpus, mountPath: /corpus }
+      resources:
+        requests: { cpu: "50m", memory: "64Mi" }
+        limits:   { cpu: "250m", memory: "128Mi" }
+  volumes:
+    - name: corpus
+      persistentVolumeClaim:
+        claimName: wordsworth-corpus

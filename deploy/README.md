@@ -82,21 +82,45 @@ kubectl apply -f k8s/00-namespace.yaml
 kubectl apply -f k8s/10-config.yaml          # or your SOPS/OpenBao-managed equivalent
 kubectl apply -f k8s/20-init-job.yaml        # one-shot schema bootstrap (idempotent)
 kubectl -n wordsworth wait --for=condition=complete job/wordsworth-init --timeout=120s
-kubectl apply -f k8s/30-api.yaml             # API Deployment + Service
+kubectl apply -f k8s/30-api.yaml             # API Deployment + Service (ClusterIP)
 kubectl -n wordsworth rollout status deploy/wordsworth-api
 ```
 
-Smoke the API:
+Smoke the API in-cluster:
 
 ```
 kubectl -n wordsworth port-forward svc/wordsworth-api 8000:8000
 curl -s localhost:8000/health
 ```
 
-## 4. Ingest a corpus
+## 4. Expose the API on the tailnet (durable, Tailscale-only)
 
-Make the PDFs available at `/corpus` (the template mounts a PVC
-`wordsworth-corpus`; adjust to your source), then:
+Make the API reachable from any machine on the tailnet — not public — via the
+Tailscale k8s operator:
+
+```
+kubectl apply -f k8s/60-api-tailscale.yaml
+kubectl -n wordsworth get svc wordsworth-api-ts -o wide   # shows the tailnet name/IP
+# from any tailnet machine:
+curl -s http://wordsworth.<tailnet>.ts.net:8000/health
+```
+
+Requires the Tailscale operator on alma; see the header of
+`60-api-tailscale.yaml` for the `tailscale serve` fallback. This stays open
+within Tailscale (kept, not torn down).
+
+## 5. Load the corpus into a PVC
+
+```
+kubectl apply -f k8s/50-corpus.yaml                       # PVC + loader pod
+kubectl -n wordsworth cp ./corpus/. wordsworth-corpus-loader:/corpus/
+kubectl -n wordsworth delete pod wordsworth-corpus-loader # free the RWO PVC
+```
+
+(Or rsync onto a node and adjust the PVC/volume source.) Size the PVC in
+`50-corpus.yaml` to the corpus.
+
+## 6. Ingest a corpus
 
 ```
 kubectl apply -f k8s/40-ingest-job.yaml
@@ -104,7 +128,9 @@ kubectl -n wordsworth logs -f job/wordsworth-ingest
 ```
 
 Each document prints its terminal state; the job exits 0 only if **all** reached
-`indexed`. A failure is loud (no clear text is stored or indexed).
+`indexed`. A failure is loud (no clear text is stored or indexed). Then validate
+functionally over the tailnet API (`/search`, `/hybrid`, `/ask`) — confirm no
+clear PII appears in results.
 
 ## Hardening follow-ups (alma decisions)
 
