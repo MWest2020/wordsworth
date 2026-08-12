@@ -40,6 +40,20 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
 
+    # --- openanonymiser-http (Architecture A: HTTP client, geen in-process ML) ---
+    @property
+    def openanonymiser_url(self) -> str:
+        """Base URL of the OpenAnonymiser (GLiNER) service. On alma this is the
+        in-cluster svc-DNS
+        ``http://openanonymiser.openanonymiser.svc.cluster.local:8080`` — the
+        heavy ML runs there, not in Wordsworth."""
+        return os.environ.get("WORDSWORTH_OPENANONYMISER_URL", "http://localhost:8080")
+
+    @property
+    def openanonymiser_timeout(self) -> float:
+        """Per-request timeout in seconds. GLiNER on CPU is slow — give it room."""
+        return float(os.environ.get("WORDSWORTH_OPENANONYMISER_TIMEOUT", "120"))
+
     # --- add-object-storage ---
     # --- Object storage (S3-compatible: SeaweedFS PoC / Ceph RGW target) ---
 

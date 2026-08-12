@@ -1,8 +1,5 @@
-# openanonymiser Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-openanonymiser-driver. Update Purpose after archive.
-## Requirements
 ### Requirement: OpenAnonymiser anonymization driver
 
 An `OpenAnonymiserAnonymizer` SHALL implement the `Anonymizer` protocol,
@@ -44,4 +41,3 @@ un-redacted text (no silent fallback to the un-redacted document).
 - **WHEN** the OpenAnonymiser service is down or unreachable
 - **THEN** the anonymize step raises rather than passing the document through
   un-redacted
-

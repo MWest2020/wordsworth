@@ -1,8 +1,11 @@
-"""OpenAnonymiser driver: protocol, composition, real CPU inference, failure.
+"""OpenAnonymiser driver: protocol, composition, real service inference, failure.
 
-The ``real_driver`` fixture runs the actual local engine (spaCy nl_core_news_lg
-via Presidio, CPU). The model load is slow, so it is session-scoped and the
-upstream engines are process-level singletons — loaded once for the suite.
+Architecture A: the driver is an HTTP client to the OpenAnonymiser GLiNER
+service. The ``real_driver`` fixture hits a real service over HTTP and SKIPS
+unless one answers its health check at ``WORDSWORTH_OPENANONYMISER_URL`` — the
+same integration-skip pattern the docker/DB tests use. The protocol,
+composition-order and fail-hard tests use the injectable ``engine`` seam and run
+fully offline (no service, no ML deps).
 """
 from __future__ import annotations
 
@@ -26,7 +29,20 @@ PII_NAME = "Jan Jansen"
 
 @pytest.fixture(scope="session")
 def real_driver() -> OpenAnonymiserAnonymizer:
-    return OpenAnonymiserAnonymizer()  # real local engine, loaded on first call
+    """Real OpenAnonymiser GLiNER service over HTTP. Skips unless the service
+    answers its health check (offline suites skip, like docker/DB tests)."""
+    import httpx
+
+    from wordsworth.config import settings
+
+    health = settings.openanonymiser_url.rstrip("/") + "/api/v1/health"
+    try:
+        httpx.get(health, timeout=5).raise_for_status()
+    except Exception:
+        pytest.skip(
+            f"OpenAnonymiser service unavailable at {settings.openanonymiser_url}"
+        )
+    return OpenAnonymiserAnonymizer()
 
 
 def _broken_engine(text: str) -> tuple[str, dict[str, int]]:
