@@ -146,7 +146,18 @@ def main(argv: list[str] | None = None) -> int:
     pst.set_defaults(func=_cmd_state)
 
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except urllib.error.HTTPError as e:
+        print(f"error: {args.url} returned HTTP {e.code} {e.reason}",
+              file=sys.stderr)
+        return 1
+    except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
+        reason = getattr(e, "reason", e)
+        print(f"error: cannot reach Wordsworth API at {args.url}: {reason}\n"
+              f"       set --url or $WORDSWORTH_API_URL to the API "
+              f"(e.g. http://100.100.181.23:8000)", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
