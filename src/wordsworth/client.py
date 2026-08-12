@@ -27,7 +27,33 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-DEFAULT_URL = os.environ.get("WORDSWORTH_API_URL", "http://localhost:8000")
+DEFAULT_URL = "http://localhost:8000"
+CONFIG_PATH = Path(os.environ.get(
+    "WORDSWORTH_CONFIG",
+    str(Path.home() / ".config" / "wordsworth" / "config.yaml")))
+
+
+def _load_config() -> dict[str, str]:
+    """Read a flat ``key: value`` config (a small YAML subset: url, batch,
+    timeout). Missing/unreadable file → empty. Stdlib only (no YAML dep)."""
+    cfg: dict[str, str] = {}
+    try:
+        text = CONFIG_PATH.read_text()
+    except OSError:
+        return cfg
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, val = line.split(":", 1)
+        cfg[key.strip()] = val.strip().strip('"').strip("'")
+    return cfg
+
+
+def _resolve_url(flag: str | None, cfg: dict[str, str]) -> str:
+    # --url flag > $WORDSWORTH_API_URL > config file > built-in default.
+    return (flag or os.environ.get("WORDSWORTH_API_URL")
+            or cfg.get("url") or DEFAULT_URL)
 
 
 def _get(base: str, path: str, params: dict | None = None, timeout: float = 30):
@@ -116,11 +142,31 @@ def _cmd_state(args) -> int:
     return 0
 
 
+def _cmd_config(args) -> int:
+    """Show or set persistent CLI defaults in the config file."""
+    cfg = _load_config()
+    updates = {k: getattr(args, k) for k in ("url", "batch", "timeout")
+               if getattr(args, k) is not None}
+    if not updates or args.show:
+        print(f"config: {CONFIG_PATH}")
+        for k in ("url", "batch", "timeout"):
+            if k in cfg:
+                print(f"{k}: {cfg[k]}")
+        return 0
+    cfg.update({k: str(v) for k, v in updates.items()})
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text("".join(f"{k}: {v}\n" for k, v in cfg.items()))
+    print(f"wrote {CONFIG_PATH}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Client for the Wordsworth HTTP API.")
-    parser.add_argument("--url", default=DEFAULT_URL,
-                        help=f"API base URL (default: {DEFAULT_URL})")
+    parser.add_argument("--url", default=None,
+                        help="API base URL "
+                             "(--url > $WORDSWORTH_API_URL > config file > "
+                             f"{DEFAULT_URL})")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("health", help="check the API is up").set_defaults(
@@ -130,10 +176,10 @@ def main(argv: list[str] | None = None) -> int:
     pi.add_argument("path", help="a PDF file or a directory of PDFs")
     pi.add_argument("--all", action="store_true",
                     help="upload every file, not just *.pdf")
-    pi.add_argument("--batch", type=int, default=25,
-                    help="files per request (default 25)")
-    pi.add_argument("--timeout", type=float, default=600,
-                    help="per-batch timeout in seconds (default 600)")
+    pi.add_argument("--batch", type=int, default=None,
+                    help="files per request (config 'batch', else 25)")
+    pi.add_argument("--timeout", type=float, default=None,
+                    help="per-batch timeout in seconds (config 'timeout', else 600)")
     pi.set_defaults(func=_cmd_ingest)
 
     ps = sub.add_parser("search", help="lexical search")
@@ -145,14 +191,34 @@ def main(argv: list[str] | None = None) -> int:
     pst.add_argument("document_id")
     pst.set_defaults(func=_cmd_state)
 
+    pc = sub.add_parser("config", help="show or set CLI defaults (url/batch/timeout)")
+    pc.add_argument("--url")
+    pc.add_argument("--batch", type=int)
+    pc.add_argument("--timeout", type=float)
+    pc.add_argument("--show", action="store_true", help="print config and exit")
+    pc.set_defaults(func=_cmd_config)
+
     args = parser.parse_args(argv)
+
+    # Resolve defaults from the config file (flag > env > config > built-in).
+    cfg = _load_config()
+    if args.cmd == "config":
+        return args.func(args)  # local file op; skip network error handling
+
+    args.url = _resolve_url(args.url, cfg)
+    if args.cmd == "ingest":
+        if args.batch is None:
+            args.batch = int(cfg.get("batch", 25))
+        if args.timeout is None:
+            args.timeout = float(cfg.get("timeout", 600))
+
     try:
         return args.func(args)
     except urllib.error.HTTPError as e:
         print(f"error: {args.url} returned HTTP {e.code} {e.reason}",
               file=sys.stderr)
         return 1
-    except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
+    except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
         reason = getattr(e, "reason", e)
         print(f"error: cannot reach Wordsworth API at {args.url}: {reason}\n"
               f"       set --url or $WORDSWORTH_API_URL to the API "

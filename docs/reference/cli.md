@@ -26,11 +26,26 @@ If the `wordsworth` package *is* installed (`uv sync` / `pip install`), the
 
 ## Configuration
 
+Set the API URL once, persistently, so you don't repeat `--url`:
+
+```bash
+wordsworth config --url http://100.100.181.23:8000    # also --batch, --timeout
+wordsworth config --show                              # print current config
+```
+
+This writes `~/.config/wordsworth/config.yaml` (override the path with
+`$WORDSWORTH_CONFIG`) — a flat `key: value` file (`url`, `batch`, `timeout`),
+parsed with the standard library (so still no dependencies; it is a small YAML
+subset, not full YAML). `install-cli.sh --url` writes it for you.
+
 The API base URL is resolved in this order:
 
 1. `--url <url>` on the command line
 2. `$WORDSWORTH_API_URL`
-3. the baked-in default (from `install-cli.sh --url`), else `http://localhost:8000`
+3. `url` in the config file
+4. built-in default `http://localhost:8000`
+
+`--batch` / `--timeout` resolve as: flag → config file → built-in default.
 
 ## Commands
 
@@ -40,6 +55,7 @@ The API base URL is resolved in this order:
 | `wordsworth ingest <path>` | Upload a PDF file, or every PDF under a directory, to `POST /ingest`. |
 | `wordsworth search <query> [--size N]` | Lexical (BM25) search (`GET /search`). |
 | `wordsworth state <document-id>` | Pipeline state of a document (`GET /documents/{id}/state`). |
+| `wordsworth config [--url … --batch … --timeout …] [--show]` | Show or set persistent defaults. |
 
 ### `ingest`
 

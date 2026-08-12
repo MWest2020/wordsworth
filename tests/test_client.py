@@ -1,6 +1,7 @@
 """wordsworthctl client — offline bits (no server contacted)."""
 from __future__ import annotations
 
+import wordsworth.client as client
 from wordsworth.client import _iter_files, main
 
 
@@ -26,3 +27,18 @@ def test_iter_files_single_file(tmp_path):
 
 def test_ingest_missing_path_exits_nonzero(tmp_path):
     assert main(["--url", "http://unused", "ingest", str(tmp_path / "nope")]) == 2
+
+
+def test_config_write_and_resolve(tmp_path, monkeypatch):
+    monkeypatch.setattr(client, "CONFIG_PATH", tmp_path / "config.yaml")
+    monkeypatch.delenv("WORDSWORTH_API_URL", raising=False)
+    assert main(["config", "--url", "http://api:8000", "--batch", "5"]) == 0
+    cfg = client._load_config()
+    assert cfg["url"] == "http://api:8000" and cfg["batch"] == "5"
+    assert client._resolve_url(None, cfg) == "http://api:8000"   # config used
+    assert client._resolve_url("http://flag", cfg) == "http://flag"  # flag wins
+
+
+def test_resolve_url_env_beats_config(monkeypatch):
+    monkeypatch.setenv("WORDSWORTH_API_URL", "http://env:8000")
+    assert client._resolve_url(None, {"url": "http://cfg:8000"}) == "http://env:8000"

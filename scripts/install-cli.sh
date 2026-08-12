@@ -30,19 +30,18 @@ done
 mkdir -p "$BIN_DIR"
 install -m 0755 "$SRC" "$BIN_DIR/wordsworth"
 
+ln -sf "$BIN_DIR/wordsworth" "$BIN_DIR/wordsworthctl"
+echo "installed: $BIN_DIR/wordsworth (+ wordsworthctl)"
+
 if [ -n "$URL" ]; then
-  # Rewrite the default URL fallback in the installed copy (env still wins).
-  sed -i "s#\"http://localhost:8000\"#\"${URL//#/\\#}\"#" "$BIN_DIR/wordsworth"
+  # Persist the API URL to the user config so `wordsworth <cmd>` needs no --url.
+  "$BIN_DIR/wordsworth" config --url "$URL" >/dev/null
+  echo "default API URL: $URL  (saved to config; env/--url still override)"
 else
   echo "warning: no --url given → default is http://localhost:8000." >&2
-  echo "         On a remote client pass e.g. --url http://100.100.181.23:8000" >&2
-  echo "         (or set WORDSWORTH_API_URL), else calls hit localhost." >&2
+  echo "         On a remote client run e.g.:  wordsworth config --url http://100.100.181.23:8000" >&2
+  echo "         (or pass --url / set WORDSWORTH_API_URL), else calls hit localhost." >&2
 fi
-
-ln -sf "$BIN_DIR/wordsworth" "$BIN_DIR/wordsworthctl"
-
-echo "installed: $BIN_DIR/wordsworth (+ wordsworthctl)"
-[ -n "$URL" ] && echo "default API URL: $URL"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) echo "note: $BIN_DIR is not on PATH — add:  export PATH=\"$BIN_DIR:\$PATH\"" ;;

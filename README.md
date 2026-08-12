@@ -35,8 +35,12 @@ A dependency-free client for the HTTP API (`src/wordsworth/client.py` — stdlib
 only, so it runs anywhere with Python 3, no install of the package needed).
 
 ```bash
-# put it on PATH as `wordsworth` (bakes in a default API URL; env still overrides)
+# put it on PATH as `wordsworth` (saves the API URL to config; env/--url override)
 scripts/install-cli.sh --url http://100.100.181.23:8000
+
+# or set/inspect the persistent config yourself
+wordsworth config --url http://100.100.181.23:8000   # ~/.config/wordsworth/config.yaml
+wordsworth config --show
 
 wordsworth health                                   # {"status": "ok"}
 wordsworth ingest ./corpus                           # a PDF file or a directory
