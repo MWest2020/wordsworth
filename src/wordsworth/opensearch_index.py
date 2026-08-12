@@ -13,14 +13,16 @@ from .search_index import Hit
 def _mapping(dim: int) -> dict:
     return {
         "settings": {
-            "index": {"knn": True, "max_ngram_diff": 10},
+            "index": {"knn": True, "max_ngram_diff": 15},
             "analysis": {
                 "filter": {
                     "nl_stop": {"type": "stop", "stopwords": "_dutch_"},
                     "nl_stemmer": {"type": "stemmer", "language": "dutch"},
                     # Substring n-grams give recall on Dutch compounds without a
                     # decompounding dictionary (e.g. "kosten" ⊂ "kostenonderbouwing").
-                    "nl_ngram": {"type": "ngram", "min_gram": 3, "max_gram": 10},
+                    # max_gram 18 covers long Dutch words (a whole-term query only
+                    # matches if it is ≤ an indexed n-gram).
+                    "nl_ngram": {"type": "ngram", "min_gram": 3, "max_gram": 18},
                 },
                 "analyzer": {
                     "nl_text": {  # precision: Dutch stopwords + stemming
