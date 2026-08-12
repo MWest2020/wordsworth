@@ -33,6 +33,10 @@ install -m 0755 "$SRC" "$BIN_DIR/wordsworth"
 if [ -n "$URL" ]; then
   # Rewrite the default URL fallback in the installed copy (env still wins).
   sed -i "s#\"http://localhost:8000\"#\"${URL//#/\\#}\"#" "$BIN_DIR/wordsworth"
+else
+  echo "warning: no --url given → default is http://localhost:8000." >&2
+  echo "         On a remote client pass e.g. --url http://100.100.181.23:8000" >&2
+  echo "         (or set WORDSWORTH_API_URL), else calls hit localhost." >&2
 fi
 
 ln -sf "$BIN_DIR/wordsworth" "$BIN_DIR/wordsworthctl"
