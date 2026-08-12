@@ -1,4 +1,5 @@
-"""``wordsworthctl`` — a tiny client for the Wordsworth HTTP API.
+#!/usr/bin/env python3
+"""``wordsworth`` / ``wordsworthctl`` — a tiny client for the Wordsworth HTTP API.
 
 Stdlib only (no dependencies), so it runs anywhere with Python 3.12 — copy this
 one file to a machine on the tailnet and run it, or use the installed
