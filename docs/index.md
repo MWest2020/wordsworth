@@ -19,3 +19,5 @@ under `openspec/`.
   invariants, stack, and configuration.
   - [evaluation](reference/evaluation.md) — the IR evaluation run: CLI,
     id-matching precondition (`object_key` = qrels doc ids), runtime needs.
+  - [cli](reference/cli.md) — the `wordsworth` API client: install, commands,
+    ingesting a directory.

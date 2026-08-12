@@ -118,7 +118,7 @@ def _cmd_state(args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="wordsworthctl", description="Client for the Wordsworth HTTP API.")
+        description="Client for the Wordsworth HTTP API.")
     parser.add_argument("--url", default=DEFAULT_URL,
                         help=f"API base URL (default: {DEFAULT_URL})")
     sub = parser.add_subparsers(dest="cmd", required=True)
