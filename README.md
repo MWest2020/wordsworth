@@ -46,7 +46,9 @@ wordsworth health                                   # {"status": "ok"}
 wordsworth ingest ./corpus                           # a PDF file or a directory
 wordsworth ingest ./corpus --batch 5                 # smaller batches (slow CPU)
 wordsworth ingest ./corpus --all                     # upload every file, not just *.pdf
-wordsworth search "vergunning"
+wordsworth search "vergunning"                       # BM25
+wordsworth hybrid "vergunning"                       # BM25 + vector (relevance)
+wordsworth ask "wat zijn de kosten?"                 # RAG answer via the local LLM
 wordsworth state <document-id>
 ```
 

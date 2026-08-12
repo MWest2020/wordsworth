@@ -54,6 +54,8 @@ The API base URL is resolved in this order:
 | `wordsworth health` | Check the API is up (`GET /health`). |
 | `wordsworth ingest <path>` | Upload a PDF file, or every PDF under a directory, to `POST /ingest`. |
 | `wordsworth search <query> [--size N]` | Lexical (BM25) search (`GET /search`). |
+| `wordsworth hybrid <query> [--size N]` | Hybrid BM25 + vector relevance search (`GET /hybrid`). |
+| `wordsworth ask <query> [--k N]` | RAG answer with citations via the local LLM (`GET /ask`). |
 | `wordsworth state <document-id>` | Pipeline state of a document (`GET /documents/{id}/state`). |
 | `wordsworth config [--url … --batch … --timeout …] [--show]` | Show or set persistent defaults. |
 

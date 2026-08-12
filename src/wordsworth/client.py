@@ -137,6 +137,19 @@ def _cmd_search(args) -> int:
     return 0
 
 
+def _cmd_hybrid(args) -> int:
+    print(json.dumps(_get(args.url, "/hybrid",
+                          {"q": args.query, "size": args.size}), indent=2))
+    return 0
+
+
+def _cmd_ask(args) -> int:
+    # RAG answer: local LLM over CPU can be slow → generous timeout.
+    print(json.dumps(_get(args.url, "/ask", {"q": args.query, "k": args.k},
+                          timeout=300), indent=2))
+    return 0
+
+
 def _cmd_state(args) -> int:
     print(json.dumps(_get(args.url, f"/documents/{args.document_id}/state")))
     return 0
@@ -182,10 +195,20 @@ def main(argv: list[str] | None = None) -> int:
                     help="per-batch timeout in seconds (config 'timeout', else 600)")
     pi.set_defaults(func=_cmd_ingest)
 
-    ps = sub.add_parser("search", help="lexical search")
+    ps = sub.add_parser("search", help="lexical (BM25) search")
     ps.add_argument("query")
     ps.add_argument("--size", type=int, default=10)
     ps.set_defaults(func=_cmd_search)
+
+    ph = sub.add_parser("hybrid", help="hybrid (BM25 + vector) relevance search")
+    ph.add_argument("query")
+    ph.add_argument("--size", type=int, default=10)
+    ph.set_defaults(func=_cmd_hybrid)
+
+    pa = sub.add_parser("ask", help="RAG question answering (local LLM)")
+    pa.add_argument("query")
+    pa.add_argument("--k", type=int, default=5, help="passages to retrieve")
+    pa.set_defaults(func=_cmd_ask)
 
     pst = sub.add_parser("state", help="pipeline state of a document")
     pst.add_argument("document_id")
