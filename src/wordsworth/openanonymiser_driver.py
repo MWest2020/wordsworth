@@ -49,7 +49,7 @@ def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
     response.raise_for_status()
     data = response.json()
     counts: dict[str, int] = {}
-    for entity in data.get("entities_found", []):  # what the service detected
+    for entity in data.get("entities_found") or []:  # what the service detected
         label = str(entity["entity_type"]).lower()
         counts[label] = counts.get(label, 0) + 1
     return data["anonymized_text"], counts

@@ -42,7 +42,6 @@ zeef = { git = "https://github.com/MWest2020/zeef" }
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "reportlab>=5.0.0",
 ]

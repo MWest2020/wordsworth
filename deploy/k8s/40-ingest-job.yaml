@@ -24,6 +24,7 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: ingest
           image: ghcr.io/mwest2020/wordsworth:latest

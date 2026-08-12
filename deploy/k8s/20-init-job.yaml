@@ -18,6 +18,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: init
           image: ghcr.io/mwest2020/wordsworth:latest   # built by the factory

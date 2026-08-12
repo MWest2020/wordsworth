@@ -104,6 +104,18 @@ kubectl -n wordsworth logs -f job/wordsworth-ingest
 Each document prints its terminal state; the job exits 0 only if **all** reached
 `indexed`. A failure is loud (no clear text is stored or indexed).
 
+## Hardening follow-ups (alma decisions)
+
+- **Transport of pre-anonymization PII.** The ingest job POSTs raw text (still
+  containing PII) to the OpenAnonymiser service over in-cluster `http://`. This is
+  the one hop where clear PII crosses the pod network unencrypted — acceptable
+  under the sovereign in-cluster model, but consider mesh mTLS or `https` on the
+  service (set `WORDSWORTH_OPENANONYMISER_URL` to `https://...`; httpx verifies
+  by default).
+- **Image pinning.** Manifests use `:latest` and the Dockerfile uses tag-pinned
+  bases. For reproducibility/supply-chain, pin by digest and add a Trivy-gated CI
+  build (mirror `OpenAnonymiser_light/.github/workflows/docker-build.yml`).
+
 ## Invariants (do not break)
 
 - No clear PII to the index; anonymize failure (incl. the OpenAnonymiser service
