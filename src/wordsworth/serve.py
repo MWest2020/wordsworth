@@ -19,6 +19,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from .api import create_app
+from .config import settings
 from .db import make_engine, make_session_factory
 from .embedder import OllamaEmbedder
 from .generator import OllamaGenerator
@@ -26,13 +27,28 @@ from .opensearch_index import OpenSearchIndex
 
 
 def build_app() -> FastAPI:
-    """Wire ``create_app`` to the real backends resolved from config."""
+    """Wire ``create_app`` to the real backends resolved from config.
+
+    The write path (``POST /ingest``) is wired only when S3 credentials are
+    configured — it needs the object store + the OpenAnonymiser driver. Without
+    creds the app serves the read surface only, so importing this module never
+    requires secrets."""
     engine = make_engine()
+    store = None
+    anonymizer = None
+    if settings.s3_access_key and settings.s3_secret_key:
+        from .object_store import S3ObjectStore
+        from .openanonymiser_driver import OpenAnonymiserAnonymizer
+
+        store = S3ObjectStore.from_config()
+        anonymizer = OpenAnonymiserAnonymizer()
     return create_app(
         session_factory=make_session_factory(engine),
         search_index=OpenSearchIndex.from_config(),
         embedder=OllamaEmbedder.from_config(),
         generator=OllamaGenerator.from_config(),
+        store=store,
+        anonymizer=anonymizer,
     )
 
 
