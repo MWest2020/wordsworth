@@ -146,7 +146,7 @@ def _cmd_hybrid(args) -> int:
 def _cmd_ask(args) -> int:
     # RAG answer: local LLM over CPU can be slow → generous timeout.
     print(json.dumps(_get(args.url, "/ask", {"q": args.query, "k": args.k},
-                          timeout=300), indent=2))
+                          timeout=610), indent=2))
     return 0
 
 

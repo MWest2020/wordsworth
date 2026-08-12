@@ -50,13 +50,18 @@ def _prompt(query: str, sources: list[Source]) -> str:
 class OllamaGenerator:
     """Local Ollama generation. No cloud in the critical path."""
 
-    def __init__(self, url: str, model: str):
+    def __init__(self, url: str, model: str, timeout: float = 600.0,
+                 num_predict: int = 512):
         self.url = url.rstrip("/")
         self.model = model
+        self.timeout = timeout
+        self.num_predict = num_predict
 
     @classmethod
     def from_config(cls) -> "OllamaGenerator":
-        return cls(settings.ollama_url, settings.llm_model)
+        return cls(settings.ollama_url, settings.llm_model,
+                   timeout=settings.llm_timeout,
+                   num_predict=settings.llm_num_predict)
 
     def generate(self, query: str, sources: list[Source]) -> Answer:
         payload = json.dumps({
@@ -64,13 +69,14 @@ class OllamaGenerator:
             "prompt": _prompt(query, sources),
             "stream": False,
             "format": "json",
+            "options": {"num_predict": self.num_predict},
         }).encode()
         req = urllib.request.Request(
             f"{self.url}/api/generate", data=payload,
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 body = json.loads(resp.read())
             parsed = json.loads(body["response"])
         except Exception as exc:  # network/timeout/HTTP/bad-JSON -> hard error

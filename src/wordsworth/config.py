@@ -106,6 +106,17 @@ class Settings:
         """Local generation model (Ollama). RAG only; no cloud in the critical path."""
         return os.environ.get("WORDSWORTH_LLM_MODEL", "llama3.1")
 
+    @property
+    def llm_timeout(self) -> float:
+        """Per-request timeout (s) for /ask generation. Generous: a small model
+        on a CPU-only node is slow."""
+        return float(os.environ.get("WORDSWORTH_LLM_TIMEOUT", "600"))
+
+    @property
+    def llm_num_predict(self) -> int:
+        """Max tokens the LLM generates per answer — bounds /ask latency on CPU."""
+        return int(os.environ.get("WORDSWORTH_LLM_NUM_PREDICT", "512"))
+
     # --- add-rate-limiting ---
     @property
     def rate_limit_enabled(self) -> bool:
