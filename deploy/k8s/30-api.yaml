@@ -1,0 +1,83 @@
+# Wordsworth read API (state, metrics, search, hybrid, ask). Light: no ML in-
+# process (anonymize is the OpenAnonymiser service; embeddings are Ollama).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordsworth-api
+  namespace: wordsworth
+  labels: { app: wordsworth, component: api }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: wordsworth, component: api }
+  template:
+    metadata:
+      labels: { app: wordsworth, component: api }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: api
+          image: ghcr.io/mwest2020/wordsworth:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: wordsworth-config }
+            - secretRef: { name: wordsworth-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordsworth-api
+  namespace: wordsworth
+spec:
+  selector: { app: wordsworth, component: api }
+  ports:
+    - { port: 8000, targetPort: 8000 }
+  type: ClusterIP
+# --- Optional external access on alma (fill host/ingressClass/TLS) ---
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: wordsworth-api
+#   namespace: wordsworth
+# spec:
+#   ingressClassName: <alma-ingressclass>
+#   tls:
+#     - hosts: [ <wordsworth.alma-domein> ]
+#       secretName: wordsworth-api-tls
+#   rules:
+#     - host: <wordsworth.alma-domein>
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service: { name: wordsworth-api, port: { number: 8000 } }

@@ -1,0 +1,35 @@
+# One-shot schema bootstrap. Run once before the API/ingest (idempotent — safe to
+# re-run). Needs a DB role permitted to create functions + triggers.
+#   kubectl -n wordsworth apply -f 20-init-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wordsworth-init
+  namespace: wordsworth
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels: { app: wordsworth, job: init }
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: init
+          image: ghcr.io/mwest2020/wordsworth:latest   # built by the factory
+          imagePullPolicy: IfNotPresent
+          command: ["wordsworth-init"]
+          envFrom:
+            - configMapRef: { name: wordsworth-config }
+            - secretRef: { name: wordsworth-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "250m", memory: "256Mi" }

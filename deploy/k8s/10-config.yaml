@@ -1,0 +1,39 @@
+# Non-secret runtime config + a SECRET TEMPLATE. Fill the <...> placeholders with
+# alma's actual service DNS. Do NOT commit real secret values — inject them via
+# SOPS+age or OpenBao (this Secret is a shape reference only).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wordsworth-config
+  namespace: wordsworth
+data:
+  # --- OpenSearch (index target) ---
+  WORDSWORTH_OPENSEARCH_URL: "http://<opensearch-host>.<ns>.svc.cluster.local:9200"
+  WORDSWORTH_OPENSEARCH_INDEX: "wordsworth"
+  # --- Ollama (bge-m3 embeddings; llama for RAG /ask) ---
+  WORDSWORTH_OLLAMA_URL: "http://<ollama-host>.<ns>.svc.cluster.local:11434"
+  WORDSWORTH_EMBEDDING_MODEL: "bge-m3"
+  WORDSWORTH_EMBEDDING_DIM: "1024"
+  WORDSWORTH_LLM_MODEL: "llama3.1"
+  # --- OpenAnonymiser GLiNER service (Architecture A: anonymize over HTTP) ---
+  WORDSWORTH_OPENANONYMISER_URL: "http://openanonymiser.openanonymiser.svc.cluster.local:8080"
+  WORDSWORTH_OPENANONYMISER_TIMEOUT: "120"
+  # --- S3 object store (endpoint + bucket; keys are in the Secret) ---
+  WORDSWORTH_S3_ENDPOINT_URL: "http://<s3-endpoint>.<ns>.svc.cluster.local:8333"
+  WORDSWORTH_S3_BUCKET: "wordsworth"
+  WORDSWORTH_S3_REGION: "us-east-1"
+  # --- OCR recovery language (Dutch corpus) ---
+  WORDSWORTH_OCR_LANGUAGE: "nld"
+---
+# TEMPLATE — replace with a SOPS+age / OpenBao-managed Secret. Never commit real
+# credentials. The DB URL carries the password, so it lives here, not the CM.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wordsworth-secrets
+  namespace: wordsworth
+type: Opaque
+stringData:
+  WORDSWORTH_DATABASE_URL: "postgresql+psycopg://<user>:<password>@<pg-host>.<ns>.svc.cluster.local:5432/wordsworth"
+  WORDSWORTH_S3_ACCESS_KEY: "<s3-access-key>"
+  WORDSWORTH_S3_SECRET_KEY: "<s3-secret-key>"

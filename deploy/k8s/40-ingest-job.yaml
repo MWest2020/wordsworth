@@ -1,0 +1,50 @@
+# Run the full straat over a PDF corpus: ingest → OCR recovery → anonymize
+# (OpenAnonymiser GLiNER) → store (S3) → index (OpenSearch + Ollama bge-m3).
+#
+# TEMPLATE — a batch Job you run per corpus. Provide the corpus at /corpus: the
+# example uses a PVC; adjust to how the corpus lands on alma (PVC, hostPath, or
+# an initContainer that pulls it). Requires the init Job to have run first and
+# the OpenAnonymiser service to be reachable (fail-hard if it is down).
+#   kubectl -n wordsworth apply -f 40-ingest-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wordsworth-ingest
+  namespace: wordsworth
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: { app: wordsworth, job: ingest }
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: ingest
+          image: ghcr.io/mwest2020/wordsworth:latest
+          imagePullPolicy: IfNotPresent
+          command: ["wordsworth-ingest", "--corpus-dir", "/corpus"]
+          envFrom:
+            - configMapRef: { name: wordsworth-config }
+            - secretRef: { name: wordsworth-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: corpus, mountPath: /corpus, readOnly: true }
+            - { name: tmp, mountPath: /tmp }   # ocrmypdf writes temp files here
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi" }
+      volumes:
+        - name: corpus
+          persistentVolumeClaim:
+            claimName: wordsworth-corpus   # TODO: create this PVC / adjust source
+        - name: tmp
+          emptyDir: {}
