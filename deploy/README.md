@@ -54,18 +54,20 @@ Feed the results back to tune `10-config.yaml` (service DNS), `40-ingest-job.yam
 
 ## 1. Build + push the image (factory)
 
-Wordsworth has no CI docker-build workflow yet; build on the factory and push to
-GHCR (mirrors OpenAnonymiser's GHCR pattern). The image is light (no torch).
+CI builds and pushes automatically: `.github/workflows/docker-build.yml` runs a
+fast test gate → builds `deploy/Dockerfile` → Trivy-scans (HIGH/CRITICAL,
+ignore-unfixed) → pushes to GHCR on every push to `main`, tagging `:latest`,
+`:main`, and `:sha-<short>` (auth via the built-in `GITHUB_TOKEN`). PRs build +
+scan without pushing. Trigger a specific ref manually with
+`gh workflow run "Build and Push Docker Image" -f ref=main`.
+
+Local build (fallback; the image is light — no torch):
 
 ```
-# from the repo root
 docker build -f deploy/Dockerfile -t ghcr.io/mwest2020/wordsworth:latest .
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u <gh-user> --password-stdin
 docker push ghcr.io/mwest2020/wordsworth:latest
 ```
-
-(A `.github/workflows/docker-build.yml` with a Trivy gate can be added later,
-mirroring `OpenAnonymiser_light/.github/workflows/docker-build.yml`.)
 
 ## 2. Configure
 
@@ -112,9 +114,9 @@ Each document prints its terminal state; the job exits 0 only if **all** reached
   under the sovereign in-cluster model, but consider mesh mTLS or `https` on the
   service (set `WORDSWORTH_OPENANONYMISER_URL` to `https://...`; httpx verifies
   by default).
-- **Image pinning.** Manifests use `:latest` and the Dockerfile uses tag-pinned
-  bases. For reproducibility/supply-chain, pin by digest and add a Trivy-gated CI
-  build (mirror `OpenAnonymiser_light/.github/workflows/docker-build.yml`).
+- **Image pinning.** The CI build (`docker-build.yml`) already Trivy-scans every
+  image. Remaining: manifests use `:latest` and the Dockerfile uses tag-pinned
+  bases — for full reproducibility/supply-chain, pin by digest.
 
 ## Invariants (do not break)
 
