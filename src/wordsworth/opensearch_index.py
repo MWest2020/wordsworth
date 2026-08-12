@@ -12,10 +12,45 @@ from .search_index import Hit
 
 def _mapping(dim: int) -> dict:
     return {
-        "settings": {"index": {"knn": True}},
+        "settings": {
+            "index": {"knn": True, "max_ngram_diff": 10},
+            "analysis": {
+                "filter": {
+                    "nl_stop": {"type": "stop", "stopwords": "_dutch_"},
+                    "nl_stemmer": {"type": "stemmer", "language": "dutch"},
+                    # Substring n-grams give recall on Dutch compounds without a
+                    # decompounding dictionary (e.g. "kosten" ⊂ "kostenonderbouwing").
+                    "nl_ngram": {"type": "ngram", "min_gram": 3, "max_gram": 10},
+                },
+                "analyzer": {
+                    "nl_text": {  # precision: Dutch stopwords + stemming
+                        "tokenizer": "standard",
+                        "filter": ["lowercase", "asciifolding", "nl_stop", "nl_stemmer"],
+                    },
+                    "nl_recall_index": {  # recall: index n-grams of each token
+                        "tokenizer": "standard",
+                        "filter": ["lowercase", "asciifolding", "nl_stop", "nl_ngram"],
+                    },
+                    "nl_recall_search": {  # query side: whole terms (no n-gram)
+                        "tokenizer": "standard",
+                        "filter": ["lowercase", "asciifolding", "nl_stop"],
+                    },
+                },
+            },
+        },
         "mappings": {
             "properties": {
-                "text": {"type": "text", "analyzer": "dutch"},
+                "text": {
+                    "type": "text",
+                    "analyzer": "nl_text",
+                    "fields": {
+                        "recall": {
+                            "type": "text",
+                            "analyzer": "nl_recall_index",
+                            "search_analyzer": "nl_recall_search",
+                        }
+                    },
+                },
                 "object_key": {"type": "keyword"},
                 "vector": {
                     "type": "knn_vector",
@@ -24,6 +59,18 @@ def _mapping(dim: int) -> dict:
                 },
             }
         },
+    }
+
+
+def _bm25(query: str) -> dict:
+    """Lexical query: the stemmed field dominates (precision), the n-gram recall
+    sub-field catches compounds/substrings the stemmer splits differently."""
+    return {
+        "multi_match": {
+            "query": query,
+            "fields": ["text^3", "text.recall"],
+            "type": "most_fields",
+        }
     }
 
 
@@ -53,7 +100,7 @@ class OpenSearchIndex:
     def search(self, query: str, size: int = 10) -> list[Hit]:
         result = self._client.search(
             index=self._index,
-            body={"query": {"match": {"text": query}}, "size": size},
+            body={"query": _bm25(query), "size": size},
         )
         return [
             Hit(h["_id"], float(h["_score"]), h["_source"].get("object_key"))
@@ -66,7 +113,7 @@ class OpenSearchIndex:
 
     def hybrid_search(self, query, query_vector, recall: int = 50) -> list[Hit]:
         bm25 = self._ranked_ids(
-            {"query": {"match": {"text": query}}, "size": recall, "_source": False}
+            {"query": _bm25(query), "size": recall, "_source": False}
         )
         knn = self._ranked_ids(
             {"query": {"knn": {"vector": {"vector": query_vector, "k": recall}}},
