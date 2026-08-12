@@ -7,16 +7,19 @@ or the full surface. Interactive docs at ``/docs`` (Swagger) and ``/redoc``.
 """
 from __future__ import annotations
 
+from datetime import timezone
 from uuid import UUID
 
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from .anonymizer import Anonymizer
 from .config import settings as default_settings
 from .embedder import Embedder
 from .generator import Generator
+from .models import AuditRecord, Document
 from .object_store import ObjectStore
 from .pipeline import current_state, ingest, process
 from .rate_limit import (
@@ -43,6 +46,8 @@ class IngestResult(BaseModel):
     filename: str | None = None
     document_id: str | None = None
     state: str
+    duration_ms: float | None = None
+    counts: dict[str, int] | None = None
     error: str | None = None
 
 
@@ -108,6 +113,19 @@ def create_app(
                 body = render_metrics(session)
             return Response(content=body, media_type=CONTENT_TYPE)
 
+        @app.get("/documents/{document_id}",
+                 summary="Document metadata (state, timing, PII counts, trail)",
+                 tags=["read"])
+        def document_meta(document_id: UUID) -> dict:
+            """State, total + per-step processing duration, PII redaction counts,
+            page/byte metrics and the audit-step trail — all derived from the
+            append-only audit chain."""
+            with session_factory() as session:
+                meta = _document_meta(session, document_id)
+            if meta is None:
+                raise HTTPException(status_code=404, detail="unknown document")
+            return meta
+
     if search_index is not None:
 
         @app.get("/search", summary="Lexical (BM25) search", tags=["read"])
@@ -149,24 +167,28 @@ def create_app(
 
             anonymizer = OpenAnonymiserAnonymizer()
 
-        def _ingest_one(data: bytes) -> str:
-            """Drive one document to its terminal state; return the state value.
-            The un-redacted bytes never leave this frame and no exception it
-            raises carries document text (fail-hard, no silent pass-through)."""
+        def _ingest_one(data: bytes) -> dict:
+            """Drive one document to its terminal state; return its metadata
+            (id, state, duration, counts). The un-redacted bytes never leave this
+            frame and no exception it raises carries document text (fail-hard, no
+            silent pass-through)."""
             with session_factory() as session:
                 doc = ingest(session, store, data)
                 session.commit()
-                state = process(session, doc.id, store, anonymizer=anonymizer,
+                document_id = doc.id
+                state = process(session, document_id, store, anonymizer=anonymizer,
                                 search_index=search_index, embedder=embedder)
                 session.commit()
                 if state == State.UNPROCESSABLE_OCR:
                     # Scanned page: OCR to a text layer, then resume the straat.
-                    recover(session, doc.id, store)
+                    recover(session, document_id, store)
                     session.commit()
-                    state = process(session, doc.id, store, anonymizer=anonymizer,
+                    state = process(session, document_id, store,
+                                    anonymizer=anonymizer,
                                     search_index=search_index, embedder=embedder)
                     session.commit()
-                return str(doc.id), state.value
+                meta = _document_meta(session, document_id)
+            return meta or {"document_id": str(document_id), "state": state.value}
 
         @app.post("/ingest", response_model=IngestResponse, tags=["write"],
                   summary="Ingest one or more PDFs through the full straat")
@@ -190,9 +212,13 @@ def create_app(
                         filename=f.filename, state="error", error="empty upload"))
                     continue
                 try:
-                    doc_id, state = _ingest_one(data)
+                    meta = _ingest_one(data)
                     results.append(IngestResult(
-                        filename=f.filename, document_id=doc_id, state=state))
+                        filename=f.filename,
+                        document_id=meta.get("document_id"),
+                        state=meta.get("state"),
+                        duration_ms=meta.get("duration_ms"),
+                        counts=meta.get("counts") or None))
                 except Exception as exc:  # fail-hard; carry no document text out
                     results.append(IngestResult(
                         filename=f.filename, state="error",
@@ -207,3 +233,45 @@ def create_app(
 def _hit(h) -> dict:
     # Omit the raw vector from API responses; expose the useful fields only.
     return {"document_id": h.document_id, "score": h.score, "object_key": h.object_key}
+
+
+def _document_meta(session: Session, document_id: UUID) -> dict | None:
+    """Per-document metadata derived from the append-only audit chain: current
+    state, total + per-step processing duration, PII redaction counts (the
+    anonymize step), page/byte metrics, and the ordered step trail. Returns None
+    when the document has no audit records."""
+    records = session.execute(
+        select(AuditRecord)
+        .where(AuditRecord.document_id == document_id)
+        .order_by(AuditRecord.seq)
+    ).scalars().all()
+    if not records:
+        return None
+    steps = []
+    prev_ts = None
+    for r in records:
+        step_ms = ((r.ts - prev_ts).total_seconds() * 1000
+                   if prev_ts is not None else None)
+        steps.append({
+            "step": r.step,
+            "from_state": r.from_state,
+            "to_state": r.to_state,
+            "ts": r.ts.astimezone(timezone.utc).isoformat(),
+            "duration_ms": round(step_ms, 1) if step_ms is not None else None,
+            "payload": r.payload,
+        })
+        prev_ts = r.ts
+    total_ms = (records[-1].ts - records[0].ts).total_seconds() * 1000
+    counts = next((r.payload for r in records if r.step == "anonymize"), {})
+    profile = next((r.payload for r in records if r.step == "profile"), {})
+    doc = session.get(Document, document_id)
+    return {
+        "document_id": str(document_id),
+        "object_key": doc.object_key if doc else None,
+        "state": records[-1].to_state,
+        "duration_ms": round(total_ms, 1),
+        "counts": counts,
+        "pages": profile.get("pages"),
+        "bytes": profile.get("bytes"),
+        "steps": steps,
+    }

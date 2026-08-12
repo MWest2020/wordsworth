@@ -57,6 +57,7 @@ The API base URL is resolved in this order:
 | `wordsworth hybrid <query> [--size N]` | Hybrid BM25 + vector relevance search (`GET /hybrid`). |
 | `wordsworth ask <query> [--k N]` | RAG answer with citations via the local LLM (`GET /ask`). |
 | `wordsworth state <document-id>` | Pipeline state of a document (`GET /documents/{id}/state`). |
+| `wordsworth meta <document-id>` | Full metadata: duration, PII counts, step trail (`GET /documents/{id}`). |
 | `wordsworth config [--url … --batch … --timeout …] [--show]` | Show or set persistent defaults. |
 
 ### `ingest`
@@ -70,9 +71,11 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
 - Uploads in batches of `--batch` files per request (default 25). On slow
   (CPU-only) deployments use a smaller batch, e.g. `--batch 5` or `--batch 1`, so
   each request stays short.
-- Prints a per-file line (`filename: state`, with the error class on failure) and
-  a final `X/Y indexed, Z failed` summary. A file that fails does **not** abort
-  the batch. Exit code is non-zero if any file failed.
+- Prints a per-file line — `filename: state`, with the processing duration and
+  non-zero PII counts on success (e.g. `2130276.pdf: indexed (1.8s, bsn=1
+  person=2)`), or the error class on failure — and a final `X/Y indexed, Z failed`
+  summary. A file that fails does **not** abort the batch. Exit code is non-zero
+  if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
 ## Examples

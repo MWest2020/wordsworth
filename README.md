@@ -49,7 +49,8 @@ wordsworth ingest ./corpus --all                     # upload every file, not ju
 wordsworth search "vergunning"                       # BM25
 wordsworth hybrid "vergunning"                       # BM25 + vector (relevance)
 wordsworth ask "wat zijn de kosten?"                 # RAG answer via the local LLM
-wordsworth state <document-id>
+wordsworth state <document-id>                       # current pipeline state
+wordsworth meta <document-id>                        # duration, PII counts, step trail
 ```
 
 Without the install step, point at the API per call or via the environment:

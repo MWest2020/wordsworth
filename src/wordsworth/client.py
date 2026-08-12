@@ -120,10 +120,22 @@ def _cmd_ingest(args) -> int:
                 indexed += 1
             else:
                 failed += 1
-            print(f"{r.get('filename')}: {r.get('state')}"
-                  + (f" ({r['error']})" if r.get("error") else ""))
+            print(f"{r.get('filename')}: {r.get('state')}{_result_extra(r)}")
     print(f"\n{indexed}/{total} indexed, {failed} failed")
     return 0 if failed == 0 else 1
+
+
+def _result_extra(r: dict) -> str:
+    """Compact per-file suffix: duration + non-zero PII counts, or the error."""
+    if r.get("duration_ms") is not None:
+        parts = [f"{r['duration_ms'] / 1000:.1f}s"]
+        nz = {k: v for k, v in (r.get("counts") or {}).items() if v}
+        if nz:
+            parts.append(" ".join(f"{k}={v}" for k, v in sorted(nz.items())))
+        return f" ({', '.join(parts)})"
+    if r.get("error"):
+        return f" ({r['error']})"
+    return ""
 
 
 def _cmd_health(args) -> int:
@@ -152,6 +164,11 @@ def _cmd_ask(args) -> int:
 
 def _cmd_state(args) -> int:
     print(json.dumps(_get(args.url, f"/documents/{args.document_id}/state")))
+    return 0
+
+
+def _cmd_meta(args) -> int:
+    print(json.dumps(_get(args.url, f"/documents/{args.document_id}"), indent=2))
     return 0
 
 
@@ -213,6 +230,10 @@ def main(argv: list[str] | None = None) -> int:
     pst = sub.add_parser("state", help="pipeline state of a document")
     pst.add_argument("document_id")
     pst.set_defaults(func=_cmd_state)
+
+    pm = sub.add_parser("meta", help="document metadata (timing, PII counts, trail)")
+    pm.add_argument("document_id")
+    pm.set_defaults(func=_cmd_meta)
 
     pc = sub.add_parser("config", help="show or set CLI defaults (url/batch/timeout)")
     pc.add_argument("--url")

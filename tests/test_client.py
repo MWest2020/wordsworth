@@ -42,3 +42,12 @@ def test_config_write_and_resolve(tmp_path, monkeypatch):
 def test_resolve_url_env_beats_config(monkeypatch):
     monkeypatch.setenv("WORDSWORTH_API_URL", "http://env:8000")
     assert client._resolve_url(None, {"url": "http://cfg:8000"}) == "http://env:8000"
+
+
+def test_result_extra_formats_duration_and_counts():
+    extra = client._result_extra(
+        {"state": "indexed", "duration_ms": 1834.0,
+         "counts": {"person": 2, "bsn": 1, "iban": 0}})
+    assert extra == " (1.8s, bsn=1 person=2)"   # sorted, zero-counts dropped
+    assert client._result_extra({"state": "error", "error": "OcrError"}) == " (OcrError)"
+    assert client._result_extra({"state": "indexed"}) == ""

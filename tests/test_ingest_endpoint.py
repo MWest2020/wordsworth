@@ -38,3 +38,8 @@ def test_ingest_absent_without_store():
         rate_limiters={},
     )
     assert ("/ingest", "POST") not in _routes(app)
+
+
+def test_document_meta_endpoint_registered_with_db():
+    app = create_app(session_factory=object(), rate_limiters={})
+    assert ("/documents/{document_id}", "GET") in _routes(app)
