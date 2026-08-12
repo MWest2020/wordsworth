@@ -170,16 +170,21 @@ def create_app(
 
         @app.post("/ingest", response_model=IngestResponse, tags=["write"],
                   summary="Ingest one or more PDFs through the full straat")
-        async def ingest_documents(
+        def ingest_documents(
             files: list[UploadFile] = File(..., description="One or more PDF files"),
         ) -> IngestResponse:
             """Upload one or more PDFs. Each is driven through
             ingest → OCR recovery (if scanned) → anonymize → store → index and
             reported individually. A failing file does not abort the batch and
-            never leaks document text (only its error class is returned)."""
+            never leaks document text (only its error class is returned).
+
+            Deliberately a sync (not async) path operation: the pipeline is
+            CPU/IO-heavy (GLiNER over HTTP, embeddings, DB), so FastAPI runs it in
+            a worker thread and the event loop stays free to answer the liveness
+            probe — otherwise a long batch starves /health and the pod is killed."""
             results: list[IngestResult] = []
             for f in files:
-                data = await f.read()
+                data = f.file.read()
                 if not data:
                     results.append(IngestResult(
                         filename=f.filename, state="error", error="empty upload"))
