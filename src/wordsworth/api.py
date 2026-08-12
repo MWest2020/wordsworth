@@ -1,11 +1,16 @@
-"""Minimal FastAPI skeleton (fundament phase). Health + derived document state.
+"""FastAPI surface for Wordsworth.
 
-Kept thin on purpose: this change is the pipeline spine, not the API surface."""
+Read path: document state, metrics, search, hybrid search, ask (RAG). Write path:
+``POST /ingest`` pushes one or more PDFs through the full straat. Routes are
+registered per injected dependency, so the same factory serves a health-only app
+or the full surface. Interactive docs at ``/docs`` (Swagger) and ``/redoc``.
+"""
 from __future__ import annotations
 
 from uuid import UUID
 
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
 from .anonymizer import Anonymizer
@@ -24,6 +29,30 @@ from .recovery import recover
 from .search_index import SearchIndex
 from .states import State
 
+API_DESCRIPTION = (
+    "Sovereign pipeline that turns government PDFs into a searchable, "
+    "privacy-safe corpus. Documents are de-identified (deterministic BSN/IBAN/"
+    "email + OpenAnonymiser GLiNER for entity PII) before they are indexed; no "
+    "clear PII reaches the index."
+)
+
+
+class IngestResult(BaseModel):
+    """Outcome for a single uploaded file."""
+
+    filename: str | None = None
+    document_id: str | None = None
+    state: str
+    error: str | None = None
+
+
+class IngestResponse(BaseModel):
+    """Per-file results for an ingest batch."""
+
+    total: int
+    indexed: int
+    results: list[IngestResult]
+
 
 def create_app(
     session_factory: sessionmaker[Session] | None = None,
@@ -34,7 +63,11 @@ def create_app(
     anonymizer: Anonymizer | None = None,
     rate_limiters: dict[str, TokenBucket] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="wordsworth")
+    app = FastAPI(
+        title="wordsworth",
+        version="0.1.0",
+        description=API_DESCRIPTION,
+    )
 
     # Per-client rate limiting on the read endpoints; /health & /metrics exempt.
     # Built from settings by default; tests may inject their own limiters.
@@ -48,22 +81,27 @@ def create_app(
             RateLimitMiddleware, limiters=limiters, exempt=EXEMPT_PATHS
         )
 
-    @app.get("/health")
+    @app.get("/health", summary="Liveness probe", tags=["ops"])
     def health() -> dict[str, str]:
+        """Always-on health check (no backend access)."""
         return {"status": "ok"}
 
     if session_factory is not None:
 
-        @app.get("/documents/{document_id}/state")
+        @app.get("/documents/{document_id}/state",
+                 summary="Current pipeline state of a document", tags=["read"])
         def document_state(document_id: UUID) -> dict[str, str]:
+            """Derived state (registered → extractable/unprocessable_ocr →
+            extracted → anonymized → indexed) from the audit chain."""
             with session_factory() as session:
                 state = current_state(session, document_id)
             if state is None:
                 raise HTTPException(status_code=404, detail="unknown document")
             return {"document_id": str(document_id), "state": state.value}
 
-        @app.get("/metrics")
+        @app.get("/metrics", summary="Prometheus metrics", tags=["ops"])
         def metrics() -> Response:
+            """Pipeline metrics in Prometheus text format."""
             from .metrics import CONTENT_TYPE, render_metrics
 
             with session_factory() as session:
@@ -72,15 +110,18 @@ def create_app(
 
     if search_index is not None:
 
-        @app.get("/search")
+        @app.get("/search", summary="Lexical (BM25) search", tags=["read"])
         def search(q: str, size: int = 10) -> dict:
+            """Full-text search over the anonymized corpus."""
             hits = search_index.search(q, size=size)
             return {"query": q, "hits": [_hit(h) for h in hits]}
 
         if embedder is not None:
 
-            @app.get("/hybrid")
+            @app.get("/hybrid", summary="Hybrid (BM25 + kNN) search",
+                     tags=["read"])
             def hybrid(q: str, size: int = 10) -> dict:
+                """RRF recall over BM25 + vector kNN, ranked by cosine."""
                 from .hybrid import hybrid_search
 
                 hits = hybrid_search(search_index, embedder, q, size=size)
@@ -88,15 +129,17 @@ def create_app(
 
             if generator is not None:
 
-                @app.get("/ask")
+                @app.get("/ask", summary="RAG question answering", tags=["read"])
                 def ask(q: str, k: int = 5) -> dict:
+                    """Retrieve top-k passages and answer with the local LLM
+                    (no cloud in the critical path)."""
                     from .rag import ask as run_ask
 
                     answer = run_ask(q, search_index, embedder, generator, k=k)
                     return {"query": q, "answer": answer.text,
                             "citations": answer.citations}
 
-    # Write path: push a document through the full straat over HTTP. Needs the
+    # Write path: push documents through the full straat over HTTP. Needs the
     # object store + anonymizer in addition to the DB/index/embedder. Defaults to
     # the OpenAnonymiser (GLiNER) driver — the sovereign anonymize step.
     if (session_factory is not None and store is not None
@@ -106,34 +149,52 @@ def create_app(
 
             anonymizer = OpenAnonymiserAnonymizer()
 
-        @app.post("/ingest")
-        async def ingest_document(file: UploadFile = File(...)) -> dict:
-            data = await file.read()
-            if not data:
-                raise HTTPException(status_code=400, detail="empty upload")
-            try:
-                with session_factory() as session:
-                    doc = ingest(session, store, data)
+        def _ingest_one(data: bytes) -> str:
+            """Drive one document to its terminal state; return the state value.
+            The un-redacted bytes never leave this frame and no exception it
+            raises carries document text (fail-hard, no silent pass-through)."""
+            with session_factory() as session:
+                doc = ingest(session, store, data)
+                session.commit()
+                state = process(session, doc.id, store, anonymizer=anonymizer,
+                                search_index=search_index, embedder=embedder)
+                session.commit()
+                if state == State.UNPROCESSABLE_OCR:
+                    # Scanned page: OCR to a text layer, then resume the straat.
+                    recover(session, doc.id, store)
                     session.commit()
                     state = process(session, doc.id, store, anonymizer=anonymizer,
                                     search_index=search_index, embedder=embedder)
                     session.commit()
-                    if state == State.UNPROCESSABLE_OCR:
-                        # Scanned page: OCR to a text layer, then resume the straat.
-                        recover(session, doc.id, store)
-                        session.commit()
-                        state = process(session, doc.id, store,
-                                        anonymizer=anonymizer,
-                                        search_index=search_index,
-                                        embedder=embedder)
-                        session.commit()
-                    doc_id = doc.id
-            except Exception as exc:  # fail-hard; carry no document text out
-                raise HTTPException(
-                    status_code=502, detail=f"ingest failed: {type(exc).__name__}"
-                ) from exc
-            return {"document_id": str(doc_id), "filename": file.filename,
-                    "state": state.value}
+                return str(doc.id), state.value
+
+        @app.post("/ingest", response_model=IngestResponse, tags=["write"],
+                  summary="Ingest one or more PDFs through the full straat")
+        async def ingest_documents(
+            files: list[UploadFile] = File(..., description="One or more PDF files"),
+        ) -> IngestResponse:
+            """Upload one or more PDFs. Each is driven through
+            ingest → OCR recovery (if scanned) → anonymize → store → index and
+            reported individually. A failing file does not abort the batch and
+            never leaks document text (only its error class is returned)."""
+            results: list[IngestResult] = []
+            for f in files:
+                data = await f.read()
+                if not data:
+                    results.append(IngestResult(
+                        filename=f.filename, state="error", error="empty upload"))
+                    continue
+                try:
+                    doc_id, state = _ingest_one(data)
+                    results.append(IngestResult(
+                        filename=f.filename, document_id=doc_id, state=state))
+                except Exception as exc:  # fail-hard; carry no document text out
+                    results.append(IngestResult(
+                        filename=f.filename, state="error",
+                        error=type(exc).__name__))
+            indexed = sum(1 for r in results if r.state == "indexed")
+            return IngestResponse(total=len(results), indexed=indexed,
+                                  results=results)
 
     return app
 
