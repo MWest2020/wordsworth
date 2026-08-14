@@ -110,7 +110,16 @@ def _cmd_ingest(args) -> int:
         try:
             resp = _post_files(args.url, chunk, timeout=args.timeout)
         except urllib.error.HTTPError as e:
-            print(f"batch {i}-{i+len(chunk)}: HTTP {e.code} {e.reason}",
+            print(f"batch @{i}: HTTP {e.code} {e.reason} — skipped {len(chunk)} "
+                  f"file(s), continuing", file=sys.stderr)
+            failed += len(chunk)
+            continue
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
+            # A per-batch timeout / connection drop must NOT abort the whole
+            # directory ingest (the server may well have processed the batch).
+            reason = getattr(e, "reason", e)
+            print(f"batch @{i}: {reason} — skipped {len(chunk)} file(s) "
+                  f"(the server may have processed them); continuing",
                   file=sys.stderr)
             failed += len(chunk)
             continue
