@@ -55,13 +55,14 @@ ENV PYTHONUNBUFFERED=1
 USER wordsworth
 EXPOSE 8000
 
-# gunicorn + uvicorn worker with --max-requests: the worker is recycled after
-# ~40 requests (jittered), releasing memory so a long ingest run cannot grow the
-# process unbounded (pypdf/boto3/client retention). One worker (CPU-bound, single
-# replica); generous timeout for slow CPU batches; graceful recycle finishes the
-# in-flight request first. init/ingest jobs override this CMD with their own.
+# gunicorn + uvicorn workers with --max-requests: workers recycle periodically so
+# a long ingest run cannot grow memory unbounded (pypdf/boto3/client retention).
+# TWO workers so one keeps serving while the other recycles (no drop window); a
+# LONG graceful-timeout so an in-flight ingest batch finishes before a recycling
+# worker is killed (a short one dropped batches mid-flight → client saw resets).
+# init/ingest jobs override this CMD with their own command.
 CMD ["gunicorn", "wordsworth.serve:app", \
      "-k", "uvicorn.workers.UvicornWorker", \
-     "-w", "1", "-b", "0.0.0.0:8000", \
-     "--max-requests", "40", "--max-requests-jitter", "10", \
-     "--timeout", "1200", "--graceful-timeout", "90"]
+     "-w", "2", "-b", "0.0.0.0:8000", \
+     "--max-requests", "60", "--max-requests-jitter", "15", \
+     "--timeout", "1800", "--graceful-timeout", "1200"]

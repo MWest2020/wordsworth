@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -95,6 +96,31 @@ def _iter_files(root: Path, include_all: bool) -> list[Path]:
     return sorted(p for p in root.rglob(pattern) if p.is_file())
 
 
+def _post_batch_with_retry(url, chunk, timeout, retries, index):
+    """POST one batch, retrying on transport errors / 5xx (transient: a server
+    worker recycle drops the in-flight connection). Returns the parsed response,
+    or None if every attempt failed. Prints each attempt's failure visibly."""
+    delay = 3
+    for attempt in range(1, retries + 1):
+        try:
+            return _post_files(url, chunk, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            transient = e.code >= 500
+            reason = f"HTTP {e.code} {e.reason}"
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
+            transient = True
+            reason = str(getattr(e, "reason", e))
+        tag = f"batch @{index} (attempt {attempt}/{retries})"
+        if transient and attempt < retries:
+            print(f"  ! {tag}: {reason} — retrying in {delay}s", flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+        else:
+            print(f"  ! {tag}: {reason} — giving up on this batch", flush=True)
+            return None
+    return None
+
+
 def _cmd_ingest(args) -> int:
     root = Path(args.path)
     if not root.exists():
@@ -104,34 +130,34 @@ def _cmd_ingest(args) -> int:
     if not files:
         print(f"no files to ingest under {root}", file=sys.stderr)
         return 2
-    total = indexed = failed = 0
-    for i in range(0, len(files), args.batch):
+    total = len(files)
+    indexed = 0
+    failures: list[tuple[str, str]] = []  # (filename, reason)
+    print(f"ingesting {total} file(s) in batches of {args.batch}...", flush=True)
+    for i in range(0, total, args.batch):
         chunk = files[i:i + args.batch]
-        try:
-            resp = _post_files(args.url, chunk, timeout=args.timeout)
-        except urllib.error.HTTPError as e:
-            print(f"batch @{i}: HTTP {e.code} {e.reason} — skipped {len(chunk)} "
-                  f"file(s), continuing", file=sys.stderr)
-            failed += len(chunk)
-            continue
-        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
-            # A per-batch timeout / connection drop must NOT abort the whole
-            # directory ingest (the server may well have processed the batch).
-            reason = getattr(e, "reason", e)
-            print(f"batch @{i}: {reason} — skipped {len(chunk)} file(s) "
-                  f"(the server may have processed them); continuing",
-                  file=sys.stderr)
-            failed += len(chunk)
+        resp = _post_batch_with_retry(args.url, chunk, args.timeout,
+                                      args.retries, i)
+        if resp is None:
+            # Whole batch failed after retries — the server may or may not have
+            # processed some; report each file so nothing fails silently.
+            for p in chunk:
+                failures.append((p.name, "batch failed (see above)"))
+                print(f"{p.name}: FAILED (batch @{i})", flush=True)
             continue
         for r in resp.get("results", []):
-            total += 1
             if r.get("state") == "indexed":
                 indexed += 1
             else:
-                failed += 1
-            print(f"{r.get('filename')}: {r.get('state')}{_result_extra(r)}")
-    print(f"\n{indexed}/{total} indexed, {failed} failed")
-    return 0 if failed == 0 else 1
+                failures.append((r.get("filename"), r.get("error") or r.get("state")))
+            print(f"{r.get('filename')}: {r.get('state')}{_result_extra(r)}",
+                  flush=True)
+    print(f"\n{indexed}/{total} indexed, {len(failures)} failed")
+    if failures:
+        print("failed files:")
+        for name, reason in failures:
+            print(f"  - {name}: {reason}")
+    return 0 if not failures else 1
 
 
 def _result_extra(r: dict) -> str:
@@ -219,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="files per request (config 'batch', else 25)")
     pi.add_argument("--timeout", type=float, default=None,
                     help="per-batch timeout in seconds (config 'timeout', else 600)")
+    pi.add_argument("--retries", type=int, default=3,
+                    help="attempts per batch on a transient error (default 3)")
     pi.set_defaults(func=_cmd_ingest)
 
     ps = sub.add_parser("search", help="lexical (BM25) search")
