@@ -7,6 +7,7 @@ or the full surface. Interactive docs at ``/docs`` (Swagger) and ``/redoc``.
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import timezone
 from uuid import UUID
 
@@ -171,8 +172,18 @@ def create_app(
             """Drive one document to its terminal state; return its metadata
             (id, state, duration, counts). The un-redacted bytes never leave this
             frame and no exception it raises carries document text (fail-hard, no
-            silent pass-through)."""
+            silent pass-through).
+
+            Idempotent: content is addressed by sha256, so if a document with the
+            same key already reached `indexed`, skip it (no duplicate). This makes
+            re-running a directory resume — only the missing files are processed."""
+            key = "documents/" + hashlib.sha256(data).hexdigest()
             with session_factory() as session:
+                for did in session.execute(
+                    select(Document.id).where(Document.object_key == key)
+                ).scalars().all():
+                    if current_state(session, did) == State.INDEXED:
+                        return {"document_id": str(did), "state": "skipped"}
                 doc = ingest(session, store, data)
                 session.commit()
                 document_id = doc.id

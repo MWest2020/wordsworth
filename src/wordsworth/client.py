@@ -131,7 +131,7 @@ def _cmd_ingest(args) -> int:
         print(f"no files to ingest under {root}", file=sys.stderr)
         return 2
     total = len(files)
-    indexed = 0
+    indexed = skipped = 0
     failures: list[tuple[str, str]] = []  # (filename, reason)
     print(f"ingesting {total} file(s) in batches of {args.batch}...", flush=True)
     for i in range(0, total, args.batch):
@@ -146,13 +146,16 @@ def _cmd_ingest(args) -> int:
                 print(f"{p.name}: FAILED (batch @{i})", flush=True)
             continue
         for r in resp.get("results", []):
-            if r.get("state") == "indexed":
+            state = r.get("state")
+            if state == "indexed":
                 indexed += 1
+            elif state == "skipped":       # already indexed (idempotent resume)
+                skipped += 1
             else:
-                failures.append((r.get("filename"), r.get("error") or r.get("state")))
-            print(f"{r.get('filename')}: {r.get('state')}{_result_extra(r)}",
-                  flush=True)
-    print(f"\n{indexed}/{total} indexed, {len(failures)} failed")
+                failures.append((r.get("filename"), r.get("error") or state))
+            print(f"{r.get('filename')}: {state}{_result_extra(r)}", flush=True)
+    tail = f", {skipped} skipped" if skipped else ""
+    print(f"\n{indexed}/{total} indexed{tail}, {len(failures)} failed")
     if failures:
         print("failed files:")
         for name, reason in failures:

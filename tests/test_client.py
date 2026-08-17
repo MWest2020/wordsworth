@@ -65,6 +65,22 @@ def test_ingest_retries_batch_then_continues(tmp_path, monkeypatch):
     assert rc == 0           # retry recovered the batch → all indexed
 
 
+def test_ingest_counts_skipped_as_not_failed(tmp_path, monkeypatch, capsys):
+    for n in ("a.pdf", "b.pdf"):
+        (tmp_path / n).write_bytes(b"%PDF-1.4")
+
+    def fake_post(url, paths, timeout=600):
+        return {"results": [{"filename": p.name,
+                             "state": "skipped" if p.name == "a.pdf" else "indexed"}
+                            for p in paths]}
+
+    monkeypatch.setattr(client, "_post_files", fake_post)
+    rc = main(["--url", "http://x", "ingest", str(tmp_path), "--batch", "5"])
+    out = capsys.readouterr().out
+    assert "1/2 indexed, 1 skipped, 0 failed" in out
+    assert rc == 0   # skipped is not a failure
+
+
 def test_ingest_reports_failed_files_after_retries_exhausted(tmp_path, monkeypatch):
     import urllib.error
     (tmp_path / "x.pdf").write_bytes(b"%PDF-1.4")
