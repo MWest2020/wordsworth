@@ -110,6 +110,11 @@ def _post_batch_with_retry(url, chunk, timeout, retries, index):
         except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
             transient = True
             reason = str(getattr(e, "reason", e))
+        except ValueError as e:
+            # Non-JSON / truncated response body (e.g. a proxy error page on a
+            # hiccup). Treat as transient — must NOT crash the whole run.
+            transient = True
+            reason = f"invalid response ({e})"
         tag = f"batch @{index} (attempt {attempt}/{retries})"
         if transient and attempt < retries:
             print(f"  ! {tag}: {reason} — retrying in {delay}s", flush=True)

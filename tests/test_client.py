@@ -94,6 +94,19 @@ def test_ingest_reports_failed_files_after_retries_exhausted(tmp_path, monkeypat
     assert rc == 1  # exhausted → file reported failed, run still completes
 
 
+def test_ingest_survives_non_json_response(tmp_path, monkeypatch):
+    (tmp_path / "x.pdf").write_bytes(b"%PDF-1.4")
+
+    def bad_json(url, paths, timeout=600):
+        raise ValueError("Expecting value: line 1 column 1")  # proxy error page
+
+    monkeypatch.setattr(client, "_post_files", bad_json)
+    monkeypatch.setattr(client.time, "sleep", lambda s: None)
+    # Must NOT raise (previously a ValueError crashed the whole ingest).
+    rc = main(["--url", "http://x", "ingest", str(tmp_path), "--retries", "2"])
+    assert rc == 1
+
+
 def test_result_extra_formats_duration_and_counts():
     extra = client._result_extra(
         {"state": "indexed", "duration_ms": 1834.0,
