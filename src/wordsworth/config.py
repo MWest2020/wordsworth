@@ -14,6 +14,31 @@ class Settings:
             "postgresql+psycopg://postgres:postgres@localhost:5432/wordsworth",
         )
 
+    # --- configure-db-pool-sizing (ADR-0001) ---
+    @property
+    def db_pool_size(self) -> int:
+        """SQLAlchemy pool_size — persistent connections. Explicit, not the
+        library default (5), sized to concurrent request volume."""
+        return int(os.environ.get("WORDSWORTH_DB_POOL_SIZE", "10"))
+
+    @property
+    def db_max_overflow(self) -> int:
+        """SQLAlchemy max_overflow — burst connections above pool_size."""
+        return int(os.environ.get("WORDSWORTH_DB_MAX_OVERFLOW", "20"))
+
+    # --- add-request-concurrency-controls (ADR-0001) ---
+    @property
+    def anonymize_concurrency(self) -> int:
+        """Max concurrent calls (per worker process) to the OpenAnonymiser
+        service. Conservative by default — a single-replica GLiNER backend is
+        memory-heavy and does not fan out well."""
+        return int(os.environ.get("WORDSWORTH_ANONYMIZE_CONCURRENCY", "1"))
+
+    @property
+    def embed_concurrency(self) -> int:
+        """Max concurrent calls (per worker process) to the Ollama embedder."""
+        return int(os.environ.get("WORDSWORTH_EMBED_CONCURRENCY", "2"))
+
     @property
     def born_digital_threshold(self) -> int:
         """Minimum extractable characters per page to count as born-digital."""

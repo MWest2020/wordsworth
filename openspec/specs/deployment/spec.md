@@ -163,3 +163,44 @@ additionally carry, per file, the processing duration and PII counts.
 - **WHEN** a document is ingested via `POST /ingest`
 - **THEN** its per-file result includes the processing duration and the PII counts
 
+### Requirement: Bounded backend concurrency
+
+The service SHALL bound the number of concurrent calls it makes to the
+memory-heavy backends — the OpenAnonymiser anonymization service and the Ollama
+embedder — so that concurrent ingest callers cannot exceed those backends'
+capacity. The limits SHALL be configurable. Exceeding the limit SHALL cause
+callers to wait for a slot, not to fan out unbounded requests at the backend.
+This SHALL NOT change the anonymize step's behaviour or output.
+
+#### Scenario: Concurrent ingests do not exceed the anonymizer limit
+
+- **WHEN** more ingest requests are in flight than the configured anonymize
+  concurrency
+- **THEN** no more than that many anonymize calls run against the OpenAnonymiser
+  service at once; the rest wait for a slot
+
+#### Scenario: Anonymize behaviour is unchanged
+
+- **WHEN** a document is anonymized under the concurrency limiter
+- **THEN** the redaction result and fail-hard behaviour are identical to running
+  it without the limiter
+
+### Requirement: Explicit database connection pool sizing
+
+The SQLAlchemy engine SHALL configure its connection pool explicitly
+(`pool_size` and `max_overflow`) from configuration rather than relying on
+library defaults, so the pool is a deliberate contract sized to the expected
+concurrent request volume. The engine SHALL also guard against stale
+connections (pre-ping / recycle).
+
+#### Scenario: Pool size is configurable
+
+- **WHEN** the pool size is configured and the engine is created
+- **THEN** the engine's pool reflects the configured size rather than the library
+  default
+
+#### Scenario: Stale connections do not surface as request errors
+
+- **WHEN** a pooled connection has gone stale between requests
+- **THEN** it is validated/recycled before use rather than failing the request
+

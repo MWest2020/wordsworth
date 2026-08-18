@@ -21,6 +21,7 @@ from typing import Protocol
 import httpx
 
 from .anonymizer import AnonymizationResult, DeterministicAnonymizer
+from .concurrency import limiter
 from .config import settings
 
 
@@ -41,11 +42,15 @@ def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
     corpus. Any transport error or non-2xx response raises — the caller turns
     that into a hard error rather than emitting un-redacted text."""
     url = settings.openanonymiser_url.rstrip("/") + "/api/v1/anonymize"
-    response = httpx.post(
-        url,
-        json={"text": text, "language": "nl", "anonymization_strategy": "replace"},
-        timeout=settings.openanonymiser_timeout,
-    )
+    # Bound concurrency to the single-replica GLiNER backend (ADR-0001): waiting
+    # for a slot beats fanning out and OOM-killing the service.
+    with limiter("anonymize", settings.anonymize_concurrency):
+        response = httpx.post(
+            url,
+            json={"text": text, "language": "nl",
+                  "anonymization_strategy": "replace"},
+            timeout=settings.openanonymiser_timeout,
+        )
     response.raise_for_status()
     data = response.json()
     counts: dict[str, int] = {}

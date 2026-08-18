@@ -31,6 +31,12 @@ def make_engine(url: str | None = None) -> Engine:
     return create_engine(
         url or settings.database_url,
         future=True,
+        # Explicit pool sizing (ADR-0001), not the library default (5+10), tuned
+        # to concurrent request volume; pre_ping/recycle guard stale connections.
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_pre_ping=True,
+        pool_recycle=1800,
         # Force UTC so timestamptz round-trips are stable for hashing.
         connect_args={"options": "-c timezone=utc"},
     )

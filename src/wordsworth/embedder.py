@@ -13,6 +13,7 @@ from typing import Protocol, runtime_checkable
 
 from zeef.similarity import tokenize
 
+from .concurrency import limiter
 from .config import settings
 
 
@@ -51,7 +52,9 @@ class OllamaEmbedder:
                 headers={"Content-Type": "application/json"},
             )
             try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
+                # Bound concurrency to the Ollama backend (ADR-0001).
+                with limiter("embed", settings.embed_concurrency), \
+                        urllib.request.urlopen(req, timeout=120) as resp:
                     body = json.loads(resp.read())
             except Exception as exc:  # network/timeout/HTTP -> hard error
                 raise EmbeddingError(f"ollama embed failed: {exc}") from exc
