@@ -93,6 +93,16 @@ class OpenSearchIndex:
         if not self._client.indices.exists(index=self._index):
             self._client.indices.create(index=self._index, body=_mapping(self._dim))
 
+    def has_object_key(self, object_key: str) -> bool:
+        """True if a document with this content key is already indexed. The index
+        is the source of truth for 'searchable', so this is the correct basis for
+        idempotent-skip (unlike the DB, which can outlive an index recreation)."""
+        result = self._client.count(
+            index=self._index,
+            body={"query": {"term": {"object_key": object_key}}},
+        )
+        return result.get("count", 0) > 0
+
     def index(self, document_id, text, object_key, vector=None) -> None:
         body = {"text": text, "object_key": object_key}
         if vector is not None:

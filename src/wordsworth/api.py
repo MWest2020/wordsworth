@@ -175,15 +175,15 @@ def create_app(
             silent pass-through).
 
             Idempotent: content is addressed by sha256, so if a document with the
-            same key already reached `indexed`, skip it (no duplicate). This makes
-            re-running a directory resume — only the missing files are processed."""
+            same key is already in the SEARCH INDEX, skip it (no duplicate). The
+            index — not the DB — is the source of truth for 'searchable', so this
+            stays correct even if the index was recreated (those docs become
+            eligible again). Re-running a directory therefore resumes cleanly,
+            processing only what is actually missing from the index."""
             key = "documents/" + hashlib.sha256(data).hexdigest()
+            if search_index.has_object_key(key):
+                return {"state": "skipped"}
             with session_factory() as session:
-                for did in session.execute(
-                    select(Document.id).where(Document.object_key == key)
-                ).scalars().all():
-                    if current_state(session, did) == State.INDEXED:
-                        return {"document_id": str(did), "state": "skipped"}
                 doc = ingest(session, store, data)
                 session.commit()
                 document_id = doc.id

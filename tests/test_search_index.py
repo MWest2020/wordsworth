@@ -27,3 +27,11 @@ def test_reindex_same_id_does_not_duplicate():
     idx.index("d1", "tweede versie", "k")
     hits = idx.search("versie")
     assert len(hits) == 1
+
+
+def test_has_object_key_reflects_indexed_content():
+    idx = InMemoryIndex()
+    assert idx.has_object_key("documents/abc") is False
+    idx.index("d1", "tekst", "documents/abc")
+    assert idx.has_object_key("documents/abc") is True   # now present
+    assert idx.has_object_key("documents/other") is False

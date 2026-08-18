@@ -31,6 +31,11 @@ class SearchIndex(Protocol):
     def search(self, query: str, size: int = 10) -> list[Hit]: ...
     def hybrid_search(self, query: str, query_vector: list[float],
                       recall: int = 50) -> list[Hit]: ...
+    def has_object_key(self, object_key: str) -> bool:
+        """Is a document with this content key already in the index? Used for
+        idempotent ingest — the index is the source of truth for 'searchable',
+        so recreating it correctly makes those documents eligible again."""
+        ...
 
 
 def _terms(text: str) -> list[str]:
@@ -48,6 +53,9 @@ class InMemoryIndex:
 
     def index(self, document_id, text, object_key, vector=None) -> None:
         self._docs[document_id] = (text, object_key, vector)  # idempotent upsert
+
+    def has_object_key(self, object_key: str) -> bool:
+        return any(key == object_key for _t, key, _v in self._docs.values())
 
     def _lexical(self, query: str) -> list[tuple[str, float]]:
         q = set(_terms(query))
