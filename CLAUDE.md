@@ -33,7 +33,9 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
   client-side, never hardcoded.
 - **Banned dependencies:** `anonypy` (never); `MinIO` (open-source edition
   deprecated April 2026 — use Ceph RGW or SeaweedFS behind the S3 seam);
-  CyberArk/Conjur. NiFi is not a given.
+  CyberArk/Conjur. **NiFi** orchestrates *above* wordsworth (calls `/ingest`),
+  never inside it — see [ADR-0001](docs/adr/0001-nifi-orchestration.md); Kafka
+  is deferred.
 
 ## Architecture invariants
 
