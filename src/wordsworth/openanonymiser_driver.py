@@ -33,17 +33,36 @@ class _EngineFn(Protocol):
     def __call__(self, text: str) -> tuple[str, dict[str, int]]: ...
 
 
-def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
-    """Redact entity PII via the OpenAnonymiser GLiNER service over HTTP;
-    return (redacted text, counts).
+def _chunk_text(text: str, max_chars: int) -> list[str]:
+    """Split into pieces of ≤ max_chars that concatenate back to the original
+    exactly (splits on line boundaries; a single over-long line is hard-split).
+    Bounds the sequence length sent to GLiNER so its O(n^2) attention cannot
+    spike memory / OOM on long documents."""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return [text]
+    chunks: list[str] = []
+    cur = ""
+    for line in text.splitlines(keepends=True):
+        if cur and len(cur) + len(line) > max_chars:
+            chunks.append(cur)
+            cur = ""
+        cur += line
+        while len(cur) > max_chars:            # a single very long line
+            chunks.append(cur[:max_chars])
+            cur = cur[max_chars:]
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _redact_one(text: str) -> tuple[str, dict[str, int]]:
+    """One anonymize call for one text segment; returns (redacted, counts).
 
     POSTs to ``{WORDSWORTH_OPENANONYMISER_URL}/api/v1/anonymize`` with the
-    ``replace`` strategy (Presidio ``<ENTITY_TYPE>`` placeholders) for the Dutch
-    corpus. Any transport error or non-2xx response raises — the caller turns
-    that into a hard error rather than emitting un-redacted text."""
+    ``replace`` strategy (Presidio ``<ENTITY_TYPE>`` placeholders). Any transport
+    error or non-2xx response raises — the caller turns that into a hard error
+    rather than emitting un-redacted text. Concurrency is bounded (ADR-0001)."""
     url = settings.openanonymiser_url.rstrip("/") + "/api/v1/anonymize"
-    # Bound concurrency to the single-replica GLiNER backend (ADR-0001): waiting
-    # for a slot beats fanning out and OOM-killing the service.
     with limiter("anonymize", settings.anonymize_concurrency):
         response = httpx.post(
             url,
@@ -58,6 +77,28 @@ def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
         label = str(entity["entity_type"]).lower()
         counts[label] = counts.get(label, 0) + 1
     return data["anonymized_text"], counts
+
+
+def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
+    """Redact entity PII via the OpenAnonymiser GLiNER service; return
+    (redacted text, counts).
+
+    Long documents are split into bounded chunks and redacted per chunk, then
+    reassembled (the ``replace`` strategy leaves non-entity text unchanged, so
+    the pieces concatenate faithfully) with counts summed. This keeps each GLiNER
+    call short enough that its attention memory cannot OOM the service — even a
+    generous memory limit was not enough for whole-document calls."""
+    chunks = _chunk_text(text, settings.anonymize_chunk_chars)
+    if len(chunks) == 1:
+        return _redact_one(text)
+    parts: list[str] = []
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        redacted, c = _redact_one(chunk)
+        parts.append(redacted)
+        for label, n in c.items():
+            counts[label] = counts.get(label, 0) + n
+    return "".join(parts), counts
 
 
 class OpenAnonymiserAnonymizer:

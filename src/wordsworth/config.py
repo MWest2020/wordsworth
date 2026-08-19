@@ -79,6 +79,13 @@ class Settings:
         """Per-request timeout in seconds. GLiNER on CPU is slow — give it room."""
         return float(os.environ.get("WORDSWORTH_OPENANONYMISER_TIMEOUT", "120"))
 
+    @property
+    def anonymize_chunk_chars(self) -> int:
+        """Max characters per anonymize call. GLiNER's O(n^2) attention OOM'd on
+        whole-document calls even at 12Gi; chunking bounds per-call memory. 0
+        disables chunking."""
+        return int(os.environ.get("WORDSWORTH_ANONYMIZE_CHUNK_CHARS", "4000"))
+
     # --- add-object-storage ---
     # --- Object storage (S3-compatible: SeaweedFS PoC / Ceph RGW target) ---
 
