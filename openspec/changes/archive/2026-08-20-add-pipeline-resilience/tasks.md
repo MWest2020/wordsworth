@@ -18,4 +18,4 @@
 - [x] 3.2 DB-integration (CI): transient-blip→INDEXED; persistent-outage→raises,
   stays REGISTERED, nothing indexed, no text persisted; permanent→not retried;
   batch continues past a failing document (one indexed, one retryable).
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
