@@ -93,3 +93,18 @@ class GrantRecord(Base):
         DateTime(timezone=True), nullable=True
     )
     actor: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class KeyVaultRecord(Base):
+    """Durable envelope-wrapped data key (ADR-0002). Stores ONLY the OpenBao
+    Transit-wrapped key material — never clear key bytes. One ``active`` row per
+    scope (PII type); rotated-out versions are ``retired`` but stay resolvable by
+    ``key_id`` so existing mappings keep decrypting."""
+
+    __tablename__ = "key_vault"
+
+    key_id: Mapped[str] = mapped_column(String, primary_key=True)
+    scope: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    wrapped_material: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)  # active | retired
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

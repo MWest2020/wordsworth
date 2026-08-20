@@ -41,6 +41,29 @@ class Settings:
         """Max concurrent calls (per worker process) to the Ollama embedder."""
         return int(os.environ.get("WORDSWORTH_EMBED_CONCURRENCY", "2"))
 
+    # --- durable-key-vault (ADR-0002) ---
+    @property
+    def openbao_url(self) -> str:
+        """OpenBao base URL for Transit envelope wrap/unwrap of data keys."""
+        return os.environ.get("WORDSWORTH_OPENBAO_URL", "http://localhost:8200")
+
+    @property
+    def openbao_token(self) -> str:
+        """Scoped OpenBao token (Transit wrap/unwrap only — never root). Injected
+        out-of-band via SOPS+age/OpenBao, never in git or logs."""
+        return os.environ.get("WORDSWORTH_OPENBAO_TOKEN", "")
+
+    @property
+    def transit_kek_name(self) -> str:
+        """Name of the Transit KEK that wraps the data keys (stays in OpenBao)."""
+        return os.environ.get("WORDSWORTH_TRANSIT_KEK", "wordsworth")
+
+    @property
+    def key_cache_ttl(self) -> int:
+        """Seconds to cache an unwrapped data key in memory (bounds OpenBao hits
+        on the hot path and rides out brief OpenBao blips)."""
+        return int(os.environ.get("WORDSWORTH_KEY_CACHE_TTL", "300"))
+
     @property
     def born_digital_threshold(self) -> int:
         """Minimum extractable characters per page to count as born-digital."""

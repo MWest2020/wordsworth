@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
+
+from .transit import KeyVaultStore, Transit
 
 
 @dataclass(frozen=True)
@@ -101,3 +104,53 @@ class InMemoryKeyProvider:
     def add(self, key: Key) -> None:
         """Re-admit a key version (e.g. one recovered from escrow)."""
         self._keys[key.id] = key
+
+
+class DurableKeyProvider:
+    """Durable, sovereign ``KeyProvider`` (ADR-0002): data keys live wrapped in a
+    ``KeyVaultStore`` under an OpenBao ``Transit`` KEK, so they survive restarts.
+    Clear material is only ever held transiently (unwrapped on demand, cached in
+    memory with a short TTL) — never persisted. Fail-closed: an unwrap error
+    propagates; there is no clear-key fallback."""
+
+    def __init__(self, vault_store: KeyVaultStore, transit: Transit,
+                 cache_ttl_seconds: int = 300):
+        self._vault = vault_store
+        self._transit = transit
+        self._ttl = cache_ttl_seconds
+        self._cache: dict[str, tuple[bytes, float]] = {}  # key_id -> (material, expiry)
+
+    def _material(self, key_id: str, wrapped: bytes) -> bytes:
+        now = time.monotonic()
+        hit = self._cache.get(key_id)
+        if hit is not None and hit[1] > now:
+            return hit[0]
+        material = self._transit.unwrap(wrapped)  # fail-closed: raises on failure
+        self._cache[key_id] = (material, now + self._ttl)
+        return material
+
+    def _mint_active(self, scope: str) -> Key:
+        fresh = _mint()
+        self._vault.put(fresh.id, scope, self._transit.wrap(fresh.material), "active")
+        self._cache[fresh.id] = (fresh.material, time.monotonic() + self._ttl)
+        return fresh
+
+    def current_key(self, scope: str = DEFAULT_SCOPE) -> Key:
+        entry = self._vault.active_for(scope)  # always re-read, so rotations show
+        if entry is None:
+            return self._mint_active(scope)
+        return Key(id=entry.key_id,
+                   material=self._material(entry.key_id, entry.wrapped_material))
+
+    def key(self, key_id: str) -> Key:
+        entry = self._vault.get(key_id)
+        if entry is None:
+            raise KeyError(f"unknown key_id: {key_id}")
+        return Key(id=key_id,
+                   material=self._material(key_id, entry.wrapped_material))
+
+    def rotate(self, scope: str = DEFAULT_SCOPE) -> Key:
+        prev = self._vault.active_for(scope)
+        if prev is not None:           # retire first so only one active per scope
+            self._vault.set_status(prev.key_id, "retired")
+        return self._mint_active(scope)
