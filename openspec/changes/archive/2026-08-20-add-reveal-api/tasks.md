@@ -10,7 +10,7 @@
 ## 2. Gate
 
 - [x] 2.1 Local: route mounts iff deps present; suite green (204 passed).
-- [ ] 2.2 DB-integration (CI): granted type revealed + others withheld; defaults
+- [x] 2.2 DB-integration (CI): granted type revealed + others withheld; defaults
   to grant types; revoked→403; unknown grant/doc→404; other-document grant→403;
   reveal audited (recipient actor, types, no clear values, chain verifies).
-- [ ] 2.3 CI green + `openspec validate`.
+- [x] 2.3 CI green + `openspec validate`.
