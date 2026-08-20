@@ -19,6 +19,6 @@
 - [x] 3.1 Local tests (no DB): per-type keys distinct + resolvable; pseudonymise
   then selective reveal (allow EMAIL not BSN); key-availability gate leaves a type
   pseudonymised when its key is absent.
-- [ ] 3.2 DB-integration test (CI): selective `deanonymize` reveals only allowed
+- [x] 3.2 DB-integration test (CI): selective `deanonymize` reveals only allowed
   types, chain still verifies, payload records types and no clear values.
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
