@@ -16,6 +16,6 @@
 
 - [x] 3.1 Local tests (no DB): authorize matrix (intersection, revoked, expired,
   doc-scope, global); issue+revoke audited without key material; idempotent revoke.
-- [ ] 3.2 DB-integration (CI): `PostgresGrantStore` issue→get→revoke round-trip and
+- [x] 3.2 DB-integration (CI): `PostgresGrantStore` issue→get→revoke round-trip and
   authorize behaviour with a real session.
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
