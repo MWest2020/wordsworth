@@ -26,6 +26,7 @@ from .extraction import ExtractionError, extract_text
 from .models import AuditRecord, Document, DocumentText
 from .object_store import ObjectStore
 from .profiling import ProfilingError, profile_pdf
+from .retry import retry_transient
 from .search_index import SearchIndex
 from .states import State, is_allowed
 from .structured_log import log_transition
@@ -193,7 +194,13 @@ def process(
             text = _extract_or_fail(session, document_id, pdf())
             if text is None:
                 return State.FAILED
-        result = anonymizer.anonymize(text)
+        # A transient downstream blip is retried with backoff; if it persists the
+        # error propagates and the document stays EXTRACTED (resumable) — never
+        # indexed with clear PII. Fail-hard per attempt is unchanged.
+        result = retry_transient(
+            lambda: anonymizer.anonymize(text),
+            settings.retry_attempts, settings.retry_base_delay,
+        )
         session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))
         session.flush()
         transition(session, document_id, State.ANONYMIZED, step="anonymize",
@@ -206,10 +213,19 @@ def process(
         embed = embedder or _default_embedder()
         # Failed embedding is a hard error (no null vector); it propagates like an
         # index outage: nothing commits, the document stays anonymized for retry.
-        vector = embed.embed([anonymized])[0]
-        index.ensure_ready()
-        # Idempotent (upsert by id) so a crash between index and commit is safe.
-        index.index(str(document_id), anonymized, doc.object_key, vector=vector)
+        # Both external calls are retried on a transient blip (backoff); the
+        # anonymized text carries no clear PII, so retrying is safe.
+        vector = retry_transient(
+            lambda: embed.embed([anonymized])[0],
+            settings.retry_attempts, settings.retry_base_delay,
+        )
+
+        def _index() -> None:
+            index.ensure_ready()
+            # Idempotent (upsert by id) so a crash between index and commit is safe.
+            index.index(str(document_id), anonymized, doc.object_key, vector=vector)
+
+        retry_transient(_index, settings.retry_attempts, settings.retry_base_delay)
         transition(session, document_id, State.INDEXED, step="index",
                    payload={"chars": len(anonymized), "dim": len(vector)})
         state = State.INDEXED

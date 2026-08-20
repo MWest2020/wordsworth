@@ -72,6 +72,18 @@ class Settings:
         pseudonyms-only either way. Requires OpenBao (ADR-0002)."""
         return os.environ.get("WORDSWORTH_REVERSIBLE", "false").lower() == "true"
 
+    # --- pipeline-resilience ---
+    @property
+    def retry_attempts(self) -> int:
+        """Total tries for a transient downstream call (OpenAnonymiser/Ollama/
+        OpenSearch) before the document is left resumable for a later run."""
+        return int(os.environ.get("WORDSWORTH_RETRY_ATTEMPTS", "3"))
+
+    @property
+    def retry_base_delay(self) -> float:
+        """Base seconds for exponential backoff between transient retries."""
+        return float(os.environ.get("WORDSWORTH_RETRY_BASE_DELAY", "0.5"))
+
     @property
     def born_digital_threshold(self) -> int:
         """Minimum extractable characters per page to count as born-digital."""

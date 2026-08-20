@@ -33,6 +33,7 @@ from .rate_limit import (
     limiters_from_settings,
 )
 from .recovery import recover
+from .retry import is_transient
 from .search_index import SearchIndex
 from .states import State
 
@@ -267,8 +268,13 @@ def create_app(
                         duration_ms=meta.get("duration_ms"),
                         counts=meta.get("counts") or None))
                 except Exception as exc:  # fail-hard; carry no document text out
+                    # A transient downstream outage (after in-pipeline retries)
+                    # leaves the document resumable — not indexed, no clear PII —
+                    # so report it 'retryable' and keep going; a permanent error
+                    # is a terminal 'error'. Either way the batch is not aborted.
+                    state = "retryable" if is_transient(exc) else "error"
                     results.append(IngestResult(
-                        filename=f.filename, state="error",
+                        filename=f.filename, state=state,
                         error=type(exc).__name__))
             indexed = sum(1 for r in results if r.state == "indexed")
             return IngestResponse(total=len(results), indexed=indexed,
