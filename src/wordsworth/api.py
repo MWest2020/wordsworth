@@ -8,7 +8,7 @@ or the full surface. Interactive docs at ``/docs`` (Swagger) and ``/redoc``.
 from __future__ import annotations
 
 import hashlib
-from datetime import timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
@@ -20,6 +20,8 @@ from .anonymizer import Anonymizer
 from .config import settings as default_settings
 from .embedder import Embedder
 from .generator import Generator
+from .grants import GrantStore
+from .keys import KeyProvider
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
 from .pipeline import current_state, ingest, process
@@ -60,6 +62,27 @@ class IngestResponse(BaseModel):
     results: list[IngestResult]
 
 
+class RevealRequest(BaseModel):
+    """A key-gated reveal request: which grant authorises it, and (optionally)
+    which PII types to reveal. Omit ``types`` to reveal exactly what the grant
+    allows."""
+
+    grant_id: str
+    types: list[str] | None = None
+
+
+class RevealResponse(BaseModel):
+    """The document text with the authorised PII types revealed; every other
+    type stays pseudonymised. ``withheld_types`` are the requested types the
+    grant did not authorise."""
+
+    document_id: str
+    revealed_text: str
+    revealed_types: list[str]
+    withheld_types: list[str]
+    grant_id: str
+
+
 def create_app(
     session_factory: sessionmaker[Session] | None = None,
     search_index: SearchIndex | None = None,
@@ -67,6 +90,8 @@ def create_app(
     generator: Generator | None = None,
     store: ObjectStore | None = None,
     anonymizer: Anonymizer | None = None,
+    key_provider: KeyProvider | None = None,
+    grant_store: GrantStore | None = None,
     rate_limiters: dict[str, TokenBucket] | None = None,
 ) -> FastAPI:
     app = FastAPI(
@@ -237,6 +262,58 @@ def create_app(
             indexed = sum(1 for r in results if r.state == "indexed")
             return IngestResponse(total=len(results), indexed=indexed,
                                   results=results)
+
+    # Key-gated reveal: turn a document's pseudonyms back into originals, but
+    # only the PII types a grant authorises. Mounted only when a key provider and
+    # grant store are supplied (durable keys arrive in a later cycle), so the
+    # default deployment is unchanged. The reveal is audited by ``deanonymize``.
+    if (session_factory is not None and key_provider is not None
+            and grant_store is not None):
+
+        @app.post("/documents/{document_id}/reveal", response_model=RevealResponse,
+                  tags=["write"],
+                  summary="Reveal a document's PII, gated per type by a grant")
+        def reveal(document_id: UUID, body: RevealRequest) -> RevealResponse:
+            """Reveal the PII types a grant authorises; every other type stays
+            pseudonymised. 404 if the document or grant is unknown, 403 if the
+            grant is revoked, expired, or scoped to another document."""
+            from .grants import authorize
+            from .mapping_store import PostgresMappingStore
+            from .pipeline import get_anonymized_text
+            from .pseudonymizer import deanonymize
+
+            grant = grant_store.get(body.grant_id)
+            if grant is None:
+                raise HTTPException(status_code=404, detail="unknown grant")
+            now = datetime.now(timezone.utc)
+            # A grant that authorises none of its own types here is revoked,
+            # expired, or scoped to another document → explicit denial.
+            if not authorize(grant, document_id, set(grant.allowed_types), now):
+                raise HTTPException(status_code=403, detail="grant not applicable")
+
+            with session_factory() as session:
+                if current_state(session, document_id) is None:
+                    raise HTTPException(status_code=404, detail="unknown document")
+                pseudo_text = get_anonymized_text(session, document_id)
+                if pseudo_text is None:
+                    raise HTTPException(
+                        status_code=409, detail="document not yet de-identified")
+                requested = body.types if body.types else list(grant.allowed_types)
+                allowed = authorize(grant, document_id, set(requested), now)
+                revealed_text = deanonymize(
+                    session, document_id, pseudo_text, key_provider,
+                    PostgresMappingStore(session), actor=grant.recipient,
+                    allowed_types=allowed,
+                )
+                session.commit()
+            requested_upper = {t.upper() for t in requested}
+            return RevealResponse(
+                document_id=str(document_id),
+                revealed_text=revealed_text,
+                revealed_types=sorted(allowed),
+                withheld_types=sorted(requested_upper - allowed),
+                grant_id=body.grant_id,
+            )
 
     return app
 
