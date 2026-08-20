@@ -13,5 +13,5 @@
 ## 3. Gate
 
 - [x] 3.1 Local tests: zip/csv helpers, ranking endpoint, CLI download (no clear PII).
-- [ ] 3.2 DB-integration (CI): zip over a real DB, id-filter, skip-non-indexed.
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.2 DB-integration (CI): zip over a real DB, id-filter, skip-non-indexed.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
