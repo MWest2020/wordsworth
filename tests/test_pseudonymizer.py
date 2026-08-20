@@ -113,3 +113,45 @@ def test_injectable_into_pipeline(session, born_digital_pii_pdf, mem_index,
     )
     for secret in (PII_BSN, PII_IBAN, PII_EMAIL):
         assert secret in restored
+
+
+def test_reversible_entity_deanonymize_and_audit(session):
+    """ReversibleAnonymizer (entities via a fake detector, so no service needed)
+    end-to-end: entity + deterministic PII become keyed tokens, deanonymize with
+    allowed_types reveals only the granted type, the chain verifies, and the
+    audit records the types with no clear values."""
+    from wordsworth.openanonymiser_driver import Entity
+    from wordsworth.pseudonymizer import ReversibleAnonymizer
+
+    name = "Jan Jansen"
+
+    def detect(text):
+        i = text.find(name)
+        return [Entity("PERSON", name, i, i + len(name))] if i >= 0 else []
+
+    keys = InMemoryKeyProvider()
+    doc = register(session, "ent")
+    session.commit()
+    result = ReversibleAnonymizer(keys, PostgresMappingStore(session), detect=detect).anonymize(
+        f"{name} met BSN {PII_BSN}"
+    )
+    session.commit()
+    assert name not in result.text and PII_BSN not in result.text
+    assert "[PERSON:" in result.text and "[BSN:" in result.text
+
+    restored = deanonymize(
+        session, doc.id, result.text,
+        keys, PostgresMappingStore(session), actor="mark",
+        allowed_types={"PERSON"},
+    )
+    session.commit()
+    assert name in restored              # PERSON revealed
+    assert PII_BSN not in restored       # BSN withheld
+
+    record = session.execute(
+        select(AuditRecord).where(AuditRecord.step == "deanonymize")
+    ).scalar_one()
+    assert record.payload["types"] == ["PERSON"]
+    assert name not in str(record.payload) and PII_BSN not in str(record.payload)
+    ok, bad = audit.verify_chain(session)
+    assert ok is True and bad is None

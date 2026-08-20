@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+from typing import Callable
 from uuid import UUID
 
 from sqlalchemy import select
@@ -21,6 +22,11 @@ from .crypto import decrypt, encrypt
 from .keys import KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord
+from .openanonymiser_driver import AnonymizationEngineError, Entity, detect_entities
+
+# A detection seam: text -> entity spans. The default calls OpenAnonymiser; tests
+# inject a fake so the reversible entity path is provable without the service.
+DetectFn = Callable[[str], list[Entity]]
 
 _PSEUDONYM_RE = re.compile(r"\[[A-Z]+:[0-9a-f]{8}\]")
 
@@ -87,6 +93,78 @@ class Pseudonymizer:
 
             text, counts[label] = detectors.substitute(text, pattern, replacer, validate)
         return AnonymizationResult(text=text, counts=counts)
+
+
+class ReversibleAnonymizer:
+    """`Anonymizer` driver that makes ALL PII reversible keyed pseudonyms: the
+    deterministic detectors (BSN/IBAN/email) via `Pseudonymizer`, then GLiNER
+    entities (PERSON, LOCATION, …) via a detection seam. Every value becomes a
+    `[TYPE:hash]` token under that type's key, with the encrypted original in the
+    mapping store — so the index holds only pseudonyms and any type is revealable
+    by whoever holds its key. Fail-hard: if detection fails, it raises and never
+    emits text with un-pseudonymised entities (no silent fallback)."""
+
+    def __init__(
+        self,
+        key_provider: KeyProvider,
+        mapping_store: MappingStore,
+        detect: DetectFn | None = None,
+    ):
+        self._keys = key_provider
+        self._store = mapping_store
+        self._deterministic = Pseudonymizer(key_provider, mapping_store)
+        self._detect = detect or detect_entities
+
+    def anonymize(self, text: str) -> AnonymizationResult:
+        result = self._deterministic.anonymize(text)  # keyed deterministic tokens
+        body = result.text
+        if not body.strip():
+            return result
+        try:
+            entities = self._detect(body)
+        except Exception as exc:
+            # No pass-through: the text with clear entities never leaves this
+            # frame, and the raised error carries none of it.
+            raise AnonymizationEngineError(
+                "entity detection failed; refusing to emit text with "
+                "un-pseudonymised entities"
+            ) from exc
+        body, entity_counts = self._pseudonymize_entities(body, entities)
+        counts = dict(result.counts)
+        for label, n in entity_counts.items():
+            counts[label] = counts.get(label, 0) + n
+        return AnonymizationResult(text=body, counts=counts)
+
+    def _pseudonymize_entities(
+        self, text: str, entities: list[Entity]
+    ) -> tuple[str, dict[str, int]]:
+        """Replace each entity span with a keyed token under its type's key.
+
+        Only well-formed, non-overlapping spans whose slice still matches the
+        detected text are used (guards against offset drift and overlaps); the
+        substitution runs right-to-left so earlier offsets stay valid."""
+        chosen: list[Entity] = []
+        taken: list[tuple[int, int]] = []
+        for e in sorted(entities, key=lambda e: (e.start, -e.end)):
+            if not (0 <= e.start < e.end <= len(text)):
+                continue
+            if text[e.start:e.end] != e.text:
+                continue
+            if any(e.start < end and start < e.end for start, end in taken):
+                continue  # overlaps an already-chosen span
+            taken.append((e.start, e.end))
+            chosen.append(e)
+
+        counts: dict[str, int] = {}
+        for e in sorted(chosen, key=lambda e: e.start, reverse=True):
+            label = e.entity_type.lower()
+            key = self._keys.current_key(scope=label.upper())
+            pseudonym = f"[{label.upper()}:{_token(key.material, label, e.text)}]"
+            ciphertext, nonce = encrypt(key.material, e.text)
+            self._store.put(pseudonym, ciphertext, nonce, key.id)
+            text = text[:e.start] + pseudonym + text[e.end:]
+            counts[label] = counts.get(label, 0) + 1
+        return text, counts
 
 
 def _current_state(session: Session, document_id: UUID) -> str | None:

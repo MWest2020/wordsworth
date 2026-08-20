@@ -17,6 +17,7 @@ passed through (no silent fallbacks; fail-hard when the service is unreachable).
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Protocol
 
 import httpx
@@ -32,6 +33,15 @@ class AnonymizationEngineError(RuntimeError):
 
 class _EngineFn(Protocol):
     def __call__(self, text: str) -> tuple[str, dict[str, int]]: ...
+
+
+@dataclass(frozen=True)
+class Entity:
+    """A detected entity span: its type and the substring at [start, end)."""
+    entity_type: str
+    text: str
+    start: int
+    end: int
 
 
 def _chunk_text(text: str, max_chars: int) -> list[str]:
@@ -111,6 +121,54 @@ def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
         for label, n in c.items():
             counts[label] = counts.get(label, 0) + n
     return "".join(parts), counts
+
+
+def _detect_one(text: str) -> list[Entity]:
+    """Detect entity spans in one segment via the OpenAnonymiser service. Reuses
+    the ``anonymize`` endpoint but keeps only ``entities_found`` (type + span);
+    the redacted text is discarded, because the reversible driver substitutes its
+    own keyed tokens. Offsets are relative to ``text``."""
+    url = settings.openanonymiser_url.rstrip("/") + "/api/v1/anonymize"
+    with limiter("anonymize", settings.anonymize_concurrency):
+        response = httpx.post(
+            url,
+            json={"text": text, "language": "nl",
+                  "anonymization_strategy": "replace"},
+            timeout=settings.openanonymiser_timeout,
+        )
+    response.raise_for_status()
+    out: list[Entity] = []
+    for e in response.json().get("entities_found") or []:
+        if "start" not in e or "end" not in e:
+            continue  # no span → cannot substitute reversibly; skip defensively
+        out.append(Entity(str(e["entity_type"]), str(e.get("text", "")),
+                          int(e["start"]), int(e["end"])))
+    return out
+
+
+def detect_entities(text: str) -> list[Entity]:
+    """Default detection engine: chunk (bounding GLiNER memory), detect each chunk
+    concurrently across the replicas, and return entities with offsets mapped back
+    to the whole ``text``. A chunk failure propagates (fail-hard at the caller)."""
+    chunks = _chunk_text(text, settings.anonymize_chunk_chars)
+    if len(chunks) == 1:
+        return _detect_one(text)
+    bases: list[int] = []
+    base = 0
+    for chunk in chunks:                       # _chunk_text is lossless, so the
+        bases.append(base)                     # base offsets rebuild global spans
+        base += len(chunk)
+    workers = max(1, min(len(chunks), settings.anonymize_concurrency))
+
+    def one(indexed: tuple[int, str]) -> list[Entity]:
+        i, chunk = indexed
+        off = bases[i]
+        return [Entity(e.entity_type, e.text, e.start + off, e.end + off)
+                for e in _detect_one(chunk)]
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        per_chunk = list(pool.map(one, enumerate(chunks)))
+    return [e for sub in per_chunk for e in sub]
 
 
 class OpenAnonymiserAnonymizer:
