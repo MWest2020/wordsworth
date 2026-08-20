@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from .escrow import Escrow
 from .key_audit import KeyLifecycleAudit
-from .keys import Key, KeyProvider
+from .keys import DEFAULT_SCOPE, Key, KeyProvider
 from .mapping_store import MappingStore
 
 
@@ -25,14 +25,16 @@ def rotate_keys(
     escrow: Escrow,
     key_audit: KeyLifecycleAudit,
     actor: str,
+    scope: str = DEFAULT_SCOPE,
 ) -> Key:
-    """Rotate to a new active key and migrate mappings onto it.
+    """Rotate one PII-type scope to a new active key and migrate that scope's
+    mappings onto it. Rotating every type is calling this once per scope.
 
     Order matters: escrow the new key *before* anything depends on it, then
     re-encrypt, then record. The caller owns the mapping-store transaction
     (commit/rollback)."""
-    old = key_provider.current_key()
-    new = key_provider.rotate()
+    old = key_provider.current_key(scope)
+    new = key_provider.rotate(scope)
     escrow.deposit(new)
     count = mapping_store.reencrypt(old.id, new.id, key_provider)
     key_audit.rotation(

@@ -16,12 +16,14 @@ from wordsworth.pseudonymizer import Pseudonymizer, deanonymize
 SENTINEL_ID = UUID("00000000-0000-0000-0000-000000000000")
 
 PII_BSN = "123456782"
+PII_BSN2 = "111222333"   # also passes the elfproef
 PII_IBAN = "NL91ABNA0417164300"
 
 _PSEUDO_RE = re.compile(r"\[[A-Z]+:[0-9a-f]{8}\]")
 
 
 # --- Task 2.2: key selection by stored key_id (no re-encryption) ------------
+# Keys are per PII type, so rotation is per scope; these exercise the BSN scope.
 
 def test_mixed_pre_and_post_rotation_mappings_all_decrypt(session):
     kp = InMemoryKeyProvider()
@@ -31,16 +33,16 @@ def test_mixed_pre_and_post_rotation_mappings_all_decrypt(session):
 
     pre = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN}")
     session.commit()
-    old_id = kp.current_key().id
+    old_id = kp.current_key(scope="BSN").id
 
-    kp.rotate()  # new active key, mappings NOT re-encrypted
-    new_id = kp.current_key().id
+    kp.rotate(scope="BSN")  # new active BSN key, mappings NOT re-encrypted
+    new_id = kp.current_key(scope="BSN").id
     assert old_id != new_id
 
-    post = Pseudonymizer(kp, store).anonymize(f"IBAN {PII_IBAN}")
+    post = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN2}")
     session.commit()
 
-    # the two mappings live under different key ids
+    # the two mappings live under different key ids (same scope, pre/post rotation)
     assert store.get(_PSEUDO_RE.search(pre.text).group(0)).key_id == old_id
     assert store.get(_PSEUDO_RE.search(post.text).group(0)).key_id == new_id
 
@@ -48,7 +50,7 @@ def test_mixed_pre_and_post_rotation_mappings_all_decrypt(session):
         session, doc.id, pre.text + " " + post.text, kp, store, actor="mark"
     )
     session.commit()
-    assert PII_BSN in restored and PII_IBAN in restored
+    assert PII_BSN in restored and PII_BSN2 in restored
 
 
 # --- Task 3.2: re-encryption; documents untouched ---------------------------
@@ -59,13 +61,14 @@ def test_reencrypt_moves_entries_to_new_key_documents_untouched(session):
     doc = register(session, "d")
     session.commit()
 
-    result = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN} IBAN {PII_IBAN}")
+    # two values of one type → two mappings under the same (BSN) scope key
+    result = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN} BSN {PII_BSN2}")
     # the anonymized text is a document artifact — it must not change on rotation
     session.add(DocumentText(document_id=doc.id, anonymized_text=result.text))
     session.commit()
 
-    old_id = kp.current_key().id
-    new = kp.rotate()
+    old_id = kp.current_key(scope="BSN").id
+    new = kp.rotate(scope="BSN")
     count = store.reencrypt(old_id, new.id, kp)
     session.commit()
 
@@ -81,7 +84,7 @@ def test_reencrypt_moves_entries_to_new_key_documents_untouched(session):
     restored = deanonymize(
         session, doc.id, result.text, kp, store, actor="x"
     )
-    for secret in (PII_BSN, PII_IBAN):
+    for secret in (PII_BSN, PII_BSN2):
         assert secret in restored
 
 
@@ -97,7 +100,7 @@ def test_rotation_writes_key_stream_event_document_chain_unchanged(session, tmp_
 
     Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN}")
     session.commit()
-    old = kp.current_key()
+    old = kp.current_key(scope="BSN")
 
     chain_before = [
         (r.seq, r.hash)
@@ -106,7 +109,7 @@ def test_rotation_writes_key_stream_event_document_chain_unchanged(session, tmp_
         ).scalars()
     ]
 
-    new = rotate_keys(kp, store, escrow, key_audit, actor="mark")
+    new = rotate_keys(kp, store, escrow, key_audit, actor="mark", scope="BSN")
     session.commit()
 
     # the key-lifecycle stream gains exactly one rotation event
@@ -155,7 +158,7 @@ def test_no_sentinel_document_and_deanonymize_by_key_id_survives_rotation(
     pre = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN}")
     session.commit()
 
-    new = rotate_keys(kp, store, escrow, key_audit, actor="mark")
+    new = rotate_keys(kp, store, escrow, key_audit, actor="mark", scope="BSN")
     session.commit()
 
     post = Pseudonymizer(kp, store).anonymize(f"IBAN {PII_IBAN}")
