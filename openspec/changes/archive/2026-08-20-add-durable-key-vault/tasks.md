@@ -19,6 +19,6 @@
 - [x] 3.1 Local tests (no DB/server): protocol; mint persists only wrapped;
   durability via a fresh provider; rotate retire+isolation; end-to-end reveal
   survives "restart"; fail-closed on unwrap error.
-- [ ] 3.2 DB-integration (CI): Postgres vault roundtrip; reveal survives restart
+- [x] 3.2 DB-integration (CI): Postgres vault roundtrip; reveal survives restart
   over the persisted vault; chain verifies.
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
