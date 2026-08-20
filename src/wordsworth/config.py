@@ -30,9 +30,11 @@ class Settings:
     @property
     def anonymize_concurrency(self) -> int:
         """Max concurrent calls (per worker process) to the OpenAnonymiser
-        service. Conservative by default — a single-replica GLiNER backend is
-        memory-heavy and does not fan out well."""
-        return int(os.environ.get("WORDSWORTH_ANONYMIZE_CONCURRENCY", "1"))
+        service — the process-wide cap and the per-document chunk fan-out width.
+        Defaults to the worker-node count so a document's independent chunks
+        spread one-per-replica across the cluster; chunking bounds each call's
+        memory, so the backend fans out safely."""
+        return int(os.environ.get("WORDSWORTH_ANONYMIZE_CONCURRENCY", "3"))
 
     @property
     def embed_concurrency(self) -> int:

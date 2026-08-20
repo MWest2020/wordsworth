@@ -16,6 +16,7 @@ passed through (no silent fallbacks; fail-hard when the service is unreachable).
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
 import httpx
@@ -87,14 +88,25 @@ def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
     reassembled (the ``replace`` strategy leaves non-entity text unchanged, so
     the pieces concatenate faithfully) with counts summed. This keeps each GLiNER
     call short enough that its attention memory cannot OOM the service — even a
-    generous memory limit was not enough for whole-document calls."""
+    generous memory limit was not enough for whole-document calls.
+
+    A document's chunks are mutually independent, so they are dispatched
+    concurrently (bounded by ``anonymize_concurrency``, the same cap the
+    process-wide ``limiter`` enforces) and load-balanced across the OpenAnonymiser
+    replicas by the Service — turning a serial N×latency wait into ~N/concurrency.
+    Results are reassembled in chunk order, so the concatenation is unchanged. If
+    any chunk fails, the exception propagates (the caller turns it into a hard
+    ``AnonymizationEngineError`` — no partial, un-redacted text is ever emitted)."""
     chunks = _chunk_text(text, settings.anonymize_chunk_chars)
     if len(chunks) == 1:
         return _redact_one(text)
+    workers = max(1, min(len(chunks), settings.anonymize_concurrency))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        # map preserves input order; the first raised exception propagates.
+        results = list(pool.map(_redact_one, chunks))
     parts: list[str] = []
     counts: dict[str, int] = {}
-    for chunk in chunks:
-        redacted, c = _redact_one(chunk)
+    for redacted, c in results:
         parts.append(redacted)
         for label, n in c.items():
             counts[label] = counts.get(label, 0) + n

@@ -38,3 +38,43 @@ def test_redact_chunks_reassembles_and_sums_counts(monkeypatch):
     redacted, counts = _openanonymiser_redact(text)
     assert redacted == text.upper()          # chunks reassembled in order
     assert counts["person"] >= 2             # summed across chunks
+
+
+def test_concurrent_chunks_preserve_order(monkeypatch):
+    # Chunks may complete out of order; the result must still be in chunk order.
+    import time
+
+    monkeypatch.setattr(type(drv.settings), "anonymize_chunk_chars",
+                        property(lambda self: 5))
+    monkeypatch.setattr(type(drv.settings), "anonymize_concurrency",
+                        property(lambda self: 4))
+
+    def slow_first(chunk: str):
+        # Earlier chunks sleep longer, so they finish last — a naive
+        # append-on-completion would scramble the order.
+        time.sleep(0.05 if chunk.startswith("a") else 0.0)
+        return chunk, {}
+
+    monkeypatch.setattr(drv, "_redact_one", slow_first)
+    text = "aaaaabbbbbcccccddddd"                # 4 chunks of 5
+    redacted, _ = _openanonymiser_redact(text)
+    assert redacted == text                      # order preserved despite timing
+
+
+def test_one_failing_chunk_propagates(monkeypatch):
+    # Fail-hard: a single failing chunk must raise, never return partial text.
+    monkeypatch.setattr(type(drv.settings), "anonymize_chunk_chars",
+                        property(lambda self: 5))
+
+    def sometimes_fails(chunk: str):
+        if chunk.startswith("b"):
+            raise RuntimeError("engine boom")
+        return chunk, {}
+
+    monkeypatch.setattr(drv, "_redact_one", sometimes_fails)
+    try:
+        _openanonymiser_redact("aaaaabbbbbccccc")
+    except RuntimeError as exc:
+        assert "boom" in str(exc)
+    else:
+        raise AssertionError("a failing chunk must propagate, not be swallowed")
