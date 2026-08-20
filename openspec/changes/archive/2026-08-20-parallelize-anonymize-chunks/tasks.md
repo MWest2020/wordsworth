@@ -15,4 +15,5 @@
 - [x] 3.1 Tests: order preserved under out-of-order completion; failing chunk
   propagates; reassembly + count-sum still hold.
 - [x] 3.2 Full suite green (176 passed) + `openspec validate` clean.
-- [ ] 3.3 Deployed; three replicas Running one-per-node; measured per-doc speedup.
+- [x] 3.3 Deployed; three replicas Running one-per-node; measured 2.15× on an
+  18-chunk / 70k-char doc (485.9s serial → 225.8s at concurrency 3).
