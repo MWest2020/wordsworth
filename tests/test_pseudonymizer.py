@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from wordsworth import audit
 from wordsworth.anonymizer import Anonymizer
-from wordsworth.keys import StubKeyProvider
+from wordsworth.keys import InMemoryKeyProvider, StubKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord
 from wordsworth.pipeline import get_anonymized_text, ingest, process, register
@@ -56,6 +56,38 @@ def test_roundtrip_and_audit_logged(session):
     assert record.payload["actor"] == "mark"
     for secret in (PII_BSN, PII_IBAN, PII_EMAIL):
         assert secret not in str(record.payload)  # pseudonyms only, never clear
+    ok, bad = audit.verify_chain(session)
+    assert ok is True and bad is None
+
+
+def test_selective_reveal_by_type_and_audit(session):
+    """deanonymize(allowed_types=...) reveals only the granted type; the other
+    stays pseudonymised, the chain still verifies, and the audit records the
+    types without any clear value. One shared provider (real per-type keys)."""
+    keys = InMemoryKeyProvider()
+    doc = register(session, "sel")
+    session.commit()
+    result = Pseudonymizer(keys, PostgresMappingStore(session)).anonymize(
+        f"BSN {PII_BSN} mail {PII_EMAIL}"
+    )
+    session.commit()
+
+    restored = deanonymize(
+        session, doc.id, result.text,
+        keys, PostgresMappingStore(session), actor="mark",
+        allowed_types={"EMAIL"},
+    )
+    session.commit()
+    assert PII_EMAIL in restored            # allowed type revealed
+    assert PII_BSN not in restored          # withheld type stays pseudonymised
+    assert "[BSN:" in restored
+
+    record = session.execute(
+        select(AuditRecord).where(AuditRecord.step == "deanonymize")
+    ).scalar_one()
+    assert record.payload["types"] == ["EMAIL"]
+    assert record.payload["requested_types"] == ["EMAIL"]
+    assert PII_BSN not in str(record.payload) and PII_EMAIL not in str(record.payload)
     ok, bad = audit.verify_chain(session)
     assert ok is True and bad is None
 

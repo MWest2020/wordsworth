@@ -71,3 +71,30 @@ class PostgresMappingStore:
             row.key_id = new_id
         self._session.flush()
         return len(rows)
+
+
+class InMemoryMappingStore:
+    """Dict-backed ``MappingStore`` — a test double and a non-DB wiring option,
+    mirroring ``InMemoryIndex``. ``put`` is idempotent: one entry per pseudonym."""
+
+    def __init__(self) -> None:
+        self._d: dict[str, Mapping] = {}
+
+    def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str) -> None:
+        self._d.setdefault(pseudonym, Mapping(pseudonym, ciphertext, nonce, key_id))
+
+    def get(self, pseudonym: str) -> Mapping | None:
+        return self._d.get(pseudonym)
+
+    def reencrypt(self, old_id: str, new_id: str, key_provider: KeyProvider) -> int:
+        old = key_provider.key(old_id)
+        new = key_provider.key(new_id)
+        n = 0
+        for pseudonym, m in list(self._d.items()):
+            if m.key_id != old_id:
+                continue
+            plaintext = decrypt(old.material, m.ciphertext, m.nonce)
+            ciphertext, nonce = encrypt(new.material, plaintext)
+            self._d[pseudonym] = Mapping(pseudonym, ciphertext, nonce, new_id)
+            n += 1
+        return n
