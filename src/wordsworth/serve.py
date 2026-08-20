@@ -38,10 +38,22 @@ def build_app() -> FastAPI:
     anonymizer = None
     if settings.s3_access_key and settings.s3_secret_key:
         from .object_store import S3ObjectStore
-        from .openanonymiser_driver import OpenAnonymiserAnonymizer
 
         store = S3ObjectStore.from_config()
+
+    # Reversible mode (ADR-0002): pseudonymise with durable keyed tokens and mount
+    # the key-gated reveal route. Session-scoped backends (durable keys, Postgres
+    # mapping/grant stores) are supplied as per-request factories, so no OpenBao
+    # I/O happens at import — the pod boots even if OpenBao is briefly sealed.
+    # Default (off) keeps the irreversible OpenAnonymiser driver and no reveal.
+    reversible: dict = {}
+    if settings.reversible_mode:
+        reversible = _reversible_wiring()
+    elif store is not None:
+        from .openanonymiser_driver import OpenAnonymiserAnonymizer
+
         anonymizer = OpenAnonymiserAnonymizer()
+
     return create_app(
         session_factory=make_session_factory(engine),
         search_index=OpenSearchIndex.from_config(),
@@ -49,7 +61,38 @@ def build_app() -> FastAPI:
         generator=OllamaGenerator.from_config(),
         store=store,
         anonymizer=anonymizer,
+        **reversible,
     )
+
+
+def _reversible_wiring() -> dict:
+    """`create_app` kwargs for reversible mode: one shared OpenBao Transit client,
+    and session-bound stores built fresh per request (so a fresh session backs
+    each pipeline run and reveal). No OpenBao call happens here — only per
+    request."""
+    from .grants import PostgresGrantStore
+    from .keys import DurableKeyProvider
+    from .mapping_store import PostgresMappingStore
+    from .pseudonymizer import ReversibleAnonymizer
+    from .transit import OpenBaoTransit, PostgresKeyVaultStore
+
+    transit = OpenBaoTransit(
+        settings.openbao_url, settings.openbao_token, settings.transit_kek_name
+    )
+
+    def key_provider(session):
+        return DurableKeyProvider(
+            PostgresKeyVaultStore(session), transit, settings.key_cache_ttl
+        )
+
+    def anonymizer(session):
+        return ReversibleAnonymizer(key_provider(session), PostgresMappingStore(session))
+
+    return {
+        "anonymizer_factory": anonymizer,
+        "key_provider_factory": key_provider,
+        "grant_store_factory": lambda session: PostgresGrantStore(session),
+    }
 
 
 app = build_app()

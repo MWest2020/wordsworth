@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
+from typing import Callable
 from uuid import UUID
 
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
@@ -93,7 +94,13 @@ def create_app(
     key_provider: KeyProvider | None = None,
     grant_store: GrantStore | None = None,
     rate_limiters: dict[str, TokenBucket] | None = None,
+    anonymizer_factory: Callable[[Session], Anonymizer] | None = None,
+    key_provider_factory: Callable[[Session], KeyProvider] | None = None,
+    grant_store_factory: Callable[[Session], GrantStore] | None = None,
 ) -> FastAPI:
+    # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
+    # supplied as factories built per request; the singleton params stay for
+    # tests and session-free doubles. A factory wins over its singleton.
     app = FastAPI(
         title="wordsworth",
         version="0.1.0",
@@ -188,7 +195,7 @@ def create_app(
     # the OpenAnonymiser (GLiNER) driver — the sovereign anonymize step.
     if (session_factory is not None and store is not None
             and search_index is not None and embedder is not None):
-        if anonymizer is None:
+        if anonymizer is None and anonymizer_factory is None:
             from .openanonymiser_driver import OpenAnonymiserAnonymizer
 
             anonymizer = OpenAnonymiserAnonymizer()
@@ -209,10 +216,14 @@ def create_app(
             if search_index.has_object_key(key):
                 return {"state": "skipped"}
             with session_factory() as session:
+                # Reversible mode binds a fresh session-scoped anonymizer (durable
+                # keys + mapping store) per document; default mode uses the shared
+                # irreversible driver.
+                anon = anonymizer_factory(session) if anonymizer_factory else anonymizer
                 doc = ingest(session, store, data)
                 session.commit()
                 document_id = doc.id
-                state = process(session, document_id, store, anonymizer=anonymizer,
+                state = process(session, document_id, store, anonymizer=anon,
                                 search_index=search_index, embedder=embedder)
                 session.commit()
                 if state == State.UNPROCESSABLE_OCR:
@@ -220,7 +231,7 @@ def create_app(
                     recover(session, document_id, store)
                     session.commit()
                     state = process(session, document_id, store,
-                                    anonymizer=anonymizer,
+                                    anonymizer=anon,
                                     search_index=search_index, embedder=embedder)
                     session.commit()
                 meta = _document_meta(session, document_id)
@@ -267,8 +278,9 @@ def create_app(
     # only the PII types a grant authorises. Mounted only when a key provider and
     # grant store are supplied (durable keys arrive in a later cycle), so the
     # default deployment is unchanged. The reveal is audited by ``deanonymize``.
-    if (session_factory is not None and key_provider is not None
-            and grant_store is not None):
+    if (session_factory is not None
+            and (grant_store is not None or grant_store_factory is not None)
+            and (key_provider is not None or key_provider_factory is not None)):
 
         @app.post("/documents/{document_id}/reveal", response_model=RevealResponse,
                   tags=["write"],
@@ -282,16 +294,20 @@ def create_app(
             from .pipeline import get_anonymized_text
             from .pseudonymizer import deanonymize
 
-            grant = grant_store.get(body.grant_id)
-            if grant is None:
-                raise HTTPException(status_code=404, detail="unknown grant")
             now = datetime.now(timezone.utc)
-            # A grant that authorises none of its own types here is revoked,
-            # expired, or scoped to another document → explicit denial.
-            if not authorize(grant, document_id, set(grant.allowed_types), now):
-                raise HTTPException(status_code=403, detail="grant not applicable")
-
             with session_factory() as session:
+                # Session-scoped stores (durable keys, Postgres grant store) are
+                # built per request from their factory; singletons win otherwise.
+                gs = grant_store_factory(session) if grant_store_factory else grant_store
+                kp = key_provider_factory(session) if key_provider_factory else key_provider
+
+                grant = gs.get(body.grant_id)
+                if grant is None:
+                    raise HTTPException(status_code=404, detail="unknown grant")
+                # A grant that authorises none of its own types here is revoked,
+                # expired, or scoped to another document → explicit denial.
+                if not authorize(grant, document_id, set(grant.allowed_types), now):
+                    raise HTTPException(status_code=403, detail="grant not applicable")
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404, detail="unknown document")
                 pseudo_text = get_anonymized_text(session, document_id)
@@ -301,7 +317,7 @@ def create_app(
                 requested = body.types if body.types else list(grant.allowed_types)
                 allowed = authorize(grant, document_id, set(requested), now)
                 revealed_text = deanonymize(
-                    session, document_id, pseudo_text, key_provider,
+                    session, document_id, pseudo_text, kp,
                     PostgresMappingStore(session), actor=grant.recipient,
                     allowed_types=allowed,
                 )

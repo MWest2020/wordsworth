@@ -65,6 +65,14 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_KEY_CACHE_TTL", "300"))
 
     @property
+    def reversible_mode(self) -> bool:
+        """When true the deployed straat pseudonymises REVERSIBLY (durable keyed
+        tokens + mapping store) instead of the irreversible default, and mounts
+        the key-gated reveal route. Off by default — the index stays
+        pseudonyms-only either way. Requires OpenBao (ADR-0002)."""
+        return os.environ.get("WORDSWORTH_REVERSIBLE", "false").lower() == "true"
+
+    @property
     def born_digital_threshold(self) -> int:
         """Minimum extractable characters per page to count as born-digital."""
         return int(os.environ.get("WORDSWORTH_BORN_DIGITAL_THRESHOLD", "10"))
