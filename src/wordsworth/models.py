@@ -66,3 +66,30 @@ class PiiMapping(Base):
     nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     key_id: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GrantRecord(Base):
+    """A reveal grant: authorization to deanonymize a set of PII types, optionally
+    scoped to one document and/or an expiry. Shareable (issued to a recipient) and
+    revocable (status flips to ``revoked``). Holds no key material and no clear
+    PII — it is purely the authorization record the reveal path enforces."""
+
+    __tablename__ = "grants"
+
+    grant_id: Mapped[str] = mapped_column(String, primary_key=True)
+    recipient: Mapped[str] = mapped_column(String, nullable=False)
+    # upper-case PII types, e.g. ["PERSON", "EMAIL"]
+    allowed_types: Mapped[list] = mapped_column(JSONB, nullable=False)
+    # NULL document_id = a global grant (any document)
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False)  # active | revoked
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    actor: Mapped[str] = mapped_column(String, nullable=False)

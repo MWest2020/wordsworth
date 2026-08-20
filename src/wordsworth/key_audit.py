@@ -18,6 +18,8 @@ from zeef.audit import AuditLog
 
 STREAM = "key_lifecycle"
 ROTATION_ACTION = "key_rotation"
+GRANT_ISSUED_ACTION = "grant_issued"
+GRANT_REVOKED_ACTION = "grant_revoked"
 
 
 @runtime_checkable
@@ -32,6 +34,18 @@ class KeyLifecycleAudit(Protocol):
         entries_reencrypted: int,
         actor: str,
     ) -> None: ...
+
+    def grant_issued(
+        self,
+        *,
+        grant_id: str,
+        recipient: str,
+        allowed_types: list[str],
+        document_id: str | None,
+        actor: str,
+    ) -> None: ...
+
+    def grant_revoked(self, *, grant_id: str, actor: str) -> None: ...
 
 
 class JsonlKeyLifecycleAudit:
@@ -57,6 +71,28 @@ class JsonlKeyLifecycleAudit:
             entries_reencrypted=entries_reencrypted,
             actor=actor,
         )
+
+    def grant_issued(
+        self,
+        *,
+        grant_id: str,
+        recipient: str,
+        allowed_types: list[str],
+        document_id: str | None,
+        actor: str,
+    ) -> None:
+        self._log.event(
+            STREAM,
+            GRANT_ISSUED_ACTION,
+            grant_id=grant_id,
+            recipient=recipient,
+            allowed_types=allowed_types,
+            document_id=document_id,
+            actor=actor,
+        )
+
+    def grant_revoked(self, *, grant_id: str, actor: str) -> None:
+        self._log.event(STREAM, GRANT_REVOKED_ACTION, grant_id=grant_id, actor=actor)
 
     def events(self) -> list[dict[str, Any]]:
         """Read the stream back (verification/audit review)."""
