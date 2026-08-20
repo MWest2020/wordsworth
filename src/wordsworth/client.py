@@ -65,6 +65,18 @@ def _get(base: str, path: str, params: dict | None = None, timeout: float = 30):
         return json.loads(resp.read())
 
 
+def _download(base: str, path: str, dest: str, params: dict | None = None,
+              timeout: float = 120) -> int:
+    """GET a binary payload (zip/csv) and write it to ``dest``; return byte count."""
+    url = base.rstrip("/") + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+        data = resp.read()
+    Path(dest).write_bytes(data)
+    return len(data)
+
+
 def _post_files(base: str, paths: list[Path], timeout: float = 600):
     """Upload files to POST /ingest as multipart/form-data (field name ``files``)."""
     boundary = uuid.uuid4().hex
@@ -215,6 +227,17 @@ def _cmd_meta(args) -> int:
     return 0
 
 
+def _cmd_export(args) -> int:
+    """Download a corpus export (de-identified ZIP) or a ranking (CSV)."""
+    if args.kind == "docs":
+        n = _download(args.url, "/export/anonymized.zip", args.out)
+    else:  # ranking
+        n = _download(args.url, "/export/ranking.csv", args.out,
+                      {"query": args.query, "k": args.k})
+    print(f"wrote {args.out} ({n} bytes)")
+    return 0
+
+
 def _cmd_config(args) -> int:
     """Show or set persistent CLI defaults in the config file."""
     cfg = _load_config()
@@ -279,6 +302,17 @@ def main(argv: list[str] | None = None) -> int:
     pm = sub.add_parser("meta", help="document metadata (timing, PII counts, trail)")
     pm.add_argument("document_id")
     pm.set_defaults(func=_cmd_meta)
+
+    pe = sub.add_parser("export", help="export the corpus (zip) or a ranking (csv)")
+    esub = pe.add_subparsers(dest="kind", required=True)
+    ed = esub.add_parser("docs", help="ZIP of de-identified document texts")
+    ed.add_argument("out", help="output .zip path")
+    ed.set_defaults(func=_cmd_export)
+    er = esub.add_parser("ranking", help="CSV ranking for a query")
+    er.add_argument("query")
+    er.add_argument("out", help="output .csv path")
+    er.add_argument("--k", type=int, default=50, help="hits to include (default 50)")
+    er.set_defaults(func=_cmd_export)
 
     pc = sub.add_parser("config", help="show or set CLI defaults (url/batch/timeout)")
     pc.add_argument("--url")

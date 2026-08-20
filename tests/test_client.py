@@ -114,3 +114,46 @@ def test_result_extra_formats_duration_and_counts():
     assert extra == " (1.8s, bsn=1 person=2)"   # sorted, zero-counts dropped
     assert client._result_extra({"state": "error", "error": "OcrError"}) == " (OcrError)"
     assert client._result_extra({"state": "indexed"}) == ""
+
+
+class _FakeResp:
+    def __init__(self, data: bytes):
+        self._d = data
+
+    def read(self) -> bytes:
+        return self._d
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_export_docs_downloads_zip(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_urlopen(url, timeout=0):
+        seen["url"] = url
+        return _FakeResp(b"PK\x03\x04zip")
+
+    monkeypatch.setattr(client.urllib.request, "urlopen", fake_urlopen)
+    out = tmp_path / "corpus.zip"
+    assert main(["--url", "http://api", "export", "docs", str(out)]) == 0
+    assert seen["url"] == "http://api/export/anonymized.zip"
+    assert out.read_bytes() == b"PK\x03\x04zip"
+
+
+def test_export_ranking_downloads_csv(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_urlopen(url, timeout=0):
+        seen["url"] = url
+        return _FakeResp(b"rank,document_id,score,object_key\n1,d1,9.0,k1\n")
+
+    monkeypatch.setattr(client.urllib.request, "urlopen", fake_urlopen)
+    out = tmp_path / "ranking.csv"
+    assert main(["--url", "http://api", "export", "ranking", "parkeren", str(out)]) == 0
+    assert seen["url"].startswith("http://api/export/ranking.csv?")
+    assert "query=parkeren" in seen["url"]
+    assert out.read_bytes().startswith(b"rank,document_id")

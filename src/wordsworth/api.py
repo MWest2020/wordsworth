@@ -7,7 +7,10 @@ or the full surface. Interactive docs at ``/docs`` (Swagger) and ``/redoc``.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
+import zipfile
 from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
@@ -25,7 +28,7 @@ from .grants import GrantStore
 from .keys import KeyProvider
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
-from .pipeline import current_state, ingest, process
+from .pipeline import current_state, get_anonymized_text, ingest, process
 from .rate_limit import (
     EXEMPT_PATHS,
     RateLimitMiddleware,
@@ -160,6 +163,28 @@ def create_app(
                 raise HTTPException(status_code=404, detail="unknown document")
             return meta
 
+        @app.get("/export/anonymized.zip",
+                 summary="Export de-identified document texts as a ZIP",
+                 tags=["export"])
+        def export_anonymized(document_ids: str | None = None) -> Response:
+            """A ZIP of the stored de-identified texts (one ``{id}.txt`` per
+            document), for all INDEXED documents or the given comma-separated
+            subset. Only the index-bound anonymized text is written — never clear
+            PII, never original bytes."""
+            ids = None
+            if document_ids:
+                try:
+                    ids = [UUID(x) for x in document_ids.split(",") if x.strip()]
+                except ValueError:
+                    raise HTTPException(status_code=400,
+                                        detail="malformed document_ids")
+            with session_factory() as session:
+                pairs = _indexed_texts(session, ids)
+            return Response(content=_anonymized_zip(pairs),
+                            media_type="application/zip",
+                            headers={"Content-Disposition":
+                                     'attachment; filename="anonymized.zip"'})
+
     if search_index is not None:
 
         @app.get("/search", summary="Lexical (BM25) search", tags=["read"])
@@ -167,6 +192,17 @@ def create_app(
             """Full-text search over the anonymized corpus."""
             hits = search_index.search(q, size=size)
             return {"query": q, "hits": [_hit(h) for h in hits]}
+
+        @app.get("/export/ranking.csv", summary="Export a ranking as CSV",
+                 tags=["export"])
+        def export_ranking(query: str, k: int = 50) -> Response:
+            """The lexical ranking for a query as CSV (Excel-openable): one row
+            per hit with rank, document id and score — de-identified metadata
+            only, never clear PII."""
+            hits = search_index.search(query, size=k)
+            return Response(content=_ranking_csv(hits), media_type="text/csv",
+                            headers={"Content-Disposition":
+                                     'attachment; filename="ranking.csv"'})
 
         if embedder is not None:
 
@@ -343,6 +379,46 @@ def create_app(
 def _hit(h) -> dict:
     # Omit the raw vector from API responses; expose the useful fields only.
     return {"document_id": h.document_id, "score": h.score, "object_key": h.object_key}
+
+
+def _ranking_csv(hits) -> str:
+    """Render search hits as CSV text (stdlib; Excel-openable). De-identified
+    metadata only — rank, document id, score, object key — never document text."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["rank", "document_id", "score", "object_key"])
+    for rank, h in enumerate(hits, start=1):
+        writer.writerow([rank, h.document_id, h.score, h.object_key or ""])
+    return buf.getvalue()
+
+
+def _anonymized_zip(pairs: list[tuple[str, str]]) -> bytes:
+    """Build a ZIP whose entries are ``{document_id}.txt`` holding the stored
+    de-identified text. In-memory (the corpus is small); deterministic order."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for document_id, text in pairs:
+            zf.writestr(f"{document_id}.txt", text)
+    return buf.getvalue()
+
+
+def _indexed_texts(
+    session: Session, ids: list[UUID] | None = None
+) -> list[tuple[str, str]]:
+    """(document_id, anonymized_text) for INDEXED documents (all, or the given
+    subset), skipping any without stored text. Sorted by id for a stable ZIP."""
+    if ids is None:
+        ids = list(session.execute(select(Document.id)).scalars())
+    out: list[tuple[str, str]] = []
+    for document_id in ids:
+        if current_state(session, document_id) != State.INDEXED:
+            continue
+        text = get_anonymized_text(session, document_id)
+        if text is None:
+            continue
+        out.append((str(document_id), text))
+    out.sort(key=lambda p: p[0])
+    return out
 
 
 def _document_meta(session: Session, document_id: UUID) -> dict | None:
