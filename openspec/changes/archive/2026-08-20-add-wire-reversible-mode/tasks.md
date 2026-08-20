@@ -11,6 +11,6 @@
 
 - [x] 2.1 Local tests: flag default off; reveal route absent by default and present
   with factories; `build_app` flips by config with no network I/O at import.
-- [ ] 2.2 DB-integration (CI): ingest→reveal end-to-end through the factories;
+- [x] 2.2 DB-integration (CI): ingest→reveal end-to-end through the factories;
   durability across requests (shared vault + FakeTransit); only granted type revealed.
-- [ ] 2.3 Full suite green in CI + `openspec validate`.
+- [x] 2.3 Full suite green in CI + `openspec validate`.
