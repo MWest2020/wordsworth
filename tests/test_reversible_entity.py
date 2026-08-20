@@ -94,6 +94,45 @@ def test_detection_failure_is_fail_hard_no_leak():
     assert NAME not in str(ei.value)              # error carries no clear text
 
 
+def test_redaction_is_offset_independent_no_leak():
+    # The audit's HIGH finding: the service can report offsets that do not match
+    # Python char slicing (byte-vs-char on non-ASCII Dutch text). Redaction must
+    # match the VALUE, never the offsets — a bad offset must not leak clear PII.
+    kp = InMemoryKeyProvider()
+    store = InMemoryMappingStore()
+
+    def detect(text: str) -> list[Entity]:
+        return [Entity("PERSON", "Jan Jansen", 999, 1009)]  # deliberately wrong span
+
+    drv = ReversibleAnonymizer(kp, store, detect=detect)
+    res = drv.anonymize("Beste Renée, contact Jan Jansen alstublieft.")
+    assert "Jan Jansen" not in res.text          # no leak despite bogus offsets
+    assert "[PERSON:" in res.text
+    restored, _ = _reveal(res.text, None, store.get, kp.key)
+    assert "Jan Jansen" in restored
+
+
+def test_all_occurrences_of_a_value_are_redacted():
+    kp, store, drv = _driver("Renée")
+    res = drv.anonymize("Renée en Renée en nog eens Renée")
+    assert "Renée" not in res.text
+    assert res.text.count("[PERSON:") == 3
+
+
+def test_underscored_entity_type_is_revealable():
+    kp = InMemoryKeyProvider()
+    store = InMemoryMappingStore()
+
+    def detect(text: str) -> list[Entity]:
+        return [Entity("PHONE_NUMBER", "0612345678", 0, 10)]
+
+    drv = ReversibleAnonymizer(kp, store, detect=detect)
+    res = drv.anonymize("bel 0612345678 vandaag")
+    assert "0612345678" not in res.text and "[PHONE_NUMBER:" in res.text
+    restored, revealed = _reveal(res.text, None, store.get, kp.key)
+    assert "0612345678" in restored and revealed   # widened token regex matches
+
+
 def test_overlapping_spans_longer_wins():
     kp = InMemoryKeyProvider()
     store = InMemoryMappingStore()

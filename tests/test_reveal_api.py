@@ -132,6 +132,7 @@ def test_reveal_is_audited(session_factory, mem_store, mem_index, fake_embedder,
             select(AuditRecord).where(AuditRecord.step == "deanonymize")
         ).scalar_one()
         assert rec.payload["actor"] == "agent-x"          # grant recipient
+        assert rec.payload["grant_id"] == grant.grant_id  # access attributed to grant
         assert rec.payload["types"] == ["EMAIL"]
         assert PII_EMAIL not in str(rec.payload)          # never clear values
         ok, bad = audit.verify_chain(s)

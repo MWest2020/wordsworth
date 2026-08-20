@@ -28,7 +28,9 @@ from .openanonymiser_driver import AnonymizationEngineError, Entity, detect_enti
 # inject a fake so the reversible entity path is provable without the service.
 DetectFn = Callable[[str], list[Entity]]
 
-_PSEUDONYM_RE = re.compile(r"\[[A-Z]+:[0-9a-f]{8}\]")
+# Token labels are upper-cased PII types; allow digits/underscore so multi-word
+# GLiNER types (e.g. PHONE_NUMBER) are matched and thus revealable.
+_PSEUDONYM_RE = re.compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
 
 
 def _token(key_material: bytes, label: str, value: str) -> str:
@@ -138,32 +140,52 @@ class ReversibleAnonymizer:
     def _pseudonymize_entities(
         self, text: str, entities: list[Entity]
     ) -> tuple[str, dict[str, int]]:
-        """Replace each entity span with a keyed token under its type's key.
+        """Replace every detected entity VALUE with a keyed token under its type's
+        key — **offset-independent**.
 
-        Only well-formed, non-overlapping spans whose slice still matches the
-        detected text are used (guards against offset drift and overlaps); the
-        substitution runs right-to-left so earlier offsets stay valid."""
-        chosen: list[Entity] = []
-        taken: list[tuple[int, int]] = []
-        for e in sorted(entities, key=lambda e: (e.start, -e.end)):
-            if not (0 <= e.start < e.end <= len(text)):
-                continue
-            if text[e.start:e.end] != e.text:
-                continue
-            if any(e.start < end and start < e.end for start, end in taken):
-                continue  # overlaps an already-chosen span
-            taken.append((e.start, e.end))
-            chosen.append(e)
+        Earlier this sliced by the detector's ``(start, end)`` offsets; but the
+        service reports offsets that need not line up with Python char slicing
+        (byte- vs char-offsets on non-ASCII Dutch text, chunk-boundary spans),
+        and a mismatch silently dropped the span, leaving clear PII in the index
+        — a fail-*open* breach of the cardinal invariant. Instead we match the
+        literal values in a single longest-preference pass (so all occurrences go,
+        and a value inside a longer one is consumed by it), which cannot leak on
+        an offset mismatch. Defense-in-depth: after substitution we strip inserted
+        tokens and assert no detected value survives, else we fail hard — the
+        index must never hold clear PII."""
+        label_of: dict[str, str] = {}
+        for e in entities:
+            value = e.text
+            if value and value.strip():
+                label_of.setdefault(value, e.entity_type.lower())
+        if not label_of:
+            return text, {}
 
         counts: dict[str, int] = {}
-        for e in sorted(chosen, key=lambda e: e.start, reverse=True):
-            label = e.entity_type.lower()
+
+        def repl(match: re.Match[str]) -> str:
+            value = match.group(0)
+            label = label_of[value]
             key = self._keys.current_key(scope=label.upper())
-            pseudonym = f"[{label.upper()}:{_token(key.material, label, e.text)}]"
-            ciphertext, nonce = encrypt(key.material, e.text)
-            self._store.put(pseudonym, ciphertext, nonce, key.id)
-            text = text[:e.start] + pseudonym + text[e.end:]
+            pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
+            ciphertext, nonce = encrypt(key.material, value)
+            self._store.put(pseudonym, ciphertext, nonce, key.id)  # idempotent
             counts[label] = counts.get(label, 0) + 1
+            return pseudonym
+
+        # Longest value first so an alternative that contains a shorter one wins
+        # at a given position; re.sub scans the original left-to-right and does
+        # not re-scan the tokens it inserts.
+        values = sorted(label_of, key=len, reverse=True)
+        text = re.compile("|".join(re.escape(v) for v in values)).sub(repl, text)
+
+        stripped = _PSEUDONYM_RE.sub("", text)  # remove inserted tokens
+        for value in values:
+            if value in stripped:
+                raise AnonymizationEngineError(
+                    "a detected entity value survived pseudonymisation; refusing "
+                    "to emit text that may contain clear PII"
+                )
         return text, counts
 
 
@@ -184,12 +206,15 @@ def deanonymize(
     mapping_store: MappingStore,
     actor: str,
     allowed_types: set[str] | None = None,
+    extra_audit: dict | None = None,
 ) -> str:
     """Recover originals from the store+key and audit-log the access.
 
     ``allowed_types`` gates the reveal to a set of PII types (e.g. ``{"PERSON"}``);
     a token is revealed only when its type is allowed and its key resolves. When
-    ``None``, every resolvable token is revealed (reveal-all)."""
+    ``None``, every resolvable token is revealed (reveal-all). ``extra_audit``
+    merges non-PII context into the access record (e.g. the ``grant_id`` that
+    authorised it) — the caller is responsible for it carrying no clear value."""
     state = _current_state(session, document_id)
     if state is None:
         raise ValueError("unknown document")
@@ -197,17 +222,20 @@ def deanonymize(
     restored, revealed = _reveal(
         text, allowed_types, mapping_store.get, key_provider.key
     )
+    payload = {
+        "pseudonyms": sorted(set(revealed)),
+        "types": sorted({_label_of(p) for p in revealed}),
+        "requested_types": sorted(allowed_types) if allowed_types else "all",
+        "actor": actor,
+    }
+    if extra_audit:
+        payload.update(extra_audit)
     audit.append(
         session,
         document_id=document_id,
         from_state=state,
         to_state=state,  # access event, not a state transition
         step="deanonymize",
-        payload={
-            "pseudonyms": sorted(set(revealed)),
-            "types": sorted({_label_of(p) for p in revealed}),
-            "requested_types": sorted(allowed_types) if allowed_types else "all",
-            "actor": actor,
-        },
+        payload=payload,
     )
     return restored

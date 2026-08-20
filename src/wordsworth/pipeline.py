@@ -116,8 +116,10 @@ def _extract_or_fail(session: Session, document_id: UUID, pdf_bytes: bytes) -> s
     try:
         return extract_text(pdf_bytes)
     except ExtractionError as exc:
+        # Record the error TYPE only: a raw pypdf message is not guaranteed to be
+        # free of document text, and this lands in the durable, exportable audit.
         transition(session, document_id, State.FAILED, step="extract",
-                   payload={"error": str(exc)})
+                   payload={"error": type(exc).__name__})
         return None
 
 
@@ -171,7 +173,7 @@ def process(
         except ProfilingError as exc:
             transition(
                 session, document_id, State.FAILED,
-                step="profile", payload={"error": str(exc)},
+                step="profile", payload={"error": type(exc).__name__},
             )
             return State.FAILED
         target = State.EXTRACTABLE if metric["born_digital"] else State.UNPROCESSABLE_OCR

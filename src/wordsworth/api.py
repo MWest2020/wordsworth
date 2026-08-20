@@ -362,6 +362,11 @@ def create_app(
                     session, document_id, pseudo_text, kp,
                     PostgresMappingStore(session), actor=grant.recipient,
                     allowed_types=allowed,
+                    # Attribute the access to the specific (revocable, issue-
+                    # audited) grant. NB: the API is tailnet-internal and the
+                    # grant_id is a bearer capability — full caller authn is a
+                    # separate decision (see the reveal route docstring).
+                    extra_audit={"grant_id": body.grant_id},
                 )
                 session.commit()
             requested_upper = {t.upper() for t in requested}

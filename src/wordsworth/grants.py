@@ -55,8 +55,15 @@ def authorize(
     raises for the denied case: the caller reveals exactly the returned types."""
     if grant.status != ACTIVE:
         return set()
-    if grant.expires_at is not None and now >= grant.expires_at:
-        return set()
+    if grant.expires_at is not None:
+        # Treat a tz-naive expiry as UTC so the comparison can't raise (which
+        # would 500 the reveal) — fail toward denial, never toward a leak.
+        expires = grant.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        cmp_now = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+        if cmp_now >= expires:
+            return set()
     if grant.document_id is not None and grant.document_id != document_id:
         return set()
     allowed = {t.upper() for t in grant.allowed_types}
