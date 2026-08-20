@@ -15,5 +15,5 @@
 
 - [x] 3.1 Local tests: offset-independent no-leak, all-occurrences, underscored
   type revealable; local suite green.
-- [ ] 3.2 DB-integration (CI): reveal audit carries grant_id; full suite green.
-- [ ] 3.3 `openspec validate`.
+- [x] 3.2 DB-integration (CI): reveal audit carries grant_id; full suite green.
+- [x] 3.3 `openspec validate`.
