@@ -17,6 +17,6 @@
 ## 3. Gate
 
 - [x] 3.1 Local: route mounts only in reversible mode; CLI posts to /reprocess.
-- [ ] 3.2 DB-integration (CI): backfill irreversible→reversible, idempotency,
+- [x] 3.2 DB-integration (CI): backfill irreversible→reversible, idempotency,
   fail-safe leaves entry intact, skip non-indexed, audit + chain verify.
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
