@@ -88,6 +88,23 @@ class RevealResponse(BaseModel):
     grant_id: str
 
 
+class ReprocessRequest(BaseModel):
+    """Backfill request: which documents to re-de-identify. Omit to reprocess
+    every INDEXED document."""
+
+    document_ids: list[str] | None = None
+
+
+class ReprocessResponse(BaseModel):
+    """Per-document outcome counts for a backfill run."""
+
+    total: int
+    reanonymized: int
+    skipped: int
+    retryable: int
+    failed: int
+
+
 def create_app(
     session_factory: sessionmaker[Session] | None = None,
     search_index: SearchIndex | None = None,
@@ -315,6 +332,55 @@ def create_app(
             indexed = sum(1 for r in results if r.state == "indexed")
             return IngestResponse(total=len(results), indexed=indexed,
                                   results=results)
+
+        # Backfill: re-run the reversible de-identify over already-processed
+        # documents (e.g. a corpus first indexed irreversibly). Mounted only in
+        # reversible mode (a session-scoped anonymizer factory present), because
+        # reprocessing with the irreversible driver would be pointless.
+        if anonymizer_factory is not None:
+
+            def _reprocess_one(document_id: UUID) -> str:
+                from .pipeline import reanonymize
+
+                with session_factory() as session:
+                    state = current_state(session, document_id)
+                    if state not in (State.INDEXED, State.ANONYMIZED):
+                        return "skipped"
+                    anon = anonymizer_factory(session)
+                    reanonymize(session, document_id, store, anonymizer=anon,
+                                search_index=search_index, embedder=embedder)
+                    session.commit()
+                return "reanonymized"
+
+            @app.post("/reprocess", response_model=ReprocessResponse,
+                      tags=["write"],
+                      summary="Backfill: re-de-identify documents reversibly")
+            def reprocess(body: ReprocessRequest | None = None) -> ReprocessResponse:
+                """Re-run the (reversible) de-identify over the given documents,
+                or all INDEXED ones by default. Continue-on-failure: a transient
+                outage leaves a document's existing entry intact and is counted
+                'retryable'; a permanent error is 'failed'. Safe to re-run
+                (idempotent) and long-running (GLiNER per document)."""
+                ids: list[UUID] | None = None
+                if body and body.document_ids:
+                    try:
+                        ids = [UUID(x) for x in body.document_ids]
+                    except ValueError:
+                        raise HTTPException(status_code=400,
+                                            detail="malformed document_ids")
+                with session_factory() as session:
+                    if ids is None:
+                        ids = [i for i in session.execute(
+                            select(Document.id)).scalars()
+                            if current_state(session, i) == State.INDEXED]
+                counts = {"reanonymized": 0, "skipped": 0,
+                          "retryable": 0, "failed": 0}
+                for document_id in ids:
+                    try:
+                        counts[_reprocess_one(document_id)] += 1
+                    except Exception as exc:  # never leaks text; entry left intact
+                        counts["retryable" if is_transient(exc) else "failed"] += 1
+                return ReprocessResponse(total=len(ids), **counts)
 
     # Key-gated reveal: turn a document's pseudonyms back into originals, but
     # only the PII types a grant authorises. Mounted only when a key provider and

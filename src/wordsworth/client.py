@@ -65,6 +65,18 @@ def _get(base: str, path: str, params: dict | None = None, timeout: float = 30):
         return json.loads(resp.read())
 
 
+def _post_json(base: str, path: str, payload: dict, timeout: float = 3600):
+    """POST a JSON body and return the parsed response."""
+    req = urllib.request.Request(
+        base.rstrip("/") + path,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        return json.loads(resp.read())
+
+
 def _download(base: str, path: str, dest: str, params: dict | None = None,
               timeout: float = 120) -> int:
     """GET a binary payload (zip/csv) and write it to ``dest``; return byte count."""
@@ -238,6 +250,16 @@ def _cmd_export(args) -> int:
     return 0
 
 
+def _cmd_reprocess(args) -> int:
+    """Backfill: POST /reprocess to re-de-identify documents reversibly."""
+    payload: dict = {}
+    if args.ids:
+        payload["document_ids"] = [x.strip() for x in args.ids.split(",") if x.strip()]
+    res = _post_json(args.url, "/reprocess", payload, timeout=args.timeout or 3600)
+    print(json.dumps(res, indent=2))
+    return 0
+
+
 def _cmd_config(args) -> int:
     """Show or set persistent CLI defaults in the config file."""
     cfg = _load_config()
@@ -313,6 +335,16 @@ def main(argv: list[str] | None = None) -> int:
     er.add_argument("out", help="output .csv path")
     er.add_argument("--k", type=int, default=50, help="hits to include (default 50)")
     er.set_defaults(func=_cmd_export)
+
+    pr = sub.add_parser("reprocess",
+                        help="backfill: re-de-identify documents reversibly")
+    grp = pr.add_mutually_exclusive_group()
+    grp.add_argument("--all", action="store_true",
+                     help="reprocess all INDEXED documents (default)")
+    grp.add_argument("--ids", help="comma-separated document ids to reprocess")
+    pr.add_argument("--timeout", type=float, default=None,
+                    help="request timeout in seconds (default 3600; long-running)")
+    pr.set_defaults(func=_cmd_reprocess)
 
     pc = sub.add_parser("config", help="show or set CLI defaults (url/batch/timeout)")
     pc.add_argument("--url")

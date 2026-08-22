@@ -233,3 +233,73 @@ def process(
         state = State.INDEXED
 
     return state
+
+
+def reanonymize(
+    session: Session,
+    document_id: UUID,
+    store: ObjectStore,
+    anonymizer: Anonymizer | None = None,
+    search_index: SearchIndex | None = None,
+    embedder: Embedder | None = None,
+) -> State:
+    """Re-run the de-identify step of an already-processed document through the
+    CURRENT (injected) anonymizer, then re-index and overwrite the stored text.
+
+    This backfills a corpus first indexed with the irreversible anonymizer into
+    reversible pseudonyms: the reversible driver writes keyed tokens + encrypted
+    mappings, so the index still holds only pseudonyms. Source text is re-derived
+    from the object store by the document's key — never from a clear-text store.
+
+    Fail-safe ordering: the new text is computed, embedded, and index-upserted
+    BEFORE the stored ``DocumentText`` is overwritten. If any of those steps
+    raises (a transient blip is retried first), the existing ``DocumentText`` and
+    index entry are left untouched and the error propagates — a failure never
+    blanks a document nor leaves clear PII. Only meaningful for INDEXED/ANONYMIZED
+    documents; any other state is a no-op. Idempotent: stable keyed pseudonyms and
+    an upsert-by-id index mean re-running yields the same text and one entry."""
+    doc = session.get(Document, document_id)
+    if doc is None:
+        raise ValueError("unknown document")
+    state = current_state(session, document_id)
+    if state not in (State.INDEXED, State.ANONYMIZED):
+        return state  # nothing to backfill (not yet de-identified / terminal-fail)
+
+    anonymizer = anonymizer or DeterministicAnonymizer()
+    index = search_index or _default_index()
+    embed = embedder or _default_embedder()
+
+    # Re-derive the source text from the stored bytes (never a clear-text store).
+    text = extract_text(store.get(doc.object_key))
+
+    # Compute + embed + re-index the NEW de-identified text first; a transient
+    # blip is retried, a persistent failure propagates with the old entry intact.
+    result = retry_transient(
+        lambda: anonymizer.anonymize(text),
+        settings.retry_attempts, settings.retry_base_delay,
+    )
+    vector = retry_transient(
+        lambda: embed.embed([result.text])[0],
+        settings.retry_attempts, settings.retry_base_delay,
+    )
+
+    def _index() -> None:
+        index.ensure_ready()
+        index.index(str(document_id), result.text, doc.object_key, vector=vector)
+
+    retry_transient(_index, settings.retry_attempts, settings.retry_base_delay)
+
+    # Only now overwrite the stored text — after the index holds the new tokens.
+    session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))
+    session.flush()
+    # An update/access event (from==to), like deanonymize: keeps the hash-chain
+    # valid without an illegal state transition. Counts only, never clear values.
+    audit.append(
+        session,
+        document_id=document_id,
+        from_state=state.value,
+        to_state=state.value,
+        step="reanonymize",
+        payload={"counts": result.counts, "reanonymized": True},
+    )
+    return state
