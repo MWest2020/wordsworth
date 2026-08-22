@@ -29,6 +29,38 @@ def test_ingest_missing_path_exits_nonzero(tmp_path):
     assert main(["--url", "http://unused", "ingest", str(tmp_path / "nope")]) == 2
 
 
+def test_grant_issue_posts_expected_payload(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(client, "_post_json",
+                        lambda base, path, payload, timeout=30: seen.update(
+                            path=path, payload=payload) or {"grant_id": "g1"})
+    assert main(["--url", "http://api", "grant", "issue",
+                 "--recipient", "team-a", "--types", "PERSON,EMAIL",
+                 "--document", "d1", "--expires", "2026-12-31T00:00:00+00:00"]) == 0
+    assert seen["path"] == "/grants"
+    assert seen["payload"] == {"recipient": "team-a",
+                               "allowed_types": ["PERSON", "EMAIL"],
+                               "document_id": "d1",
+                               "expires_at": "2026-12-31T00:00:00+00:00"}
+
+
+def test_grant_show_gets_by_id(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(client, "_get",
+                        lambda base, path: seen.update(path=path) or {"status": "active"})
+    assert main(["--url", "http://api", "grant", "show", "g42"]) == 0
+    assert seen["path"] == "/grants/g42"
+
+
+def test_grant_revoke_posts_revoke(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(client, "_post_json",
+                        lambda base, path, payload, timeout=30: seen.update(
+                            path=path, payload=payload) or {"status": "revoked"})
+    assert main(["--url", "http://api", "grant", "revoke", "g42"]) == 0
+    assert seen["path"] == "/grants/g42/revoke" and seen["payload"] == {}
+
+
 def test_config_write_and_resolve(tmp_path, monkeypatch):
     monkeypatch.setattr(client, "CONFIG_PATH", tmp_path / "config.yaml")
     monkeypatch.delenv("WORDSWORTH_API_URL", raising=False)

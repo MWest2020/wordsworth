@@ -260,6 +260,26 @@ def _cmd_reprocess(args) -> int:
     return 0
 
 
+def _cmd_grant(args) -> int:
+    """Issue, inspect, or revoke a reveal grant (operator/admin surface)."""
+    if args.grant_cmd == "issue":
+        payload: dict = {
+            "recipient": args.recipient,
+            "allowed_types": [t.strip() for t in args.types.split(",") if t.strip()],
+        }
+        if args.document:
+            payload["document_id"] = args.document
+        if args.expires:
+            payload["expires_at"] = args.expires
+        res = _post_json(args.url, "/grants", payload, timeout=30)
+    elif args.grant_cmd == "show":
+        res = _get(args.url, f"/grants/{args.grant_id}")
+    else:  # revoke
+        res = _post_json(args.url, f"/grants/{args.grant_id}/revoke", {}, timeout=30)
+    print(json.dumps(res, indent=2))
+    return 0
+
+
 def _cmd_config(args) -> int:
     """Show or set persistent CLI defaults in the config file."""
     cfg = _load_config()
@@ -345,6 +365,24 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--timeout", type=float, default=None,
                     help="request timeout in seconds (default 3600; long-running)")
     pr.set_defaults(func=_cmd_reprocess)
+
+    pg = sub.add_parser("grant", help="issue / inspect / revoke reveal grants")
+    gsub = pg.add_subparsers(dest="grant_cmd", required=True)
+    gi = gsub.add_parser("issue", help="issue a reveal grant")
+    gi.add_argument("--recipient", required=True)
+    gi.add_argument("--types", required=True,
+                    help="comma-separated PII types, e.g. PERSON,LOCATION")
+    gi.add_argument("--document", default=None,
+                    help="scope to one document id (default: any document)")
+    gi.add_argument("--expires", default=None,
+                    help="ISO-8601 timezone-aware expiry (e.g. 2026-12-31T00:00:00+00:00)")
+    gi.set_defaults(func=_cmd_grant)
+    gsh = gsub.add_parser("show", help="inspect a grant")
+    gsh.add_argument("grant_id")
+    gsh.set_defaults(func=_cmd_grant)
+    grv = gsub.add_parser("revoke", help="revoke a grant")
+    grv.add_argument("grant_id")
+    grv.set_defaults(func=_cmd_grant)
 
     pc = sub.add_parser("config", help="show or set CLI defaults (url/batch/timeout)")
     pc.add_argument("--url")

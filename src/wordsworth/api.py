@@ -25,6 +25,7 @@ from .config import settings as default_settings
 from .embedder import Embedder
 from .generator import Generator
 from .grants import GrantStore
+from .key_audit import KeyLifecycleAudit
 from .keys import KeyProvider
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
@@ -105,6 +106,30 @@ class ReprocessResponse(BaseModel):
     failed: int
 
 
+class GrantIssueRequest(BaseModel):
+    """Operator/admin request to issue a reveal grant. NB: this surface has no
+    caller authentication yet — the API is tailnet-internal and the returned
+    grant_id is a bearer capability; a real auth decision is pending."""
+
+    recipient: str
+    allowed_types: list[str]
+    document_id: str | None = None      # None = any document
+    expires_at: str | None = None       # ISO-8601, must be timezone-aware
+
+
+class GrantResponse(BaseModel):
+    """A grant's state — never any key material or clear PII."""
+
+    grant_id: str
+    recipient: str
+    allowed_types: list[str]
+    document_id: str | None
+    status: str
+    created_at: str
+    revoked_at: str | None
+    expires_at: str | None
+
+
 def create_app(
     session_factory: sessionmaker[Session] | None = None,
     search_index: SearchIndex | None = None,
@@ -118,6 +143,7 @@ def create_app(
     anonymizer_factory: Callable[[Session], Anonymizer] | None = None,
     key_provider_factory: Callable[[Session], KeyProvider] | None = None,
     grant_store_factory: Callable[[Session], GrantStore] | None = None,
+    key_audit: KeyLifecycleAudit | None = None,
 ) -> FastAPI:
     # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
     # supplied as factories built per request; the singleton params stay for
@@ -443,6 +469,91 @@ def create_app(
                 withheld_types=sorted(requested_upper - allowed),
                 grant_id=body.grant_id,
             )
+
+    # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
+    # grant store (no key provider) — mounts wherever grants are configured.
+    if (session_factory is not None
+            and (grant_store is not None or grant_store_factory is not None)):
+        from pathlib import Path
+
+        from .grants import issue_grant, revoke_grant
+
+        def _resolve_audit() -> KeyLifecycleAudit:
+            if key_audit is not None:
+                return key_audit
+            from .key_audit import JsonlKeyLifecycleAudit
+            return JsonlKeyLifecycleAudit(
+                Path(default_settings.key_lifecycle_audit_path))
+
+        def _grant_response(g) -> GrantResponse:
+            return GrantResponse(
+                grant_id=g.grant_id,
+                recipient=g.recipient,
+                allowed_types=list(g.allowed_types),
+                document_id=str(g.document_id) if g.document_id else None,
+                status=g.status,
+                created_at=g.created_at.isoformat(),
+                revoked_at=g.revoked_at.isoformat() if g.revoked_at else None,
+                expires_at=g.expires_at.isoformat() if g.expires_at else None,
+            )
+
+        def _grant_store(session):
+            return grant_store_factory(session) if grant_store_factory else grant_store
+
+        @app.post("/grants", response_model=GrantResponse, status_code=201,
+                  tags=["admin"],
+                  summary="Issue a reveal grant (operator/admin; no caller auth yet)")
+        def grant_issue(body: GrantIssueRequest) -> GrantResponse:
+            """Issue a grant permitting later reveal of the given PII types,
+            optionally scoped to one document and/or expiring. Operator/admin
+            surface: the API is tailnet-internal and the returned grant_id is a
+            bearer capability — full caller authentication is a pending decision.
+            The issue is recorded in the key-lifecycle audit stream."""
+            doc_id = None
+            if body.document_id:
+                try:
+                    doc_id = UUID(body.document_id)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="malformed document_id")
+            expires = None
+            if body.expires_at:
+                try:
+                    expires = datetime.fromisoformat(body.expires_at)
+                except ValueError:
+                    raise HTTPException(status_code=400,
+                                        detail="malformed expires_at (ISO-8601)")
+                if expires.tzinfo is None:
+                    raise HTTPException(status_code=400,
+                                        detail="expires_at must be timezone-aware")
+            with session_factory() as session:
+                grant = issue_grant(
+                    _grant_store(session), _resolve_audit(),
+                    recipient=body.recipient, allowed_types=body.allowed_types,
+                    actor="operator", document_id=doc_id, expires_at=expires,
+                )
+                session.commit()
+                return _grant_response(grant)
+
+        @app.get("/grants/{grant_id}", response_model=GrantResponse, tags=["admin"],
+                 summary="Inspect a grant")
+        def grant_show(grant_id: str) -> GrantResponse:
+            with session_factory() as session:
+                grant = _grant_store(session).get(grant_id)
+            if grant is None:
+                raise HTTPException(status_code=404, detail="unknown grant")
+            return _grant_response(grant)
+
+        @app.post("/grants/{grant_id}/revoke", response_model=GrantResponse,
+                  tags=["admin"], summary="Revoke a grant (idempotent)")
+        def grant_revoke(grant_id: str) -> GrantResponse:
+            with session_factory() as session:
+                gs = _grant_store(session)
+                if gs.get(grant_id) is None:
+                    raise HTTPException(status_code=404, detail="unknown grant")
+                revoke_grant(gs, _resolve_audit(), grant_id, actor="operator")
+                session.commit()
+                grant = gs.get(grant_id)
+            return _grant_response(grant)
 
     return app
 

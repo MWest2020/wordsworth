@@ -65,6 +65,15 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_KEY_CACHE_TTL", "300"))
 
     @property
+    def key_lifecycle_audit_path(self) -> str:
+        """Append-only JSONL stream for key-lifecycle events (rotations, grant
+        issue/revoke). Default under the writable /tmp; a durable path can be
+        mounted. (This stream is not yet WORM-exported like the document chain.)"""
+        return os.environ.get(
+            "WORDSWORTH_KEY_LIFECYCLE_AUDIT_PATH", "/tmp/wordsworth-key-lifecycle.jsonl"
+        )
+
+    @property
     def reversible_mode(self) -> bool:
         """When true the deployed straat pseudonymises REVERSIBLY (durable keyed
         tokens + mapping store) instead of the irreversible default, and mounts
