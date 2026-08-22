@@ -15,5 +15,5 @@
 
 - [x] 3.1 Local tests: CRUD lifecycle, idempotent revoke, 404s, 400s, no key
   material, routes absent without a store; CLI arg/payload shaping. Suite green.
-- [ ] 3.2 DB-integration (CI): issue→revoke gates the reveal endpoint (403).
-- [ ] 3.3 `openspec validate` + full CI suite green.
+- [x] 3.2 DB-integration (CI): issue→revoke gates the reveal endpoint (403).
+- [x] 3.3 `openspec validate` + full CI suite green.
