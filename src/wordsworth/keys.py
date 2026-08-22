@@ -13,7 +13,9 @@ import time
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from .transit import KeyVaultStore, Transit
+from sqlalchemy.exc import IntegrityError
+
+from .transit import ActiveKeyExists, KeyVaultStore, Transit
 
 
 @dataclass(frozen=True)
@@ -129,18 +131,33 @@ class DurableKeyProvider:
         self._cache[key_id] = (material, now + self._ttl)
         return material
 
+    def _to_key(self, entry) -> Key:
+        return Key(id=entry.key_id,
+                   material=self._material(entry.key_id, entry.wrapped_material))
+
     def _mint_active(self, scope: str) -> Key:
         fresh = _mint()
         self._vault.put(fresh.id, scope, self._transit.wrap(fresh.material), "active")
         self._cache[fresh.id] = (fresh.material, time.monotonic() + self._ttl)
         return fresh
 
+    def _mint_or_adopt_winner(self, scope: str) -> Key:
+        """Mint a new active key for the scope; if a concurrent mint won the
+        single-active race (the store rejects the second active), adopt the
+        winner instead of ending with two active keys."""
+        try:
+            return self._mint_active(scope)
+        except (IntegrityError, ActiveKeyExists):
+            entry = self._vault.active_for(scope)
+            if entry is None:
+                raise
+            return self._to_key(entry)
+
     def current_key(self, scope: str = DEFAULT_SCOPE) -> Key:
         entry = self._vault.active_for(scope)  # always re-read, so rotations show
-        if entry is None:
-            return self._mint_active(scope)
-        return Key(id=entry.key_id,
-                   material=self._material(entry.key_id, entry.wrapped_material))
+        if entry is not None:
+            return self._to_key(entry)
+        return self._mint_or_adopt_winner(scope)
 
     def key(self, key_id: str) -> Key:
         entry = self._vault.get(key_id)
@@ -153,4 +170,4 @@ class DurableKeyProvider:
         prev = self._vault.active_for(scope)
         if prev is not None:           # retire first so only one active per scope
             self._vault.set_status(prev.key_id, "retired")
-        return self._mint_active(scope)
+        return self._mint_or_adopt_winner(scope)

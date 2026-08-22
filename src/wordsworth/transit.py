@@ -15,7 +15,7 @@ from typing import Protocol, runtime_checkable
 import httpx
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from .models import KeyVaultRecord
 
@@ -85,6 +85,12 @@ class OpenBaoTransit:
         return base64.b64decode(resp.json()["data"]["plaintext"])
 
 
+class ActiveKeyExists(Exception):
+    """Raised when a second ``active`` key is inserted for a scope. The Postgres
+    store surfaces the equivalent as a SQLAlchemy ``IntegrityError`` from the
+    partial-unique index; the provider treats both as "a concurrent mint won"."""
+
+
 @dataclass(frozen=True)
 class VaultEntry:
     key_id: str
@@ -151,7 +157,11 @@ class InMemoryKeyVaultStore:
 
     def put(self, key_id: str, scope: str, wrapped_material: bytes,
             status: str = "active") -> None:
-        self._d.setdefault(key_id, VaultEntry(key_id, scope, wrapped_material, status))
+        if key_id in self._d:
+            return
+        if status == "active" and self.active_for(scope) is not None:
+            raise ActiveKeyExists(scope)  # mirrors the Postgres partial-unique index
+        self._d[key_id] = VaultEntry(key_id, scope, wrapped_material, status)
 
     def get(self, key_id: str) -> VaultEntry | None:
         return self._d.get(key_id)
@@ -168,3 +178,33 @@ class InMemoryKeyVaultStore:
             raise KeyError(f"unknown key_id: {key_id}")
         self._d[key_id] = VaultEntry(entry.key_id, entry.scope,
                                      entry.wrapped_material, status)
+
+
+class SessionFactoryKeyVaultStore:
+    """Process-lifetime ``KeyVaultStore``: opens a short-lived session per
+    operation from a session factory (committing writes), so a single long-lived
+    ``DurableKeyProvider`` can serve every request and keep its unwrap cache warm
+    across them. ``VaultEntry`` is a detached frozen value, safe to return after
+    the session closes."""
+
+    def __init__(self, session_factory: sessionmaker[Session]):
+        self._sf = session_factory
+
+    def put(self, key_id: str, scope: str, wrapped_material: bytes,
+            status: str = "active") -> None:
+        with self._sf() as s:
+            PostgresKeyVaultStore(s).put(key_id, scope, wrapped_material, status)
+            s.commit()
+
+    def get(self, key_id: str) -> VaultEntry | None:
+        with self._sf() as s:
+            return PostgresKeyVaultStore(s).get(key_id)
+
+    def active_for(self, scope: str) -> VaultEntry | None:
+        with self._sf() as s:
+            return PostgresKeyVaultStore(s).active_for(scope)
+
+    def set_status(self, key_id: str, status: str) -> None:
+        with self._sf() as s:
+            PostgresKeyVaultStore(s).set_status(key_id, status)
+            s.commit()

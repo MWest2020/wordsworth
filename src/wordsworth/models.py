@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, LargeBinary, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -108,3 +108,11 @@ class KeyVaultRecord(Base):
     wrapped_material: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)  # active | retired
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # At most one active key per scope — the DB enforces the invariant so a
+    # concurrent double-mint cannot leave two active rows (the loser gets an
+    # IntegrityError, which the provider turns into a re-read of the winner).
+    __table_args__ = (
+        Index("uq_key_vault_active_scope", "scope", unique=True,
+              postgresql_where=text("status = 'active'")),
+    )
