@@ -15,7 +15,7 @@
 - [x] 3.1 Local tests: cache warm within one provider / cold across separate
   providers; one active after rotate; reject 2nd active; adopt-winner on race;
   serve shares one provider. Local suite green (250 passed).
-- [ ] 3.2 DB-integration (CI): session-factory round-trip; fresh provider resolves
+- [x] 3.2 DB-integration (CI): session-factory round-trip; fresh provider resolves
   persisted keys; partial-unique index rejects a 2nd active; reveal survives
   across sessions via the singleton.
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
