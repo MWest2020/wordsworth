@@ -48,6 +48,7 @@ def test_pull_ingests_pdfs_idempotent_and_continues(session, mem_store, mem_inde
     assert s1 == {"found": 3, "ingested": 1, "skipped": 2, "failed": 1}
     assert len(mem_index._docs) == 1                      # only the one unique PDF
 
-    # Re-run: the indexed PDF(s) are skipped; nothing new ingested (idempotent).
+    # Re-run: both indexed PDFs + the non-PDF are skipped; the corrupt one still
+    # fails; nothing new is ingested (idempotent).
     s2 = ingest_from_nextcloud(client, one, "/")
-    assert s2["ingested"] == 0 and s2["skipped"] == 2 and s2["failed"] == 1
+    assert s2["ingested"] == 0 and s2["skipped"] == 3 and s2["failed"] == 1
