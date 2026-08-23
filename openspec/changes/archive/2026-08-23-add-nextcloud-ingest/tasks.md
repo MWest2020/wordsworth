@@ -17,5 +17,5 @@
 
 - [x] 3.1 Local tests: XML parse, recursion, driver idempotency+continue-on-fail,
   inert, CLI; local suite green (259 passed).
-- [ ] 3.2 DB-integration (CI): end-to-end pull through the real pipeline.
-- [ ] 3.3 Full suite green in CI + `openspec validate`.
+- [x] 3.2 DB-integration (CI): end-to-end pull through the real pipeline.
+- [x] 3.3 Full suite green in CI + `openspec validate`.
