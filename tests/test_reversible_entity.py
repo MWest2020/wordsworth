@@ -151,6 +151,23 @@ def test_short_noise_entities_are_skipped_no_false_failhard():
     assert res.counts.get("person") == 1   # only the real entity counted
 
 
+def test_fragment_inside_a_word_is_not_redacted_or_failhard():
+    # GLiNER emits >=3-char fragment spans on OCR-noisy text (e.g. "ene" inside
+    # "voorzienen"). Word-boundary matching must NOT redact the fragment inside a
+    # larger word (no mangling) nor trip the survivor fail-hard, while a real
+    # whole-word entity is still redacted.
+    kp = InMemoryKeyProvider()
+    store = InMemoryMappingStore()
+
+    def detect(text: str) -> list[Entity]:
+        return [Entity("PERSON", "ene", 0, 3), Entity("PERSON", "Jan Jansen", 4, 14)]
+
+    drv = ReversibleAnonymizer(kp, store, detect=detect)
+    res = drv.anonymize("de voorzienen van Jan Jansen")  # "ene" only inside a word
+    assert "voorzienen" in res.text          # word intact, fragment not redacted
+    assert "Jan Jansen" not in res.text and "[PERSON:" in res.text  # real entity gone
+
+
 def test_overlapping_spans_longer_wins():
     kp = InMemoryKeyProvider()
     store = InMemoryMappingStore()

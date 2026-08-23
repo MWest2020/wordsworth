@@ -186,15 +186,21 @@ class ReversibleAnonymizer:
             counts[label] = counts.get(label, 0) + 1
             return pseudonym
 
-        # Longest value first so an alternative that contains a shorter one wins
-        # at a given position; re.sub scans the original left-to-right and does
-        # not re-scan the tokens it inserts.
+        # Match values only as WHOLE tokens — not as substrings inside larger
+        # words — via non-word-char lookarounds. GLiNER emits fragment spans on
+        # OCR-noisy Dutch text (e.g. "ene" in "voorzienen", "len" in "bepalen");
+        # a bare substring match would both mangle ordinary words and, because
+        # such a fragment recurs everywhere, guarantee a false survivor that
+        # rejects the whole document. A real name/place is a whole word and is
+        # still caught. Longest value first so a value containing a shorter one
+        # wins; re.sub does not re-scan the tokens it inserts.
         values = sorted(label_of, key=len, reverse=True)
-        text = re.compile("|".join(re.escape(v) for v in values)).sub(repl, text)
+        alt = "|".join(re.escape(v) for v in values)
+        text = re.compile(r"(?<!\w)(?:" + alt + r")(?!\w)").sub(repl, text)
 
         stripped = _PSEUDONYM_RE.sub("", text)  # remove inserted tokens
         for value in values:
-            if value in stripped:
+            if re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", stripped):
                 raise AnonymizationEngineError(
                     "a detected entity value survived pseudonymisation; refusing "
                     "to emit text that may contain clear PII"
