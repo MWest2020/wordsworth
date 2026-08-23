@@ -32,6 +32,10 @@ DetectFn = Callable[[str], list[Entity]]
 # GLiNER types (e.g. PHONE_NUMBER) are matched and thus revealable.
 _PSEUDONYM_RE = re.compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
 
+# Minimum length of a GLiNER entity value we will pseudonymise. Shorter spans are
+# OCR/model noise (e.g. "ik", "re"), not PII; see _pseudonymize_entities.
+_MIN_ENTITY_LEN = 3
+
 
 def _token(key_material: bytes, label: str, value: str) -> str:
     msg = f"{label}:{value}".encode("utf-8")
@@ -152,11 +156,20 @@ class ReversibleAnonymizer:
         and a value inside a longer one is consumed by it), which cannot leak on
         an offset mismatch. Defense-in-depth: after substitution we strip inserted
         tokens and assert no detected value survives, else we fail hard — the
-        index must never hold clear PII."""
+        index must never hold clear PII.
+
+        Entity values shorter than ``_MIN_ENTITY_LEN`` are skipped: GLiNER emits
+        spurious 1-2 char spans on OCR-noisy Dutch text (e.g. "ik", "re") that are
+        not PII, and redacting them would both mangle the text (every occurrence
+        of a common substring becomes a token) and, worse, guarantee a false
+        survivor — such a fragment always recurs in ordinary text, tripping the
+        fail-hard check and rejecting the whole document. Structured PII
+        (BSN/IBAN/email) is handled by the deterministic pass regardless, and real
+        entity PII (names/places/orgs) is >= 3 chars, so this cannot leak."""
         label_of: dict[str, str] = {}
         for e in entities:
             value = e.text
-            if value and value.strip():
+            if value and len(value.strip()) >= _MIN_ENTITY_LEN:
                 label_of.setdefault(value, e.entity_type.lower())
         if not label_of:
             return text, {}

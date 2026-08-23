@@ -133,6 +133,24 @@ def test_underscored_entity_type_is_revealable():
     assert "0612345678" in restored and revealed   # widened token regex matches
 
 
+def test_short_noise_entities_are_skipped_no_false_failhard():
+    # GLiNER emits spurious 1-2 char spans on OCR-noisy Dutch text (e.g. "ik")
+    # that recur throughout ordinary text; redacting them would trip the fail-hard
+    # survivor check and wrongly reject the whole document. They must be skipped,
+    # while a real (>=3 char) entity is still pseudonymised.
+    kp = InMemoryKeyProvider()
+    store = InMemoryMappingStore()
+
+    def detect(text: str) -> list[Entity]:
+        return [Entity("PERSON", "ik", 0, 2), Entity("PERSON", "Jan Jansen", 12, 22)]
+
+    drv = ReversibleAnonymizer(kp, store, detect=detect)
+    res = drv.anonymize("ik denk dat Jan Jansen ook ik zei")  # "ik" recurs
+    assert "Jan Jansen" not in res.text and "[PERSON:" in res.text  # real entity gone
+    assert "ik" in res.text                # 2-char noise left as-is, no fail-hard
+    assert res.counts.get("person") == 1   # only the real entity counted
+
+
 def test_overlapping_spans_longer_wins():
     kp = InMemoryKeyProvider()
     store = InMemoryMappingStore()
