@@ -260,6 +260,23 @@ def _cmd_reprocess(args) -> int:
     return 0
 
 
+def _cmd_ingest_nextcloud(args) -> int:
+    """Pull + ingest from the configured Nextcloud (POST /ingest/nextcloud)."""
+    path = "/ingest/nextcloud"
+    if args.folder:
+        path += "?" + urllib.parse.urlencode({"folder": args.folder})
+    try:
+        res = _post_json(args.url, path, {}, timeout=args.timeout or 3600)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print("Nextcloud ingest is not configured on the server.")
+            return 2
+        raise
+    print(f"found={res.get('found')} ingested={res.get('ingested')} "
+          f"skipped={res.get('skipped')} failed={res.get('failed')}")
+    return 0
+
+
 def _cmd_grant(args) -> int:
     """Issue, inspect, or revoke a reveal grant (operator/admin surface)."""
     if args.grant_cmd == "issue":
@@ -383,6 +400,13 @@ def main(argv: list[str] | None = None) -> int:
     grv = gsub.add_parser("revoke", help="revoke a grant")
     grv.add_argument("grant_id")
     grv.set_defaults(func=_cmd_grant)
+
+    pn = sub.add_parser("ingest-nextcloud",
+                        help="pull + ingest documents from the configured Nextcloud")
+    pn.add_argument("--folder", default=None,
+                    help="Nextcloud folder to pull (default: server config)")
+    pn.add_argument("--timeout", type=float, default=3600)
+    pn.set_defaults(func=_cmd_ingest_nextcloud)
 
     pc = sub.add_parser("config", help="show or set CLI defaults (url/batch/timeout)")
     pc.add_argument("--url")

@@ -226,6 +226,27 @@ class Settings:
     def rate_limit_ask_burst(self) -> float:
         return float(os.environ.get("WORDSWORTH_RATE_LIMIT_ASK_BURST", "3"))
 
+    # --- nextcloud-ingest (pull documents from a Nextcloud folder over WebDAV) ---
+    # All empty by default → the feature is inert (endpoint not mounted).
+    @property
+    def nextcloud_url(self) -> str:
+        """Base URL of the Nextcloud instance (e.g. https://cloud.example.org)."""
+        return os.environ.get("WORDSWORTH_NEXTCLOUD_URL", "")
+
+    @property
+    def nextcloud_user(self) -> str:
+        return os.environ.get("WORDSWORTH_NEXTCLOUD_USER", "")
+
+    @property
+    def nextcloud_password(self) -> str:
+        """Nextcloud app-password (secret). Injected out-of-band via a Secret;
+        used only for WebDAV Basic auth, never logged or committed."""
+        return os.environ.get("WORDSWORTH_NEXTCLOUD_PASSWORD", "")
+
+    @property
+    def nextcloud_folder(self) -> str:
+        """Folder (relative to the user's files root) to pull from."""
+        return os.environ.get("WORDSWORTH_NEXTCLOUD_FOLDER", "/")
 
 
 settings = Settings()
