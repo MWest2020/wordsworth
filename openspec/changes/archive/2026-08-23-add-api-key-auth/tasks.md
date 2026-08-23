@@ -10,4 +10,4 @@
 - [x] 2.1 Local tests: parse; open by default; 401 missing/wrong; valid passes; `/health` open; key not echoed.
 - [x] 2.2 DB-integration (CI): reveal 401 without key, and records `caller` with no clear PII.
 - [x] 2.3 Full suite green locally (266) + no regressions; `openspec validate`.
-- [ ] 2.4 CI green.
+- [x] 2.4 CI green.
