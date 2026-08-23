@@ -81,6 +81,16 @@ class Settings:
         pseudonyms-only either way. Requires OpenBao (ADR-0002)."""
         return os.environ.get("WORDSWORTH_REVERSIBLE", "false").lower() == "true"
 
+    # --- api-key-auth (opt-in, default off) ---
+    @property
+    def api_keys(self) -> dict[str, str]:
+        """Optional per-caller API keys, parsed from ``WORDSWORTH_API_KEYS`` as
+        comma-separated ``label:key`` pairs. Returns {key: label}. Empty (the
+        default) means authentication is OFF — the tailnet-internal API stays
+        open, exactly as before. Secret: the keys are never logged."""
+        from .auth import parse_api_keys
+        return parse_api_keys(os.environ.get("WORDSWORTH_API_KEYS", ""))
+
     # --- pipeline-resilience ---
     @property
     def retry_attempts(self) -> int:

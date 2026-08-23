@@ -15,12 +15,13 @@ from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from .anonymizer import Anonymizer
+from .auth import ApiKeyAuthMiddleware
 from .config import settings as default_settings
 from .embedder import Embedder
 from .generator import Generator
@@ -144,6 +145,7 @@ def create_app(
     key_provider_factory: Callable[[Session], KeyProvider] | None = None,
     grant_store_factory: Callable[[Session], GrantStore] | None = None,
     key_audit: KeyLifecycleAudit | None = None,
+    api_keys: dict[str, str] | None = None,
 ) -> FastAPI:
     # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
     # supplied as factories built per request; the singleton params stay for
@@ -164,6 +166,15 @@ def create_app(
     if limiters:
         app.add_middleware(
             RateLimitMiddleware, limiters=limiters, exempt=EXEMPT_PATHS
+        )
+
+    # Opt-in per-caller API-key auth. Mounted ONLY when keys are configured, so
+    # an empty set leaves the API open (unchanged, non-breaking). Added last so
+    # it runs first — an unauthenticated caller is rejected before rate-limiting.
+    keys = api_keys if api_keys is not None else default_settings.api_keys
+    if keys:
+        app.add_middleware(
+            ApiKeyAuthMiddleware, keys=keys, exempt=EXEMPT_PATHS
         )
 
     @app.get("/health", summary="Liveness probe", tags=["ops"])
@@ -439,7 +450,7 @@ def create_app(
         @app.post("/documents/{document_id}/reveal", response_model=RevealResponse,
                   tags=["write"],
                   summary="Reveal a document's PII, gated per type by a grant")
-        def reveal(document_id: UUID, body: RevealRequest) -> RevealResponse:
+        def reveal(document_id: UUID, body: RevealRequest, request: Request) -> RevealResponse:
             """Reveal the PII types a grant authorises; every other type stays
             pseudonymised. 404 if the document or grant is unknown, 403 if the
             grant is revoked, expired, or scoped to another document."""
@@ -470,15 +481,18 @@ def create_app(
                         status_code=409, detail="document not yet de-identified")
                 requested = body.types if body.types else list(grant.allowed_types)
                 allowed = authorize(grant, document_id, set(requested), now)
+                # The authenticated caller (from api-key auth, if enabled) is
+                # recorded distinctly from the grant recipient; None when auth
+                # is off (tailnet-internal, grant_id as bearer capability).
+                caller = getattr(request.state, "caller", None)
+                extra_audit = {"grant_id": body.grant_id}
+                if caller:
+                    extra_audit["caller"] = caller
                 revealed_text = deanonymize(
                     session, document_id, pseudo_text, kp,
                     PostgresMappingStore(session), actor=grant.recipient,
                     allowed_types=allowed,
-                    # Attribute the access to the specific (revocable, issue-
-                    # audited) grant. NB: the API is tailnet-internal and the
-                    # grant_id is a bearer capability — full caller authn is a
-                    # separate decision (see the reveal route docstring).
-                    extra_audit={"grant_id": body.grant_id},
+                    extra_audit=extra_audit,
                 )
                 session.commit()
             requested_upper = {t.upper() for t in requested}
