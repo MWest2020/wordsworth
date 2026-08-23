@@ -3,4 +3,4 @@
 - [x] 1.2 Test: short noise skipped, no false fail-hard, real entity still redacted.
 ## 2. Gate
 - [x] 2.1 Local suite green.
-- [ ] 2.2 CI green + `openspec validate`.
+- [x] 2.2 CI green + `openspec validate`.
