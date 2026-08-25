@@ -15,4 +15,4 @@
 
 - [x] 3.1 Suite green; `/ingest/nextcloud` gone; generic `/ingest` + api-key-auth
   intact.
-- [ ] 3.2 CI green + `openspec validate`.
+- [x] 3.2 CI green + `openspec validate`.
