@@ -1,30 +1,8 @@
 """wordsworthctl client — offline bits (no server contacted)."""
 from __future__ import annotations
 
-import urllib.error
-
 import wordsworth.client as client
 from wordsworth.client import _iter_files, main
-
-
-def test_ingest_nextcloud_posts_to_endpoint(monkeypatch):
-    seen = {}
-
-    def fake_post(base, path, payload, timeout=3600):
-        seen["path"] = path
-        return {"found": 2, "ingested": 2, "skipped": 0, "failed": 0}
-
-    monkeypatch.setattr(client, "_post_json", fake_post)
-    assert main(["--url", "http://api", "ingest-nextcloud", "--folder", "/Woo"]) == 0
-    assert seen["path"] == "/ingest/nextcloud?folder=%2FWoo"
-
-
-def test_ingest_nextcloud_reports_not_configured(monkeypatch):
-    def fake_post(base, path, payload, timeout=3600):
-        raise urllib.error.HTTPError(base + path, 404, "Not Found", {}, None)
-
-    monkeypatch.setattr(client, "_post_json", fake_post)
-    assert main(["--url", "http://api", "ingest-nextcloud"]) == 2
 
 
 def test_iter_files_pdf_recursive_and_all(tmp_path):

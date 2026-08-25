@@ -370,26 +370,6 @@ def create_app(
             return IngestResponse(total=len(results), indexed=indexed,
                                   results=results)
 
-        # Nextcloud pull-based ingest: sourced from a Nextcloud folder over WebDAV
-        # and driven through the SAME per-document ingest closure. Mounted only
-        # when a Nextcloud source is configured (otherwise inert). Reuses the
-        # content-addressed idempotent skip, so re-runs only pull what's missing.
-        from . import nextcloud_source
-
-        if nextcloud_source.configured():
-
-            @app.post("/ingest/nextcloud", tags=["write"],
-                      summary="Pull + ingest documents from the configured Nextcloud")
-            def ingest_nextcloud(folder: str | None = None) -> dict:
-                """List the configured Nextcloud folder over WebDAV, fetch each PDF,
-                and run it through ingest → OCR → anonymize → index. Idempotent and
-                continue-on-failure; returns per-outcome counts. The Nextcloud
-                password is used only for WebDAV auth and never returned or logged."""
-                client = nextcloud_source.client_from_config()
-                target = folder or default_settings.nextcloud_folder
-                return nextcloud_source.ingest_from_nextcloud(
-                    client, _ingest_one, target)
-
         # Backfill: re-run the reversible de-identify over already-processed
         # documents (e.g. a corpus first indexed irreversibly). Mounted only in
         # reversible mode (a session-scoped anonymizer factory present), because
