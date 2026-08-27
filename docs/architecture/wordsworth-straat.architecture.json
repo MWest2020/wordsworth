@@ -1,0 +1,349 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Wordsworth-straat",
+    "subtitle": "PII-veilige documentpijplijn: ingest → de-identify → index → zoek / reveal",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ingest-pad",
+        "label": "Ingest-pad",
+        "focus": [
+          "producers",
+          "ingress",
+          "api",
+          "objectstore",
+          "openanonymiser",
+          "ollama",
+          "opensearch"
+        ],
+        "note": "Van aangeleverd document naar geanonimiseerd, doorzoekbaar resultaat."
+      },
+      {
+        "id": "leespad",
+        "label": "Zoeken en RAG",
+        "focus": [
+          "users",
+          "ingress",
+          "api",
+          "opensearch",
+          "ollama"
+        ],
+        "note": "search → hybrid (BM25+kNN, zeef-cosine eindranker) → ask met lokale LLM."
+      },
+      {
+        "id": "fase-b",
+        "label": "Fase B: reveal",
+        "focus": [
+          "api",
+          "postgres",
+          "openbao"
+        ],
+        "note": "Omkeerbare pseudonimisatie met envelope-encryptie; reveal vereist grant én key, fail-closed."
+      },
+      {
+        "id": "grenzen",
+        "label": "Trust boundaries",
+        "focus": [
+          "ingress",
+          "api",
+          "openanonymiser"
+        ],
+        "note": "Tailnet-only ontsluiting; bekende zwakke hop: klare PII over in-cluster http naar de anonymiser."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "users",
+      "type": "external",
+      "label": "Gebruikers",
+      "sublabel": "search · hybrid · ask · reveal",
+      "pos": [
+        40,
+        160
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "producers",
+      "type": "external",
+      "label": "Producers",
+      "sublabel": "NiFi · connector · CLI",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "cloud",
+      "label": "Tailnet-ingress",
+      "sublabel": "LoadBalancer (tailscale)",
+      "pos": [
+        250,
+        245
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "tag": "niet publiek"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "wordsworth-api",
+      "sublabel": "FastAPI :8000",
+      "pos": [
+        470,
+        245
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "tag": "pipeline in-process"
+    },
+    {
+      "id": "openanonymiser",
+      "type": "backend",
+      "label": "OpenAnonymiser",
+      "sublabel": "PII-detectie :8080",
+      "pos": [
+        360,
+        70
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "eigen namespace"
+    },
+    {
+      "id": "ollama",
+      "type": "backend",
+      "label": "Ollama",
+      "sublabel": "bge-m3 · llama3.1 :11434",
+      "pos": [
+        590,
+        70
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "openbao",
+      "type": "security",
+      "label": "OpenBao Transit",
+      "sublabel": "KEK wrap/unwrap",
+      "pos": [
+        830,
+        70
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "fase B"
+    },
+    {
+      "id": "opensearch",
+      "type": "database",
+      "label": "OpenSearch",
+      "sublabel": "BM25 + kNN :9200",
+      "pos": [
+        700,
+        245
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "objectstore",
+      "type": "database",
+      "label": "S3-objectstore",
+      "sublabel": "content-addressed · WORM-audit",
+      "pos": [
+        470,
+        420
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "audit = state machine",
+      "pos": [
+        700,
+        420
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "tag": "mappings · grants · key_vault"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Kubernetes-cluster (homelab)",
+      "wraps": [
+        "ingress",
+        "api",
+        "openanonymiser",
+        "ollama",
+        "openbao",
+        "opensearch",
+        "objectstore",
+        "postgres"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "namespace: wordsworth",
+      "wraps": [
+        "ingress",
+        "api"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "users-in",
+      "from": "users",
+      "to": "ingress",
+      "label": "HTTPS (tailnet)",
+      "variant": "emphasis",
+      "labelAt": [
+        215,
+        156
+      ]
+    },
+    {
+      "id": "producers-in",
+      "from": "producers",
+      "to": "ingress",
+      "label": "POST /ingest"
+    },
+    {
+      "id": "ingress-api",
+      "from": "ingress",
+      "to": "api",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-anon",
+      "from": "api",
+      "to": "openanonymiser",
+      "label": "de-identify (chunks ×3)",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "api-ollama",
+      "from": "api",
+      "to": "ollama",
+      "label": "embed · generate",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "api-os",
+      "from": "api",
+      "to": "opensearch",
+      "label": "index · query",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-s3",
+      "from": "api",
+      "to": "objectstore",
+      "label": "bytes (sha256)",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "api-pg",
+      "from": "api",
+      "to": "postgres",
+      "label": "audit + state"
+    },
+    {
+      "id": "api-bao",
+      "from": "api",
+      "to": "openbao",
+      "label": "fase B: datakey wrap/unwrap",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelSegment": 1,
+      "labelDx": 80
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Pijplijn (in-process, hervatbaar)",
+      "items": [
+        "profile → (OCR nld) → extract (pypdf, tekst alleen in geheugen) → de-identify → embed → index",
+        "Append-only audittabel is de state machine; retries 3× met backoff, run hervatbaar",
+        "Idempotent: content-addressed sha256, al geïndexeerd = skipped"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Zeef als library (geen service)",
+      "items": [
+        "cosine-eindranker over de RRF-recallset (hybrid)",
+        "tokenizer in de embedder",
+        "key-lifecycle audit als append-only JSONL"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Batch-intake",
+      "items": [
+        "wordsworth-ingest Job leest PVC /corpus en draait dezelfde pipeline",
+        "corpus-loader is een tijdelijke pod (RWO), daarna weg",
+        "Nextcloud-connector bewust extern proces, koppelt via POST /ingest"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Fase B — default UIT",
+      "items": [
+        "HMAC-tokens [TYPE:hash8], mappings AES-256-GCM in Postgres",
+        "Envelope-encryptie: datakey per (PII-type, versie), gewrapt door OpenBao Transit; KEK verlaat OpenBao nooit",
+        "Reveal = grant-scope én key-beschikbaarheid; sealed OpenBao ⇒ fail-closed, nooit klare PII naar de index"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Hardening",
+      "items": [
+        "Pods non-root, read-only rootfs, caps dropped, seccomp",
+        "Rate limits op /search /hybrid /ask; optionele X-API-Key",
+        "Bekende zwakke hop: klare PII over in-cluster http naar OpenAnonymiser (mTLS open punt)"
+      ]
+    }
+  ]
+}
