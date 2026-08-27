@@ -51,6 +51,16 @@
           "openanonymiser"
         ],
         "note": "Tailnet-only ontsluiting; bekende zwakke hop: klare PII over in-cluster http naar de anonymiser."
+      },
+      {
+        "id": "deploy",
+        "label": "GitOps-deploy",
+        "focus": [
+          "gitops",
+          "argocd",
+          "api"
+        ],
+        "note": "App-of-apps: wordsworth-Application op sync-wave 6, na stores en anonymiser; automated sync met prune + selfHeal."
       }
     ]
   },
@@ -199,6 +209,36 @@
         60
       ],
       "tag": "mappings · grants · key_vault"
+    },
+    {
+      "id": "gitops",
+      "type": "external",
+      "label": "homelab-repo (Git)",
+      "sublabel": "cluster-config/infra/wordsworth",
+      "pos": [
+        40,
+        470
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "kustomize"
+    },
+    {
+      "id": "argocd",
+      "type": "cloud",
+      "label": "Argo CD",
+      "sublabel": "app-of-apps · sync-wave 6",
+      "pos": [
+        250,
+        470
+      ],
+      "size": [
+        150,
+        60
+      ],
+      "tag": "prune + selfHeal"
     }
   ],
   "boundaries": [
@@ -213,7 +253,8 @@
         "openbao",
         "opensearch",
         "objectstore",
-        "postgres"
+        "postgres",
+        "argocd"
       ]
     },
     {
@@ -297,6 +338,20 @@
       "toSide": "bottom",
       "labelSegment": 1,
       "labelDx": 80
+    },
+    {
+      "id": "git-argocd",
+      "from": "gitops",
+      "to": "argocd",
+      "label": "sync (main)",
+      "variant": "dashed"
+    },
+    {
+      "id": "argocd-api",
+      "from": "argocd",
+      "to": "api",
+      "label": "kustomize apply",
+      "variant": "dashed"
     }
   ],
   "cards": [
@@ -343,6 +398,15 @@
         "Pods non-root, read-only rootfs, caps dropped, seccomp",
         "Rate limits op /search /hybrid /ask; optionele X-API-Key",
         "Bekende zwakke hop: klare PII over in-cluster http naar OpenAnonymiser (mTLS open punt)"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "GitOps-deploy (homelab-repo)",
+      "items": [
+        "Argo CD app-of-apps: root-app → Applications per infra-onderdeel",
+        "wordsworth op sync-wave 6, na minio (2), opensearch/ollama/openanonymiser (3), cnpg-database (4)",
+        "Automated sync: prune + selfHeal + CreateNamespace; factory-CI bouwt, Trivy-scant en pusht het image naar GHCR"
       ]
     }
   ]
