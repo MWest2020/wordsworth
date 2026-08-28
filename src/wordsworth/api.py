@@ -21,6 +21,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from .anonymizer import Anonymizer
+from starlette.middleware.cors import CORSMiddleware
+
 from .auth import ApiKeyAuthMiddleware
 from .config import settings as default_settings
 from .embedder import Embedder
@@ -146,6 +148,7 @@ def create_app(
     grant_store_factory: Callable[[Session], GrantStore] | None = None,
     key_audit: KeyLifecycleAudit | None = None,
     api_keys: dict[str, str] | None = None,
+    cors_allow_origins: list[str] | None = None,
 ) -> FastAPI:
     # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
     # supplied as factories built per request; the singleton params stay for
@@ -175,6 +178,23 @@ def create_app(
     if keys:
         app.add_middleware(
             ApiKeyAuthMiddleware, keys=keys, exempt=EXEMPT_PATHS
+        )
+
+    # Opt-in CORS for browser frontends (e.g. the Wordsworth Console). Added
+    # LAST so it runs FIRST (outermost): it answers OPTIONS preflight and sets
+    # the Access-Control-* headers before auth/rate-limiting see the request.
+    # Empty origins (the default) leaves CORS off — no cross-origin browser
+    # client is admitted, unchanged. Config-gated only; no coupling to any one
+    # frontend, and X-API-Key auth still governs the actual call.
+    cors_origins = cors_allow_origins if cors_allow_origins is not None \
+        else default_settings.cors_allow_origins
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["x-api-key", "content-type"],
+            allow_credentials=False,
         )
 
     @app.get("/health", summary="Liveness probe", tags=["ops"])

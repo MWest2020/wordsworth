@@ -91,6 +91,18 @@ class Settings:
         from .auth import parse_api_keys
         return parse_api_keys(os.environ.get("WORDSWORTH_API_KEYS", ""))
 
+    # --- browser frontends: CORS (opt-in, default off) ---
+    @property
+    def cors_allow_origins(self) -> list[str]:
+        """Allowed browser origins for cross-origin API calls, from
+        ``WORDSWORTH_CORS_ALLOW_ORIGINS`` as a comma-separated list (e.g.
+        ``https://mwest2020.github.io``). Empty (the default) means CORS is OFF
+        — no cross-origin browser client may call the API, exactly as before.
+        This only permits an origin; it is not authentication (X-API-Key still
+        applies). Never use ``*`` together with credentials."""
+        raw = os.environ.get("WORDSWORTH_CORS_ALLOW_ORIGINS", "")
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
     # --- pipeline-resilience ---
     @property
     def retry_attempts(self) -> int:
