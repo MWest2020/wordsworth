@@ -1,6 +1,6 @@
 ---
-status: proposed
-last_reviewed: 2026-08-27
+status: accepted
+last_reviewed: 2026-08-29
 ---
 
 # ADR-0003: Verifiable-credential reveal authorization (EUDI-aligned), PoC-first
