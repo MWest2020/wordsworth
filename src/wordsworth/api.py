@@ -24,6 +24,7 @@ from .anonymizer import Anonymizer
 from starlette.middleware.cors import CORSMiddleware
 
 from .auth import ApiKeyAuthMiddleware
+from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .embedder import Embedder
 from .generator import Generator
@@ -149,6 +150,10 @@ def create_app(
     key_audit: KeyLifecycleAudit | None = None,
     api_keys: dict[str, str] | None = None,
     cors_allow_origins: list[str] | None = None,
+    vc_public_key=None,
+    vc_expected_issuer: str | None = None,
+    vc_expected_vct: str | None = None,
+    vc_required: bool | None = None,
 ) -> FastAPI:
     # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
     # supplied as factories built per request; the singleton params stay for
@@ -193,9 +198,21 @@ def create_app(
             CORSMiddleware,
             allow_origins=cors_origins,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["x-api-key", "content-type"],
+            allow_headers=["x-api-key", "content-type", "x-vc"],
             allow_credentials=False,
         )
+
+    # EUDI-aligned VC reveal gate (opt-in, ADR-0003). Resolved once; the reveal
+    # route closes over it. Off unless an issuer key is configured, so the
+    # default deployment is grant-only and unchanged.
+    if vc_public_key is None and default_settings.vc_issuer_key_pem:
+        vc_public_key = load_public_key_pem(default_settings.vc_issuer_key_pem)
+    if vc_expected_issuer is None:
+        vc_expected_issuer = default_settings.vc_expected_issuer or None
+    if vc_expected_vct is None:
+        vc_expected_vct = default_settings.vc_expected_vct or None
+    if vc_required is None:
+        vc_required = default_settings.vc_required
 
     @app.get("/health", summary="Liveness probe", tags=["ops"])
     def health() -> dict[str, str]:
@@ -488,6 +505,21 @@ def create_app(
                 extra_audit = {"grant_id": body.grant_id}
                 if caller:
                     extra_audit["caller"] = caller
+                # EUDI-aligned VC gate (opt-in): a presented X-VC credential can
+                # only NARROW what the grant allows (intersection), never widen
+                # it. Off unless an issuer key is configured; then a valid VC is
+                # required only if WORDSWORTH_VC_REQUIRED. Denials are 403.
+                try:
+                    allowed, vc_audit = apply_vc_gate(
+                        allowed, request.headers.get("x-vc"),
+                        public_key=vc_public_key,
+                        expected_vct=vc_expected_vct,
+                        expected_issuer=vc_expected_issuer,
+                        required=vc_required, now=now,
+                    )
+                except VcError as exc:
+                    raise HTTPException(status_code=403, detail=f"vc rejected: {exc}")
+                extra_audit.update(vc_audit)
                 revealed_text = deanonymize(
                     session, document_id, pseudo_text, kp,
                     PostgresMappingStore(session), actor=grant.recipient,

@@ -11,8 +11,10 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 from wordsworth.vc import (
     VcError,
+    apply_vc_gate,
     authorized_types,
     issue_sdjwt_vc,
+    load_public_key_pem,
     verify_sdjwt_vc,
 )
 
@@ -105,6 +107,63 @@ def test_authorized_types_uppercases_and_handles_scalar():
                           selective_claims={"authorized_types": "person"})
     vc = verify_sdjwt_vc(cred.present(), key.public_key())
     assert authorized_types(vc) == {"PERSON"}
+
+
+def test_gate_off_when_no_key():
+    allowed = {"PERSON", "EMAIL"}
+    out, extra = apply_vc_gate(allowed, None, public_key=None)
+    assert out == allowed and extra == {}
+
+
+def test_gate_narrows_but_never_widens():
+    key = _key()
+    cred = _issue(key, types=["EMAIL"])            # VC authorizes only EMAIL
+    pres = cred.present()
+    # grant allows more than the VC → intersection = {EMAIL}
+    out, extra = apply_vc_gate({"PERSON", "EMAIL", "BSN"}, pres, public_key=key.public_key())
+    assert out == {"EMAIL"}
+    assert extra["vc_issuer"] == ISS
+    # VC authorizes more than the grant → still bounded by the grant
+    cred2 = _issue(key, types=["PERSON", "EMAIL", "BSN"])
+    out2, _ = apply_vc_gate({"EMAIL"}, cred2.present(), public_key=key.public_key())
+    assert out2 == {"EMAIL"}
+
+
+def test_gate_absent_presentation_passes_when_not_required():
+    key = _key()
+    out, extra = apply_vc_gate({"PERSON"}, None, public_key=key.public_key(), required=False)
+    assert out == {"PERSON"} and extra == {}
+
+
+def test_gate_absent_presentation_raises_when_required():
+    key = _key()
+    with pytest.raises(VcError):
+        apply_vc_gate({"PERSON"}, None, public_key=key.public_key(), required=True)
+
+
+def test_gate_rejects_invalid_presentation():
+    key = _key()
+    cred = _issue(key)
+    with pytest.raises(VcError):
+        apply_vc_gate({"PERSON"}, cred.present(), public_key=_key().public_key())  # wrong key
+
+
+def test_load_public_key_pem_roundtrip():
+    from cryptography.hazmat.primitives import serialization
+    key = _key()
+    pem = key.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    pub = load_public_key_pem(pem)
+    cred = _issue(key, types=["PERSON"])
+    vc = verify_sdjwt_vc(cred.present(), pub)
+    assert authorized_types(vc) == {"PERSON"}
+
+
+def test_load_public_key_pem_rejects_garbage():
+    with pytest.raises(VcError):
+        load_public_key_pem("not a pem")
 
 
 def test_alg_none_is_rejected():

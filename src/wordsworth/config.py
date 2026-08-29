@@ -103,6 +103,29 @@ class Settings:
         raw = os.environ.get("WORDSWORTH_CORS_ALLOW_ORIGINS", "")
         return [o.strip() for o in raw.split(",") if o.strip()]
 
+    # --- EUDI-aligned VC reveal gate (opt-in, default off) — ADR-0003 ---
+    @property
+    def vc_issuer_key_pem(self) -> str:
+        """PEM of the trusted VC issuer's EC public key, from
+        ``WORDSWORTH_VC_ISSUER_KEY_PEM``. Empty (default) → the VC reveal gate
+        is OFF and reveal is grant-only, exactly as before."""
+        return os.environ.get("WORDSWORTH_VC_ISSUER_KEY_PEM", "")
+
+    @property
+    def vc_expected_issuer(self) -> str:
+        return os.environ.get("WORDSWORTH_VC_ISSUER", "")
+
+    @property
+    def vc_expected_vct(self) -> str:
+        return os.environ.get("WORDSWORTH_VC_VCT", "")
+
+    @property
+    def vc_required(self) -> bool:
+        """When true (and the gate is on), a reveal without a valid X-VC
+        credential is denied. Default false → a VC only *narrows* a grant when
+        presented; absent, reveal stays grant-only (non-breaking)."""
+        return os.environ.get("WORDSWORTH_VC_REQUIRED", "false").lower() == "true"
+
     # --- pipeline-resilience ---
     @property
     def retry_attempts(self) -> int:

@@ -215,6 +215,53 @@ def verify_sdjwt_vc(
                               issuer=payload.get("iss", ""))
 
 
+def load_public_key_pem(pem: str) -> ec.EllipticCurvePublicKey:
+    """Load an issuer EC public key from PEM (for config-driven verification)."""
+    from cryptography.hazmat.primitives.serialization import load_pem_public_key
+    try:
+        key = load_pem_public_key(pem.encode("ascii") if isinstance(pem, str) else pem)
+    except Exception as exc:
+        raise VcError("malformed issuer public key PEM") from exc
+    if not isinstance(key, ec.EllipticCurvePublicKey):
+        raise VcError("issuer key is not an EC public key")
+    return key
+
+
+def apply_vc_gate(
+    allowed: set[str],
+    presentation: str | None,
+    *,
+    public_key: ec.EllipticCurvePublicKey | None,
+    expected_vct: str | None = None,
+    expected_issuer: str | None = None,
+    required: bool = False,
+    now: datetime | None = None,
+) -> tuple[set[str], dict]:
+    """Narrow ``allowed`` by a presented X-VC credential (defense in depth).
+
+    The EUDI-aligned reveal gate, as a pure function so the endpoint stays thin
+    and this stays unit-testable without a DB. Semantics (ADR-0003):
+
+    * ``public_key is None`` → VC path off; return ``allowed`` unchanged.
+    * no presentation, ``required`` false → unchanged (grant-only, non-breaking).
+    * no presentation, ``required`` true → ``VcError`` (caller maps to 403).
+    * a presentation → verify it and return ``allowed ∩ authorized_types(vc)``;
+      a VC can only *narrow* what the grant already permits, never widen it.
+
+    Returns ``(narrowed_allowed, audit_extra)``; ``audit_extra`` names the VC
+    issuer/vct for the audit trail — never the raw credential or a clear value.
+    """
+    if public_key is None:
+        return allowed, {}
+    if not presentation:
+        if required:
+            raise VcError("verifiable credential required")
+        return allowed, {}
+    vc = verify_sdjwt_vc(presentation, public_key, expected_vct=expected_vct,
+                         expected_issuer=expected_issuer, now=now)
+    return allowed & authorized_types(vc), {"vc_issuer": vc.issuer, "vc_vct": vc.vct}
+
+
 def authorized_types(vc: VerifiedCredential) -> set[str]:
     """Map a verified credential to the PII types it authorizes revealing.
 
