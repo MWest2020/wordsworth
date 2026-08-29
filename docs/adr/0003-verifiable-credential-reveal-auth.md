@@ -83,8 +83,21 @@ Out of scope for the PoC:
   in the opt-in reveal path. Introduces a second authorization mechanism
   alongside grant bearer capabilities during the PoC; the two must reconcile
   cleanly (VC presentation → grant `allowed_types`).
-- **Neutral.** No change to ingest, pseudonymization, index, or search. This
-  ADR is `proposed`; it moves to `accepted` when the PoC lands green.
+- **Neutral.** No change to ingest, pseudonymization, index, or search.
+
+## Status update (2026-08-29) — accepted, PoC landed
+
+The PoC is implemented and green. `src/wordsworth/vc.py` holds an SD-JWT-VC
+verifier (ES256 on the existing `cryptography` dependency — no new dep), a dev
+issuer, selective disclosure, and a pure `apply_vc_gate()`. It is wired into
+`POST /documents/{id}/reveal` **opt-in** via `WORDSWORTH_VC_ISSUER_KEY_PEM`
+(+ `_ISSUER` / `_VCT` / `_REQUIRED`); the credential is presented in the `X-VC`
+header and the reveal is **narrowed** to
+`grant.allowed_types ∩ vc.authorized_types` — a VC can only restrict, never
+widen. Empty issuer key = gate off, reveal grant-only and unchanged. Covered by
+16 local tests (`tests/test_vc.py`) plus DB-backed endpoint tests
+(`tests/test_reveal_vc_db.py`); CI green. Still future work: mobile wallets,
+real eIDAS trust lists, mdoc/ISO-18013-5, and rolling out `required` mode.
 
 ## Alternatives considered
 
