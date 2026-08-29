@@ -93,6 +93,14 @@ class RevealResponse(BaseModel):
     grant_id: str
 
 
+class AnonymizedResponse(BaseModel):
+    """The stored, de-identified document text — the same pseudonymised text
+    that backs the index and the export ZIP. Never clear PII."""
+
+    document_id: str
+    anonymized_text: str
+
+
 class ReprocessRequest(BaseModel):
     """Backfill request: which documents to re-de-identify. Omit to reprocess
     every INDEXED document."""
@@ -231,6 +239,25 @@ def create_app(
             if state is None:
                 raise HTTPException(status_code=404, detail="unknown document")
             return {"document_id": str(document_id), "state": state.value}
+
+        @app.get("/documents/{document_id}/anonymized",
+                 response_model=AnonymizedResponse,
+                 summary="De-identified (pseudonymised) document text",
+                 tags=["read"])
+        def document_anonymized(document_id: UUID) -> AnonymizedResponse:
+            """The stored, de-identified text — the same pseudonymised text that
+            backs the index and the export ZIP, never clear PII. 404 if the
+            document is unknown; 409 if it exists but is not yet de-identified."""
+            with session_factory() as session:
+                if current_state(session, document_id) is None:
+                    raise HTTPException(status_code=404,
+                                        detail="unknown document")
+                anonymized_text = get_anonymized_text(session, document_id)
+            if anonymized_text is None:
+                raise HTTPException(status_code=409,
+                                    detail="document not yet de-identified")
+            return AnonymizedResponse(document_id=str(document_id),
+                                      anonymized_text=anonymized_text)
 
         @app.get("/metrics", summary="Prometheus metrics", tags=["ops"])
         def metrics() -> Response:
