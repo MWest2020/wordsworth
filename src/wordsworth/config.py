@@ -120,6 +120,16 @@ class Settings:
         return os.environ.get("WORDSWORTH_VC_VCT", "")
 
     @property
+    def corpus_read_labels(self) -> list[str]:
+        """Caller labels permitted to read full de-identified document text
+        (``/documents/{id}/anonymized`` + ``/export/anonymized.zip``), from
+        ``WORDSWORTH_CORPUS_READ_LABELS`` (comma-separated). Empty (default) →
+        the scope is OFF and any authenticated caller may read (unchanged).
+        Requires api-key auth to be meaningful (fail-closed for a None caller)."""
+        raw = os.environ.get("WORDSWORTH_CORPUS_READ_LABELS", "")
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
+    @property
     def vc_required(self) -> bool:
         """When true (and the gate is on), a reveal without a valid X-VC
         credential is denied. Default false → a VC only *narrows* a grant when

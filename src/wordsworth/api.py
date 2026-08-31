@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .anonymizer import Anonymizer
 from starlette.middleware.cors import CORSMiddleware
 
-from .auth import ApiKeyAuthMiddleware
+from .auth import ApiKeyAuthMiddleware, authorize_corpus_read
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .embedder import Embedder
@@ -162,6 +162,7 @@ def create_app(
     vc_expected_issuer: str | None = None,
     vc_expected_vct: str | None = None,
     vc_required: bool | None = None,
+    corpus_read_labels: list[str] | None = None,
 ) -> FastAPI:
     # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
     # supplied as factories built per request; the singleton params stay for
@@ -222,6 +223,19 @@ def create_app(
     if vc_required is None:
         vc_required = default_settings.vc_required
 
+    # Opt-in corpus-read scope: which caller labels may read FULL de-identified
+    # document text (/documents/{id}/anonymized + /export/anonymized.zip). Empty
+    # (default) → any authenticated caller may read (unchanged). When set, other
+    # callers get 403 — least privilege for the full-text surface.
+    if corpus_read_labels is None:
+        corpus_read_labels = default_settings.corpus_read_labels
+
+    def _guard_corpus_read(request: Request) -> None:
+        caller = getattr(request.state, "caller", None)
+        if not authorize_corpus_read(caller, corpus_read_labels):
+            raise HTTPException(
+                status_code=403, detail="caller not authorized for corpus read")
+
     @app.get("/health", summary="Liveness probe", tags=["ops"])
     def health() -> dict[str, str]:
         """Always-on health check (no backend access)."""
@@ -244,10 +258,12 @@ def create_app(
                  response_model=AnonymizedResponse,
                  summary="De-identified (pseudonymised) document text",
                  tags=["read"])
-        def document_anonymized(document_id: UUID) -> AnonymizedResponse:
+        def document_anonymized(document_id: UUID, request: Request) -> AnonymizedResponse:
             """The stored, de-identified text — the same pseudonymised text that
             backs the index and the export ZIP, never clear PII. 404 if the
-            document is unknown; 409 if it exists but is not yet de-identified."""
+            document is unknown; 409 if it exists but is not yet de-identified.
+            Gated by the opt-in corpus-read scope (403 if the caller lacks it)."""
+            _guard_corpus_read(request)
             with session_factory() as session:
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404,
@@ -284,11 +300,13 @@ def create_app(
         @app.get("/export/anonymized.zip",
                  summary="Export de-identified document texts as a ZIP",
                  tags=["export"])
-        def export_anonymized(document_ids: str | None = None) -> Response:
+        def export_anonymized(request: Request,
+                              document_ids: str | None = None) -> Response:
             """A ZIP of the stored de-identified texts (one ``{id}.txt`` per
             document), for all INDEXED documents or the given comma-separated
             subset. Only the index-bound anonymized text is written — never clear
-            PII, never original bytes."""
+            PII, never original bytes. Gated by the opt-in corpus-read scope."""
+            _guard_corpus_read(request)
             ids = None
             if document_ids:
                 try:

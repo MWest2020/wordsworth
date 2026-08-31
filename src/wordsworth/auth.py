@@ -28,6 +28,20 @@ def parse_api_keys(raw: str) -> dict[str, str]:
     return keys
 
 
+def authorize_corpus_read(caller: str | None, allowed_labels: list[str]) -> bool:
+    """Whether ``caller`` may read full de-identified document text
+    (``/documents/{id}/anonymized`` and ``/export/anonymized.zip``).
+
+    An empty ``allowed_labels`` means the corpus-read scope is OFF — any caller
+    is permitted (unchanged, non-breaking). When non-empty the scope is ON and
+    only callers whose label is listed may read full text; everyone else is
+    denied. Fail-closed: a ``None`` caller (auth off) is denied once the scope
+    is set, so enabling the scope requires api-key auth to be on."""
+    if not allowed_labels:
+        return True
+    return caller in set(allowed_labels)
+
+
 class ApiKeyAuthMiddleware:
     """ASGI middleware: require a valid ``X-API-Key`` on every path except the
     exempt ops probes. Mounted only when there is at least one configured key,
