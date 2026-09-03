@@ -1,3 +1,8 @@
+---
+status: accepted
+last_reviewed: 2026-08-20
+---
+
 # ADR 0002 — Sovereign key management for reversible pseudonymisation
 
 - Status: accepted

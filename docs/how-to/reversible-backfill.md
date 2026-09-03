@@ -1,3 +1,8 @@
+---
+status: draft
+last_reviewed: 2026-09-03
+---
+
 # Runbook — reversible backfill
 
 Re-process an already-indexed corpus through the **reversible** de-identify driver
