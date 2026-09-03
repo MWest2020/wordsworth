@@ -1,0 +1,30 @@
+## ADDED Requirements
+
+### Requirement: Tokens are derived from the normalised value
+
+The keyed pseudonym SHALL be derived from `normalize(label, value)` rather than
+the raw value, where `normalize` applies a typed, table-driven rule set (default:
+trim + Unicode NFC; BSN: strip separators, left-pad to 9 digits; postcode: strip
+spaces, uppercase; names and locations: trim, NFC, casefold; dates: ISO 8601
+when parseable). The encrypted mapping SHALL still hold the original value.
+
+#### Scenario: Spelling variants yield one pseudonym
+
+- **WHEN** `Jansen` and `jansen` are pseudonymised under the same key
+- **THEN** both produce the same token
+
+#### Scenario: BSN formatting variants yield one pseudonym
+
+- **WHEN** `1234.56.789` and `123456789` are pseudonymised under the same key
+- **THEN** both produce the same token, and reveal returns each original spelling
+
+### Requirement: Normalisation profile is versioned
+
+Every mapping row SHALL record the normalisation profile version used. A change
+to the rule set SHALL bump the version; re-deriving an existing corpus SHALL go
+through the reprocess path, never happen implicitly.
+
+#### Scenario: Version is stored
+
+- **WHEN** a pseudonym is stored
+- **THEN** the mapping row carries the current profile version
