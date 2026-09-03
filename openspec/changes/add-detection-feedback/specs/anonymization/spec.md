@@ -3,14 +3,16 @@
 ### Requirement: Versioned allow/deny lists refine detection
 
 After detection, wordsworth SHALL apply git-versioned allow and deny lists:
-a typed allow rule SHALL remove detections of that type whose value matches
-exactly or by anchored regex; a typed deny rule SHALL add detections (layer
-`list`, score 1.0). The lists' content hash SHALL be recorded in the
-de-identify audit record, and suppressed detections SHALL be counted.
+a typed allow rule SHALL remove detections of that type whose value fully
+matches the pattern; a typed deny rule SHALL add detections (layer `list`,
+score 1.0). Where wordsworth does not control the substitution (the
+irreversible service-side driver) only the deny list applies. The lists'
+content hash SHALL be recorded in the de-identify audit record, and suppressed
+detections SHALL be counted.
 
 #### Scenario: Typed false positive is suppressed
 
-- **WHEN** `allow.yml` has `PERSON: ['^Jansen BV$']` and the detector tags
+- **WHEN** `allow.json` has `{"PERSON": ["^Jansen BV$"]}` and the detector tags
   `Jansen BV` as PERSON
 - **THEN** the value is not redacted and `suppressed_by_list.PERSON == 1`
 

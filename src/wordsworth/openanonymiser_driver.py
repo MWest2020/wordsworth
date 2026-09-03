@@ -81,7 +81,8 @@ def _chunk_text(text: str, max_chars: int) -> list[str]:
 
 
 def _redact_one(text: str) -> tuple[str, dict[str, int], dict]:
-    """One anonymize call for one text segment; returns (redacted, counts).
+    """One anonymize call for one text segment; returns (redacted, counts,
+    per-layer detection aggregates).
 
     POSTs to ``{WORDSWORTH_OPENANONYMISER_URL}/api/v1/anonymize`` with the
     ``replace`` strategy (Presidio ``<ENTITY_TYPE>`` placeholders). Any transport
@@ -109,7 +110,7 @@ def _redact_one(text: str) -> tuple[str, dict[str, int], dict]:
 
 def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int], dict]:
     """Redact entity PII via the OpenAnonymiser GLiNER service; return
-    (redacted text, counts).
+    (redacted text, counts, per-layer detection aggregates).
 
     Long documents are split into bounded chunks and redacted per chunk, then
     reassembled (the ``replace`` strategy leaves non-entity text unchanged, so
@@ -198,13 +199,31 @@ class OpenAnonymiserAnonymizer:
     with the deterministic detectors. Construction is cheap; no service call
     happens until :meth:`anonymize`."""
 
-    def __init__(self, engine: _EngineFn | None = None) -> None:
+    def __init__(self, engine: _EngineFn | None = None, lists=None) -> None:
         # ``engine`` is a test seam only; the default is the real HTTP client.
         self._engine = engine or _openanonymiser_redact
         self._deterministic = DeterministicAnonymizer()
+        # add-detection-feedback: only the DENY list applies here — the service
+        # redacts server-side, so an allow-list cannot un-redact its output. The
+        # reversible driver applies both.
+        from .detection_lists import DetectionLists
+
+        self._lists = lists or DetectionLists()
+
+    def _apply_deny(self, text: str, stats: DetectionStats) -> str:
+        for t, pats in self._lists.deny.items():
+            for p in pats:
+                text, n = p.subn(f"[{t}]", text)
+                stats.add("list", t, 1.0, n)
+        return text
 
     def anonymize(self, text: str) -> AnonymizationResult:
         deterministic = self._deterministic.anonymize(text)
+        pre = DetectionStats(settings.detection_min_score)
+        pre.merge(deterministic.detections)
+        deterministic.text = self._apply_deny(deterministic.text, pre)  # deny list
+        deterministic.detections = pre.to_dict()
+        deterministic.lists_hash = self._lists.hash
         if not deterministic.text.strip():
             # Nothing left for the entity engine; the service rejects empty text
             # (422). Structured-PII counts (all zeros here) still stand.
@@ -228,4 +247,5 @@ class OpenAnonymiserAnonymizer:
         if agg:
             stats.merge(agg[0])
         return AnonymizationResult(text=redacted, counts=counts,
-                                   detections=stats.to_dict())
+                                   detections=stats.to_dict(),
+                                   lists_hash=self._lists.hash)

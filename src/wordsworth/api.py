@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import inspect
 import io
 import zipfile
 from datetime import datetime, timezone
@@ -112,6 +113,28 @@ class AnonymizedResponse(BaseModel):
     # (``[PERSOON 1]`` numbering per document) with a legend back to the tokens.
     view: str = "tokens"
     legend: dict[str, str] | None = None
+
+
+class FeedbackRequest(BaseModel):
+    """A false-positive / false-negative report on a document's detection
+    (add-detection-feedback). By TYPE and TOKEN only — never a clear value; that
+    is why there is no free-text field. Recorded in the audit trail; the lists
+    themselves change only through a reviewed git change."""
+
+    kind: str                    # "fp" | "fn"
+    type: str                    # PII type, e.g. PERSON
+    token: str | None = None     # the [TYPE:hash8] token concerned (fp), if any
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if self.kind not in ("fp", "fn"):
+            raise ValueError("kind must be fp or fn")
+        if self.token is not None and not _TOKEN_RE.fullmatch(self.token):
+            raise ValueError("token must be a [TYPE:hash8] pseudonym, never a value")
+        return self
+
+
+_TOKEN_RE = __import__("re").compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
 
 
 class ReprocessRequest(BaseModel):
@@ -335,6 +358,33 @@ def create_app(
             if meta is None:
                 raise HTTPException(status_code=404, detail="unknown document")
             return meta
+
+        @app.post("/documents/{document_id}/feedback", status_code=201,
+                  summary="Record detection feedback (false positive / negative)",
+                  tags=["write"])
+        def document_feedback(document_id: UUID, body: FeedbackRequest,
+                              request: Request) -> dict:
+            """Append a ``detection_feedback`` access event (from == to state) to
+            the document's audit chain: kind, type, token, caller. No clear value
+            can be carried (no free text). Lists are NOT modified — updating
+            allow/deny lists is a reviewed git change."""
+            from . import audit
+
+            with session_factory() as session:
+                state = current_state(session, document_id)
+                if state is None:
+                    raise HTTPException(status_code=404, detail="unknown document")
+                payload = {"kind": body.kind, "type": body.type.upper(),
+                           "token": body.token}
+                caller = getattr(request.state, "caller", None)
+                if caller:
+                    payload["caller"] = caller
+                rec = audit.append(session, document_id=document_id,
+                                   from_state=state.value, to_state=state.value,
+                                   step="detection_feedback", payload=payload)
+                session.commit()
+                return {"document_id": str(document_id), "seq": rec.seq,
+                        "recorded": payload}
 
         @app.get("/export/anonymized.zip",
                  summary="Export de-identified document texts as a ZIP",
@@ -754,10 +804,10 @@ def _accepts_domain(factory) -> bool:
     """Whether a session-scoped anonymizer factory takes a second ``domain``
     argument (arity check, so a TypeError raised *inside* the factory is never
     mistaken for a signature mismatch)."""
-    import inspect
-
     params = list(inspect.signature(factory).parameters.values())
-    return len(params) >= 2 or any(
+    positional = [p for p in params if p.kind in (
+        inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+    return len(positional) >= 2 or any(
         p.kind is inspect.Parameter.VAR_POSITIONAL for p in params)
 
 
@@ -834,7 +884,7 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         prev_ts = r.ts
     total_ms = (records[-1].ts - records[0].ts).total_seconds() * 1000
     anon = next((r.payload for r in records if r.step == "anonymize"), {})
-    counts = {k: v for k, v in anon.items() if k != "detections"}
+    counts = {k: v for k, v in anon.items() if k not in ("detections", "lists_hash")}
     profile = next((r.payload for r in records if r.step == "profile"), {})
     reg = next((r.payload for r in records if r.step == "register"), {})
     doc = session.get(Document, document_id)
@@ -847,6 +897,7 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         "counts": counts,
         "pii_counts_by_category": counts_by_category(counts),
         "detections": anon.get("detections", {}),
+        "lists_hash": anon.get("lists_hash"),
         "pages": profile.get("pages"),
         "bytes": profile.get("bytes"),
         "steps": steps,

@@ -35,7 +35,7 @@ def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf,
     assert "[BSN]" in stored and "[IBAN]" in stored and "[EMAIL]" in stored
     payload = _anonymize_payload(session, doc.id)
     # add-detection-confidence: counts per type + per-layer aggregates (no values)
-    assert {k: v for k, v in payload.items() if k != "detections"} == {
+    assert {k: v for k, v in payload.items() if k not in ("detections", "lists_hash")} == {
         "email": 1, "iban": 1, "bsn": 1}
     assert payload["detections"]["deterministic"]["BSN"]["count"] == 1
 
@@ -57,7 +57,8 @@ def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index,
 
     assert get_anonymized_text(session, doc.id) == "MARKER"
     payload = _anonymize_payload(session, doc.id)
-    assert {k: v for k, v in payload.items() if k != "detections"} == {"custom": 7}
+    assert {k: v for k, v in payload.items() if k not in ("detections", "lists_hash")} == {
+        "custom": 7}
 
 
 def test_only_anonymized_text_is_stored(session, born_digital_pii_pdf, mem_index,

@@ -27,3 +27,5 @@ under `openspec/`.
     verdict per requirement, build order.
   - [ADR-0005](explanation/adr/0005-nora-target-architecture-alignment.md) —
     what wordsworth adopts, adapts and declines from that architecture.
+  - [detection lists](how-to/detection-lists.md) — allow/deny JSON lists,
+    `lists_hash` in audit, the feedback endpoint.

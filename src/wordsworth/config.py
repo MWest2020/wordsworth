@@ -181,6 +181,13 @@ class Settings:
         one. ``_global`` keeps single-domain deployments exactly as before."""
         return os.environ.get("WORDSWORTH_DEFAULT_DOMAIN", "_global")
 
+    # --- add-detection-feedback ---
+    @property
+    def detection_lists_dir(self) -> str:
+        """Directory holding git-versioned ``allow.json``/``deny.json`` detection
+        lists (see detection_lists.py). Empty (default) = no lists."""
+        return os.environ.get("WORDSWORTH_DETECTION_LISTS", "")
+
     # --- add-detection-confidence ---
     @property
     def detection_min_score(self) -> float:

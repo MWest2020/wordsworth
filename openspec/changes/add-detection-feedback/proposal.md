@@ -11,19 +11,22 @@ an audited way to record the feedback that produced them.
 
 ## What Changes
 
-- `WORDSWORTH_DETECTION_LISTS` points at a directory with two YAML files:
-  `allow.yml` (values or regexes that are **not** PII for a given type, e.g.
-  `ORGANIZATION`-suffix patterns like `\bBV\b` → drop PERSON hits) and
-  `deny.yml` (values or regexes that **are** PII of a given type, e.g. known
-  initials patterns). Lists are versioned in git, loaded at start, hash logged.
-- Applied in a post-detection step: deny adds detections (layer `list`,
-  score 1.0); allow removes detections — **only** when the allow rule is typed
-  and the value matches exactly or by anchored regex. Removal is counted in the
-  audit aggregates as `suppressed_by_list`.
+- `WORDSWORTH_DETECTION_LISTS` points at a directory with two JSON files (no
+  new dependency): `allow.json` (`{"PERSON": ["^Jansen BV$"]}` — typed
+  patterns whose full match is **not** PII of that type) and `deny.json`
+  (typed patterns that **are** PII, e.g. a licence-plate shape). Lists are
+  versioned in git, loaded at start, and their content hash is written into
+  every de-identify audit record (`lists_hash`).
+- Applied after detection in the reversible driver: deny adds detections (layer
+  `list`, score 1.0); allow removes a same-type detection whose value fully
+  matches a pattern (never across types). Removals are counted in the audit
+  aggregates under `suppressed_by_list`. The irreversible OpenAnonymiser driver
+  applies the **deny** list only (the service redacts server-side, so an allow
+  rule cannot un-redact its output); it still records `lists_hash`.
 - `POST /documents/{id}/feedback` records `{kind: fp|fn, type, token?}` as an
-  audit record (token, never clear value — for fn the caller supplies the type
-  and an opaque description, no text). This creates the trail; updating the
-  lists remains a reviewed git change by a human. No auto-learning.
+  audit access event (`detection_feedback`). Token, never a clear value — there
+  is deliberately no free-text field. This creates the trail; updating the lists
+  remains a reviewed git change by a human. No auto-learning.
 
 ## Capabilities
 
@@ -32,6 +35,6 @@ an audited way to record the feedback that produced them.
 
 ## Impact
 
-- Code: `detection_lists.py` (≤ 150 lines), hook in the de-identify step,
-  one route. Tests: allow suppresses a typed FP, deny adds, list hash in audit.
+- Code: `detection_lists.py` (≤ 100 lines), hooks in both drivers, one route,
+  `lists_hash` on `AnonymizationResult` + audit payload + metadata, serve wiring. Tests: allow suppresses a typed FP, deny adds, list hash in audit.
 - Depends on `add-detection-confidence` for the `layer`/aggregate fields.

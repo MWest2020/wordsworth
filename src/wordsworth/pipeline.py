@@ -226,7 +226,8 @@ def process(
         # Counts per type + per-layer confidence aggregates (add-detection-
         # confidence): aggregates only, never a value or an offset.
         transition(session, document_id, State.ANONYMIZED, step="anonymize",
-                   payload={**result.counts, "detections": result.detections})
+                   payload={**result.counts, "detections": result.detections,
+                            "lists_hash": result.lists_hash})
         state = State.ANONYMIZED
 
     if state == State.ANONYMIZED:
@@ -321,6 +322,6 @@ def reanonymize(
         to_state=state.value,
         step="reanonymize",
         payload={"counts": result.counts, "detections": result.detections,
-                 "reanonymized": True},
+                 "lists_hash": result.lists_hash, "reanonymized": True},
     )
     return state

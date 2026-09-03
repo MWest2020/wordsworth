@@ -20,6 +20,7 @@ from . import audit, detectors
 from .anonymizer import AnonymizationResult
 from .config import settings
 from .crypto import decrypt, encrypt
+from .detection_lists import DetectionLists
 from .detection_stats import DETERMINISTIC, DetectionStats
 from .keys import DEFAULT_DOMAIN, KeyProvider, scope_for
 from .mapping_store import MappingStore
@@ -128,12 +129,15 @@ class ReversibleAnonymizer:
         mapping_store: MappingStore,
         detect: DetectFn | None = None,
         domain: str = DEFAULT_DOMAIN,
+        lists: DetectionLists | None = None,
     ):
         self._keys = key_provider
         self._store = mapping_store
         self._domain = domain
         self._deterministic = Pseudonymizer(key_provider, mapping_store, domain)
         self._detect = detect or detect_entities
+        # Versioned allow/deny lists (add-detection-feedback); default = none.
+        self._lists = lists or DetectionLists()
 
     def anonymize(self, text: str) -> AnonymizationResult:
         result = self._deterministic.anonymize(text)  # keyed deterministic tokens
@@ -149,6 +153,9 @@ class ReversibleAnonymizer:
                 "entity detection failed; refusing to emit text with "
                 "un-pseudonymised entities"
             ) from exc
+        # Allow/deny lists refine what the detectors found (typed; allow never
+        # crosses types). Suppressions are counted, never silent.
+        entities, suppressed = self._lists.apply(body, entities)
         body, entity_counts = self._pseudonymize_entities(body, entities)
         counts = dict(result.counts)
         for label, n in entity_counts.items():
@@ -158,7 +165,10 @@ class ReversibleAnonymizer:
         for e in entities:  # one aggregate row per detection; no value, no offset
             if e.text and len(e.text.strip()) >= _MIN_ENTITY_LEN:
                 stats.add(e.layer, e.entity_type, e.score)
-        return AnonymizationResult(text=body, counts=counts, detections=stats.to_dict())
+        for t, n in suppressed.items():
+            stats.add("suppressed_by_list", t, 1.0, n)
+        return AnonymizationResult(text=body, counts=counts, detections=stats.to_dict(),
+                                   lists_hash=self._lists.hash)
 
     def _pseudonymize_entities(
         self, text: str, entities: list[Entity]

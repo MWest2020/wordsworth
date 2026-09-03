@@ -20,6 +20,9 @@ class AnonymizationResult:
     # Per-layer aggregates (add-detection-confidence): {layer: {TYPE: {count,
     # min_score, max_score, below_threshold}}} — never values or offsets.
     detections: dict = field(default_factory=dict)
+    # add-detection-feedback: content hash of the allow/deny lists in force
+    # (None = none configured), so the audit record pins the rule version.
+    lists_hash: str | None = None
 
 
 @runtime_checkable
