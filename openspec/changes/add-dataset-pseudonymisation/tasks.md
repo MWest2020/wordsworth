@@ -5,7 +5,7 @@
 ## 1. Engine
 
 - [x] 1.1 `datasets.py`: `Profile` (pydantic), `pseudonymize_rows(rows, profile,
-  pseudonymizer)` streaming; per_attribute + per_record; `|` join, `""` empty.
+  pseudonymizer)` row-iterating (whole upload in memory for the PoC); per_attribute + per_record; `|` join, `""` empty.
 - [x] 1.2 `nen7524` renderer `01-<ttp>-P<T>|<base64(token bytes)>`; type letters
   B/N/A/D/C/R; labelled NEN 7524-style in docs.
 - [x] 1.3 PII validation of unselected columns → warnings list.

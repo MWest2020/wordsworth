@@ -50,9 +50,24 @@ one of `profile` (inline JSON) / `profile_name`. Response: `csv`, `rows`,
 ## Audit
 
 Each run appends one `dataset_pseudonymize` record to the audit chain of the
-dataset artefact (registered once per content hash, `object_key` =
+dataset artefact (registered once per content+profile hash, `object_key` =
 `datasets/<sha256>`): profile hash, domain, row count, columns, unique
-pseudonyms, warned columns — never a cell value. Re-identify a token with a
-grant in the same domain via `POST /documents/{dataset_id}/reveal`... no: reveal
-works on stored *document* text; for datasets, reveal the tokens through any
-document in that domain or via the mapping store tooling (follow-up).
+pseudonyms, `rows_without_record_key`, warned columns — never a cell value.
+Dataset artefacts stay in state `registered` (they are never profiled or
+extracted), so `wordsworth_documents_total{state="registered"}` includes them.
+
+## Re-identification
+
+Dataset tokens live in the same mapping store as document tokens. A grant in the
+same domain reveals them through any document text that contains them; a
+dedicated "reveal these tokens" surface for datasets (and for `RECORD` tokens,
+which appear in no document) is a follow-up change.
+
+## Caveats
+
+- `per_record` rows whose key cells are all empty derive identity `""` and
+  collapse onto one shared pseudonym; they are counted in
+  `rows_without_record_key` — check it before joining.
+- Empty selected cells stay empty (no pseudonym is invented for a missing value).
+- `validate_pii` covers only the deterministic detectors (BSN/IBAN/email); an
+  unselected name or address column is not warned about.

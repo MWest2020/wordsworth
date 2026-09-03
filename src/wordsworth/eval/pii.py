@@ -61,8 +61,10 @@ def load_gold(path: Path) -> list[GoldDoc]:
             continue
         raw = json.loads(line)
         text = raw["text"]
+        if "entities" not in raw:   # explicit: a doc with no PII lists []
+            raise ValueError(f"gold line {n} ({raw.get('id')}): missing 'entities'")
         spans = sorted((GoldSpan(int(e["start"]), int(e["end"]), str(e["type"]).upper())
-                        for e in raw.get("entities", [])), key=lambda s: s.start)
+                        for e in raw["entities"]), key=lambda s: s.start)
         last = 0
         for sp in spans:
             if not 0 <= sp.start < sp.end <= len(text) or sp.start < last:
@@ -75,13 +77,8 @@ def load_gold(path: Path) -> list[GoldDoc]:
 
 def deterministic_entities(text: str) -> list[Entity]:
     """The deterministic layer as ``Entity`` spans (BSN/IBAN/email, validated)."""
-    out: list[Entity] = []
-    for label, pattern, validate in detectors.DETECTORS:
-        for m in pattern.finditer(text):
-            if validate is None or validate(m.group(0)):
-                out.append(Entity(label.upper(), m.group(0), m.start(), m.end(),
-                                  DETERMINISTIC, 1.0))
-    return out
+    return [Entity(label.upper(), value, start, end, DETERMINISTIC, 1.0)
+            for label, value, start, end in detectors.find_deterministic(text)]
 
 
 def _tokens(text: str, start: int, end: int) -> list[tuple[int, int]]:
@@ -120,8 +117,8 @@ def score_doc(doc: GoldDoc, preds: list[Entity]) -> dict:
                     tc.tp += 1
                 else:
                     tc.fn += 1
-        for p in ps:
-            for tok in _tokens(doc.text, p.start, p.end):
+        for start, end in pset:          # distinct predicted spans: no double count
+            for tok in _tokens(doc.text, start, end):
                 if not _covered(tok, gset):
                     tc.fp += 1
 
@@ -159,14 +156,17 @@ def evaluate_pii(docs: list[GoldDoc], detect: Callable[[str], list[Entity]]) -> 
     span: dict[str, Counts] = {}
     token: dict[str, Counts] = {}
     leaks = 0
-    per_layer: dict[str, dict] = {}
-    for doc in docs:
-        preds = detect(doc.text)
+    # Detect once per doc; a layer is scored on EVERY document, including those
+    # where it found nothing (else its misses vanish and recall inflates).
+    predictions = [(doc, detect(doc.text)) for doc in docs]
+    layers = sorted({p.layer for _, preds in predictions for p in preds})
+    per_layer: dict[str, dict] = {l: {"span": {}, "token": {}, "leaks": 0} for l in layers}
+    for doc, preds in predictions:
         r = score_doc(doc, preds)
         _merge(span, r["span"]); _merge(token, r["token"]); leaks += r["leaks"]
-        for layer in {p.layer for p in preds}:
+        for layer in layers:
             lr = score_doc(doc, [p for p in preds if p.layer == layer])
-            acc = per_layer.setdefault(layer, {"span": {}, "token": {}, "leaks": 0})
+            acc = per_layer[layer]
             _merge(acc["span"], lr["span"]); _merge(acc["token"], lr["token"])
             acc["leaks"] += lr["leaks"]
     report = _summarise(span, token, leaks)

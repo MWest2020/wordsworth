@@ -166,9 +166,12 @@ class ReversibleAnonymizer:
             counts[label] = counts.get(label, 0) + n
         stats = DetectionStats(settings.detection_min_score)
         stats.merge(result.detections)
+        winner: dict[str, str] = {}   # value -> label that _pseudonymize_entities used
         for e in entities:  # one aggregate row per detection; no value, no offset
             if e.text and len(e.text.strip()) >= _MIN_ENTITY_LEN:
-                stats.add(e.layer, e.entity_type, e.score)
+                winner.setdefault(e.text, e.entity_type.lower())
+                if winner[e.text] == e.entity_type.lower():
+                    stats.add(e.layer, e.entity_type, e.score)
         for t, n in suppressed.items():
             stats.add("suppressed_by_list", t, 1.0, n)
         return AnonymizationResult(text=body, counts=counts, detections=stats.to_dict(),

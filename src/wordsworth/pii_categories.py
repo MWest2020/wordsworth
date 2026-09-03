@@ -32,7 +32,7 @@ _TYPES: dict[str, str] = {
         "POSTCODE", "BSN", "IBAN", "EMAIL", "EMAIL_ADDRESS", "PHONE_NUMBER",
         "TELEFOON", "DATE", "DATE_TIME", "GEBOORTEDATUM", "KENTEKEN",
         "LICENSE_PLATE", "ORGANIZATION", "ORGANISATIE", "BEDRAG", "KVK",
-        "URL", "IP_ADDRESS", "OVERIG",
+        "URL", "IP_ADDRESS", "OVERIG", "RECORD",
     )},
     # Art. 9 — special categories
     **{t: "c2" for t in (

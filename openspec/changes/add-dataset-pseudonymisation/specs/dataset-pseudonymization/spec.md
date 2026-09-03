@@ -29,7 +29,9 @@ domain, so the tokens are equal.
 
 In `per_record` mode a row SHALL receive one pseudonym derived from the
 `record_key` columns joined with `|` in profile order, empty cells as `""`,
-under type `RECORD`; all selected columns of that row SHALL carry it.
+under type `RECORD`; all non-empty selected cells of that row SHALL carry it
+(an empty cell stays empty). Rows whose key cells are all empty SHALL be
+counted and reported (`rows_without_record_key`).
 
 #### Scenario: Same person, same record pseudonym
 

@@ -11,6 +11,7 @@ import csv
 import hashlib
 import inspect
 import io
+import re
 import zipfile
 from datetime import datetime, timezone
 from typing import Callable
@@ -134,7 +135,7 @@ class FeedbackRequest(BaseModel):
         return self
 
 
-_TOKEN_RE = __import__("re").compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
+_TOKEN_RE = re.compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
 
 
 class DatasetResponse(BaseModel):
@@ -146,6 +147,7 @@ class DatasetResponse(BaseModel):
     rows: int
     columns: list[str]
     unique_pseudonyms: int
+    rows_without_record_key: int
     domain: str
     mode: str
     format: str
@@ -673,10 +675,18 @@ def create_app(
             data = file.file.read()
             if not data:
                 raise HTTPException(status_code=400, detail="empty upload")
-            rows = list(_csv.DictReader(_io.StringIO(data.decode("utf-8-sig"))))
+            try:
+                rows = list(_csv.DictReader(_io.StringIO(data.decode("utf-8-sig"))))
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=400, detail="CSV must be UTF-8")
             if not rows:
                 raise HTTPException(status_code=400, detail="CSV has no data rows")
-            key = "datasets/" + hashlib.sha256(data).hexdigest()
+            if any(None in r for r in rows):   # ragged row: more cells than header
+                raise HTTPException(status_code=400,
+                                    detail="CSV row has more fields than the header")
+            # One artefact per (content, profile): a different profile/domain over
+            # the same CSV is a different run with its own registered domain.
+            key = "datasets/" + hashlib.sha256(data + prof.sha256().encode()).hexdigest()
             with session_factory() as session:
                 kp = key_provider_factory(session) if key_provider_factory else key_provider
                 run = DatasetRun(prof, Pseudonymizer(kp, PostgresMappingStore(session),

@@ -40,6 +40,17 @@ DETECTORS: list[tuple[str, re.Pattern[str], Callable[[str], bool] | None]] = [
 ]
 
 
+def find_deterministic(text: str) -> list[tuple[str, str, int, int]]:
+    """Every validated deterministic hit as ``(label, value, start, end)`` — the
+    shared span view used by the PII eval and the dataset column validation."""
+    out: list[tuple[str, str, int, int]] = []
+    for label, pattern, validate in DETECTORS:
+        for m in pattern.finditer(text):
+            if validate is None or validate(m.group(0)):
+                out.append((label, m.group(0), m.start(), m.end()))
+    return out
+
+
 def substitute(text, pattern, replacer, validate) -> tuple[str, int]:
     """Replace each validated match via ``replacer(value) -> str``; count them."""
     count = 0

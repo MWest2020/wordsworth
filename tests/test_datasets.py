@@ -161,3 +161,32 @@ def test_cli_posts_multipart(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr()
     assert out.out == "a,b\n1,2\n" and '"rows": 1' in out.err
     assert seen["profile_name"] == "example-wi" and seen["profile"] is None
+
+
+def test_nen7524_rejects_type_without_letter_and_counts_empty_record_keys():
+    with pytest.raises(ValueError):
+        Profile(domain="wi", columns={"x": "TELEFOON"}, format="nen7524")
+    prof = Profile(domain="wi", columns={"bsn": "BSN", "naam": "PERSON"},
+                   mode="per_record", record_key=["bsn"])
+    out, run, _, _ = _run(prof)
+    assert run.stats()["rows_without_record_key"] == 1 and out[2]["bsn"] == ""
+
+
+def test_endpoint_400s_and_profile_specific_artefact(session_factory):
+    kp = InMemoryKeyProvider()
+    c = TestClient(create_app(session_factory=session_factory, key_provider=kp))
+    prof_wi = {"domain": "wi", "columns": {"bsn": "BSN"}}
+    prof_mo = {"domain": "mo", "columns": {"bsn": "BSN"}}
+    data = _csv(ROWS)
+    a = c.post("/datasets/pseudonymize", files={"file": ("in.csv", data, "text/csv")},
+               data={"profile": json.dumps(prof_wi)}).json()
+    b = c.post("/datasets/pseudonymize", files={"file": ("in.csv", data, "text/csv")},
+               data={"profile": json.dumps(prof_mo)}).json()
+    assert a["dataset_id"] != b["dataset_id"]                 # other profile = other artefact
+    assert c.get(f"/documents/{a['dataset_id']}").json()["domain"] == "wi"
+    assert c.get(f"/documents/{b['dataset_id']}").json()["domain"] == "mo"
+    assert c.post("/datasets/pseudonymize", files={"file": ("in.csv", b"\xff\xfe\x00bad", "text/csv")},
+                  data={"profile": json.dumps(prof_wi)}).status_code == 400
+    ragged = b"bsn,naam\n123456782,Jan,extra\n"
+    assert c.post("/datasets/pseudonymize", files={"file": ("in.csv", ragged, "text/csv")},
+                  data={"profile": json.dumps(prof_wi)}).status_code == 400

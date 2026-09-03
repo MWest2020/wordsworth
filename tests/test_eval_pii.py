@@ -81,3 +81,26 @@ def test_cli_runs_deterministic_layer(capsys):
     with pytest.raises(ValueError):
         build_detect(["nope"])
     assert "overall/span" in format_report(evaluate_pii(load_gold(FIX), deterministic_entities))
+
+
+def test_per_layer_scores_every_document_even_when_layer_silent():
+    docs = load_gold(FIX)
+    report = evaluate_pii(docs, deterministic_entities)      # single layer
+    det = report["per_layer"]["deterministic"]
+    assert det["leaks"] == report["leaks"]                    # not under-reported
+    assert det["overall"]["span"]["fn"] == report["overall"]["span"]["fn"]
+
+
+def test_token_fp_not_double_counted_for_duplicate_predictions():
+    doc = _doc()
+    dup = [Entity("PERSON", "Aanvrager", 0, 9, "deterministic", 1.0),
+           Entity("PERSON", "Aanvrager", 0, 9, "openanonymiser", 0.7)]
+    r = score_doc(doc, dup)
+    assert r["span"]["PERSON"].fp == 1 and r["token"]["PERSON"].fp == 1
+
+
+def test_gold_without_entities_key_is_hard_error(tmp_path):
+    bad = tmp_path / "g.jsonl"
+    bad.write_text('{"id":"x","text":"abc"}\n')
+    with pytest.raises(ValueError):
+        load_gold(bad)

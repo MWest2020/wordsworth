@@ -111,3 +111,13 @@ def test_feedback_is_audited_without_values_and_lists_untouched(
     assert DetectionLists.load(tmp_path).hash == before  # lists untouched
     meta = c.get(f"/documents/{doc.id}").json()
     assert meta["lists_hash"] is None and "lists_hash" not in meta["counts"]
+
+
+def test_deny_overlapping_detector_span_keeps_counts_and_aggregates_consistent(tmp_path):
+    lists = _lists(tmp_path, deny={"KENTEKEN": [r"\bAB-123-C\b"]})
+    ents = [Entity("PERSON", "AB-123-C", 9, 17, "openanonymiser", 0.5)]  # detector's label wins
+    r = ReversibleAnonymizer(InMemoryKeyProvider(), InMemoryMappingStore(),
+                             detect=lambda t: ents, lists=lists).anonymize("Voertuig AB-123-C.")
+    assert "AB-123-C" not in r.text
+    assert r.counts.get("kenteken", 0) == 0 and r.counts["person"] == 1
+    assert "KENTEKEN" not in r.detections.get("list", {})     # loser not aggregated

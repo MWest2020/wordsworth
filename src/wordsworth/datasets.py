@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, model_validator
 
-from .eval.pii import deterministic_entities
+from .detectors import find_deterministic
 from .keys import DEFAULT_DOMAIN
 from .normalization import normalize
 
@@ -51,6 +51,11 @@ class Profile(BaseModel):
             raise ValueError("select at least one column")
         if self.mode == "per_record" and not self.record_key:
             raise ValueError("per_record needs record_key")
+        if self.format == "nen7524":
+            types = set(self.columns.values()) if self.mode == "per_attribute" else {RECORD_TYPE}
+            unknown = sorted(t for t in types if t.upper() not in _NEN_LETTER)
+            if unknown:   # no silent 'X' letter for a typo'd type
+                raise ValueError(f"nen7524 format has no type letter for {unknown}")
         return self
 
     def sha256(self) -> str:
@@ -85,6 +90,7 @@ class DatasetRun:
         self._p = pseudonymizer               # has .pseudonym(label, value)
         self.rows = 0
         self.unique: set[str] = set()
+        self.rows_without_record_key = 0   # per_record rows whose identity is empty
 
     def _record_identity(self, row: dict) -> str:
         parts = []
@@ -103,7 +109,12 @@ class DatasetRun:
                 raise KeyError(f"selected column(s) missing: {missing}")
             out = dict(row)
             if self.profile.mode == "per_record":
-                token = self._p.pseudonym(RECORD_TYPE, self._record_identity(row))
+                identity = self._record_identity(row)
+                if identity.strip("|") == "":
+                    # All key cells empty: such rows collapse onto ONE shared
+                    # pseudonym — counted so the operator sees the footgun.
+                    self.rows_without_record_key += 1
+                token = self._p.pseudonym(RECORD_TYPE, identity)
                 self.unique.add(token)
                 for col in self.profile.columns:
                     out[col] = render(token, fmt, ttp) if (row[col] or "") != "" else ""
@@ -122,12 +133,14 @@ class DatasetRun:
         return {"rows": self.rows, "columns": sorted(self.profile.columns),
                 "mode": self.profile.mode, "format": self.profile.format,
                 "domain": self.profile.domain, "unique_pseudonyms": len(self.unique),
+                "rows_without_record_key": self.rows_without_record_key,
                 "profile_sha256": self.profile.sha256()}
 
 
 def validate_unselected(rows: list[dict], profile: Profile) -> list[dict]:
-    """Advisory: run the deterministic detectors over a sample of each UNSELECTED
-    column; report columns that look like they hold PII. Never transforms."""
+    """Advisory: run the DETERMINISTIC detectors (BSN/IBAN/email — offline, no
+    service call) over a sample of each UNSELECTED column; report columns that
+    look like they hold PII. Names/addresses are not covered. Never transforms."""
     warnings: list[dict] = []
     if not rows:
         return warnings
@@ -135,7 +148,7 @@ def validate_unselected(rows: list[dict], profile: Profile) -> list[dict]:
         if col in profile.columns:
             continue
         sample = "\n".join((r.get(col) or "") for r in rows[:_SAMPLE_ROWS])
-        types = sorted({e.entity_type for e in deterministic_entities(sample)})
+        types = sorted({label.upper() for label, _, _, _ in find_deterministic(sample)})
         if types:
             warnings.append({"column": col, "types": types,
                              "hint": "kolom bevat mogelijk PII maar is niet geselecteerd"})
