@@ -1,6 +1,6 @@
 ## 0. Gate before apply
 
-- [ ] 0.1 ADR-0005 D8 (datasets in scope) accepted by Mark.
+- [x] 0.1 ADR-0005 D8 (datasets in scope) accepted by Mark (2026-09-03).
 
 ## 1. Engine
 

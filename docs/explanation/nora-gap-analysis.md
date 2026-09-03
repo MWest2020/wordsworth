@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 last_reviewed: 2026-09-03
 ---
 
@@ -80,8 +80,9 @@ deck's "Swiss Cheese", just not named that).
 7. `add-detection-feedback` — after 3.
 8. `add-dataset-pseudonymisation` — only after ADR-0005 D8; depends on 1 and 5.
 
-Everything under **decision** waits for ADR-0005; everything **out-of-core**
-is not wordsworth's to build.
+ADR-0005 was accepted 2026-09-03 (D8 included); items 1–5 are implemented on
+this branch, 6–8 remain proposals. Everything **out-of-core** is not
+wordsworth's to build.
 
 ## 4. Deck inconsistencies worth knowing before adopting it as a spec
 

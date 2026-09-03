@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 last_reviewed: 2026-09-03
 ---
 
@@ -97,4 +97,8 @@ placeholders is a separate render component behind the API, like the console.
 
 ## Status update
 
-Proposed 2026-09-03; awaiting Mark's disposition per decision.
+Proposed 2026-09-03. **Accepted 2026-09-03 by Mark** (in #wordsworth): D8
+(datasets in scope) accepted explicitly; D1–D7 and D9–D11 accepted as
+recommended. Go given for proposals 1–5 (`add-value-normalisation`,
+`add-pii-categories-and-ppl`, `add-detection-confidence`,
+`add-legible-placeholders`, `add-domain-keys`); 6–8 stay at propose stage.
