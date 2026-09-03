@@ -1,0 +1,10 @@
+{"id": "g01", "text": "Aanvrager Janine van Dijk, BSN 123456782, woont in Haarlem.", "entities": [{"start": 10, "end": 25, "type": "PERSON"}, {"start": 31, "end": 40, "type": "BSN"}, {"start": 51, "end": 58, "type": "LOCATION"}]}
+{"id": "g02", "text": "Contact via jan.jansen@haarlem.nl of 023-1234567.", "entities": [{"start": 12, "end": 33, "type": "EMAIL"}, {"start": 37, "end": 48, "type": "PHONE_NUMBER"}]}
+{"id": "g03", "text": "Rekening NL91ABNA0417164300 op naam van Piet Pietersen.", "entities": [{"start": 9, "end": 27, "type": "IBAN"}, {"start": 40, "end": 54, "type": "PERSON"}]}
+{"id": "g04", "text": "De heer De Vries meldde zich in Zandvoort.", "entities": [{"start": 8, "end": 16, "type": "PERSON"}, {"start": 32, "end": 41, "type": "LOCATION"}]}
+{"id": "g05", "text": "Geen persoonsgegevens in deze zin over het beleid.", "entities": []}
+{"id": "g06", "text": "Mevrouw Aisha El Amrani, BSN 111222333, verhuisde naar Bloemendaal.", "entities": [{"start": 8, "end": 23, "type": "PERSON"}, {"start": 29, "end": 38, "type": "BSN"}, {"start": 55, "end": 66, "type": "LOCATION"}]}
+{"id": "g07", "text": "Mail naar info@voorbeeldgemeente.nl voor vragen.", "entities": [{"start": 10, "end": 35, "type": "EMAIL"}]}
+{"id": "g08", "text": "Kenmerk 2024-0001 betreft Kees Kok uit Heemstede.", "entities": [{"start": 26, "end": 34, "type": "PERSON"}, {"start": 39, "end": 48, "type": "LOCATION"}]}
+{"id": "g09", "text": "Betaling aan NL02ABNA0123456789 door Fatima Yilmaz.", "entities": [{"start": 13, "end": 31, "type": "IBAN"}, {"start": 37, "end": 50, "type": "PERSON"}]}
+{"id": "g10", "text": "Zaak van Lars Bakker en Sanne de Boer in Haarlem.", "entities": [{"start": 9, "end": 20, "type": "PERSON"}, {"start": 24, "end": 37, "type": "PERSON"}, {"start": 41, "end": 48, "type": "LOCATION"}]}
