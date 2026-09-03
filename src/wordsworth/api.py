@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -135,6 +135,24 @@ class FeedbackRequest(BaseModel):
 
 
 _TOKEN_RE = __import__("re").compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
+
+
+class DatasetResponse(BaseModel):
+    """Result of a dataset run (add-dataset-pseudonymisation): the transformed
+    CSV, aggregates, advisory warnings for unselected columns that look like
+    PII, and the audit record's sequence number. Never an input value."""
+
+    csv: str
+    rows: int
+    columns: list[str]
+    unique_pseudonyms: int
+    domain: str
+    mode: str
+    format: str
+    profile_sha256: str
+    warnings: list[dict]
+    dataset_id: str
+    audit_seq: int
 
 
 class ReprocessRequest(BaseModel):
@@ -615,6 +633,80 @@ def create_app(
                     except Exception as exc:  # never leaks text; entry left intact
                         counts["retryable" if is_transient(exc) else "failed"] += 1
                 return ReprocessResponse(total=len(ids), **counts)
+
+    # Dataset path (add-dataset-pseudonymisation): column-selected, profile-driven
+    # pseudonymisation of CSV with the SAME derivation as documents. Reversible
+    # mode only (needs a key provider + mapping store per session).
+    if (session_factory is not None
+            and (key_provider is not None or key_provider_factory is not None)):
+
+        @app.post("/datasets/pseudonymize", response_model=DatasetResponse,
+                  tags=["write"],
+                  summary="Pseudonymise selected CSV columns by profile")
+        def datasets_pseudonymize(
+            file: UploadFile = File(..., description="CSV with a header row"),
+            profile: str | None = Form(None, description="inline profile JSON"),
+            profile_name: str | None = Form(None, description="profiles/<name>.json"),
+        ) -> DatasetResponse:
+            """Selected columns are replaced by keyed pseudonyms (per attribute or
+            per record); unselected columns pass through byte-identical. One
+            audit record per run (aggregates only). Exactly one of ``profile`` /
+            ``profile_name``. 400 on a malformed profile or missing column."""
+            import csv as _csv
+            import io as _io
+
+            from . import audit
+            from .datasets import (DatasetRun, Profile, load_profile,
+                                   validate_unselected)
+            from .mapping_store import PostgresMappingStore
+            from .pipeline import register
+            from .pseudonymizer import Pseudonymizer
+
+            if (profile is None) == (profile_name is None):
+                raise HTTPException(status_code=400,
+                                    detail="give exactly one of profile or profile_name")
+            try:
+                prof = (Profile.model_validate_json(profile) if profile is not None
+                        else load_profile(profile_name, default_settings.profiles_dir))
+            except (ValueError, FileNotFoundError) as exc:
+                raise HTTPException(status_code=400, detail=f"bad profile: {exc}")
+            data = file.file.read()
+            if not data:
+                raise HTTPException(status_code=400, detail="empty upload")
+            rows = list(_csv.DictReader(_io.StringIO(data.decode("utf-8-sig"))))
+            if not rows:
+                raise HTTPException(status_code=400, detail="CSV has no data rows")
+            key = "datasets/" + hashlib.sha256(data).hexdigest()
+            with session_factory() as session:
+                kp = key_provider_factory(session) if key_provider_factory else key_provider
+                run = DatasetRun(prof, Pseudonymizer(kp, PostgresMappingStore(session),
+                                                     domain=prof.domain))
+                try:
+                    out_rows = list(run.transform(rows))
+                except KeyError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                buf = io.StringIO()
+                writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()),
+                                        lineterminator="\n")
+                writer.writeheader()
+                writer.writerows(out_rows)
+                warnings = validate_unselected(rows, prof) if prof.validate_pii else []
+                # The dataset is an artefact with identity (content hash); its run
+                # is an access event on it — aggregates only, never a cell value.
+                doc = session.execute(select(Document).where(
+                    Document.object_key == key)).scalars().first()
+                if doc is None:
+                    doc = register(session, key, prof.domain)
+                state = current_state(session, doc.id)
+                stats = run.stats()
+                rec = audit.append(session, document_id=doc.id,
+                                   from_state=state.value, to_state=state.value,
+                                   step="dataset_pseudonymize",
+                                   payload={**stats, "kind": "dataset",
+                                            "warnings": [w["column"] for w in warnings]})
+                session.commit()
+            return DatasetResponse(csv=buf.getvalue(), warnings=warnings,
+                                   dataset_id=str(doc.id), audit_seq=rec.seq, **stats)
 
     # Key-gated reveal: turn a document's pseudonyms back into originals, but
     # only the PII types a grant authorises. Mounted only when a key provider and

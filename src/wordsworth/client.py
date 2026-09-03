@@ -264,6 +264,50 @@ def _cmd_reprocess(args) -> int:
     return 0
 
 
+def _post_dataset(base: str, path: Path, profile: str | None, profile_name: str | None,
+                  timeout: float = 600) -> dict:
+    """Upload a CSV + profile to POST /datasets/pseudonymize (multipart)."""
+    boundary = uuid.uuid4().hex
+    body = bytearray()
+
+    def part(name: str, value: bytes, filename: str | None = None,
+             ctype: str = "text/plain") -> None:
+        body.extend(f"--{boundary}\r\n".encode())
+        disp = f'Content-Disposition: form-data; name="{name}"'
+        if filename:
+            disp += f'; filename="{filename}"'
+        body.extend((disp + "\r\n").encode())
+        body.extend(f"Content-Type: {ctype}\r\n\r\n".encode())
+        body.extend(value)
+        body.extend(b"\r\n")
+
+    part("file", path.read_bytes(), path.name, "text/csv")
+    if profile is not None:
+        part("profile", profile.encode())
+    if profile_name is not None:
+        part("profile_name", profile_name.encode())
+    body.extend(f"--{boundary}--\r\n".encode())
+    req = urllib.request.Request(
+        base.rstrip("/") + "/datasets/pseudonymize", data=bytes(body), method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _cmd_dataset(args) -> int:
+    """Pseudonymise selected CSV columns; CSV to stdout, stats to stderr."""
+    path = Path(args.csv)
+    if not path.exists():
+        print(f"file not found: {path}", file=sys.stderr)
+        return 2
+    profile = Path(args.profile).read_text() if args.profile else None
+    res = _post_dataset(args.url, path, profile, args.profile_name, args.timeout)
+    sys.stdout.write(res["csv"])
+    stats = {k: v for k, v in res.items() if k != "csv"}
+    print(json.dumps(stats, indent=2), file=sys.stderr)
+    return 0
+
+
 def _cmd_grant(args) -> int:
     """Issue, inspect, or revoke a reveal grant (operator/admin surface)."""
     if args.grant_cmd == "issue":
@@ -375,6 +419,14 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--timeout", type=float, default=None,
                     help="request timeout in seconds (default 3600; long-running)")
     pr.set_defaults(func=_cmd_reprocess)
+
+    pd = sub.add_parser("pseudonymize-dataset",
+                        help="pseudonymise selected CSV columns by profile")
+    pd.add_argument("csv", help="input CSV (header row required)")
+    pd.add_argument("--profile", default=None, help="path to an inline profile JSON")
+    pd.add_argument("--profile-name", default=None, help="server-side profiles/<name>.json")
+    pd.add_argument("--timeout", type=float, default=600)
+    pd.set_defaults(func=_cmd_dataset)
 
     pg = sub.add_parser("grant", help="issue / inspect / revoke reveal grants")
     gsub = pg.add_subparsers(dest="grant_cmd", required=True)

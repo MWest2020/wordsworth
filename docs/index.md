@@ -29,3 +29,5 @@ under `openspec/`.
     what wordsworth adopts, adapts and declines from that architecture.
   - [detection lists](how-to/detection-lists.md) — allow/deny JSON lists,
     `lists_hash` in audit, the feedback endpoint.
+  - [dataset pseudonymisation](how-to/dataset-pseudonymisation.md) — CSV
+    column path: profiles, per-attribute/per-record, NEN 7524-style output.

@@ -94,22 +94,26 @@ class Pseudonymizer:
         self._store = mapping_store
         self._domain = domain  # add-domain-keys: keys are scoped domain/TYPE
 
+    def pseudonym(self, label: str, value: str) -> str:
+        """The keyed ``[LABEL:hash8]`` token for one value of one PII type, with
+        its encrypted original stored (idempotent). The ONE derivation shared by
+        free text and datasets (add-dataset-pseudonymisation): same domain, same
+        type, same normalised value → same token, whichever path produced it."""
+        label = label.lower()
+        # Each PII type is keyed under its own scope, so possessing a type's
+        # key reveals only that type.
+        key = self._keys.current_key(scope=scope_for(self._domain, label.upper()))
+        pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
+        ciphertext, nonce = encrypt(key.material, value)
+        self._store.put(pseudonym, ciphertext, nonce, key.id, norm_version=PROFILE_VERSION)
+        return pseudonym
+
     def anonymize(self, text: str) -> AnonymizationResult:
         counts: dict[str, int] = {}
         stats = DetectionStats(settings.detection_min_score)
         for label, pattern, validate in detectors.DETECTORS:
-            # Each PII type is keyed under its own scope, so possessing a type's
-            # key reveals only that type.
-            key = self._keys.current_key(scope=scope_for(self._domain, label.upper()))
-
-            def replacer(value: str, label: str = label, key=key) -> str:
-                pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
-                ciphertext, nonce = encrypt(key.material, value)
-                self._store.put(pseudonym, ciphertext, nonce, key.id,
-                                norm_version=PROFILE_VERSION)
-                return pseudonym
-
-            text, counts[label] = detectors.substitute(text, pattern, replacer, validate)
+            text, counts[label] = detectors.substitute(
+                text, pattern, lambda v, label=label: self.pseudonym(label, v), validate)
             stats.add(DETERMINISTIC, label, 1.0, counts[label])  # validated = certain
         return AnonymizationResult(text=text, counts=counts, detections=stats.to_dict())
 

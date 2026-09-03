@@ -1,0 +1,7 @@
+{
+  "domain": "wi",
+  "columns": {"bsn": "BSN", "naam": "PERSON", "geboortedatum": "DATE", "postcode": "POSTCODE"},
+  "mode": "per_attribute",
+  "format": "token",
+  "validate_pii": true
+}

@@ -181,6 +181,13 @@ class Settings:
         one. ``_global`` keeps single-domain deployments exactly as before."""
         return os.environ.get("WORDSWORTH_DEFAULT_DOMAIN", "_global")
 
+    # --- add-dataset-pseudonymisation ---
+    @property
+    def profiles_dir(self) -> str:
+        """Directory of git-versioned dataset profiles (``<name>.json``) that
+        ``POST /datasets/pseudonymize`` may reference by name."""
+        return os.environ.get("WORDSWORTH_PROFILES_DIR", "profiles")
+
     # --- add-detection-feedback ---
     @property
     def detection_lists_dir(self) -> str:
