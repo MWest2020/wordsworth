@@ -1,3 +1,8 @@
+---
+status: draft
+last_reviewed: 2026-09-03
+---
+
 # Runbook — optional API-key authentication
 
 The Wordsworth API is tailnet-internal and open by default. You can optionally

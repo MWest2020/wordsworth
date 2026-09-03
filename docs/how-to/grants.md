@@ -1,3 +1,8 @@
+---
+status: draft
+last_reviewed: 2026-09-03
+---
+
 # Runbook: reveal grants
 
 Grants gate the key-gated reveal endpoint per PII type. They are **shareable**

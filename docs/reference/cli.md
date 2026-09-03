@@ -1,3 +1,8 @@
+---
+status: draft
+last_reviewed: 2026-09-03
+---
+
 # CLI reference — `wordsworth`
 
 `wordsworth` (alias `wordsworthctl`) is a dependency-free client for the
