@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 
 from . import audit, detectors
 from .anonymizer import AnonymizationResult
+from .config import settings
 from .crypto import decrypt, encrypt
+from .detection_stats import DETERMINISTIC, DetectionStats
 from .keys import KeyProvider
 from .mapping_store import MappingStore
 from .normalization import PROFILE_VERSION, normalize
@@ -91,6 +93,7 @@ class Pseudonymizer:
 
     def anonymize(self, text: str) -> AnonymizationResult:
         counts: dict[str, int] = {}
+        stats = DetectionStats(settings.detection_min_score)
         for label, pattern, validate in detectors.DETECTORS:
             # Each PII type is keyed under its own scope, so possessing a type's
             # key reveals only that type.
@@ -104,7 +107,8 @@ class Pseudonymizer:
                 return pseudonym
 
             text, counts[label] = detectors.substitute(text, pattern, replacer, validate)
-        return AnonymizationResult(text=text, counts=counts)
+            stats.add(DETERMINISTIC, label, 1.0, counts[label])  # validated = certain
+        return AnonymizationResult(text=text, counts=counts, detections=stats.to_dict())
 
 
 class ReversibleAnonymizer:
@@ -145,7 +149,12 @@ class ReversibleAnonymizer:
         counts = dict(result.counts)
         for label, n in entity_counts.items():
             counts[label] = counts.get(label, 0) + n
-        return AnonymizationResult(text=body, counts=counts)
+        stats = DetectionStats(settings.detection_min_score)
+        stats.merge(result.detections)
+        for e in entities:  # one aggregate row per detection; no value, no offset
+            if e.text and len(e.text.strip()) >= _MIN_ENTITY_LEN:
+                stats.add(e.layer, e.entity_type, e.score)
+        return AnonymizationResult(text=body, counts=counts, detections=stats.to_dict())
 
     def _pseudonymize_entities(
         self, text: str, entities: list[Entity]

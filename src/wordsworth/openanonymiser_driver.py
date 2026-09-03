@@ -25,6 +25,7 @@ import httpx
 from .anonymizer import AnonymizationResult, DeterministicAnonymizer
 from .concurrency import limiter
 from .config import settings
+from .detection_stats import OPENANONYMISER
 
 
 class AnonymizationEngineError(RuntimeError):
@@ -42,6 +43,17 @@ class Entity:
     text: str
     start: int
     end: int
+    # add-detection-confidence: which layer found it, how confidently (0..1).
+    layer: str = OPENANONYMISER
+    score: float = 1.0
+
+
+def _score(e: dict) -> float:
+    """The service's confidence; its absence is a contract break → hard error
+    (no silent default), per the no-silent-fallback rule."""
+    if "score" not in e:
+        raise AnonymizationEngineError("OpenAnonymiser entity without score")
+    return float(e["score"])
 
 
 def _chunk_text(text: str, max_chars: int) -> list[str]:
@@ -85,6 +97,7 @@ def _redact_one(text: str) -> tuple[str, dict[str, int]]:
     data = response.json()
     counts: dict[str, int] = {}
     for entity in data.get("entities_found") or []:  # what the service detected
+        _score(entity)  # contract check only; the irreversible path keeps counts
         label = str(entity["entity_type"]).lower()
         counts[label] = counts.get(label, 0) + 1
     return data["anonymized_text"], counts
@@ -142,7 +155,7 @@ def _detect_one(text: str) -> list[Entity]:
         if "start" not in e or "end" not in e:
             continue  # no span → cannot substitute reversibly; skip defensively
         out.append(Entity(str(e["entity_type"]), str(e.get("text", "")),
-                          int(e["start"]), int(e["end"])))
+                          int(e["start"]), int(e["end"]), OPENANONYMISER, _score(e)))
     return out
 
 
@@ -163,7 +176,8 @@ def detect_entities(text: str) -> list[Entity]:
     def one(indexed: tuple[int, str]) -> list[Entity]:
         i, chunk = indexed
         off = bases[i]
-        return [Entity(e.entity_type, e.text, e.start + off, e.end + off)
+        return [Entity(e.entity_type, e.text, e.start + off, e.end + off,
+                       e.layer, e.score)
                 for e in _detect_one(chunk)]
 
     with ThreadPoolExecutor(max_workers=workers) as pool:

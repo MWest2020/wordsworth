@@ -205,8 +205,10 @@ def process(
         )
         session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))
         session.flush()
+        # Counts per type + per-layer confidence aggregates (add-detection-
+        # confidence): aggregates only, never a value or an offset.
         transition(session, document_id, State.ANONYMIZED, step="anonymize",
-                   payload=result.counts)
+                   payload={**result.counts, "detections": result.detections})
         state = State.ANONYMIZED
 
     if state == State.ANONYMIZED:
@@ -300,6 +302,7 @@ def reanonymize(
         from_state=state.value,
         to_state=state.value,
         step="reanonymize",
-        payload={"counts": result.counts, "reanonymized": True},
+        payload={"counts": result.counts, "detections": result.detections,
+                 "reanonymized": True},
     )
     return state

@@ -770,7 +770,8 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         })
         prev_ts = r.ts
     total_ms = (records[-1].ts - records[0].ts).total_seconds() * 1000
-    counts = next((r.payload for r in records if r.step == "anonymize"), {})
+    anon = next((r.payload for r in records if r.step == "anonymize"), {})
+    counts = {k: v for k, v in anon.items() if k != "detections"}
     profile = next((r.payload for r in records if r.step == "profile"), {})
     doc = session.get(Document, document_id)
     return {
@@ -779,8 +780,8 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         "state": records[-1].to_state,
         "duration_ms": round(total_ms, 1),
         "counts": counts,
-        "pii_counts_by_category": counts_by_category(
-            {k: v for k, v in counts.items() if isinstance(v, int)}),
+        "pii_counts_by_category": counts_by_category(counts),
+        "detections": anon.get("detections", {}),
         "pages": profile.get("pages"),
         "bytes": profile.get("bytes"),
         "steps": steps,

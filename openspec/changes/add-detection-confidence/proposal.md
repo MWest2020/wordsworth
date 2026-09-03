@@ -33,7 +33,12 @@ value was found, so precision/recall problems cannot be traced to a layer.
 
 ## Impact
 
-- Code: `openanonymiser_driver.py`, `detectors.py`, `pseudonymizer.py` (entity
-  tuple → small dataclass), `pipeline.py` (audit payload), `config.py`.
+- Code: `detection_stats.py` (new), `openanonymiser_driver.py` (`Entity.layer`/
+  `.score`, hard error without score), `anonymizer.py`, `pseudonymizer.py`,
+  `pipeline.py` (audit payload), `api.py` (metadata), `config.py`.
+- Scope note: the irreversible OpenAnonymiser driver enforces the score contract
+  but its `AnonymizationResult.detections` covers the deterministic layer only
+  (its engine seam returns redacted text + counts, no spans); full per-layer
+  aggregates come from the reversible path, which is the deployed mode.
 - No schema change (audit content is JSON). Tests for score passthrough and
   aggregate shape. No behaviour change to what gets redacted.

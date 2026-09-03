@@ -174,6 +174,14 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
 
+    # --- add-detection-confidence ---
+    @property
+    def detection_min_score(self) -> float:
+        """Confidence threshold used ONLY for counting ``below_threshold`` in the
+        per-layer detection aggregates. It never affects what is redacted: a
+        low-score entity is still replaced before indexing."""
+        return float(os.environ.get("WORDSWORTH_DETECTION_MIN_SCORE", "0.0"))
+
     # --- openanonymiser-http (Architecture A: HTTP client, geen in-process ML) ---
     @property
     def openanonymiser_url(self) -> str:
