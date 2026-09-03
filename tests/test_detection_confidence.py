@@ -126,3 +126,19 @@ def test_two_tuple_engine_double_still_yields_deterministic_aggregates():
     assert r.counts["person"] == 2
     assert r.detections == {"deterministic": {"BSN": {
         "count": 1, "min_score": 1.0, "max_score": 1.0, "below_threshold": 0}}}
+
+
+def test_spanless_entity_without_score_still_fails_hard(monkeypatch):
+    import httpx
+    from wordsworth.openanonymiser_driver import detect_entities
+
+    class FakeResp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {"anonymized_text": "x", "entities_found": [
+                {"entity_type": "PERSON", "text": "Jan"}]}  # no span, no score
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResp())
+    with pytest.raises(AnonymizationEngineError):
+        detect_entities("Jan is hier")

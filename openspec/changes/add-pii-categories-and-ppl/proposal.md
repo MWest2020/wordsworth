@@ -23,11 +23,8 @@ gives an operator no vocabulary for "Art. 9 data" or "level 2 access".
 - **Grants accept a PPL shorthand.** `POST /grants` accepts `ppl: 0..3` as an
   alternative to `allowed_types`; the server expands it to the type set of all
   categories with `ppl_min ≤ ppl`. `allowed_types` stays the canonical stored
-  form — PPL is sugar over the existing capability model, not a second model.
-  PPL 3 additionally sets `reidentify: true` (reserved; today a no-op flag
-  because reveal *is* re-identification).
-- **Category + legal basis surfaced** in `GET /documents/{id}` metadata counts
-  (per category) and in reveal responses (`revealed_types` grouped per basis).
+  form — PPL is sugar over the existing capability model, not a second model. (Reveal *is* re-identification, so PPL 3
+  needs no extra flag.)
 - **Audit**: reveal records carry the categories touched. No clear values.
 - **Untouched:** cryptography, key scoping, token format, index invariant.
 

@@ -42,5 +42,6 @@ def rotate_keys(
         new_key_id=new.id,
         entries_reencrypted=count,
         actor=actor,
+        scope=scope,  # which domain/type was rotated (add-domain-keys)
     )
     return new

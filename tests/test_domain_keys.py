@@ -142,14 +142,17 @@ def test_rotation_per_domain_scope_is_audited_and_keeps_revealing(tmp_path):
     from wordsworth.pseudonymizer import _reveal
     kp, store = InMemoryKeyProvider(), InMemoryMappingStore()
     out = Pseudonymizer(kp, store, domain="wi").anonymize(f"BSN {PII_BSN}").text
-    token = out.split()[-1]
-    old_id = store.get(token).key_id
+    mo_out = Pseudonymizer(kp, store, domain="mo").anonymize(f"BSN {PII_BSN}").text
+    token, mo_token = out.split()[-1], mo_out.split()[-1]
+    old_id, mo_id = store.get(token).key_id, store.get(mo_token).key_id
     audit = JsonlKeyLifecycleAudit(tmp_path / "k.jsonl")
     new = rotate_keys(kp, store, AgeEscrow(), audit, actor="m",
                       scope=scope_for("wi", "BSN"))
     assert store.get(token).key_id == new.id != old_id           # re-encrypted
-    assert kp.current_key(scope_for("mo", "BSN")).id != new.id  # other domain untouched
+    assert store.get(mo_token).key_id == mo_id                    # other domain untouched
+    assert kp.current_key(scope_for("mo", "BSN")).id == mo_id
     events = (tmp_path / "k.jsonl").read_text()
     assert old_id in events and new.id in events                # rotation audited
+    assert '"scope": "wi/BSN"' in events or "'scope': 'wi/BSN'" in events or "wi/BSN" in events
     restored, _ = _reveal(out, None, store.get, kp.key)
     assert PII_BSN in restored
