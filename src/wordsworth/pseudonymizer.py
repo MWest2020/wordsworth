@@ -21,6 +21,7 @@ from .anonymizer import AnonymizationResult
 from .crypto import decrypt, encrypt
 from .keys import KeyProvider
 from .mapping_store import MappingStore
+from .normalization import PROFILE_VERSION, normalize
 from .models import AuditRecord
 from .openanonymiser_driver import AnonymizationEngineError, Entity, detect_entities
 
@@ -38,7 +39,10 @@ _MIN_ENTITY_LEN = 3
 
 
 def _token(key_material: bytes, label: str, value: str) -> str:
-    msg = f"{label}:{value}".encode("utf-8")
+    # HMAC over the NORMALISED value so spelling/format variants of one
+    # identifier collide onto one token (add-value-normalisation). The stored
+    # ciphertext keeps the original spelling; only the derivation is canonical.
+    msg = f"{label}:{normalize(label, value)}".encode("utf-8")
     return hmac.new(key_material, msg, hashlib.sha256).hexdigest()[:8]
 
 
@@ -94,7 +98,8 @@ class Pseudonymizer:
             def replacer(value: str, label: str = label, key=key) -> str:
                 pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
                 ciphertext, nonce = encrypt(key.material, value)
-                self._store.put(pseudonym, ciphertext, nonce, key.id)
+                self._store.put(pseudonym, ciphertext, nonce, key.id,
+                                norm_version=PROFILE_VERSION)
                 return pseudonym
 
             text, counts[label] = detectors.substitute(text, pattern, replacer, validate)
@@ -182,7 +187,8 @@ class ReversibleAnonymizer:
             key = self._keys.current_key(scope=label.upper())
             pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
             ciphertext, nonce = encrypt(key.material, value)
-            self._store.put(pseudonym, ciphertext, nonce, key.id)  # idempotent
+            self._store.put(pseudonym, ciphertext, nonce, key.id,
+                            norm_version=PROFILE_VERSION)  # idempotent
             counts[label] = counts.get(label, 0) + 1
             return pseudonym
 

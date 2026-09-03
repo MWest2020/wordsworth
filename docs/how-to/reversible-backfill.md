@@ -63,3 +63,13 @@ failed}`.
   simply picked up again on the next run.
 - The pre-existing corpus's original bytes must still be in the object store
   (they are, unless orphan-cleaned); the backfill reads from there.
+
+## After a normalisation-profile change
+
+Tokens are derived from `normalize(type, value)` (see `normalization.py`,
+`PROFILE_VERSION`). When the rule set changes, the version is bumped and every
+existing mapping row still carries the version it was derived under
+(`pii_mappings.norm_version`; `NULL` = legacy raw derivation). Re-derive the
+corpus with the same `POST /reprocess` run as above — the stored original values
+are unchanged, only the tokens move onto the new profile. Never re-derive
+implicitly.

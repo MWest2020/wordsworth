@@ -42,10 +42,18 @@ def make_engine(url: str | None = None) -> Engine:
     )
 
 
+# Additive, idempotent column migrations for databases created before the
+# column existed (create_all never alters existing tables). Boring on purpose.
+_COLUMN_MIGRATIONS_SQL = """
+ALTER TABLE pii_mappings ADD COLUMN IF NOT EXISTS norm_version VARCHAR;
+"""
+
+
 def init_schema(engine: Engine) -> None:
-    """Apply the schema migration: tables + the append-only trigger."""
+    """Apply the schema migration: tables + columns + the append-only trigger."""
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
+        conn.execute(text(_COLUMN_MIGRATIONS_SQL))
         conn.execute(text(_APPEND_ONLY_SQL))
 
 

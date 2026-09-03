@@ -5,8 +5,8 @@
 The keyed pseudonym SHALL be derived from `normalize(label, value)` rather than
 the raw value, where `normalize` applies a typed, table-driven rule set (default:
 trim + Unicode NFC; BSN: strip separators, left-pad to 9 digits; postcode: strip
-spaces, uppercase; names and locations: trim, NFC, casefold; dates: ISO 8601
-when parseable). The encrypted mapping SHALL still hold the original value.
+spaces, uppercase; names, locations, organisations and e-mail addresses: trim,
+NFC, casefold; dates: ISO 8601 when parseable, else the default). The encrypted mapping SHALL still hold the original value.
 
 #### Scenario: Spelling variants yield one pseudonym
 

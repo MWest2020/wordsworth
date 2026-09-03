@@ -19,11 +19,13 @@ class Mapping:
     ciphertext: bytes
     nonce: bytes
     key_id: str
+    norm_version: str | None = None  # normalisation profile; None = legacy (raw)
 
 
 @runtime_checkable
 class MappingStore(Protocol):
-    def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str) -> None: ...
+    def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
+            norm_version: str | None = None) -> None: ...
     def get(self, pseudonym: str) -> Mapping | None: ...
     def reencrypt(self, old_id: str, new_id: str, key_provider: KeyProvider) -> int: ...
 
@@ -34,7 +36,8 @@ class PostgresMappingStore:
     def __init__(self, session: Session):
         self._session = session
 
-    def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str) -> None:
+    def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
+            norm_version: str | None = None) -> None:
         if self._session.get(PiiMapping, pseudonym) is not None:
             return
         self._session.add(
@@ -43,6 +46,7 @@ class PostgresMappingStore:
                 ciphertext=ciphertext,
                 nonce=nonce,
                 key_id=key_id,
+                norm_version=norm_version,
                 created_at=datetime.now(timezone.utc),
             )
         )
@@ -52,7 +56,8 @@ class PostgresMappingStore:
         row = self._session.get(PiiMapping, pseudonym)
         if row is None:
             return None
-        return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id)
+        return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id,
+                       row.norm_version)
 
     def reencrypt(self, old_id: str, new_id: str, key_provider: KeyProvider) -> int:
         """Re-encrypt every entry under ``old_id`` onto ``new_id`` and return the
@@ -80,8 +85,10 @@ class InMemoryMappingStore:
     def __init__(self) -> None:
         self._d: dict[str, Mapping] = {}
 
-    def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str) -> None:
-        self._d.setdefault(pseudonym, Mapping(pseudonym, ciphertext, nonce, key_id))
+    def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
+            norm_version: str | None = None) -> None:
+        self._d.setdefault(
+            pseudonym, Mapping(pseudonym, ciphertext, nonce, key_id, norm_version))
 
     def get(self, pseudonym: str) -> Mapping | None:
         return self._d.get(pseudonym)
@@ -95,6 +102,7 @@ class InMemoryMappingStore:
                 continue
             plaintext = decrypt(old.material, m.ciphertext, m.nonce)
             ciphertext, nonce = encrypt(new.material, plaintext)
-            self._d[pseudonym] = Mapping(pseudonym, ciphertext, nonce, new_id)
+            self._d[pseudonym] = Mapping(pseudonym, ciphertext, nonce, new_id,
+                                         m.norm_version)
             n += 1
         return n
