@@ -263,10 +263,12 @@ def _cmd_reprocess(args) -> int:
 def _cmd_grant(args) -> int:
     """Issue, inspect, or revoke a reveal grant (operator/admin surface)."""
     if args.grant_cmd == "issue":
-        payload: dict = {
-            "recipient": args.recipient,
-            "allowed_types": [t.strip() for t in args.types.split(",") if t.strip()],
-        }
+        payload: dict = {"recipient": args.recipient}
+        if args.ppl is not None:  # PPL shorthand; the server expands it
+            payload["ppl"] = args.ppl
+        else:
+            payload["allowed_types"] = [
+                t.strip() for t in (args.types or "").split(",") if t.strip()]
         if args.document:
             payload["document_id"] = args.document
         if args.expires:
@@ -370,8 +372,11 @@ def main(argv: list[str] | None = None) -> int:
     gsub = pg.add_subparsers(dest="grant_cmd", required=True)
     gi = gsub.add_parser("issue", help="issue a reveal grant")
     gi.add_argument("--recipient", required=True)
-    gi.add_argument("--types", required=True,
+    gi.add_argument("--types", default=None,
                     help="comma-separated PII types, e.g. PERSON,LOCATION")
+    gi.add_argument("--ppl", type=int, default=None, choices=range(0, 4),
+                    help="Privacy Protection Level 0-3 instead of --types "
+                         "(0 none, 1 Art. 6, 2 Art. 6+9, 3 everything)")
     gi.add_argument("--document", default=None,
                     help="scope to one document id (default: any document)")
     gi.add_argument("--expires", default=None,

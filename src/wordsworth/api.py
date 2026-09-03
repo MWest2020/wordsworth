@@ -16,7 +16,7 @@ from typing import Callable
 from uuid import UUID
 
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -33,6 +33,9 @@ from .key_audit import KeyLifecycleAudit
 from .keys import KeyProvider
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
+from .pii_categories import (
+    counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
+)
 from .pipeline import current_state, get_anonymized_text, ingest, process
 from .rate_limit import (
     EXEMPT_PATHS,
@@ -91,6 +94,9 @@ class RevealResponse(BaseModel):
     revealed_types: list[str]
     withheld_types: list[str]
     grant_id: str
+    # The same two sets grouped under their AVG legal basis (Art. 6/9/10):
+    # {"Art. 6": {"revealed": [...], "withheld": [...]}, ...}
+    by_legal_basis: dict[str, dict[str, list[str]]] = {}
 
 
 class AnonymizedResponse(BaseModel):
@@ -124,9 +130,19 @@ class GrantIssueRequest(BaseModel):
     grant_id is a bearer capability; a real auth decision is pending."""
 
     recipient: str
-    allowed_types: list[str]
+    allowed_types: list[str] | None = None  # explicit types, XOR ppl
+    ppl: int | None = None                  # Privacy Protection Level 0..3
     document_id: str | None = None      # None = any document
     expires_at: str | None = None       # ISO-8601, must be timezone-aware
+
+    @model_validator(mode="after")
+    def _types_xor_ppl(self):
+        # PPL is shorthand over allowed_types (pii_categories); exactly one form.
+        if (self.allowed_types is None) == (self.ppl is None):
+            raise ValueError("give exactly one of allowed_types or ppl")
+        if self.ppl is not None and not 0 <= self.ppl <= 3:
+            raise ValueError("ppl must be 0..3")
+        return self
 
 
 class GrantResponse(BaseModel):
@@ -135,6 +151,7 @@ class GrantResponse(BaseModel):
     grant_id: str
     recipient: str
     allowed_types: list[str]
+    ppl: int | None = None  # the level whose expansion equals allowed_types, if any
     document_id: str | None
     status: str
     created_at: str
@@ -573,12 +590,20 @@ def create_app(
                 )
                 session.commit()
             requested_upper = {t.upper() for t in requested}
+            withheld = requested_upper - allowed
+            by_basis = {b: {"revealed": [], "withheld": []}
+                        for b in (*group_by_basis(allowed), *group_by_basis(withheld))}
+            for b, ts in group_by_basis(allowed).items():
+                by_basis[b]["revealed"] = ts
+            for b, ts in group_by_basis(withheld).items():
+                by_basis[b]["withheld"] = ts
             return RevealResponse(
                 document_id=str(document_id),
                 revealed_text=revealed_text,
                 revealed_types=sorted(allowed),
-                withheld_types=sorted(requested_upper - allowed),
+                withheld_types=sorted(withheld),
                 grant_id=body.grant_id,
+                by_legal_basis=by_basis,
             )
 
     # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
@@ -601,6 +626,7 @@ def create_app(
                 grant_id=g.grant_id,
                 recipient=g.recipient,
                 allowed_types=list(g.allowed_types),
+                ppl=ppl_of_types(g.allowed_types),
                 document_id=str(g.document_id) if g.document_id else None,
                 status=g.status,
                 created_at=g.created_at.isoformat(),
@@ -636,10 +662,13 @@ def create_app(
                 if expires.tzinfo is None:
                     raise HTTPException(status_code=400,
                                         detail="expires_at must be timezone-aware")
+            # PPL shorthand → the registry's type set; stored form stays types.
+            types = (sorted(types_for_ppl(body.ppl)) if body.ppl is not None
+                     else list(body.allowed_types or []))
             with session_factory() as session:
                 grant = issue_grant(
                     _grant_store(session), _resolve_audit(),
-                    recipient=body.recipient, allowed_types=body.allowed_types,
+                    recipient=body.recipient, allowed_types=types,
                     actor="operator", document_id=doc_id, expires_at=expires,
                 )
                 session.commit()
@@ -750,6 +779,8 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         "state": records[-1].to_state,
         "duration_ms": round(total_ms, 1),
         "counts": counts,
+        "pii_counts_by_category": counts_by_category(
+            {k: v for k, v in counts.items() if isinstance(v, int)}),
         "pages": profile.get("pages"),
         "bytes": profile.get("bytes"),
         "steps": steps,

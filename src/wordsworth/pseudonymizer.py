@@ -22,6 +22,7 @@ from .crypto import decrypt, encrypt
 from .keys import KeyProvider
 from .mapping_store import MappingStore
 from .normalization import PROFILE_VERSION, normalize
+from .pii_categories import category_of
 from .models import AuditRecord
 from .openanonymiser_driver import AnonymizationEngineError, Entity, detect_entities
 
@@ -247,9 +248,11 @@ def deanonymize(
     restored, revealed = _reveal(
         text, allowed_types, mapping_store.get, key_provider.key
     )
+    types = sorted({_label_of(p) for p in revealed})
     payload = {
         "pseudonyms": sorted(set(revealed)),
-        "types": sorted({_label_of(p) for p in revealed}),
+        "types": types,
+        "categories": sorted({category_of(t) for t in types}),  # c1/c2/c3, no values
         "requested_types": sorted(allowed_types) if allowed_types else "all",
         "actor": actor,
     }

@@ -89,7 +89,9 @@ def test_malformed_inputs_rejected(tmp_path):
 def test_response_carries_no_key_material(tmp_path):
     c = TestClient(_app(InMemoryGrantStore(), tmp_path))
     body = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"]}).json()
-    assert set(body) == {"grant_id", "recipient", "allowed_types", "document_id",
+    # ``ppl`` (add-pii-categories-and-ppl) is derived from allowed_types — metadata,
+    # not material.
+    assert set(body) == {"grant_id", "recipient", "allowed_types", "ppl", "document_id",
                          "status", "created_at", "revoked_at", "expires_at"}
 
 

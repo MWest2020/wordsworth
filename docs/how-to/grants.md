@@ -28,6 +28,29 @@ HTTP: `POST /grants` `{recipient, allowed_types, document_id?, expires_at?}` →
 with the grant metadata (including `grant_id`). `--document` scopes the grant to a
 single document (omit for any document). A naive/invalid `expires_at` → 400.
 
+## Issue by Privacy Protection Level (PPL)
+
+Instead of listing types, issue at a level; the server expands it through the
+PII category registry (`pii_categories.py`) and stores plain `allowed_types`.
+
+| PPL | Reveals | AVG basis | Typical holder (per the NORA target architecture) |
+|---|---|---|---|
+| 0 | nothing — placeholders only | — | data teams, external parties |
+| 1 | ordinary personal data (PERSON, LOCATION, BSN, IBAN, EMAIL, …) | Art. 6 | functional administrators |
+| 2 | PPL 1 + special categories (GEZONDHEID, RELIGIE, ETNICITEIT, BIOMETRIE, …) | Art. 6 + 9 | privacy officers |
+| 3 | everything incl. criminal data (STRAFRECHTELIJK) | Art. 6 + 9 + 10 | FG, emergency procedures |
+
+```sh
+wordsworth grant issue --recipient privacy-officer --ppl 2 [--document <uuid>]
+```
+HTTP: `POST /grants` `{recipient, ppl}` — `ppl` and `allowed_types` are mutually
+exclusive (422 on both or neither). The response reports `ppl` whenever the
+stored type set equals a level exactly. Reveal responses add `by_legal_basis`
+(the revealed/withheld types grouped under Art. 6/9/10) and the reveal audit
+record carries the categories touched (`c1`/`c2`/`c3`), never values. A type the
+registry does not know is treated as Art. 6 (`c1`) and is *not* granted
+implicitly by any level.
+
 ## Inspect
 ```sh
 wordsworth grant show <grant_id>          # GET /grants/{id}
