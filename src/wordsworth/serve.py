@@ -74,7 +74,7 @@ def _reversible_wiring(session_factory) -> dict:
     invariant is enforced by one provider. Only the mapping/grant stores stay
     per-request (session-bound). No OpenBao call happens here — only per request."""
     from .grants import PostgresGrantStore
-    from .keys import DurableKeyProvider
+    from .keys import DEFAULT_DOMAIN, DurableKeyProvider
     from .mapping_store import PostgresMappingStore
     from .pseudonymizer import ReversibleAnonymizer
     from .transit import OpenBaoTransit, SessionFactoryKeyVaultStore
@@ -86,8 +86,9 @@ def _reversible_wiring(session_factory) -> dict:
         SessionFactoryKeyVaultStore(session_factory), transit, settings.key_cache_ttl
     )
 
-    def anonymizer(session):
-        return ReversibleAnonymizer(key_provider, PostgresMappingStore(session))
+    def anonymizer(session, domain=DEFAULT_DOMAIN):
+        return ReversibleAnonymizer(key_provider, PostgresMappingStore(session),
+                                    domain=domain)
 
     return {
         "anonymizer_factory": anonymizer,

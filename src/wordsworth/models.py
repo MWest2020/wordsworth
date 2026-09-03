@@ -96,6 +96,8 @@ class GrantRecord(Base):
         DateTime(timezone=True), nullable=True
     )
     actor: Mapped[str] = mapped_column(String, nullable=False)
+    # add-domain-keys: pseudonymisation domain; NULL = legacy = default domain.
+    domain: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class KeyVaultRecord(Base):

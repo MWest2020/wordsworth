@@ -23,6 +23,7 @@ from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
+from .keys import DEFAULT_DOMAIN
 from .models import AuditRecord, Document, DocumentText
 from .object_store import ObjectStore
 from .profiling import ProfilingError, profile_pdf
@@ -87,15 +88,32 @@ def transition(
     return record
 
 
-def register(session: Session, object_key: str) -> Document:
+def register(session: Session, object_key: str,
+             domain: str = DEFAULT_DOMAIN) -> Document:
     doc = Document(object_key=object_key)
     session.add(doc)
     session.flush()
-    transition(session, doc.id, State.REGISTERED, step="register")
+    # The document's pseudonymisation domain is an audit fact from birth
+    # (add-domain-keys); derived, never a mutable column.
+    transition(session, doc.id, State.REGISTERED, step="register",
+               payload={"domain": domain})
     return doc
 
 
-def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes) -> Document:
+def document_domain(session: Session, document_id: UUID) -> str:
+    """The domain recorded at registration; legacy documents (no payload) are
+    in the default domain."""
+    payload = session.execute(
+        select(AuditRecord.payload)
+        .where(AuditRecord.document_id == document_id, AuditRecord.step == "register")
+        .order_by(AuditRecord.seq)
+        .limit(1)
+    ).scalar_one_or_none() or {}
+    return payload.get("domain") or DEFAULT_DOMAIN
+
+
+def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
+           domain: str = DEFAULT_DOMAIN) -> Document:
     """Store the PDF in object storage under a content-addressed key, then register
     the document against that key. `process` later fetches the bytes back by key —
     this closes the PoC shortcut of passing raw bytes across the pipeline seam.
@@ -104,7 +122,7 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes) -> Document:
     same bytes is idempotent at the object layer."""
     key = "documents/" + hashlib.sha256(pdf_bytes).hexdigest()
     store.put(key, pdf_bytes)
-    return register(session, key)
+    return register(session, key, domain)
 
 
 def get_anonymized_text(session: Session, document_id: UUID) -> str | None:

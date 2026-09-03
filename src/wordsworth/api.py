@@ -31,13 +31,15 @@ from .generator import Generator
 from .grants import GrantStore
 from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
-from .keys import KeyProvider
+from .keys import DEFAULT_DOMAIN, KeyProvider
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
-from .pipeline import current_state, get_anonymized_text, ingest, process
+from .pipeline import (
+    current_state, document_domain, get_anonymized_text, ingest, process,
+)
 from .rate_limit import (
     EXEMPT_PATHS,
     RateLimitMiddleware,
@@ -139,6 +141,7 @@ class GrantIssueRequest(BaseModel):
     ppl: int | None = None                  # Privacy Protection Level 0..3
     document_id: str | None = None      # None = any document
     expires_at: str | None = None       # ISO-8601, must be timezone-aware
+    domain: str | None = None           # pseudonymisation domain; None = default
 
     @model_validator(mode="after")
     def _types_xor_ppl(self):
@@ -158,6 +161,7 @@ class GrantResponse(BaseModel):
     allowed_types: list[str]
     ppl: int | None = None  # the level whose expansion equals allowed_types, if any
     document_id: str | None
+    domain: str = DEFAULT_DOMAIN
     status: str
     created_at: str
     revoked_at: str | None
@@ -413,7 +417,21 @@ def create_app(
 
             anonymizer = OpenAnonymiserAnonymizer()
 
-        def _ingest_one(data: bytes) -> dict:
+        def _make_anonymizer(session, domain: str):
+            """Session-scoped anonymizer for a domain. A domain-unaware factory
+            (legacy 1-arg) is accepted for the default domain only — a non-default
+            domain with such a factory is an error, never a silent fall-back to
+            the global keys."""
+            if anonymizer_factory is None:
+                return anonymizer
+            try:
+                return anonymizer_factory(session, domain)
+            except TypeError:
+                if domain != DEFAULT_DOMAIN:
+                    raise
+                return anonymizer_factory(session)
+
+        def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN) -> dict:
             """Drive one document to its terminal state; return its metadata
             (id, state, duration, counts). The un-redacted bytes never leave this
             frame and no exception it raises carries document text (fail-hard, no
@@ -432,8 +450,8 @@ def create_app(
                 # Reversible mode binds a fresh session-scoped anonymizer (durable
                 # keys + mapping store) per document; default mode uses the shared
                 # irreversible driver.
-                anon = anonymizer_factory(session) if anonymizer_factory else anonymizer
-                doc = ingest(session, store, data)
+                anon = _make_anonymizer(session, domain)
+                doc = ingest(session, store, data, domain)
                 session.commit()
                 document_id = doc.id
                 state = process(session, document_id, store, anonymizer=anon,
@@ -454,6 +472,7 @@ def create_app(
                   summary="Ingest one or more PDFs through the full straat")
         def ingest_documents(
             files: list[UploadFile] = File(..., description="One or more PDF files"),
+            domain: str | None = None,
         ) -> IngestResponse:
             """Upload one or more PDFs. Each is driven through
             ingest → OCR recovery (if scanned) → anonymize → store → index and
@@ -463,7 +482,13 @@ def create_app(
             Deliberately a sync (not async) path operation: the pipeline is
             CPU/IO-heavy (GLiNER over HTTP, embeddings, DB), so FastAPI runs it in
             a worker thread and the event loop stays free to answer the liveness
-            probe — otherwise a long batch starves /health and the pod is killed."""
+            probe — otherwise a long batch starves /health and the pod is killed.
+
+            ``?domain=`` binds the batch to a pseudonymisation domain
+            (add-domain-keys); default from ``WORDSWORTH_DEFAULT_DOMAIN``."""
+            dom = domain or default_settings.default_domain
+            if "/" in dom:
+                raise HTTPException(status_code=400, detail="domain must not contain '/'")
             results: list[IngestResult] = []
             for f in files:
                 data = f.file.read()
@@ -472,7 +497,7 @@ def create_app(
                         filename=f.filename, state="error", error="empty upload"))
                     continue
                 try:
-                    meta = _ingest_one(data)
+                    meta = _ingest_one(data, dom)
                     results.append(IngestResult(
                         filename=f.filename,
                         document_id=meta.get("document_id"),
@@ -505,7 +530,7 @@ def create_app(
                     state = current_state(session, document_id)
                     if state not in (State.INDEXED, State.ANONYMIZED):
                         return "skipped"
-                    anon = anonymizer_factory(session)
+                    anon = _make_anonymizer(session, document_domain(session, document_id))
                     reanonymize(session, document_id, store, anonymizer=anon,
                                 search_index=search_index, embedder=embedder)
                     session.commit()
@@ -571,18 +596,20 @@ def create_app(
                 grant = gs.get(body.grant_id)
                 if grant is None:
                     raise HTTPException(status_code=404, detail="unknown grant")
-                # A grant that authorises none of its own types here is revoked,
-                # expired, or scoped to another document → explicit denial.
-                if not authorize(grant, document_id, set(grant.allowed_types), now):
-                    raise HTTPException(status_code=403, detail="grant not applicable")
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404, detail="unknown document")
+                dom = document_domain(session, document_id)
+                # A grant that authorises none of its own types here is revoked,
+                # expired, scoped to another document or bound to another domain
+                # → explicit denial.
+                if not authorize(grant, document_id, set(grant.allowed_types), now, dom):
+                    raise HTTPException(status_code=403, detail="grant not applicable")
                 pseudo_text = get_anonymized_text(session, document_id)
                 if pseudo_text is None:
                     raise HTTPException(
                         status_code=409, detail="document not yet de-identified")
                 requested = body.types if body.types else list(grant.allowed_types)
-                allowed = authorize(grant, document_id, set(requested), now)
+                allowed = authorize(grant, document_id, set(requested), now, dom)
                 # The authenticated caller (from api-key auth, if enabled) is
                 # recorded distinctly from the grant recipient; None when auth
                 # is off (tailnet-internal, grant_id as bearer capability).
@@ -651,6 +678,7 @@ def create_app(
                 allowed_types=list(g.allowed_types),
                 ppl=ppl_of_types(g.allowed_types),
                 document_id=str(g.document_id) if g.document_id else None,
+                domain=g.domain or DEFAULT_DOMAIN,
                 status=g.status,
                 created_at=g.created_at.isoformat(),
                 revoked_at=g.revoked_at.isoformat() if g.revoked_at else None,
@@ -693,6 +721,7 @@ def create_app(
                     _grant_store(session), _resolve_audit(),
                     recipient=body.recipient, allowed_types=types,
                     actor="operator", document_id=doc_id, expires_at=expires,
+                    domain=body.domain or DEFAULT_DOMAIN,
                 )
                 session.commit()
                 return _grant_response(grant)
@@ -796,10 +825,12 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
     anon = next((r.payload for r in records if r.step == "anonymize"), {})
     counts = {k: v for k, v in anon.items() if k != "detections"}
     profile = next((r.payload for r in records if r.step == "profile"), {})
+    reg = next((r.payload for r in records if r.step == "register"), {})
     doc = session.get(Document, document_id)
     return {
         "document_id": str(document_id),
         "object_key": doc.object_key if doc else None,
+        "domain": reg.get("domain") or DEFAULT_DOMAIN,
         "state": records[-1].to_state,
         "duration_ms": round(total_ms, 1),
         "counts": counts,

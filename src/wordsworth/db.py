@@ -46,6 +46,7 @@ def make_engine(url: str | None = None) -> Engine:
 # column existed (create_all never alters existing tables). Boring on purpose.
 _COLUMN_MIGRATIONS_SQL = """
 ALTER TABLE pii_mappings ADD COLUMN IF NOT EXISTS norm_version VARCHAR;
+ALTER TABLE grants ADD COLUMN IF NOT EXISTS domain VARCHAR;
 """
 
 

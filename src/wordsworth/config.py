@@ -174,6 +174,13 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
 
+    # --- add-domain-keys ---
+    @property
+    def default_domain(self) -> str:
+        """Pseudonymisation domain for documents ingested without an explicit
+        one. ``_global`` keeps single-domain deployments exactly as before."""
+        return os.environ.get("WORDSWORTH_DEFAULT_DOMAIN", "_global")
+
     # --- add-detection-confidence ---
     @property
     def detection_min_score(self) -> float:

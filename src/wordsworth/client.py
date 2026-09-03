@@ -89,7 +89,8 @@ def _download(base: str, path: str, dest: str, params: dict | None = None,
     return len(data)
 
 
-def _post_files(base: str, paths: list[Path], timeout: float = 600):
+def _post_files(base: str, paths: list[Path], timeout: float = 600,
+                domain: str | None = None):
     """Upload files to POST /ingest as multipart/form-data (field name ``files``)."""
     boundary = uuid.uuid4().hex
     body = bytearray()
@@ -104,7 +105,7 @@ def _post_files(base: str, paths: list[Path], timeout: float = 600):
         body += b"\r\n"
     body += f"--{boundary}--\r\n".encode()
     req = urllib.request.Request(
-        base.rstrip("/") + "/ingest",
+        base.rstrip("/") + "/ingest" + (f"?domain={domain}" if domain else ""),
         data=bytes(body),
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
@@ -120,14 +121,16 @@ def _iter_files(root: Path, include_all: bool) -> list[Path]:
     return sorted(p for p in root.rglob(pattern) if p.is_file())
 
 
-def _post_batch_with_retry(url, chunk, timeout, retries, index):
+def _post_batch_with_retry(url, chunk, timeout, retries, index, domain: str | None = None):
     """POST one batch, retrying on transport errors / 5xx (transient: a server
     worker recycle drops the in-flight connection). Returns the parsed response,
     or None if every attempt failed. Prints each attempt's failure visibly."""
     delay = 3
     for attempt in range(1, retries + 1):
         try:
-            return _post_files(url, chunk, timeout=timeout)
+            # keyword only when set, so a domain-unaware seam/test double still fits
+            return _post_files(url, chunk, timeout=timeout,
+                               **({"domain": domain} if domain else {}))
         except urllib.error.HTTPError as e:
             transient = e.code >= 500
             reason = f"HTTP {e.code} {e.reason}"
@@ -166,7 +169,7 @@ def _cmd_ingest(args) -> int:
     for i in range(0, total, args.batch):
         chunk = files[i:i + args.batch]
         resp = _post_batch_with_retry(args.url, chunk, args.timeout,
-                                      args.retries, i)
+                                      args.retries, i, domain=args.domain)
         if resp is None:
             # Whole batch failed after retries — the server may or may not have
             # processed some; report each file so nothing fails silently.
@@ -271,6 +274,8 @@ def _cmd_grant(args) -> int:
                 t.strip() for t in (args.types or "").split(",") if t.strip()]
         if args.document:
             payload["document_id"] = args.document
+        if args.domain:
+            payload["domain"] = args.domain
         if args.expires:
             payload["expires_at"] = args.expires
         res = _post_json(args.url, "/grants", payload, timeout=30)
@@ -322,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="per-batch timeout in seconds (config 'timeout', else 600)")
     pi.add_argument("--retries", type=int, default=3,
                     help="attempts per batch on a transient error (default 3)")
+    pi.add_argument("--domain", default=None,
+                    help="pseudonymisation domain for this batch (default: server default)")
     pi.set_defaults(func=_cmd_ingest)
 
     ps = sub.add_parser("search", help="lexical (BM25) search")
@@ -379,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
                          "(0 none, 1 Art. 6, 2 Art. 6+9, 3 everything)")
     gi.add_argument("--document", default=None,
                     help="scope to one document id (default: any document)")
+    gi.add_argument("--domain", default=None,
+                    help="bind to a pseudonymisation domain (default: the default domain)")
     gi.add_argument("--expires", default=None,
                     help="ISO-8601 timezone-aware expiry (e.g. 2026-12-31T00:00:00+00:00)")
     gi.set_defaults(func=_cmd_grant)

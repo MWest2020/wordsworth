@@ -21,7 +21,7 @@ from .anonymizer import AnonymizationResult
 from .config import settings
 from .crypto import decrypt, encrypt
 from .detection_stats import DETERMINISTIC, DetectionStats
-from .keys import KeyProvider
+from .keys import DEFAULT_DOMAIN, KeyProvider, scope_for
 from .mapping_store import MappingStore
 from .normalization import PROFILE_VERSION, normalize
 from .pii_categories import category_of
@@ -87,9 +87,11 @@ def _reveal(
 
 
 class Pseudonymizer:
-    def __init__(self, key_provider: KeyProvider, mapping_store: MappingStore):
+    def __init__(self, key_provider: KeyProvider, mapping_store: MappingStore,
+                 domain: str = DEFAULT_DOMAIN):
         self._keys = key_provider
         self._store = mapping_store
+        self._domain = domain  # add-domain-keys: keys are scoped domain/TYPE
 
     def anonymize(self, text: str) -> AnonymizationResult:
         counts: dict[str, int] = {}
@@ -97,7 +99,7 @@ class Pseudonymizer:
         for label, pattern, validate in detectors.DETECTORS:
             # Each PII type is keyed under its own scope, so possessing a type's
             # key reveals only that type.
-            key = self._keys.current_key(scope=label.upper())
+            key = self._keys.current_key(scope=scope_for(self._domain, label.upper()))
 
             def replacer(value: str, label: str = label, key=key) -> str:
                 pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
@@ -125,10 +127,12 @@ class ReversibleAnonymizer:
         key_provider: KeyProvider,
         mapping_store: MappingStore,
         detect: DetectFn | None = None,
+        domain: str = DEFAULT_DOMAIN,
     ):
         self._keys = key_provider
         self._store = mapping_store
-        self._deterministic = Pseudonymizer(key_provider, mapping_store)
+        self._domain = domain
+        self._deterministic = Pseudonymizer(key_provider, mapping_store, domain)
         self._detect = detect or detect_entities
 
     def anonymize(self, text: str) -> AnonymizationResult:
@@ -194,7 +198,7 @@ class ReversibleAnonymizer:
         def repl(match: re.Match[str]) -> str:
             value = match.group(0)
             label = label_of[value]
-            key = self._keys.current_key(scope=label.upper())
+            key = self._keys.current_key(scope=scope_for(self._domain, label.upper()))
             pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
             ciphertext, nonce = encrypt(key.material, value)
             self._store.put(pseudonym, ciphertext, nonce, key.id,

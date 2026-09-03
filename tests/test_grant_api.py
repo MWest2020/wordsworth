@@ -92,6 +92,7 @@ def test_response_carries_no_key_material(tmp_path):
     # ``ppl`` (add-pii-categories-and-ppl) is derived from allowed_types — metadata,
     # not material.
     assert set(body) == {"grant_id", "recipient", "allowed_types", "ppl", "document_id",
+                         "domain",
                          "status", "created_at", "revoked_at", "expires_at"}
 
 
