@@ -30,6 +30,7 @@ from .embedder import Embedder
 from .generator import Generator
 from .grants import GrantStore
 from .key_audit import KeyLifecycleAudit
+from .legible import to_legible
 from .keys import KeyProvider
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
@@ -105,6 +106,10 @@ class AnonymizedResponse(BaseModel):
 
     document_id: str
     anonymized_text: str
+    # add-legible-placeholders: ``tokens`` (stored form, default) or ``legible``
+    # (``[PERSOON 1]`` numbering per document) with a legend back to the tokens.
+    view: str = "tokens"
+    legend: dict[str, str] | None = None
 
 
 class ReprocessRequest(BaseModel):
@@ -247,6 +252,10 @@ def create_app(
     if corpus_read_labels is None:
         corpus_read_labels = default_settings.corpus_read_labels
 
+    def _check_view(view: str) -> None:
+        if view not in ("tokens", "legible"):
+            raise HTTPException(status_code=400, detail="view must be tokens|legible")
+
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
         if not authorize_corpus_read(caller, corpus_read_labels):
@@ -275,12 +284,16 @@ def create_app(
                  response_model=AnonymizedResponse,
                  summary="De-identified (pseudonymised) document text",
                  tags=["read"])
-        def document_anonymized(document_id: UUID, request: Request) -> AnonymizedResponse:
+        def document_anonymized(document_id: UUID, request: Request,
+                                view: str = "tokens") -> AnonymizedResponse:
             """The stored, de-identified text — the same pseudonymised text that
             backs the index and the export ZIP, never clear PII. 404 if the
             document is unknown; 409 if it exists but is not yet de-identified.
-            Gated by the opt-in corpus-read scope (403 if the caller lacks it)."""
+            Gated by the opt-in corpus-read scope (403 if the caller lacks it).
+            ``view=legible`` renders tokens as numbered Dutch placeholders
+            (``[PERSOON 1]``) with a legend; the stored text is unchanged."""
             _guard_corpus_read(request)
+            _check_view(view)
             with session_factory() as session:
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404,
@@ -289,6 +302,11 @@ def create_app(
             if anonymized_text is None:
                 raise HTTPException(status_code=409,
                                     detail="document not yet de-identified")
+            if view == "legible":
+                anonymized_text, legend = to_legible(anonymized_text)
+                return AnonymizedResponse(document_id=str(document_id),
+                                          anonymized_text=anonymized_text,
+                                          view=view, legend=legend)
             return AnonymizedResponse(document_id=str(document_id),
                                       anonymized_text=anonymized_text)
 
@@ -318,12 +336,15 @@ def create_app(
                  summary="Export de-identified document texts as a ZIP",
                  tags=["export"])
         def export_anonymized(request: Request,
-                              document_ids: str | None = None) -> Response:
+                              document_ids: str | None = None,
+                              view: str = "tokens") -> Response:
             """A ZIP of the stored de-identified texts (one ``{id}.txt`` per
             document), for all INDEXED documents or the given comma-separated
             subset. Only the index-bound anonymized text is written — never clear
-            PII, never original bytes. Gated by the opt-in corpus-read scope."""
+            PII, never original bytes. Gated by the opt-in corpus-read scope.
+            ``view=legible`` renders each text with numbered placeholders."""
             _guard_corpus_read(request)
+            _check_view(view)
             ids = None
             if document_ids:
                 try:
@@ -333,6 +354,8 @@ def create_app(
                                         detail="malformed document_ids")
             with session_factory() as session:
                 pairs = _indexed_texts(session, ids)
+            if view == "legible":
+                pairs = [(d, to_legible(t)[0]) for d, t in pairs]
             return Response(content=_anonymized_zip(pairs),
                             media_type="application/zip",
                             headers={"Content-Disposition":
