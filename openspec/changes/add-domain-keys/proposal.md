@@ -31,6 +31,8 @@ space — fine for one corpus, wrong for a multi-department deployment.
 
 ## Impact
 
+- CLI: `ingest --domain`, `grant issue --domain`; `grant_issued` audit event
+  records the domain.
 - Code: `keys.py` (scope helper), `pseudonymizer.py` (domain param),
   `api.py`/`pipeline.py` (ingest domain → audit), `grants.py` (optional
   `domain`), `config.py`. One reserved-character check (`/` not allowed in

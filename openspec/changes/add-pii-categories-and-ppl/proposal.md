@@ -46,5 +46,6 @@ gives an operator no vocabulary for "Art. 9 data" or "level 2 access".
   request model, `api.py` (grants + reveal + metadata), `pseudonymizer.py`
   audit record. No schema migration (categories are derived, not stored).
 - Tests: registry, expansion, reveal grouping.
+- CLI: `wordsworth grant issue --ppl N`.
 - Docs: `docs/how-to/grants.md` gets a PPL section.
 - Not in scope: ABAC engine, IdP/Entra integration, roles. See ADR-0005 D7.

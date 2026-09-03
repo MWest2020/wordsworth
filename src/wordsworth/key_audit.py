@@ -43,6 +43,7 @@ class KeyLifecycleAudit(Protocol):
         allowed_types: list[str],
         document_id: str | None,
         actor: str,
+        domain: str | None = None,
     ) -> None: ...
 
     def grant_revoked(self, *, grant_id: str, actor: str) -> None: ...
@@ -80,11 +81,13 @@ class JsonlKeyLifecycleAudit:
         allowed_types: list[str],
         document_id: str | None,
         actor: str,
+        domain: str | None = None,
     ) -> None:
         self._log.event(
             STREAM,
             GRANT_ISSUED_ACTION,
             grant_id=grant_id,
+            domain=domain,
             recipient=recipient,
             allowed_types=allowed_types,
             document_id=document_id,

@@ -35,7 +35,7 @@ def test_redact_chunks_reassembles_and_sums_counts(monkeypatch):
 
     monkeypatch.setattr(drv, "_redact_one", fake_redact_one)
     text = "jan jansen woont in amsterdam bij de gracht"   # > 10 chars → chunked
-    redacted, counts = _openanonymiser_redact(text)
+    redacted, counts, *_ = _openanonymiser_redact(text)  # 3rd = aggregates
     assert redacted == text.upper()          # chunks reassembled in order
     assert counts["person"] >= 2             # summed across chunks
 
@@ -57,7 +57,7 @@ def test_concurrent_chunks_preserve_order(monkeypatch):
 
     monkeypatch.setattr(drv, "_redact_one", slow_first)
     text = "aaaaabbbbbcccccddddd"                # 4 chunks of 5
-    redacted, _ = _openanonymiser_redact(text)
+    redacted, *_ = _openanonymiser_redact(text)
     assert redacted == text                      # order preserved despite timing
 
 

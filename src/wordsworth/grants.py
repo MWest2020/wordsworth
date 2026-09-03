@@ -212,6 +212,7 @@ def issue_grant(
         allowed_types=grant.allowed_types,
         document_id=str(grant.document_id) if grant.document_id else None,
         actor=actor,
+        domain=grant.domain,
     )
     return grant
 

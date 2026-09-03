@@ -98,3 +98,31 @@ def test_audit_and_metadata_carry_aggregates(session_factory, mem_store, mem_ind
     assert meta["counts"] == {"bsn": 1, "iban": 1, "email": 1}
     assert meta["detections"]["deterministic"]["BSN"]["count"] == 1
     assert PII_BSN not in str(meta["detections"])
+
+
+def test_irreversible_driver_reports_both_layers(monkeypatch):
+    import httpx
+
+    class FakeResp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {"anonymized_text": "<PERSON> woont in <LOCATION>", "entities_found": [
+                {"entity_type": "PERSON", "text": "Jan", "start": 0, "end": 3, "score": 0.6},
+                {"entity_type": "LOCATION", "text": "Haarlem", "start": 13, "end": 20,
+                 "score": 0.95}]}
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResp())
+    r = OpenAnonymiserAnonymizer().anonymize(f"Jan woont in Haarlem, BSN {PII_BSN}")
+    assert r.detections["deterministic"]["BSN"]["count"] == 1
+    assert r.detections["openanonymiser"]["PERSON"]["min_score"] == 0.6
+    assert r.detections["openanonymiser"]["LOCATION"]["count"] == 1
+    assert "Haarlem" not in str(r.detections) and PII_BSN not in str(r.detections)
+
+
+def test_two_tuple_engine_double_still_yields_deterministic_aggregates():
+    r = OpenAnonymiserAnonymizer(engine=lambda t: (t, {"person": 2})).anonymize(
+        f"BSN {PII_BSN} en iemand")
+    assert r.counts["person"] == 2
+    assert r.detections == {"deterministic": {"BSN": {
+        "count": 1, "min_score": 1.0, "max_score": 1.0, "below_threshold": 0}}}

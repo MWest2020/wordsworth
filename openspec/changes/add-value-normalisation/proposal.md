@@ -21,8 +21,10 @@ pseudonymisation side.
 - Existing corpora: tokens change for any value the rules touch. The migration
   is the existing `POST /reprocess` (reversible mode) — documented as a
   runbook step, not automated.
-- The stored ciphertext keeps the **original** (un-normalised) value; reveal
-  returns what was in the document.
+- The stored ciphertext keeps the **original** (un-normalised) value — one per
+  token, the spelling first seen (idempotent put); reveal returns that spelling,
+  so a later case/format variant of the same identifier reveals as the first
+  one. The normalised form is never stored.
 
 ## Capabilities
 

@@ -25,7 +25,7 @@ import httpx
 from .anonymizer import AnonymizationResult, DeterministicAnonymizer
 from .concurrency import limiter
 from .config import settings
-from .detection_stats import OPENANONYMISER
+from .detection_stats import OPENANONYMISER, DetectionStats
 
 
 class AnonymizationEngineError(RuntimeError):
@@ -33,7 +33,9 @@ class AnonymizationEngineError(RuntimeError):
 
 
 class _EngineFn(Protocol):
-    def __call__(self, text: str) -> tuple[str, dict[str, int]]: ...
+    """(redacted text, counts[, per-layer detection aggregates]). The third
+    element is optional so a plain 2-tuple test double still satisfies it."""
+    def __call__(self, text: str) -> tuple: ...
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,7 @@ def _chunk_text(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def _redact_one(text: str) -> tuple[str, dict[str, int]]:
+def _redact_one(text: str) -> tuple[str, dict[str, int], dict]:
     """One anonymize call for one text segment; returns (redacted, counts).
 
     POSTs to ``{WORDSWORTH_OPENANONYMISER_URL}/api/v1/anonymize`` with the
@@ -96,14 +98,16 @@ def _redact_one(text: str) -> tuple[str, dict[str, int]]:
     response.raise_for_status()
     data = response.json()
     counts: dict[str, int] = {}
+    stats = DetectionStats(settings.detection_min_score)
     for entity in data.get("entities_found") or []:  # what the service detected
-        _score(entity)  # contract check only; the irreversible path keeps counts
+        score = _score(entity)  # hard error without one
         label = str(entity["entity_type"]).lower()
         counts[label] = counts.get(label, 0) + 1
-    return data["anonymized_text"], counts
+        stats.add(OPENANONYMISER, label, score)  # aggregates only, no value/span
+    return data["anonymized_text"], counts, stats.to_dict()
 
 
-def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
+def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int], dict]:
     """Redact entity PII via the OpenAnonymiser GLiNER service; return
     (redacted text, counts).
 
@@ -129,11 +133,14 @@ def _openanonymiser_redact(text: str) -> tuple[str, dict[str, int]]:
         results = list(pool.map(_redact_one, chunks))
     parts: list[str] = []
     counts: dict[str, int] = {}
-    for redacted, c in results:
+    stats = DetectionStats(settings.detection_min_score)
+    for redacted, c, *agg in results:  # a 2-tuple double carries no aggregates
         parts.append(redacted)
         for label, n in c.items():
             counts[label] = counts.get(label, 0) + n
-    return "".join(parts), counts
+        if agg:
+            stats.merge(agg[0])
+    return "".join(parts), counts, stats.to_dict()
 
 
 def _detect_one(text: str) -> list[Entity]:
@@ -152,10 +159,11 @@ def _detect_one(text: str) -> list[Entity]:
     response.raise_for_status()
     out: list[Entity] = []
     for e in response.json().get("entities_found") or []:
+        score = _score(e)  # contract check first: no score is a hard error
         if "start" not in e or "end" not in e:
             continue  # no span → cannot substitute reversibly; skip defensively
         out.append(Entity(str(e["entity_type"]), str(e.get("text", "")),
-                          int(e["start"]), int(e["end"]), OPENANONYMISER, _score(e)))
+                          int(e["start"]), int(e["end"]), OPENANONYMISER, score))
     return out
 
 
@@ -202,7 +210,7 @@ class OpenAnonymiserAnonymizer:
             # (422). Structured-PII counts (all zeros here) still stand.
             return deterministic
         try:
-            redacted, engine_counts = self._engine(deterministic.text)
+            redacted, engine_counts, *agg = self._engine(deterministic.text)
         except Exception as exc:
             # Hard error, no pass-through: the un-redacted text never leaves
             # this frame, and the raised error carries none of it.
@@ -212,4 +220,12 @@ class OpenAnonymiserAnonymizer:
         counts = dict(deterministic.counts)  # keep zeros: detectors did run
         for label, n in engine_counts.items():
             counts[label] = counts.get(label, 0) + n
-        return AnonymizationResult(text=redacted, counts=counts)
+        # Per-layer aggregates: deterministic layer + (when the engine reports
+        # them) the OpenAnonymiser layer. A 2-tuple engine (test double) yields
+        # deterministic-only aggregates — never an empty record.
+        stats = DetectionStats(settings.detection_min_score)
+        stats.merge(deterministic.detections)
+        if agg:
+            stats.merge(agg[0])
+        return AnonymizationResult(text=redacted, counts=counts,
+                                   detections=stats.to_dict())

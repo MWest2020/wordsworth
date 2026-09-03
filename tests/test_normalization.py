@@ -45,18 +45,17 @@ def test_token_collides_for_variants():
     assert _token(KEY, "bsn", "123456789") != _token(KEY, "bsn", "123456788")
 
 
-def test_reveal_returns_original_spelling_and_records_version():
+def test_one_stored_original_per_token_first_seen_spelling():
+    """Spec: one encrypted original per token (first seen); reveal returns it;
+    the normalised form is never stored; the version is recorded."""
     kp, store = InMemoryKeyProvider(), InMemoryMappingStore()
-    # Two spellings of one BSN in one text: one token, two originals — the store
-    # keeps the FIRST original (idempotent put), which is what reveal returns.
-    text = "A 123456782 B 1234.56.782"
-    out = Pseudonymizer(kp, store).anonymize(text)
-    tokens = [t for t in out.text.split() if t.startswith("[BSN:")]
-    # The dotted form is not matched by the 9-digit detector regex, so only the
-    # plain form is tokenised here; both map onto the same token by derivation.
-    assert len(tokens) == 1
-    mapping = store.get(tokens[0])
-    assert mapping is not None and mapping.norm_version == PROFILE_VERSION
-    restored, revealed = _reveal(out.text, None, store.get, kp.key)
-    assert "123456782" in restored and revealed == tokens
-    assert _token(kp.current_key("BSN").material, "bsn", "1234.56.782") == tokens[0][5:13]
+    p = Pseudonymizer(kp, store)
+    first = p.anonymize("mail Jan.Jansen@Haarlem.nl").text
+    second = p.anonymize("mail jan.jansen@haarlem.nl").text
+    assert first == second                       # variants collide onto one token
+    token = first.split()[-1]
+    m = store.get(token)
+    assert m is not None and m.norm_version == PROFILE_VERSION
+    restored, revealed = _reveal(second, None, store.get, kp.key)
+    assert restored == "mail Jan.Jansen@Haarlem.nl" and revealed == [token]
+    assert "jan.jansen@haarlem.nl" not in restored  # normalised form never stored

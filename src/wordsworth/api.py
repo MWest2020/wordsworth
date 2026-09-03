@@ -424,12 +424,12 @@ def create_app(
             the global keys."""
             if anonymizer_factory is None:
                 return anonymizer
-            try:
+            if _accepts_domain(anonymizer_factory):
                 return anonymizer_factory(session, domain)
-            except TypeError:
-                if domain != DEFAULT_DOMAIN:
-                    raise
-                return anonymizer_factory(session)
+            if domain != DEFAULT_DOMAIN:
+                raise ValueError(
+                    "anonymizer factory is domain-unaware; refusing non-default domain")
+            return anonymizer_factory(session)
 
         def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN) -> dict:
             """Drive one document to its terminal state; return its metadata
@@ -748,6 +748,17 @@ def create_app(
             return _grant_response(grant)
 
     return app
+
+
+def _accepts_domain(factory) -> bool:
+    """Whether a session-scoped anonymizer factory takes a second ``domain``
+    argument (arity check, so a TypeError raised *inside* the factory is never
+    mistaken for a signature mismatch)."""
+    import inspect
+
+    params = list(inspect.signature(factory).parameters.values())
+    return len(params) >= 2 or any(
+        p.kind is inspect.Parameter.VAR_POSITIONAL for p in params)
 
 
 def _hit(h) -> dict:

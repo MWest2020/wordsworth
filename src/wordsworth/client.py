@@ -105,7 +105,8 @@ def _post_files(base: str, paths: list[Path], timeout: float = 600,
         body += b"\r\n"
     body += f"--{boundary}--\r\n".encode()
     req = urllib.request.Request(
-        base.rstrip("/") + "/ingest" + (f"?domain={domain}" if domain else ""),
+        base.rstrip("/") + "/ingest"
+        + ("?" + urllib.parse.urlencode({"domain": domain}) if domain else ""),
         data=bytes(body),
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
