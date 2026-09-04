@@ -438,7 +438,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="Privacy Protection Level 0-3 instead of --types "
                          "(0 none, 1 Art. 6, 2 Art. 6+9, 3 everything)")
     gi.add_argument("--document", default=None,
-                    help="scope to one document id (default: any document)")
+                    help="scope to one document id (required unless the "
+                         "deployment sets WORDSWORTH_ALLOW_GLOBAL_GRANTS=true)")
     gi.add_argument("--domain", default=None,
                     help="bind to a pseudonymisation domain (default: the default domain)")
     gi.add_argument("--expires", default=None,
@@ -475,7 +476,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except urllib.error.HTTPError as e:
-        print(f"error: {args.url} returned HTTP {e.code} {e.reason}",
+        # Show the API's own ``detail`` when it sends one — a 400 like "document_id
+        # required (global grants are not allowed)" is only actionable with it.
+        detail = ""
+        try:
+            body = json.loads(e.read().decode("utf-8"))
+            if isinstance(body, dict) and body.get("detail"):
+                detail = f": {body['detail']}"
+        except Exception:
+            pass
+        print(f"error: {args.url} returned HTTP {e.code} {e.reason}{detail}",
               file=sys.stderr)
         return 1
     except (urllib.error.URLError, ConnectionError, TimeoutError) as e:

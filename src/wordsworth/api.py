@@ -232,6 +232,7 @@ def create_app(
     vc_expected_vct: str | None = None,
     vc_required: bool | None = None,
     corpus_read_labels: list[str] | None = None,
+    allow_global_grants: bool | None = None,
 ) -> FastAPI:
     # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
     # supplied as factories built per request; the singleton params stay for
@@ -298,6 +299,11 @@ def create_app(
     # callers get 403 — least privilege for the full-text surface.
     if corpus_read_labels is None:
         corpus_read_labels = default_settings.corpus_read_labels
+
+    # Whether an unscoped grant may authorize reveal on every document. Default
+    # false (see config): the broad capability is opt-in per deployment.
+    if allow_global_grants is None:
+        allow_global_grants = default_settings.allow_global_grants
 
     def _check_view(view: str) -> None:
         if view not in ("tokens", "legible"):
@@ -754,14 +760,16 @@ def create_app(
                 # A grant that authorises none of its own types here is revoked,
                 # expired, scoped to another document or bound to another domain
                 # → explicit denial.
-                if not authorize(grant, document_id, set(grant.allowed_types), now, dom):
+                if not authorize(grant, document_id, set(grant.allowed_types),
+                                 now, dom, allow_global_grants):
                     raise HTTPException(status_code=403, detail="grant not applicable")
                 pseudo_text = get_anonymized_text(session, document_id)
                 if pseudo_text is None:
                     raise HTTPException(
                         status_code=409, detail="document not yet de-identified")
                 requested = body.types if body.types else list(grant.allowed_types)
-                allowed = authorize(grant, document_id, set(requested), now, dom)
+                allowed = authorize(grant, document_id, set(requested), now, dom,
+                                    allow_global_grants)
                 # The authenticated caller (from api-key auth, if enabled) is
                 # recorded distinctly from the grant recipient; None when auth
                 # is off (tailnet-internal, grant_id as bearer capability).
@@ -845,7 +853,8 @@ def create_app(
                   summary="Issue a reveal grant (operator/admin; no caller auth yet)")
         def grant_issue(body: GrantIssueRequest) -> GrantResponse:
             """Issue a grant permitting later reveal of the given PII types,
-            optionally scoped to one document and/or expiring. Operator/admin
+            scoped to one document and/or expiring. The document scope is
+            required unless the deployment allows global grants. Operator/admin
             surface: the API is tailnet-internal and the returned grant_id is a
             bearer capability — full caller authentication is a pending decision.
             The issue is recorded in the key-lifecycle audit stream."""
@@ -855,6 +864,13 @@ def create_app(
                     doc_id = UUID(body.document_id)
                 except ValueError:
                     raise HTTPException(status_code=400, detail="malformed document_id")
+            elif not allow_global_grants:
+                # An unscoped grant reveals on EVERY document. Refuse before any
+                # write, so the default path cannot mint that capability by
+                # omission (no grant row, no audit event).
+                raise HTTPException(
+                    status_code=400,
+                    detail="document_id required (global grants are not allowed)")
             expires = None
             if body.expires_at:
                 try:

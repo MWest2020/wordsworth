@@ -26,23 +26,31 @@ def test_store_satisfies_protocol():
 
 
 def test_authorize_intersects_requested_with_allowed():
-    g = InMemoryGrantStore().issue("R", ["PERSON", "email"], actor="mark")
-    assert authorize(g, None, {"PERSON", "BSN"}, NOW) == {"PERSON"}
-    assert authorize(g, None, {"EMAIL"}, NOW) == {"EMAIL"}   # allowed_types upper-cased
-    assert authorize(g, None, {"BSN"}, NOW) == set()
+    # Scoped to a document so the intersection is what is under test, not the
+    # global-grant gate (which is closed by default).
+    d = uuid.uuid4()
+    g = InMemoryGrantStore().issue("R", ["PERSON", "email"], actor="mark",
+                                   document_id=d)
+    assert authorize(g, d, {"PERSON", "BSN"}, NOW) == {"PERSON"}
+    assert authorize(g, d, {"EMAIL"}, NOW) == {"EMAIL"}   # allowed_types upper-cased
+    assert authorize(g, d, {"BSN"}, NOW) == set()
 
 
 def test_revoked_authorizes_nothing():
     s = InMemoryGrantStore()
-    g = s.issue("R", ["PERSON"], actor="mark")
+    d = uuid.uuid4()
+    g = s.issue("R", ["PERSON"], actor="mark", document_id=d)
+    assert authorize(g, d, {"PERSON"}, NOW) == {"PERSON"}   # authorized before
     s.revoke(g.grant_id, actor="mark")
-    assert authorize(g, None, {"PERSON"}, NOW) == set()
+    assert authorize(g, d, {"PERSON"}, NOW) == set()
 
 
 def test_expired_authorizes_nothing():
-    g = InMemoryGrantStore().issue("R", ["PERSON"], actor="mark", expires_at=NOW)
-    assert authorize(g, None, {"PERSON"}, NOW) == set()                    # now >= expiry
-    assert authorize(g, None, {"PERSON"}, NOW - timedelta(seconds=1)) == {"PERSON"}
+    d = uuid.uuid4()
+    g = InMemoryGrantStore().issue("R", ["PERSON"], actor="mark", expires_at=NOW,
+                                   document_id=d)
+    assert authorize(g, d, {"PERSON"}, NOW) == set()                       # now >= expiry
+    assert authorize(g, d, {"PERSON"}, NOW - timedelta(seconds=1)) == {"PERSON"}
 
 
 def test_document_scope():
@@ -53,9 +61,20 @@ def test_document_scope():
     assert authorize(g, d2, {"PERSON"}, NOW) == set()
 
 
-def test_global_grant_authorizes_any_document():
+def test_global_grant_is_inert_unless_allowed():
+    """An unscoped grant reveals on every document — a capability only available
+    where the deployment allows it (harden-global-grant-gate)."""
     g = InMemoryGrantStore().issue("R", ["PERSON"], actor="mark")  # document_id None
-    assert authorize(g, uuid.uuid4(), {"PERSON"}, NOW) == {"PERSON"}
+    assert authorize(g, uuid.uuid4(), {"PERSON"}, NOW) == set()
+    assert authorize(g, uuid.uuid4(), {"PERSON"}, NOW,
+                     allow_global=True) == {"PERSON"}
+
+
+def test_allowing_global_grants_does_not_widen_a_scoped_grant():
+    d1, d2 = uuid.uuid4(), uuid.uuid4()
+    g = InMemoryGrantStore().issue("R", ["PERSON"], actor="mark", document_id=d1)
+    assert authorize(g, d1, {"PERSON"}, NOW, allow_global=True) == {"PERSON"}
+    assert authorize(g, d2, {"PERSON"}, NOW, allow_global=True) == set()
 
 
 def test_issue_and_revoke_are_audited_without_key_material(tmp_path):

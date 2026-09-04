@@ -1,5 +1,6 @@
 """add-domain-keys: domain/TYPE key scopes; default domain = legacy scopes;
 grants are domain-bound and fail-safe; ingest binds a document to a domain."""
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 
@@ -60,12 +61,16 @@ def test_reversible_driver_uses_domain_for_entities():
 def test_grant_without_domain_is_default_only():
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
-    g = InMemoryGrantStore().issue("r", ["BSN"], actor="m")
-    assert authorize(g, None, {"BSN"}, now) == {"BSN"}
-    assert authorize(g, None, {"BSN"}, now, domain="wi") == set()
-    gw = InMemoryGrantStore().issue("r", ["BSN"], actor="m", domain="wi")
-    assert authorize(gw, None, {"BSN"}, now, domain="wi") == {"BSN"}
-    assert authorize(gw, None, {"BSN"}, now) == set()
+    # Document-scoped, so the domain binding is what is under test rather than
+    # the (closed-by-default) global-grant gate.
+    d = uuid.uuid4()
+    g = InMemoryGrantStore().issue("r", ["BSN"], actor="m", document_id=d)
+    assert authorize(g, d, {"BSN"}, now) == {"BSN"}
+    assert authorize(g, d, {"BSN"}, now, domain="wi") == set()
+    gw = InMemoryGrantStore().issue("r", ["BSN"], actor="m", domain="wi",
+                                    document_id=d)
+    assert authorize(gw, d, {"BSN"}, now, domain="wi") == {"BSN"}
+    assert authorize(gw, d, {"BSN"}, now) == set()
 
 
 def _client(session_factory, tmp_path, kp, gs, mem_store, mem_index, fake_embedder):

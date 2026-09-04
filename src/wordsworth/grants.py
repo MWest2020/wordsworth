@@ -4,7 +4,8 @@ deanonymization.
 A grant is the AUTHORIZATION record — "recipient R may reveal types T (for
 document D, until E)". It carries no key material and no clear PII. Enforcement is
 the pure `authorize()`: a revoked, expired, or document-mismatched grant
-authorizes nothing. Every issue/revoke is recorded in the append-only
+authorizes nothing, and so does an unscoped grant unless the deployment allows
+global grants. Every issue/revoke is recorded in the append-only
 key-lifecycle audit stream (a global key-management fact, not a document event).
 
 Seam note: this layer decides *whether* a reveal is permitted. Cryptographic key
@@ -54,11 +55,16 @@ def authorize(
     requested_types: Iterable[str],
     now: datetime,
     domain: str = DEFAULT_DOMAIN,
+    allow_global: bool = False,
 ) -> set[str]:
     """The subset of ``requested_types`` this grant permits right now — the empty
-    set if the grant is revoked, expired, scoped to another document, or bound to
-    another domain. Never raises for the denied case: the caller reveals exactly
-    the returned types."""
+    set if the grant is revoked, expired, scoped to another document, bound to
+    another domain, or unscoped where global grants are not allowed. Never raises
+    for the denied case: the caller reveals exactly the returned types.
+
+    ``allow_global`` defaults to False for the same reason ``domain`` defaults to
+    one domain: a grant never widens implicitly. A caller that wants the
+    reveal-any-document behaviour asks for it."""
     if grant.status != ACTIVE:
         return set()
     if (grant.domain or DEFAULT_DOMAIN) != domain:
@@ -72,7 +78,12 @@ def authorize(
         cmp_now = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
         if cmp_now >= expires:
             return set()
-    if grant.document_id is not None and grant.document_id != document_id:
+    if grant.document_id is None:
+        # Unscoped ("global") grant: reveal on every document. A capability that
+        # broad is only available where the deployment allows it.
+        if not allow_global:
+            return set()
+    elif grant.document_id != document_id:
         return set()
     allowed = {t.upper() for t in grant.allowed_types}
     return {t.upper() for t in requested_types if t.upper() in allowed}
