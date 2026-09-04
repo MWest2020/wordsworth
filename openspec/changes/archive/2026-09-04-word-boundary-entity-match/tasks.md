@@ -3,4 +3,4 @@
 - [x] 1.2 Test: fragment inside a word not redacted/failed; real whole word redacted.
 ## 2. Gate
 - [x] 2.1 Local suite green.
-- [ ] 2.2 CI green + `openspec validate`.
+- [x] 2.2 CI green + `openspec validate` (438 tests groen, validate --all --strict 31/31, CI main groen).

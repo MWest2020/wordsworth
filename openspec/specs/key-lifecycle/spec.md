@@ -70,17 +70,21 @@ SHALL NOT log any key material.
 
 ### Requirement: Keys are scoped per PII type
 
-The `KeyProvider` SHALL support an optional scope on `current_key` and `rotate`,
-identifying a PII type, defaulting to a single global scope when omitted (backward
-compatible). Each scope SHALL have its own active key and its own rotation history;
-`key(key_id)` SHALL resolve any version regardless of scope so stored mappings
-decrypt by their `key_id` as before.
+Data keys SHALL be scoped per `domain/type`, where `domain` identifies a
+pseudonymisation domain (e.g. a department) and `type` the PII type. The default
+domain SHALL be `_global`; existing key rows scoped by type alone SHALL be read
+as `_global/<type>` without migration. The same value under two domains SHALL
+yield two different pseudonyms. Rotation, escrow and recovery operate per scope.
 
-#### Scenario: Rotating one scope leaves other scopes' active keys unchanged
+#### Scenario: Domains do not share pseudonyms
 
-- **WHEN** the provider is rotated for one PII-type scope
-- **THEN** that scope has a new active key while other scopes' active keys are
-  unchanged, and all prior versions across scopes remain resolvable by `key_id`
+- **WHEN** the same BSN is pseudonymised in domain `wi` and in domain `mo`
+- **THEN** the two tokens differ
+
+#### Scenario: Legacy scope keeps working
+
+- **WHEN** a key row scoped `PERSON` exists from before this change
+- **THEN** it is used for `_global/PERSON` and existing tokens still reveal
 
 ### Requirement: Data keys are durably persisted as envelope-wrapped blobs
 
@@ -136,4 +140,15 @@ unwrap via the KEK at most once.
   cache TTL
 - **THEN** the Transit unwrap is performed once and subsequent resolutions are
   served from the cache
+
+### Requirement: Grants are domain-bound
+
+A grant MAY name a domain. A grant without a domain SHALL authorise reveal in
+`_global` only; it SHALL never match all domains implicitly.
+
+#### Scenario: Grant without domain is fail-safe
+
+- **WHEN** a grant without `domain` is used to reveal a document ingested in
+  domain `wi`
+- **THEN** every type is withheld
 
