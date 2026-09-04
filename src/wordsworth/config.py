@@ -174,6 +174,35 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
 
+    # --- add-domain-keys ---
+    @property
+    def default_domain(self) -> str:
+        """Pseudonymisation domain for documents ingested without an explicit
+        one. ``_global`` keeps single-domain deployments exactly as before."""
+        return os.environ.get("WORDSWORTH_DEFAULT_DOMAIN", "_global")
+
+    # --- add-dataset-pseudonymisation ---
+    @property
+    def profiles_dir(self) -> str:
+        """Directory of git-versioned dataset profiles (``<name>.json``) that
+        ``POST /datasets/pseudonymize`` may reference by name."""
+        return os.environ.get("WORDSWORTH_PROFILES_DIR", "profiles")
+
+    # --- add-detection-feedback ---
+    @property
+    def detection_lists_dir(self) -> str:
+        """Directory holding git-versioned ``allow.json``/``deny.json`` detection
+        lists (see detection_lists.py). Empty (default) = no lists."""
+        return os.environ.get("WORDSWORTH_DETECTION_LISTS", "")
+
+    # --- add-detection-confidence ---
+    @property
+    def detection_min_score(self) -> float:
+        """Confidence threshold used ONLY for counting ``below_threshold`` in the
+        per-layer detection aggregates. It never affects what is redacted: a
+        low-score entity is still replaced before indexing."""
+        return float(os.environ.get("WORDSWORTH_DETECTION_MIN_SCORE", "0.0"))
+
     # --- openanonymiser-http (Architecture A: HTTP client, geen in-process ML) ---
     @property
     def openanonymiser_url(self) -> str:

@@ -65,6 +65,9 @@ class PiiMapping(Base):
     ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     nonce: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     key_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Normalisation profile the token was derived under (add-value-normalisation);
+    # NULL = legacy row derived from the raw value.
+    norm_version: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -93,6 +96,8 @@ class GrantRecord(Base):
         DateTime(timezone=True), nullable=True
     )
     actor: Mapped[str] = mapped_column(String, nullable=False)
+    # add-domain-keys: pseudonymisation domain; NULL = legacy = default domain.
+    domain: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class KeyVaultRecord(Base):

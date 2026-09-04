@@ -52,9 +52,11 @@ def build_app() -> FastAPI:
     if settings.reversible_mode:
         reversible = _reversible_wiring(session_factory)
     elif store is not None:
+        from .detection_lists import DetectionLists
         from .openanonymiser_driver import OpenAnonymiserAnonymizer
 
-        anonymizer = OpenAnonymiserAnonymizer()
+        anonymizer = OpenAnonymiserAnonymizer(
+            lists=DetectionLists.load(settings.detection_lists_dir))
 
     return create_app(
         session_factory=session_factory,
@@ -73,8 +75,9 @@ def _reversible_wiring(session_factory) -> dict:
     vault — the unwrap cache persists across requests and the single-active-key
     invariant is enforced by one provider. Only the mapping/grant stores stay
     per-request (session-bound). No OpenBao call happens here — only per request."""
+    from .detection_lists import DetectionLists
     from .grants import PostgresGrantStore
-    from .keys import DurableKeyProvider
+    from .keys import DEFAULT_DOMAIN, DurableKeyProvider
     from .mapping_store import PostgresMappingStore
     from .pseudonymizer import ReversibleAnonymizer
     from .transit import OpenBaoTransit, SessionFactoryKeyVaultStore
@@ -86,8 +89,11 @@ def _reversible_wiring(session_factory) -> dict:
         SessionFactoryKeyVaultStore(session_factory), transit, settings.key_cache_ttl
     )
 
-    def anonymizer(session):
-        return ReversibleAnonymizer(key_provider, PostgresMappingStore(session))
+    lists = DetectionLists.load(settings.detection_lists_dir)  # hash-pinned lists
+
+    def anonymizer(session, domain=DEFAULT_DOMAIN):
+        return ReversibleAnonymizer(key_provider, PostgresMappingStore(session),
+                                    domain=domain, lists=lists)
 
     return {
         "anonymizer_factory": anonymizer,

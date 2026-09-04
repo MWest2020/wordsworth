@@ -38,6 +38,20 @@ def _mint() -> Key:
 # so a stored mapping still decrypts by its recorded ``key_id`` alone.
 DEFAULT_SCOPE = "_global"
 
+# add-domain-keys: a pseudonymisation DOMAIN (e.g. a department) is a second
+# scope dimension — ``domain/TYPE``. The default domain keeps today's plain
+# ``TYPE`` scopes, so existing key rows and tokens stay valid with no migration;
+# the same value under two domains gets two keys and thus two pseudonyms.
+DEFAULT_DOMAIN = "_global"
+
+
+def scope_for(domain: str, pii_type: str) -> str:
+    """Key scope for a PII type within a domain. ``/`` is the separator and is
+    therefore not allowed inside either part (fail loudly, not ambiguously)."""
+    if "/" in domain or "/" in pii_type or not domain or not pii_type:
+        raise ValueError("domain and type must be non-empty and contain no '/'")
+    return pii_type if domain == DEFAULT_DOMAIN else f"{domain}/{pii_type}"
+
 
 @runtime_checkable
 class KeyProvider(Protocol):

@@ -21,6 +21,7 @@ from typing import Protocol, runtime_checkable
 from sqlalchemy.orm import Session
 
 from .key_audit import KeyLifecycleAudit
+from .keys import DEFAULT_DOMAIN
 from .models import GrantRecord
 
 ACTIVE = "active"
@@ -42,6 +43,9 @@ class Grant:
     revoked_at: datetime | None
     expires_at: datetime | None
     actor: str
+    # add-domain-keys: the pseudonymisation domain this grant is bound to. A
+    # grant without one is bound to the default domain — never to all domains.
+    domain: str = DEFAULT_DOMAIN
 
 
 def authorize(
@@ -49,12 +53,16 @@ def authorize(
     document_id: uuid.UUID | None,
     requested_types: Iterable[str],
     now: datetime,
+    domain: str = DEFAULT_DOMAIN,
 ) -> set[str]:
     """The subset of ``requested_types`` this grant permits right now — the empty
-    set if the grant is revoked, expired, or scoped to another document. Never
-    raises for the denied case: the caller reveals exactly the returned types."""
+    set if the grant is revoked, expired, scoped to another document, or bound to
+    another domain. Never raises for the denied case: the caller reveals exactly
+    the returned types."""
     if grant.status != ACTIVE:
         return set()
+    if (grant.domain or DEFAULT_DOMAIN) != domain:
+        return set()  # fail-safe: a grant never spans domains implicitly
     if grant.expires_at is not None:
         # Treat a tz-naive expiry as UTC so the comparison can't raise (which
         # would 500 the reveal) — fail toward denial, never toward a leak.
@@ -79,6 +87,7 @@ class GrantStore(Protocol):
         actor: str,
         document_id: uuid.UUID | None = None,
         expires_at: datetime | None = None,
+        domain: str = DEFAULT_DOMAIN,
     ) -> Grant: ...
     def get(self, grant_id: str) -> Grant | None: ...
     def revoke(self, grant_id: str, actor: str) -> None: ...
@@ -90,6 +99,7 @@ def _new_grant(
     actor: str,
     document_id: uuid.UUID | None,
     expires_at: datetime | None,
+    domain: str = DEFAULT_DOMAIN,
 ) -> Grant:
     return Grant(
         grant_id=uuid.uuid4().hex,
@@ -101,6 +111,7 @@ def _new_grant(
         revoked_at=None,
         expires_at=expires_at,
         actor=actor,
+        domain=domain,
     )
 
 
@@ -110,8 +121,9 @@ class InMemoryGrantStore:
     def __init__(self) -> None:
         self._d: dict[str, Grant] = {}
 
-    def issue(self, recipient, allowed_types, actor, document_id=None, expires_at=None):
-        grant = _new_grant(recipient, allowed_types, actor, document_id, expires_at)
+    def issue(self, recipient, allowed_types, actor, document_id=None, expires_at=None,
+              domain=DEFAULT_DOMAIN):
+        grant = _new_grant(recipient, allowed_types, actor, document_id, expires_at, domain)
         self._d[grant.grant_id] = grant
         return grant
 
@@ -134,8 +146,9 @@ class PostgresGrantStore:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def issue(self, recipient, allowed_types, actor, document_id=None, expires_at=None):
-        grant = _new_grant(recipient, allowed_types, actor, document_id, expires_at)
+    def issue(self, recipient, allowed_types, actor, document_id=None, expires_at=None,
+              domain=DEFAULT_DOMAIN):
+        grant = _new_grant(recipient, allowed_types, actor, document_id, expires_at, domain)
         self._session.add(
             GrantRecord(
                 grant_id=grant.grant_id,
@@ -147,6 +160,7 @@ class PostgresGrantStore:
                 revoked_at=grant.revoked_at,
                 expires_at=grant.expires_at,
                 actor=grant.actor,
+                domain=grant.domain,
             )
         )
         self._session.flush()
@@ -166,6 +180,7 @@ class PostgresGrantStore:
             revoked_at=row.revoked_at,
             expires_at=row.expires_at,
             actor=row.actor,
+            domain=row.domain or DEFAULT_DOMAIN,  # legacy NULL = default domain
         )
 
     def revoke(self, grant_id: str, actor: str) -> None:
@@ -187,15 +202,17 @@ def issue_grant(
     actor: str,
     document_id: uuid.UUID | None = None,
     expires_at: datetime | None = None,
+    domain: str = DEFAULT_DOMAIN,
 ) -> Grant:
     """Issue a grant and record it in the key-lifecycle audit stream (one event)."""
-    grant = store.issue(recipient, allowed_types, actor, document_id, expires_at)
+    grant = store.issue(recipient, allowed_types, actor, document_id, expires_at, domain)
     key_audit.grant_issued(
         grant_id=grant.grant_id,
         recipient=grant.recipient,
         allowed_types=grant.allowed_types,
         document_id=str(grant.document_id) if grant.document_id else None,
         actor=actor,
+        domain=grant.domain,
     )
     return grant
 

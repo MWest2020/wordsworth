@@ -1,0 +1,8 @@
+{
+  "domain": "wi",
+  "columns": {"bsn": "BSN", "naam": "PERSON", "adres": "ADRES"},
+  "mode": "per_record",
+  "record_key": ["bsn"],
+  "format": "nen7524",
+  "ttp_id": "0001"
+}

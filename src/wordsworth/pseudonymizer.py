@@ -18,9 +18,14 @@ from sqlalchemy.orm import Session
 
 from . import audit, detectors
 from .anonymizer import AnonymizationResult
+from .config import settings
 from .crypto import decrypt, encrypt
-from .keys import KeyProvider
+from .detection_lists import DetectionLists
+from .detection_stats import DETERMINISTIC, DetectionStats
+from .keys import DEFAULT_DOMAIN, KeyProvider, scope_for
 from .mapping_store import MappingStore
+from .normalization import PROFILE_VERSION, normalize
+from .pii_categories import category_of
 from .models import AuditRecord
 from .openanonymiser_driver import AnonymizationEngineError, Entity, detect_entities
 
@@ -38,7 +43,10 @@ _MIN_ENTITY_LEN = 3
 
 
 def _token(key_material: bytes, label: str, value: str) -> str:
-    msg = f"{label}:{value}".encode("utf-8")
+    # HMAC over the NORMALISED value so spelling/format variants of one
+    # identifier collide onto one token (add-value-normalisation). The stored
+    # ciphertext keeps the original spelling; only the derivation is canonical.
+    msg = f"{label}:{normalize(label, value)}".encode("utf-8")
     return hmac.new(key_material, msg, hashlib.sha256).hexdigest()[:8]
 
 
@@ -80,25 +88,34 @@ def _reveal(
 
 
 class Pseudonymizer:
-    def __init__(self, key_provider: KeyProvider, mapping_store: MappingStore):
+    def __init__(self, key_provider: KeyProvider, mapping_store: MappingStore,
+                 domain: str = DEFAULT_DOMAIN):
         self._keys = key_provider
         self._store = mapping_store
+        self._domain = domain  # add-domain-keys: keys are scoped domain/TYPE
+
+    def pseudonym(self, label: str, value: str) -> str:
+        """The keyed ``[LABEL:hash8]`` token for one value of one PII type, with
+        its encrypted original stored (idempotent). The ONE derivation shared by
+        free text and datasets (add-dataset-pseudonymisation): same domain, same
+        type, same normalised value → same token, whichever path produced it."""
+        label = label.lower()
+        # Each PII type is keyed under its own scope, so possessing a type's
+        # key reveals only that type.
+        key = self._keys.current_key(scope=scope_for(self._domain, label.upper()))
+        pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
+        ciphertext, nonce = encrypt(key.material, value)
+        self._store.put(pseudonym, ciphertext, nonce, key.id, norm_version=PROFILE_VERSION)
+        return pseudonym
 
     def anonymize(self, text: str) -> AnonymizationResult:
         counts: dict[str, int] = {}
+        stats = DetectionStats(settings.detection_min_score)
         for label, pattern, validate in detectors.DETECTORS:
-            # Each PII type is keyed under its own scope, so possessing a type's
-            # key reveals only that type.
-            key = self._keys.current_key(scope=label.upper())
-
-            def replacer(value: str, label: str = label, key=key) -> str:
-                pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
-                ciphertext, nonce = encrypt(key.material, value)
-                self._store.put(pseudonym, ciphertext, nonce, key.id)
-                return pseudonym
-
-            text, counts[label] = detectors.substitute(text, pattern, replacer, validate)
-        return AnonymizationResult(text=text, counts=counts)
+            text, counts[label] = detectors.substitute(
+                text, pattern, lambda v, label=label: self.pseudonym(label, v), validate)
+            stats.add(DETERMINISTIC, label, 1.0, counts[label])  # validated = certain
+        return AnonymizationResult(text=text, counts=counts, detections=stats.to_dict())
 
 
 class ReversibleAnonymizer:
@@ -115,11 +132,16 @@ class ReversibleAnonymizer:
         key_provider: KeyProvider,
         mapping_store: MappingStore,
         detect: DetectFn | None = None,
+        domain: str = DEFAULT_DOMAIN,
+        lists: DetectionLists | None = None,
     ):
         self._keys = key_provider
         self._store = mapping_store
-        self._deterministic = Pseudonymizer(key_provider, mapping_store)
+        self._domain = domain
+        self._deterministic = Pseudonymizer(key_provider, mapping_store, domain)
         self._detect = detect or detect_entities
+        # Versioned allow/deny lists (add-detection-feedback); default = none.
+        self._lists = lists or DetectionLists()
 
     def anonymize(self, text: str) -> AnonymizationResult:
         result = self._deterministic.anonymize(text)  # keyed deterministic tokens
@@ -135,11 +157,25 @@ class ReversibleAnonymizer:
                 "entity detection failed; refusing to emit text with "
                 "un-pseudonymised entities"
             ) from exc
+        # Allow/deny lists refine what the detectors found (typed; allow never
+        # crosses types). Suppressions are counted, never silent.
+        entities, suppressed = self._lists.apply(body, entities)
         body, entity_counts = self._pseudonymize_entities(body, entities)
         counts = dict(result.counts)
         for label, n in entity_counts.items():
             counts[label] = counts.get(label, 0) + n
-        return AnonymizationResult(text=body, counts=counts)
+        stats = DetectionStats(settings.detection_min_score)
+        stats.merge(result.detections)
+        winner: dict[str, str] = {}   # value -> label that _pseudonymize_entities used
+        for e in entities:  # one aggregate row per detection; no value, no offset
+            if e.text and len(e.text.strip()) >= _MIN_ENTITY_LEN:
+                winner.setdefault(e.text, e.entity_type.lower())
+                if winner[e.text] == e.entity_type.lower():
+                    stats.add(e.layer, e.entity_type, e.score)
+        for t, n in suppressed.items():
+            stats.add("suppressed_by_list", t, 1.0, n)
+        return AnonymizationResult(text=body, counts=counts, detections=stats.to_dict(),
+                                   lists_hash=self._lists.hash)
 
     def _pseudonymize_entities(
         self, text: str, entities: list[Entity]
@@ -179,10 +215,11 @@ class ReversibleAnonymizer:
         def repl(match: re.Match[str]) -> str:
             value = match.group(0)
             label = label_of[value]
-            key = self._keys.current_key(scope=label.upper())
+            key = self._keys.current_key(scope=scope_for(self._domain, label.upper()))
             pseudonym = f"[{label.upper()}:{_token(key.material, label, value)}]"
             ciphertext, nonce = encrypt(key.material, value)
-            self._store.put(pseudonym, ciphertext, nonce, key.id)  # idempotent
+            self._store.put(pseudonym, ciphertext, nonce, key.id,
+                            norm_version=PROFILE_VERSION)  # idempotent
             counts[label] = counts.get(label, 0) + 1
             return pseudonym
 
@@ -241,9 +278,11 @@ def deanonymize(
     restored, revealed = _reveal(
         text, allowed_types, mapping_store.get, key_provider.key
     )
+    types = sorted({_label_of(p) for p in revealed})
     payload = {
         "pseudonyms": sorted(set(revealed)),
-        "types": sorted({_label_of(p) for p in revealed}),
+        "types": types,
+        "categories": sorted({category_of(t) for t in types}),  # c1/c2/c3, no values
         "requested_types": sorted(allowed_types) if allowed_types else "all",
         "actor": actor,
     }

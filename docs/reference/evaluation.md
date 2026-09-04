@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-07-18
+last_reviewed: 2026-09-03
 ---
 
 # Evaluation run
@@ -44,3 +44,30 @@ corpus keyed on the qrels doc ids and push it through the pipeline into a
 dedicated index) and `make_smoke_collection.py` (a synthetic pipe-cleaner
 collection). See `scripts/eval/README.md` for the end-to-end procedure and
 infrastructure notes.
+
+## PII-detection evaluation
+
+Separate from ranking quality: how well does the *deployed* detection seam find
+PII? `wordsworth.eval.pii` scores the same `Entity` objects the pipeline uses
+against a gold corpus.
+
+```
+python -m wordsworth.eval.pii_run gold.jsonl [--layers deterministic,openanonymiser] [--json]
+```
+
+- **Gold format:** JSONL, one document per line:
+  `{"id": "...", "text": "...", "entities": [{"start": 10, "end": 25, "type": "PERSON"}]}`
+  (character offsets, half-open, upper-case types; spans must be in range and
+  non-overlapping — a malformed line is a hard error). Real gold corpora live
+  outside the repo; `tests/fixtures/pii_gold_synthetic.jsonl` is a synthetic
+  10-document smoke set with invented names and test BSNs.
+- **Metrics:** precision / recall / F1 per type and overall, at **span** level
+  (exact start/end/type) and **token** level (a whitespace token of a gold span
+  counts when a same-type prediction covers it, so `van Dijk` for `Janine van
+  Dijk` scores 2/3 recall); **`leaks`** = gold entities with no overlapping
+  prediction of any type — the number that matters for the index invariant;
+  **per layer** (`deterministic`, `openanonymiser`), each layer scored alone.
+- **Runtime:** `--layers deterministic` runs offline; the `openanonymiser` layer
+  needs the service at `WORDSWORTH_OPENANONYMISER_URL` (local, no cloud). A
+  service failure is a hard error, never an empty result. Read-only: nothing is
+  ingested, indexed or audited.

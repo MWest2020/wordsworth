@@ -27,5 +27,7 @@ def test_clean_text_is_unchanged_with_zero_counts():
 
 def test_result_carries_no_reverse_mapping():
     result = DeterministicAnonymizer().anonymize("BSN 123456782")
-    # AnonymizationResult exposes only text + counts — no mapping field.
-    assert set(vars(result)) == {"text", "counts"}
+    # AnonymizationResult exposes text + counts + per-layer detection aggregates
+    # (add-detection-confidence) — no mapping field, no values.
+    assert set(vars(result)) == {"text", "counts", "detections", "lists_hash"}
+    assert "123456782" not in str(result.detections)

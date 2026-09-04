@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import inspect
 import io
+import re
 import zipfile
 from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
-from pydantic import BaseModel
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -30,10 +32,16 @@ from .embedder import Embedder
 from .generator import Generator
 from .grants import GrantStore
 from .key_audit import KeyLifecycleAudit
-from .keys import KeyProvider
+from .legible import to_legible
+from .keys import DEFAULT_DOMAIN, KeyProvider
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
-from .pipeline import current_state, get_anonymized_text, ingest, process
+from .pii_categories import (
+    counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
+)
+from .pipeline import (
+    current_state, document_domain, get_anonymized_text, ingest, process,
+)
 from .rate_limit import (
     EXEMPT_PATHS,
     RateLimitMiddleware,
@@ -91,6 +99,9 @@ class RevealResponse(BaseModel):
     revealed_types: list[str]
     withheld_types: list[str]
     grant_id: str
+    # The same two sets grouped under their AVG legal basis (Art. 6/9/10):
+    # {"Art. 6": {"revealed": [...], "withheld": [...]}, ...}
+    by_legal_basis: dict[str, dict[str, list[str]]] = {}
 
 
 class AnonymizedResponse(BaseModel):
@@ -99,6 +110,51 @@ class AnonymizedResponse(BaseModel):
 
     document_id: str
     anonymized_text: str
+    # add-legible-placeholders: ``tokens`` (stored form, default) or ``legible``
+    # (``[PERSOON 1]`` numbering per document) with a legend back to the tokens.
+    view: str = "tokens"
+    legend: dict[str, str] | None = None
+
+
+class FeedbackRequest(BaseModel):
+    """A false-positive / false-negative report on a document's detection
+    (add-detection-feedback). By TYPE and TOKEN only — never a clear value; that
+    is why there is no free-text field. Recorded in the audit trail; the lists
+    themselves change only through a reviewed git change."""
+
+    kind: str                    # "fp" | "fn"
+    type: str                    # PII type, e.g. PERSON
+    token: str | None = None     # the [TYPE:hash8] token concerned (fp), if any
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if self.kind not in ("fp", "fn"):
+            raise ValueError("kind must be fp or fn")
+        if self.token is not None and not _TOKEN_RE.fullmatch(self.token):
+            raise ValueError("token must be a [TYPE:hash8] pseudonym, never a value")
+        return self
+
+
+_TOKEN_RE = re.compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
+
+
+class DatasetResponse(BaseModel):
+    """Result of a dataset run (add-dataset-pseudonymisation): the transformed
+    CSV, aggregates, advisory warnings for unselected columns that look like
+    PII, and the audit record's sequence number. Never an input value."""
+
+    csv: str
+    rows: int
+    columns: list[str]
+    unique_pseudonyms: int
+    rows_without_record_key: int
+    domain: str
+    mode: str
+    format: str
+    profile_sha256: str
+    warnings: list[dict]
+    dataset_id: str
+    audit_seq: int
 
 
 class ReprocessRequest(BaseModel):
@@ -124,9 +180,20 @@ class GrantIssueRequest(BaseModel):
     grant_id is a bearer capability; a real auth decision is pending."""
 
     recipient: str
-    allowed_types: list[str]
+    allowed_types: list[str] | None = None  # explicit types, XOR ppl
+    ppl: int | None = None                  # Privacy Protection Level 0..3
     document_id: str | None = None      # None = any document
     expires_at: str | None = None       # ISO-8601, must be timezone-aware
+    domain: str | None = None           # pseudonymisation domain; None = default
+
+    @model_validator(mode="after")
+    def _types_xor_ppl(self):
+        # PPL is shorthand over allowed_types (pii_categories); exactly one form.
+        if (self.allowed_types is None) == (self.ppl is None):
+            raise ValueError("give exactly one of allowed_types or ppl")
+        if self.ppl is not None and not 0 <= self.ppl <= 3:
+            raise ValueError("ppl must be 0..3")
+        return self
 
 
 class GrantResponse(BaseModel):
@@ -135,7 +202,9 @@ class GrantResponse(BaseModel):
     grant_id: str
     recipient: str
     allowed_types: list[str]
+    ppl: int | None = None  # the level whose expansion equals allowed_types, if any
     document_id: str | None
+    domain: str = DEFAULT_DOMAIN
     status: str
     created_at: str
     revoked_at: str | None
@@ -230,6 +299,10 @@ def create_app(
     if corpus_read_labels is None:
         corpus_read_labels = default_settings.corpus_read_labels
 
+    def _check_view(view: str) -> None:
+        if view not in ("tokens", "legible"):
+            raise HTTPException(status_code=400, detail="view must be tokens|legible")
+
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
         if not authorize_corpus_read(caller, corpus_read_labels):
@@ -258,12 +331,16 @@ def create_app(
                  response_model=AnonymizedResponse,
                  summary="De-identified (pseudonymised) document text",
                  tags=["read"])
-        def document_anonymized(document_id: UUID, request: Request) -> AnonymizedResponse:
+        def document_anonymized(document_id: UUID, request: Request,
+                                view: str = "tokens") -> AnonymizedResponse:
             """The stored, de-identified text — the same pseudonymised text that
             backs the index and the export ZIP, never clear PII. 404 if the
             document is unknown; 409 if it exists but is not yet de-identified.
-            Gated by the opt-in corpus-read scope (403 if the caller lacks it)."""
+            Gated by the opt-in corpus-read scope (403 if the caller lacks it).
+            ``view=legible`` renders tokens as numbered Dutch placeholders
+            (``[PERSOON 1]``) with a legend; the stored text is unchanged."""
             _guard_corpus_read(request)
+            _check_view(view)
             with session_factory() as session:
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404,
@@ -272,6 +349,11 @@ def create_app(
             if anonymized_text is None:
                 raise HTTPException(status_code=409,
                                     detail="document not yet de-identified")
+            if view == "legible":
+                anonymized_text, legend = to_legible(anonymized_text)
+                return AnonymizedResponse(document_id=str(document_id),
+                                          anonymized_text=anonymized_text,
+                                          view=view, legend=legend)
             return AnonymizedResponse(document_id=str(document_id),
                                       anonymized_text=anonymized_text)
 
@@ -297,16 +379,46 @@ def create_app(
                 raise HTTPException(status_code=404, detail="unknown document")
             return meta
 
+        @app.post("/documents/{document_id}/feedback", status_code=201,
+                  summary="Record detection feedback (false positive / negative)",
+                  tags=["write"])
+        def document_feedback(document_id: UUID, body: FeedbackRequest,
+                              request: Request) -> dict:
+            """Append a ``detection_feedback`` access event (from == to state) to
+            the document's audit chain: kind, type, token, caller. No clear value
+            can be carried (no free text). Lists are NOT modified — updating
+            allow/deny lists is a reviewed git change."""
+            from . import audit
+
+            with session_factory() as session:
+                state = current_state(session, document_id)
+                if state is None:
+                    raise HTTPException(status_code=404, detail="unknown document")
+                payload = {"kind": body.kind, "type": body.type.upper(),
+                           "token": body.token}
+                caller = getattr(request.state, "caller", None)
+                if caller:
+                    payload["caller"] = caller
+                rec = audit.append(session, document_id=document_id,
+                                   from_state=state.value, to_state=state.value,
+                                   step="detection_feedback", payload=payload)
+                session.commit()
+                return {"document_id": str(document_id), "seq": rec.seq,
+                        "recorded": payload}
+
         @app.get("/export/anonymized.zip",
                  summary="Export de-identified document texts as a ZIP",
                  tags=["export"])
         def export_anonymized(request: Request,
-                              document_ids: str | None = None) -> Response:
+                              document_ids: str | None = None,
+                              view: str = "tokens") -> Response:
             """A ZIP of the stored de-identified texts (one ``{id}.txt`` per
             document), for all INDEXED documents or the given comma-separated
             subset. Only the index-bound anonymized text is written — never clear
-            PII, never original bytes. Gated by the opt-in corpus-read scope."""
+            PII, never original bytes. Gated by the opt-in corpus-read scope.
+            ``view=legible`` renders each text with numbered placeholders."""
             _guard_corpus_read(request)
+            _check_view(view)
             ids = None
             if document_ids:
                 try:
@@ -316,6 +428,8 @@ def create_app(
                                         detail="malformed document_ids")
             with session_factory() as session:
                 pairs = _indexed_texts(session, ids)
+            if view == "legible":
+                pairs = [(d, to_legible(t)[0]) for d, t in pairs]
             return Response(content=_anonymized_zip(pairs),
                             media_type="application/zip",
                             headers={"Content-Disposition":
@@ -373,7 +487,21 @@ def create_app(
 
             anonymizer = OpenAnonymiserAnonymizer()
 
-        def _ingest_one(data: bytes) -> dict:
+        def _make_anonymizer(session, domain: str):
+            """Session-scoped anonymizer for a domain. A domain-unaware factory
+            (legacy 1-arg) is accepted for the default domain only — a non-default
+            domain with such a factory is an error, never a silent fall-back to
+            the global keys."""
+            if anonymizer_factory is None:
+                return anonymizer
+            if _accepts_domain(anonymizer_factory):
+                return anonymizer_factory(session, domain)
+            if domain != DEFAULT_DOMAIN:
+                raise ValueError(
+                    "anonymizer factory is domain-unaware; refusing non-default domain")
+            return anonymizer_factory(session)
+
+        def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN) -> dict:
             """Drive one document to its terminal state; return its metadata
             (id, state, duration, counts). The un-redacted bytes never leave this
             frame and no exception it raises carries document text (fail-hard, no
@@ -392,8 +520,8 @@ def create_app(
                 # Reversible mode binds a fresh session-scoped anonymizer (durable
                 # keys + mapping store) per document; default mode uses the shared
                 # irreversible driver.
-                anon = anonymizer_factory(session) if anonymizer_factory else anonymizer
-                doc = ingest(session, store, data)
+                anon = _make_anonymizer(session, domain)
+                doc = ingest(session, store, data, domain)
                 session.commit()
                 document_id = doc.id
                 state = process(session, document_id, store, anonymizer=anon,
@@ -414,6 +542,7 @@ def create_app(
                   summary="Ingest one or more PDFs through the full straat")
         def ingest_documents(
             files: list[UploadFile] = File(..., description="One or more PDF files"),
+            domain: str | None = None,
         ) -> IngestResponse:
             """Upload one or more PDFs. Each is driven through
             ingest → OCR recovery (if scanned) → anonymize → store → index and
@@ -423,7 +552,13 @@ def create_app(
             Deliberately a sync (not async) path operation: the pipeline is
             CPU/IO-heavy (GLiNER over HTTP, embeddings, DB), so FastAPI runs it in
             a worker thread and the event loop stays free to answer the liveness
-            probe — otherwise a long batch starves /health and the pod is killed."""
+            probe — otherwise a long batch starves /health and the pod is killed.
+
+            ``?domain=`` binds the batch to a pseudonymisation domain
+            (add-domain-keys); default from ``WORDSWORTH_DEFAULT_DOMAIN``."""
+            dom = domain or default_settings.default_domain
+            if "/" in dom:
+                raise HTTPException(status_code=400, detail="domain must not contain '/'")
             results: list[IngestResult] = []
             for f in files:
                 data = f.file.read()
@@ -432,7 +567,7 @@ def create_app(
                         filename=f.filename, state="error", error="empty upload"))
                     continue
                 try:
-                    meta = _ingest_one(data)
+                    meta = _ingest_one(data, dom)
                     results.append(IngestResult(
                         filename=f.filename,
                         document_id=meta.get("document_id"),
@@ -465,7 +600,7 @@ def create_app(
                     state = current_state(session, document_id)
                     if state not in (State.INDEXED, State.ANONYMIZED):
                         return "skipped"
-                    anon = anonymizer_factory(session)
+                    anon = _make_anonymizer(session, document_domain(session, document_id))
                     reanonymize(session, document_id, store, anonymizer=anon,
                                 search_index=search_index, embedder=embedder)
                     session.commit()
@@ -501,6 +636,88 @@ def create_app(
                         counts["retryable" if is_transient(exc) else "failed"] += 1
                 return ReprocessResponse(total=len(ids), **counts)
 
+    # Dataset path (add-dataset-pseudonymisation): column-selected, profile-driven
+    # pseudonymisation of CSV with the SAME derivation as documents. Reversible
+    # mode only (needs a key provider + mapping store per session).
+    if (session_factory is not None
+            and (key_provider is not None or key_provider_factory is not None)):
+
+        @app.post("/datasets/pseudonymize", response_model=DatasetResponse,
+                  tags=["write"],
+                  summary="Pseudonymise selected CSV columns by profile")
+        def datasets_pseudonymize(
+            file: UploadFile = File(..., description="CSV with a header row"),
+            profile: str | None = Form(None, description="inline profile JSON"),
+            profile_name: str | None = Form(None, description="profiles/<name>.json"),
+        ) -> DatasetResponse:
+            """Selected columns are replaced by keyed pseudonyms (per attribute or
+            per record); unselected columns pass through byte-identical. One
+            audit record per run (aggregates only). Exactly one of ``profile`` /
+            ``profile_name``. 400 on a malformed profile or missing column."""
+            import csv as _csv
+            import io as _io
+
+            from . import audit
+            from .datasets import (DatasetRun, Profile, load_profile,
+                                   validate_unselected)
+            from .mapping_store import PostgresMappingStore
+            from .pipeline import register
+            from .pseudonymizer import Pseudonymizer
+
+            if (profile is None) == (profile_name is None):
+                raise HTTPException(status_code=400,
+                                    detail="give exactly one of profile or profile_name")
+            try:
+                prof = (Profile.model_validate_json(profile) if profile is not None
+                        else load_profile(profile_name, default_settings.profiles_dir))
+            except (ValueError, FileNotFoundError) as exc:
+                raise HTTPException(status_code=400, detail=f"bad profile: {exc}")
+            data = file.file.read()
+            if not data:
+                raise HTTPException(status_code=400, detail="empty upload")
+            try:
+                rows = list(_csv.DictReader(_io.StringIO(data.decode("utf-8-sig"))))
+            except UnicodeDecodeError:
+                raise HTTPException(status_code=400, detail="CSV must be UTF-8")
+            if not rows:
+                raise HTTPException(status_code=400, detail="CSV has no data rows")
+            if any(None in r for r in rows):   # ragged row: more cells than header
+                raise HTTPException(status_code=400,
+                                    detail="CSV row has more fields than the header")
+            # One artefact per (content, profile): a different profile/domain over
+            # the same CSV is a different run with its own registered domain.
+            key = "datasets/" + hashlib.sha256(data + prof.sha256().encode()).hexdigest()
+            with session_factory() as session:
+                kp = key_provider_factory(session) if key_provider_factory else key_provider
+                run = DatasetRun(prof, Pseudonymizer(kp, PostgresMappingStore(session),
+                                                     domain=prof.domain))
+                try:
+                    out_rows = list(run.transform(rows))
+                except KeyError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                buf = io.StringIO()
+                writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()),
+                                        lineterminator="\n")
+                writer.writeheader()
+                writer.writerows(out_rows)
+                warnings = validate_unselected(rows, prof) if prof.validate_pii else []
+                # The dataset is an artefact with identity (content hash); its run
+                # is an access event on it — aggregates only, never a cell value.
+                doc = session.execute(select(Document).where(
+                    Document.object_key == key)).scalars().first()
+                if doc is None:
+                    doc = register(session, key, prof.domain)
+                state = current_state(session, doc.id)
+                stats = run.stats()
+                rec = audit.append(session, document_id=doc.id,
+                                   from_state=state.value, to_state=state.value,
+                                   step="dataset_pseudonymize",
+                                   payload={**stats, "kind": "dataset",
+                                            "warnings": [w["column"] for w in warnings]})
+                session.commit()
+            return DatasetResponse(csv=buf.getvalue(), warnings=warnings,
+                                   dataset_id=str(doc.id), audit_seq=rec.seq, **stats)
+
     # Key-gated reveal: turn a document's pseudonyms back into originals, but
     # only the PII types a grant authorises. Mounted only when a key provider and
     # grant store are supplied (durable keys arrive in a later cycle), so the
@@ -531,18 +748,20 @@ def create_app(
                 grant = gs.get(body.grant_id)
                 if grant is None:
                     raise HTTPException(status_code=404, detail="unknown grant")
-                # A grant that authorises none of its own types here is revoked,
-                # expired, or scoped to another document → explicit denial.
-                if not authorize(grant, document_id, set(grant.allowed_types), now):
-                    raise HTTPException(status_code=403, detail="grant not applicable")
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404, detail="unknown document")
+                dom = document_domain(session, document_id)
+                # A grant that authorises none of its own types here is revoked,
+                # expired, scoped to another document or bound to another domain
+                # → explicit denial.
+                if not authorize(grant, document_id, set(grant.allowed_types), now, dom):
+                    raise HTTPException(status_code=403, detail="grant not applicable")
                 pseudo_text = get_anonymized_text(session, document_id)
                 if pseudo_text is None:
                     raise HTTPException(
                         status_code=409, detail="document not yet de-identified")
                 requested = body.types if body.types else list(grant.allowed_types)
-                allowed = authorize(grant, document_id, set(requested), now)
+                allowed = authorize(grant, document_id, set(requested), now, dom)
                 # The authenticated caller (from api-key auth, if enabled) is
                 # recorded distinctly from the grant recipient; None when auth
                 # is off (tailnet-internal, grant_id as bearer capability).
@@ -573,12 +792,20 @@ def create_app(
                 )
                 session.commit()
             requested_upper = {t.upper() for t in requested}
+            withheld = requested_upper - allowed
+            by_basis = {b: {"revealed": [], "withheld": []}
+                        for b in (*group_by_basis(allowed), *group_by_basis(withheld))}
+            for b, ts in group_by_basis(allowed).items():
+                by_basis[b]["revealed"] = ts
+            for b, ts in group_by_basis(withheld).items():
+                by_basis[b]["withheld"] = ts
             return RevealResponse(
                 document_id=str(document_id),
                 revealed_text=revealed_text,
                 revealed_types=sorted(allowed),
-                withheld_types=sorted(requested_upper - allowed),
+                withheld_types=sorted(withheld),
                 grant_id=body.grant_id,
+                by_legal_basis=by_basis,
             )
 
     # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
@@ -601,7 +828,9 @@ def create_app(
                 grant_id=g.grant_id,
                 recipient=g.recipient,
                 allowed_types=list(g.allowed_types),
+                ppl=ppl_of_types(g.allowed_types),
                 document_id=str(g.document_id) if g.document_id else None,
+                domain=g.domain or DEFAULT_DOMAIN,
                 status=g.status,
                 created_at=g.created_at.isoformat(),
                 revoked_at=g.revoked_at.isoformat() if g.revoked_at else None,
@@ -636,11 +865,15 @@ def create_app(
                 if expires.tzinfo is None:
                     raise HTTPException(status_code=400,
                                         detail="expires_at must be timezone-aware")
+            # PPL shorthand → the registry's type set; stored form stays types.
+            types = (sorted(types_for_ppl(body.ppl)) if body.ppl is not None
+                     else list(body.allowed_types or []))
             with session_factory() as session:
                 grant = issue_grant(
                     _grant_store(session), _resolve_audit(),
-                    recipient=body.recipient, allowed_types=body.allowed_types,
+                    recipient=body.recipient, allowed_types=types,
                     actor="operator", document_id=doc_id, expires_at=expires,
+                    domain=body.domain or DEFAULT_DOMAIN,
                 )
                 session.commit()
                 return _grant_response(grant)
@@ -667,6 +900,17 @@ def create_app(
             return _grant_response(grant)
 
     return app
+
+
+def _accepts_domain(factory) -> bool:
+    """Whether a session-scoped anonymizer factory takes a second ``domain``
+    argument (arity check, so a TypeError raised *inside* the factory is never
+    mistaken for a signature mismatch)."""
+    params = list(inspect.signature(factory).parameters.values())
+    positional = [p for p in params if p.kind in (
+        inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+    return len(positional) >= 2 or any(
+        p.kind is inspect.Parameter.VAR_POSITIONAL for p in params)
 
 
 def _hit(h) -> dict:
@@ -741,15 +985,21 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         })
         prev_ts = r.ts
     total_ms = (records[-1].ts - records[0].ts).total_seconds() * 1000
-    counts = next((r.payload for r in records if r.step == "anonymize"), {})
+    anon = next((r.payload for r in records if r.step == "anonymize"), {})
+    counts = {k: v for k, v in anon.items() if k not in ("detections", "lists_hash")}
     profile = next((r.payload for r in records if r.step == "profile"), {})
+    reg = next((r.payload for r in records if r.step == "register"), {})
     doc = session.get(Document, document_id)
     return {
         "document_id": str(document_id),
         "object_key": doc.object_key if doc else None,
+        "domain": reg.get("domain") or DEFAULT_DOMAIN,
         "state": records[-1].to_state,
         "duration_ms": round(total_ms, 1),
         "counts": counts,
+        "pii_counts_by_category": counts_by_category(counts),
+        "detections": anon.get("detections", {}),
+        "lists_hash": anon.get("lists_hash"),
         "pages": profile.get("pages"),
         "bytes": profile.get("bytes"),
         "steps": steps,

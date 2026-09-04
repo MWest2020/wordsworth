@@ -89,7 +89,8 @@ def _download(base: str, path: str, dest: str, params: dict | None = None,
     return len(data)
 
 
-def _post_files(base: str, paths: list[Path], timeout: float = 600):
+def _post_files(base: str, paths: list[Path], timeout: float = 600,
+                domain: str | None = None):
     """Upload files to POST /ingest as multipart/form-data (field name ``files``)."""
     boundary = uuid.uuid4().hex
     body = bytearray()
@@ -104,7 +105,8 @@ def _post_files(base: str, paths: list[Path], timeout: float = 600):
         body += b"\r\n"
     body += f"--{boundary}--\r\n".encode()
     req = urllib.request.Request(
-        base.rstrip("/") + "/ingest",
+        base.rstrip("/") + "/ingest"
+        + ("?" + urllib.parse.urlencode({"domain": domain}) if domain else ""),
         data=bytes(body),
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
@@ -120,14 +122,16 @@ def _iter_files(root: Path, include_all: bool) -> list[Path]:
     return sorted(p for p in root.rglob(pattern) if p.is_file())
 
 
-def _post_batch_with_retry(url, chunk, timeout, retries, index):
+def _post_batch_with_retry(url, chunk, timeout, retries, index, domain: str | None = None):
     """POST one batch, retrying on transport errors / 5xx (transient: a server
     worker recycle drops the in-flight connection). Returns the parsed response,
     or None if every attempt failed. Prints each attempt's failure visibly."""
     delay = 3
     for attempt in range(1, retries + 1):
         try:
-            return _post_files(url, chunk, timeout=timeout)
+            # keyword only when set, so a domain-unaware seam/test double still fits
+            return _post_files(url, chunk, timeout=timeout,
+                               **({"domain": domain} if domain else {}))
         except urllib.error.HTTPError as e:
             transient = e.code >= 500
             reason = f"HTTP {e.code} {e.reason}"
@@ -166,7 +170,7 @@ def _cmd_ingest(args) -> int:
     for i in range(0, total, args.batch):
         chunk = files[i:i + args.batch]
         resp = _post_batch_with_retry(args.url, chunk, args.timeout,
-                                      args.retries, i)
+                                      args.retries, i, domain=args.domain)
         if resp is None:
             # Whole batch failed after retries — the server may or may not have
             # processed some; report each file so nothing fails silently.
@@ -260,15 +264,63 @@ def _cmd_reprocess(args) -> int:
     return 0
 
 
+def _post_dataset(base: str, path: Path, profile: str | None, profile_name: str | None,
+                  timeout: float = 600) -> dict:
+    """Upload a CSV + profile to POST /datasets/pseudonymize (multipart)."""
+    boundary = uuid.uuid4().hex
+    body = bytearray()
+
+    def part(name: str, value: bytes, filename: str | None = None,
+             ctype: str = "text/plain") -> None:
+        body.extend(f"--{boundary}\r\n".encode())
+        disp = f'Content-Disposition: form-data; name="{name}"'
+        if filename:
+            disp += f'; filename="{filename}"'
+        body.extend((disp + "\r\n").encode())
+        body.extend(f"Content-Type: {ctype}\r\n\r\n".encode())
+        body.extend(value)
+        body.extend(b"\r\n")
+
+    part("file", path.read_bytes(), path.name, "text/csv")
+    if profile is not None:
+        part("profile", profile.encode())
+    if profile_name is not None:
+        part("profile_name", profile_name.encode())
+    body.extend(f"--{boundary}--\r\n".encode())
+    req = urllib.request.Request(
+        base.rstrip("/") + "/datasets/pseudonymize", data=bytes(body), method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _cmd_dataset(args) -> int:
+    """Pseudonymise selected CSV columns; CSV to stdout, stats to stderr."""
+    path = Path(args.csv)
+    if not path.exists():
+        print(f"file not found: {path}", file=sys.stderr)
+        return 2
+    profile = Path(args.profile).read_text() if args.profile else None
+    res = _post_dataset(args.url, path, profile, args.profile_name, args.timeout)
+    sys.stdout.write(res["csv"])
+    stats = {k: v for k, v in res.items() if k != "csv"}
+    print(json.dumps(stats, indent=2), file=sys.stderr)
+    return 0
+
+
 def _cmd_grant(args) -> int:
     """Issue, inspect, or revoke a reveal grant (operator/admin surface)."""
     if args.grant_cmd == "issue":
-        payload: dict = {
-            "recipient": args.recipient,
-            "allowed_types": [t.strip() for t in args.types.split(",") if t.strip()],
-        }
+        payload: dict = {"recipient": args.recipient}
+        if args.ppl is not None:  # PPL shorthand; the server expands it
+            payload["ppl"] = args.ppl
+        else:
+            payload["allowed_types"] = [
+                t.strip() for t in (args.types or "").split(",") if t.strip()]
         if args.document:
             payload["document_id"] = args.document
+        if args.domain:
+            payload["domain"] = args.domain
         if args.expires:
             payload["expires_at"] = args.expires
         res = _post_json(args.url, "/grants", payload, timeout=30)
@@ -320,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="per-batch timeout in seconds (config 'timeout', else 600)")
     pi.add_argument("--retries", type=int, default=3,
                     help="attempts per batch on a transient error (default 3)")
+    pi.add_argument("--domain", default=None,
+                    help="pseudonymisation domain for this batch (default: server default)")
     pi.set_defaults(func=_cmd_ingest)
 
     ps = sub.add_parser("search", help="lexical (BM25) search")
@@ -366,14 +420,27 @@ def main(argv: list[str] | None = None) -> int:
                     help="request timeout in seconds (default 3600; long-running)")
     pr.set_defaults(func=_cmd_reprocess)
 
+    pd = sub.add_parser("pseudonymize-dataset",
+                        help="pseudonymise selected CSV columns by profile")
+    pd.add_argument("csv", help="input CSV (header row required)")
+    pd.add_argument("--profile", default=None, help="path to an inline profile JSON")
+    pd.add_argument("--profile-name", default=None, help="server-side profiles/<name>.json")
+    pd.add_argument("--timeout", type=float, default=600)
+    pd.set_defaults(func=_cmd_dataset)
+
     pg = sub.add_parser("grant", help="issue / inspect / revoke reveal grants")
     gsub = pg.add_subparsers(dest="grant_cmd", required=True)
     gi = gsub.add_parser("issue", help="issue a reveal grant")
     gi.add_argument("--recipient", required=True)
-    gi.add_argument("--types", required=True,
+    gi.add_argument("--types", default=None,
                     help="comma-separated PII types, e.g. PERSON,LOCATION")
+    gi.add_argument("--ppl", type=int, default=None, choices=range(0, 4),
+                    help="Privacy Protection Level 0-3 instead of --types "
+                         "(0 none, 1 Art. 6, 2 Art. 6+9, 3 everything)")
     gi.add_argument("--document", default=None,
                     help="scope to one document id (default: any document)")
+    gi.add_argument("--domain", default=None,
+                    help="bind to a pseudonymisation domain (default: the default domain)")
     gi.add_argument("--expires", default=None,
                     help="ISO-8601 timezone-aware expiry (e.g. 2026-12-31T00:00:00+00:00)")
     gi.set_defaults(func=_cmd_grant)

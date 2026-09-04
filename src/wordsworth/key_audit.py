@@ -33,6 +33,7 @@ class KeyLifecycleAudit(Protocol):
         new_key_id: str,
         entries_reencrypted: int,
         actor: str,
+        scope: str | None = None,
     ) -> None: ...
 
     def grant_issued(
@@ -43,6 +44,7 @@ class KeyLifecycleAudit(Protocol):
         allowed_types: list[str],
         document_id: str | None,
         actor: str,
+        domain: str | None = None,
     ) -> None: ...
 
     def grant_revoked(self, *, grant_id: str, actor: str) -> None: ...
@@ -62,11 +64,13 @@ class JsonlKeyLifecycleAudit:
         new_key_id: str,
         entries_reencrypted: int,
         actor: str,
+        scope: str | None = None,
     ) -> None:
         self._log.event(
             STREAM,
             ROTATION_ACTION,
             old_key_id=old_key_id,
+            scope=scope,
             new_key_id=new_key_id,
             entries_reencrypted=entries_reencrypted,
             actor=actor,
@@ -80,11 +84,13 @@ class JsonlKeyLifecycleAudit:
         allowed_types: list[str],
         document_id: str | None,
         actor: str,
+        domain: str | None = None,
     ) -> None:
         self._log.event(
             STREAM,
             GRANT_ISSUED_ACTION,
             grant_id=grant_id,
+            domain=domain,
             recipient=recipient,
             allowed_types=allowed_types,
             document_id=document_id,
