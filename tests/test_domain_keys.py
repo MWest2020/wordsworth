@@ -98,13 +98,14 @@ def test_ingest_binds_domain_and_reveal_is_domain_gated(
     assert c.get(f"/documents/{doc_id}").json()["domain"] == "wi"
 
     # a default-domain grant reveals nothing in domain wi (403: not applicable)
-    g_default = c.post("/grants", json={"recipient": "r", "allowed_types": ["EMAIL"]}).json()
+    g_default = c.post("/grants", json={"recipient": "r", "allowed_types": ["EMAIL"],
+                                        "document_id": doc_id}).json()
     assert g_default["domain"] == DEFAULT_DOMAIN
     assert c.post(f"/documents/{doc_id}/reveal",
                   json={"grant_id": g_default["grant_id"]}).status_code == 403
     # a wi-bound grant does
     g_wi = c.post("/grants", json={"recipient": "r", "allowed_types": ["EMAIL"],
-                                   "domain": "wi"}).json()
+                                   "domain": "wi", "document_id": doc_id}).json()
     r = c.post(f"/documents/{doc_id}/reveal", json={"grant_id": g_wi["grant_id"]})
     assert r.status_code == 200 and PII_EMAIL in r.json()["revealed_text"]
     assert c.post("/ingest", params={"domain": "a/b"},

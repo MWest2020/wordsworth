@@ -96,8 +96,10 @@ def test_issue_and_revoke_are_audited_without_key_material(tmp_path):
     raw = (tmp_path / "k.jsonl").read_text(encoding="utf-8")
     assert "material" not in raw and "key_id" not in raw
 
-    # and the revoked grant now authorizes nothing
-    assert authorize(s.get(g.grant_id), None, {"PERSON"}, NOW) == set()
+    # and the revoked grant now authorizes nothing — allow_global so revocation,
+    # not the global-grant gate, is what denies here
+    assert authorize(s.get(g.grant_id), None, {"PERSON"}, NOW,
+                     allow_global=True) == set()
 
 
 def test_revoke_is_idempotent():

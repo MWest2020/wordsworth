@@ -85,6 +85,7 @@ def test_naive_expiry_rejected(tmp_path):
 def test_malformed_inputs_rejected(tmp_path):
     c = TestClient(_app(InMemoryGrantStore(), tmp_path))
     assert c.post("/grants", json={"recipient": "r", "allowed_types": ["P"],
+                                   "document_id": DOC,
                                    "expires_at": "nonsense"}).status_code == 400
     assert c.post("/grants", json={"recipient": "r", "allowed_types": ["P"],
                                    "document_id": "not-a-uuid"}).status_code == 400
