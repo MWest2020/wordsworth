@@ -27,16 +27,18 @@ class _FakeSession:
         pass
 
 
-def _app(gs, tmp_path):
+def _app(gs, tmp_path, allow_global_grants=False):
     return create_app(session_factory=lambda: _FakeSession(), grant_store=gs,
-                      key_audit=JsonlKeyLifecycleAudit(tmp_path / "ka.jsonl"))
+                      key_audit=JsonlKeyLifecycleAudit(tmp_path / "ka.jsonl"),
+                      allow_global_grants=allow_global_grants)
 
 
 def test_issue_get_revoke_lifecycle(tmp_path):
     gs = InMemoryGrantStore()
     c = TestClient(_app(gs, tmp_path))
     r = c.post("/grants", json={"recipient": "team-a",
-                                "allowed_types": ["person", "EMAIL"]})
+                                "allowed_types": ["person", "EMAIL"],
+                                "document_id": DOC})
     assert r.status_code == 201
     body = r.json()
     gid = body["grant_id"]
@@ -51,7 +53,8 @@ def test_issue_get_revoke_lifecycle(tmp_path):
 def test_revoke_is_idempotent(tmp_path):
     gs = InMemoryGrantStore()
     c = TestClient(_app(gs, tmp_path))
-    gid = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"]}).json()["grant_id"]
+    gid = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
+                                  "document_id": DOC}).json()["grant_id"]
     assert c.post(f"/grants/{gid}/revoke").json()["status"] == "revoked"
     assert c.post(f"/grants/{gid}/revoke").json()["status"] == "revoked"   # again, fine
 
@@ -74,6 +77,7 @@ def test_scope_and_expiry_echoed(tmp_path):
 def test_naive_expiry_rejected(tmp_path):
     c = TestClient(_app(InMemoryGrantStore(), tmp_path))
     r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
+                                "document_id": DOC,
                                 "expires_at": "2026-12-31T00:00:00"})   # no tz
     assert r.status_code == 400
 
@@ -81,6 +85,7 @@ def test_naive_expiry_rejected(tmp_path):
 def test_malformed_inputs_rejected(tmp_path):
     c = TestClient(_app(InMemoryGrantStore(), tmp_path))
     assert c.post("/grants", json={"recipient": "r", "allowed_types": ["P"],
+                                   "document_id": DOC,
                                    "expires_at": "nonsense"}).status_code == 400
     assert c.post("/grants", json={"recipient": "r", "allowed_types": ["P"],
                                    "document_id": "not-a-uuid"}).status_code == 400
@@ -88,7 +93,8 @@ def test_malformed_inputs_rejected(tmp_path):
 
 def test_response_carries_no_key_material(tmp_path):
     c = TestClient(_app(InMemoryGrantStore(), tmp_path))
-    body = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"]}).json()
+    body = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
+                                   "document_id": DOC}).json()
     # ``ppl`` (add-pii-categories-and-ppl) is derived from allowed_types — metadata,
     # not material.
     assert set(body) == {"grant_id", "recipient", "allowed_types", "ppl", "document_id",
@@ -101,3 +107,21 @@ def test_routes_absent_without_grant_store():
     spec = c.get("/openapi.json").json()
     assert "/grants" not in spec["paths"]
     assert c.post("/grants", json={"recipient": "r", "allowed_types": ["P"]}).status_code == 404
+
+
+def test_unscoped_issue_refused_while_global_grants_disallowed(tmp_path):
+    """The default path cannot mint a reveal-everything grant by omission
+    (harden-global-grant-gate): no grant row, no audit event."""
+    gs = InMemoryGrantStore()
+    ka = tmp_path / "ka.jsonl"
+    c = TestClient(_app(gs, tmp_path))
+    r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"]})
+    assert r.status_code == 400
+    assert "document_id" in r.json()["detail"]
+    assert not ka.exists() or ka.read_text(encoding="utf-8") == ""
+
+
+def test_unscoped_issue_allowed_when_deployment_opts_in(tmp_path):
+    c = TestClient(_app(InMemoryGrantStore(), tmp_path, allow_global_grants=True))
+    r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"]})
+    assert r.status_code == 201 and r.json()["document_id"] is None

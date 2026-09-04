@@ -17,6 +17,12 @@ from wordsworth.pseudonymizer import Pseudonymizer
 PII_BSN = "123456782"
 
 
+# Any uuid: the issue route validates the shape, not the document's existence.
+# Scoped because an unscoped grant needs WORDSWORTH_ALLOW_GLOBAL_GRANTS
+# (harden-global-grant-gate); PPL expansion is orthogonal to that gate.
+DOC = "8b4ad8ad-123b-406a-bdfa-4b30aed9199b"
+
+
 def _app(session_factory, tmp_path, kp=None, gs=None):
     return TestClient(create_app(session_factory=session_factory,
                                  key_provider=kp or InMemoryKeyProvider(),
@@ -26,7 +32,7 @@ def _app(session_factory, tmp_path, kp=None, gs=None):
 
 def test_issue_by_ppl_expands_to_types(session_factory, tmp_path):
     c = _app(session_factory, tmp_path)
-    r = c.post("/grants", json={"recipient": "r", "ppl": 1})
+    r = c.post("/grants", json={"recipient": "r", "ppl": 1, "document_id": DOC})
     assert r.status_code == 201, r.text
     body = r.json()
     assert set(body["allowed_types"]) == types_for_ppl(1)
@@ -35,7 +41,8 @@ def test_issue_by_ppl_expands_to_types(session_factory, tmp_path):
 
 
 def test_issue_ppl_zero_grants_nothing(session_factory, tmp_path):
-    r = _app(session_factory, tmp_path).post("/grants", json={"recipient": "r", "ppl": 0})
+    r = _app(session_factory, tmp_path).post(
+        "/grants", json={"recipient": "r", "ppl": 0, "document_id": DOC})
     assert r.status_code == 201 and r.json()["allowed_types"] == []
     assert r.json()["ppl"] == 0
 
@@ -50,7 +57,8 @@ def test_both_or_neither_forms_rejected(session_factory, tmp_path):
 
 def test_explicit_types_report_ppl_only_on_exact_match(session_factory, tmp_path):
     c = _app(session_factory, tmp_path)
-    r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"]})
+    r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
+                                "document_id": DOC})
     assert r.status_code == 201 and r.json()["ppl"] is None
 
 

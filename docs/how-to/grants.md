@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-04
 ---
 
 # Runbook: reveal grants
@@ -26,7 +26,30 @@ wordsworth grant issue --recipient auditor \
 ```
 HTTP: `POST /grants` `{recipient, allowed_types, document_id?, expires_at?}` → 201
 with the grant metadata (including `grant_id`). `--document` scopes the grant to a
-single document (omit for any document). A naive/invalid `expires_at` → 400.
+single document and is **required by default** — see the next section. A
+naive/invalid `expires_at` → 400.
+
+## Global (unscoped) grants are off by default
+
+A grant without a document scope authorizes reveal on **every** document. That is
+a legitimate bulk-reveal capability, but too broad to hand out by forgetting a
+flag, so it is gated:
+
+| `WORDSWORTH_ALLOW_GLOBAL_GRANTS` | Issue without `--document` | An existing unscoped grant |
+|---|---|---|
+| unset / `false` (default) | 400 `document_id required (global grants are not allowed)` | authorizes nothing (reveal → 403) |
+| `true` | 201 | authorizes any document |
+
+The gate is enforced in `grants.authorize()`, not only at issue, so a grant
+created before the gate — or written straight into the database — is covered too.
+Turning it on is a deployment decision, visible in the deployment's configmap:
+
+```sh
+WORDSWORTH_ALLOW_GLOBAL_GRANTS=true   # bulk reveal across documents
+```
+
+Prefer a scoped grant per document; reach for the flag only for an actual
+cross-document task, and turn it off again afterwards.
 
 ## Issue by Privacy Protection Level (PPL)
 
@@ -74,6 +97,8 @@ clear values.
 ## Notes
 - Grant routes mount only when the deployment runs in reversible mode (a grant
   store is configured). In the irreversible default they are absent.
+- An unscoped ("global") grant needs `WORDSWORTH_ALLOW_GLOBAL_GRANTS=true`; see
+  above. Default is denied, at issue and at authorize.
 - The key-lifecycle audit JSONL path is `WORDSWORTH_KEY_LIFECYCLE_AUDIT_PATH`
   (default under `/tmp`); mount a durable path for retention. (This stream is not
   yet WORM-exported like the document hash-chain.)

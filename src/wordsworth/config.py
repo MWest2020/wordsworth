@@ -130,6 +130,15 @@ class Settings:
         return [o.strip() for o in raw.split(",") if o.strip()]
 
     @property
+    def allow_global_grants(self) -> bool:
+        """Whether an unscoped grant (no ``document_id``) may authorize reveal on
+        every document, from ``WORDSWORTH_ALLOW_GLOBAL_GRANTS``. Default false:
+        such a grant is refused at issue and authorizes nothing, whenever it was
+        issued. A deployment that needs bulk reveal opts in explicitly."""
+        return os.environ.get(
+            "WORDSWORTH_ALLOW_GLOBAL_GRANTS", "false").lower() == "true"
+
+    @property
     def vc_required(self) -> bool:
         """When true (and the gate is on), a reveal without a valid X-VC
         credential is denied. Default false → a VC only *narrows* a grant when
