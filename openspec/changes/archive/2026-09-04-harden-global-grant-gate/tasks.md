@@ -19,6 +19,12 @@
 
 ## 3. Deploy
 
-- [ ] 3.1 Deploy the new image; leave `WORDSWORTH_ALLOW_GLOBAL_GRANTS` unset (closed) in `wordsworth-config`.
-- [ ] 3.2 Live proof: unscoped issue → 400; scoped issue → 201 and reveal 200 on its own document, 403 on another.
-- [ ] 3.3 Note the structural fix on the F3 entry in `boomhuis/handover/2026-08-30-security-review-wordsworth.md`.
+- [x] 3.1 Deploy the new image; leave `WORDSWORTH_ALLOW_GLOBAL_GRANTS` unset (closed) in `wordsworth-config`.
+- [x] 3.2 Live proof (image `sha-33186cb`, gate closed): unscoped issue → 400 with
+      detail; scoped issue → 201; reveal 200 on its own document (`['EMAIL']`), 403
+      "grant not applicable" on another; smoke grant revoked afterwards.
+- [x] 3.3 Note the structural fix on the F3 entry in `boomhuis/handover/2026-08-30-security-review-wordsworth.md`.
+- [x] 3.4 Fallout of the deploy: the ArgoCD PreSync init-job was pinned to a
+      pre-#34 sha, so `init_schema()`'s column migrations had never run
+      (`grants.domain`, `pii_mappings.norm_version` missing → 500 on every grant
+      issue). Init-job and api now pinned to the same sha (homelab `57dafaf`).
