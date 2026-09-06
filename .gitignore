@@ -31,3 +31,10 @@ corpus/
 
 # OS
 .DS_Store
+
+# Habitat-run-artefacten: lokaal bij de operator, 14 dagen (habitat#19).
+# .habitat/ zelf blijft: task-ref-bestanden van de brug horen er wel in.
+run-report.json
+.habitat/audit.jsonl
+.habitat/run-output-*.md
+.habitat/run-report-*.html
