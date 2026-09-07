@@ -25,7 +25,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from .anonymizer import Anonymizer
 from starlette.middleware.cors import CORSMiddleware
 
-from .auth import ApiKeyAuthMiddleware, authorize_corpus_read
+from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
+                   authorize_grant_issue)
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .embedder import Embedder
@@ -232,6 +233,7 @@ def create_app(
     vc_expected_vct: str | None = None,
     vc_required: bool | None = None,
     corpus_read_labels: list[str] | None = None,
+    grant_issuer_labels: list[str] | None = None,
     allow_global_grants: bool | None = None,
 ) -> FastAPI:
     # Session-scoped backends (durable keys, Postgres mapping/grant stores) are
@@ -304,10 +306,24 @@ def create_app(
     # false (see config): the broad capability is opt-in per deployment.
     if allow_global_grants is None:
         allow_global_grants = default_settings.allow_global_grants
+    if grant_issuer_labels is None:
+        grant_issuer_labels = default_settings.grant_issuer_labels
+    # Auth aan? Dan is er een caller om op te beslissen en geldt de issuer-scope.
+    auth_enabled = bool(keys)   # `keys` valt terug op de config, `api_keys` niet
 
     def _check_view(view: str) -> None:
         if view not in ("tokens", "legible"):
             raise HTTPException(status_code=400, detail="view must be tokens|legible")
+
+    def _guard_grant_admin(request: Request) -> None:
+        """Uitgeven/intrekken van een grant is het zwaarste recht hier: het levert
+        de sleutel tot klare PII. Met auth aan mag alleen een expliciet genoemd
+        label het; zonder auth blijft het gedrag zoals gedocumenteerd."""
+        caller = getattr(request.state, "caller", None)
+        if not authorize_grant_issue(caller, grant_issuer_labels, auth_enabled):
+            raise HTTPException(
+                status_code=403,
+                detail="caller not authorized to issue or revoke grants")
 
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
@@ -851,13 +867,14 @@ def create_app(
         @app.post("/grants", response_model=GrantResponse, status_code=201,
                   tags=["admin"],
                   summary="Issue a reveal grant (operator/admin; no caller auth yet)")
-        def grant_issue(body: GrantIssueRequest) -> GrantResponse:
+        def grant_issue(body: GrantIssueRequest, request: Request) -> GrantResponse:
             """Issue a grant permitting later reveal of the given PII types,
             scoped to one document and/or expiring. The document scope is
             required unless the deployment allows global grants. Operator/admin
             surface: the API is tailnet-internal and the returned grant_id is a
             bearer capability — full caller authentication is a pending decision.
             The issue is recorded in the key-lifecycle audit stream."""
+            _guard_grant_admin(request)
             doc_id = None
             if body.document_id:
                 try:
@@ -905,7 +922,10 @@ def create_app(
 
         @app.post("/grants/{grant_id}/revoke", response_model=GrantResponse,
                   tags=["admin"], summary="Revoke a grant (idempotent)")
-        def grant_revoke(grant_id: str) -> GrantResponse:
+        def grant_revoke(grant_id: str, request: Request) -> GrantResponse:
+            """Trek een grant in (idempotent). Zelfde issuer-scope als uitgeven:
+            wie mag minten, mag intrekken — en omgekeerd niemand anders."""
+            _guard_grant_admin(request)
             with session_factory() as session:
                 gs = _grant_store(session)
                 if gs.get(grant_id) is None:

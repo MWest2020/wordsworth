@@ -130,6 +130,20 @@ class Settings:
         return [o.strip() for o in raw.split(",") if o.strip()]
 
     @property
+    def grant_issuer_labels(self) -> list[str]:
+        """Caller labels die een reveal-grant mogen uitgeven of intrekken
+        (``WORDSWORTH_GRANT_ISSUER_LABELS``, komma-gescheiden).
+
+        Een grant IS de sleutel tot klare PII: wie er een mag slaan, mag alles
+        onthullen. Dat hoort een aparte, kleinere kring te zijn dan "iedereen met
+        een api-key". Leeg (default) betekent hier — anders dan bij de
+        corpus-read-scope — NIET "iedereen mag": met auth aan is uitgeven dan
+        geweigerd. Zonder auth verandert er niets (zie ``require_auth_for_grants``).
+        """
+        raw = os.environ.get("WORDSWORTH_GRANT_ISSUER_LABELS", "")
+        return [o.strip() for o in raw.split(",") if o.strip()]
+
+    @property
     def allow_global_grants(self) -> bool:
         """Whether an unscoped grant (no ``document_id``) may authorize reveal on
         every document, from ``WORDSWORTH_ALLOW_GLOBAL_GRANTS``. Default false:

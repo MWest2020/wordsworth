@@ -28,6 +28,21 @@ def parse_api_keys(raw: str) -> dict[str, str]:
     return keys
 
 
+def authorize_grant_issue(caller: str | None, issuer_labels: list[str],
+                          auth_enabled: bool) -> bool:
+    """Mag deze caller een reveal-grant uitgeven of intrekken?
+
+    Zonder api-key-auth (``auth_enabled`` False) is er geen caller om op te
+    beslissen en verandert er niets — dat is de bestaande, gedocumenteerde
+    tailnet-interne modus. Met auth aan geldt least privilege: alleen labels uit
+    ``issuer_labels``. Een lege lijst weigert dan iedereen, want een grant minten
+    is het zwaarste recht in dit systeem en hoort een expliciete keuze te zijn.
+    """
+    if not auth_enabled:
+        return True
+    return bool(caller) and caller in set(issuer_labels)
+
+
 def authorize_corpus_read(caller: str | None, allowed_labels: list[str]) -> bool:
     """Whether ``caller`` may read full de-identified document text
     (``/documents/{id}/anonymized`` and ``/export/anonymized.zip``).
