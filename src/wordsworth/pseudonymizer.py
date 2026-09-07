@@ -55,6 +55,34 @@ def _label_of(pseudonym: str) -> str:
     return pseudonym[1:pseudonym.index(":")]
 
 
+
+def neutralise_foreign_tokens(text: str) -> tuple[str, int]:
+    """Maak tokens die AL in de aangeleverde tekst staan onschadelijk.
+
+    Een pseudonym als ``[PERSON:5c93c3df]`` is de sleutel waarmee ``_reveal`` de
+    klare waarde uit de mapping-store haalt, en die store is globaal (opzoeken op
+    pseudonym, niet per document — dat is bewust: dezelfde waarde krijgt overal
+    hetzelfde token). Zonder deze stap kan iemand tokens oogsten uit een document
+    dat hij mag inzien, ze letterlijk in zijn eigen document zetten, een grant
+    vragen die netjes op dat eigen document gescoped is, en zo waarden onthullen
+    die bij een ander document horen. De documentscope van een grant is dan
+    betekenisloos (security-review 2026-09-06, CRITICAL).
+
+    We weigeren zo'n document niet — een ingest die klapt op een vierkante haak is
+    een makkelijke stoorzender — maar halen de vorm uit elkaar zodat hij nooit meer
+    als token wordt herkend: ``[PERSON:5c93c3df]`` wordt ``(PERSON:5c93c3df)``. De
+    inhoud blijft leesbaar, de betekenis als sleutel is weg.
+    """
+    count = 0
+
+    def repl(m: "re.Match[str]") -> str:
+        nonlocal count
+        count += 1
+        return "(" + m.group(0)[1:-1] + ")"
+
+    return _PSEUDONYM_RE.sub(repl, text), count
+
+
 def _reveal(
     text: str,
     allowed_types: set[str] | None,
@@ -109,12 +137,17 @@ class Pseudonymizer:
         return pseudonym
 
     def anonymize(self, text: str) -> AnonymizationResult:
+        # Eerst tokens onschadelijk maken die al in de brontekst staan: anders is
+        # een geïnjecteerd token straks een sleutel naar andermans klare waarde.
+        text, foreign = neutralise_foreign_tokens(text)
         counts: dict[str, int] = {}
         stats = DetectionStats(settings.detection_min_score)
         for label, pattern, validate in detectors.DETECTORS:
             text, counts[label] = detectors.substitute(
                 text, pattern, lambda v, label=label: self.pseudonym(label, v), validate)
             stats.add(DETERMINISTIC, label, 1.0, counts[label])  # validated = certain
+        if foreign:
+            counts["FOREIGN_TOKEN_NEUTRALISED"] = foreign
         return AnonymizationResult(text=text, counts=counts, detections=stats.to_dict())
 
 
