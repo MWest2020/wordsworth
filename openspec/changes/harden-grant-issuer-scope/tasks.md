@@ -16,5 +16,10 @@
 
 ## 3. Deploy
 
-- [ ] 3.1 `WORDSWORTH_GRANT_ISSUER_LABELS` in de homelab-configmap zetten, anders
-      mint niemand meer op de live-deployment (auth staat daar aan).
+- [x] 3.1 `WORDSWORTH_GRANT_ISSUER_LABELS: "console,cli"` staat in
+      `cluster-config/infra/wordsworth/configmap.yaml` (homelab 5d5b4be,
+      gepusht). ArgoCD synct die app automatisch.
+- [ ] 3.2 Live bevestigen dat de pod de waarde heeft
+      (`kubectl -n wordsworth get cm wordsworth-config -o jsonpath=...`) en dat
+      een issuer-label wél en een ander label géén grant mint. Kon nu niet:
+      jumpy is onbereikbaar (ssh time-out).
