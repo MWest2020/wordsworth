@@ -29,10 +29,19 @@ RUN uv sync --frozen --no-dev --no-cache \
 # ---------- runtime ----------
 FROM python:3.12-slim-bookworm AS runtime
 
+# Cache-bust voor de patchlaag. Zonder dit hergebruikt de GHA-cache de laag met
+# apt-lijsten van de dag dat hij gebouwd werd: `apt-get upgrade` draait dan nooit
+# opnieuw en het image blijft op oude pakketversies staan, hoe vaak je ook bouwt.
+# CI geeft hier het ISO-weeknummer mee, dus minstens wekelijks verse patches en
+# daarbuiten blijft de cache intact. (Gevonden 2026-09-06: de Trivy-gate stond
+# rood op libssh2 met status "fixed", en blokkeerde daarmee elke publicatie.)
+ARG APT_REFRESH=onbekend
+
 # OS security patches + the OCR native stack. ocrmypdf (OCR recovery) shells out
 # to tesseract + ghostscript; the corpus is Dutch → the `nld` language pack
 # (WORDSWORTH_OCR_LANGUAGE default). As root, before the non-root USER.
-RUN apt-get update \
+RUN echo "apt-refresh: ${APT_REFRESH}" \
+ && apt-get update \
  && apt-get -y --no-install-recommends upgrade \
  && apt-get install -y --no-install-recommends \
       tesseract-ocr tesseract-ocr-nld ghostscript \
