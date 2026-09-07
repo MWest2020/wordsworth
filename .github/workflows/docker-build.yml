@@ -88,6 +88,11 @@ jobs:
 
       # Build to the runner first (load, no push) so Trivy scans the exact image
       # before it can reach the registry.
+      # ISO-week als cache-bust: de patchlaag mag hoogstens een week oud zijn.
+      - name: Patchweek bepalen
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
       - name: Build image (load to runner for scan)
         uses: docker/build-push-action@v5
         with:
@@ -95,6 +100,7 @@ jobs:
           file: deploy/Dockerfile
           load: true
           tags: scan-target:latest
+          build-args: APT_REFRESH=${{ steps.week.outputs.week }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -117,6 +123,9 @@ jobs:
           file: deploy/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          # Zelfde cache-bust als de scan-build, anders bouwt deze stap een ander
+          # image dan er gescand is.
+          build-args: APT_REFRESH=${{ steps.week.outputs.week }}
           cache-from: type=gha
 
       - name: Pushed summary
