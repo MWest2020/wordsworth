@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-04
+last_reviewed: 2026-09-07
 ---
 
 # Runbook: reveal grants
@@ -28,6 +28,29 @@ HTTP: `POST /grants` `{recipient, allowed_types, document_id?, expires_at?}` →
 with the grant metadata (including `grant_id`). `--document` scopes the grant to a
 single document and is **required by default** — see the next section. A
 naive/invalid `expires_at` → 400.
+
+## Who may issue a grant
+
+A grant is the key to clear PII: whoever can mint one can reveal everything it
+allows. That is a smaller circle than "everyone with an API key", so it has its
+own setting:
+
+| `WORDSWORTH_GRANT_ISSUER_LABELS` | with `WORDSWORTH_API_KEYS` set | without API-key auth |
+|---|---|---|
+| `console,cli` | those labels may issue and revoke; any other caller gets 403 | unchanged |
+| unset / empty | **nobody** may issue or revoke | unchanged |
+
+Empty means *nobody* here — unlike the corpus-read scope, where empty means "off".
+Forgetting to name the circle would otherwise leave exactly the hole this setting
+closes: a caller who is denied `/documents/{id}/anonymized` could still mint a
+grant and reveal through it.
+
+Without API-key auth there is no caller to decide on, so behaviour is unchanged —
+the documented tailnet-internal mode.
+
+```sh
+WORDSWORTH_GRANT_ISSUER_LABELS=console,cli
+```
 
 ## Global (unscoped) grants are off by default
 

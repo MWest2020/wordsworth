@@ -125,3 +125,51 @@ def test_unscoped_issue_allowed_when_deployment_opts_in(tmp_path):
     c = TestClient(_app(InMemoryGrantStore(), tmp_path, allow_global_grants=True))
     r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"]})
     assert r.status_code == 201 and r.json()["document_id"] is None
+
+
+def test_grant_admin_open_zonder_auth(tmp_path):
+    """Zonder api-key-auth is er geen caller om op te beslissen: gedrag ongewijzigd
+    (de gedocumenteerde tailnet-interne modus)."""
+    c = TestClient(_app(InMemoryGrantStore(), tmp_path))
+    r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
+                                "document_id": DOC})
+    assert r.status_code == 201
+
+
+def _app_auth(gs, tmp_path, issuers):
+    return create_app(session_factory=lambda: _FakeSession(), grant_store=gs,
+                      key_audit=JsonlKeyLifecycleAudit(tmp_path / "ka.jsonl"),
+                      api_keys={"k-issuer": "issuer", "k-plain": "plain"},
+                      grant_issuer_labels=issuers)
+
+
+def test_grant_uitgeven_alleen_door_een_issuer_label(tmp_path):
+    """Met auth aan is een grant minten het zwaarste recht: alleen expliciet
+    genoemde labels. Een gewone geauthenticeerde caller mag het niet."""
+    c = TestClient(_app_auth(InMemoryGrantStore(), tmp_path, ["issuer"]))
+    body = {"recipient": "r", "allowed_types": ["PERSON"], "document_id": DOC}
+    assert c.post("/grants", json=body, headers={"X-API-Key": "k-issuer"}).status_code == 201
+    r = c.post("/grants", json=body, headers={"X-API-Key": "k-plain"})
+    assert r.status_code == 403 and "grants" in r.json()["detail"]
+
+
+def test_lege_issuerlijst_weigert_iedereen_met_auth_aan(tmp_path):
+    """Leeg betekent hier NIET 'iedereen mag' (anders dan bij corpus-read): wie
+    vergeet de kring te benoemen, mint niets."""
+    c = TestClient(_app_auth(InMemoryGrantStore(), tmp_path, []))
+    r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
+                                "document_id": DOC},
+               headers={"X-API-Key": "k-issuer"})
+    assert r.status_code == 403
+
+
+def test_intrekken_valt_onder_dezelfde_scope(tmp_path):
+    gs = InMemoryGrantStore()
+    c = TestClient(_app_auth(gs, tmp_path, ["issuer"]))
+    gid = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
+                                  "document_id": DOC},
+                 headers={"X-API-Key": "k-issuer"}).json()["grant_id"]
+    assert c.post(f"/grants/{gid}/revoke",
+                  headers={"X-API-Key": "k-plain"}).status_code == 403
+    assert c.post(f"/grants/{gid}/revoke",
+                  headers={"X-API-Key": "k-issuer"}).json()["status"] == "revoked"
