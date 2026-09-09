@@ -902,6 +902,13 @@ def create_app(
             types = (sorted(types_for_ppl(body.ppl)) if body.ppl is not None
                      else list(body.allowed_types or []))
             with session_factory() as session:
+                # Een onbekend document is een client-fout, geen serverfout:
+                # zonder deze check valt de INSERT door op de foreign key en
+                # komt er een 500 met een SQLAlchemy-trace uit. Vóór de write,
+                # zodat er net als bij de andere weigeringen geen grant-rij en
+                # geen audit-event ontstaat.
+                if doc_id is not None and session.get(Document, doc_id) is None:
+                    raise HTTPException(status_code=404, detail="unknown document")
                 grant = issue_grant(
                     _grant_store(session), _resolve_audit(),
                     recipient=body.recipient, allowed_types=types,

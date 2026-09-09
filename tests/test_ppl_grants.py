@@ -1,5 +1,7 @@
 """add-pii-categories-and-ppl: PPL shorthand on grants, legal-basis grouping on
 reveal, categories in the reveal audit, category counts in metadata."""
+from uuid import UUID
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -9,7 +11,7 @@ from wordsworth.grants import InMemoryGrantStore
 from wordsworth.key_audit import JsonlKeyLifecycleAudit
 from wordsworth.keys import InMemoryKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
-from wordsworth.models import AuditRecord
+from wordsworth.models import AuditRecord, Document
 from wordsworth.pii_categories import types_for_ppl
 from wordsworth.pipeline import ingest, process
 from wordsworth.pseudonymizer import Pseudonymizer
@@ -17,10 +19,18 @@ from wordsworth.pseudonymizer import Pseudonymizer
 PII_BSN = "123456782"
 
 
-# Any uuid: the issue route validates the shape, not the document's existence.
 # Scoped because an unscoped grant needs WORDSWORTH_ALLOW_GLOBAL_GRANTS
-# (harden-global-grant-gate); PPL expansion is orthogonal to that gate.
+# (harden-global-grant-gate); PPL expansion is orthogonal to that gate. The
+# document has to exist: the issue route refuses an unknown one with 404
+# (harden-grant-document-check), so `_document` puts the row there first.
 DOC = "8b4ad8ad-123b-406a-bdfa-4b30aed9199b"
+
+
+def _document(session_factory, doc_id=DOC):
+    """Put the bare document row the grant's foreign key points at."""
+    with session_factory() as s:
+        s.add(Document(id=UUID(doc_id), object_key=f"test/{doc_id}.pdf"))
+        s.commit()
 
 
 def _app(session_factory, tmp_path, kp=None, gs=None):
@@ -31,6 +41,7 @@ def _app(session_factory, tmp_path, kp=None, gs=None):
 
 
 def test_issue_by_ppl_expands_to_types(session_factory, tmp_path):
+    _document(session_factory)
     c = _app(session_factory, tmp_path)
     r = c.post("/grants", json={"recipient": "r", "ppl": 1, "document_id": DOC})
     assert r.status_code == 201, r.text
@@ -41,6 +52,7 @@ def test_issue_by_ppl_expands_to_types(session_factory, tmp_path):
 
 
 def test_issue_ppl_zero_grants_nothing(session_factory, tmp_path):
+    _document(session_factory)
     r = _app(session_factory, tmp_path).post(
         "/grants", json={"recipient": "r", "ppl": 0, "document_id": DOC})
     assert r.status_code == 201 and r.json()["allowed_types"] == []
@@ -56,6 +68,7 @@ def test_both_or_neither_forms_rejected(session_factory, tmp_path):
 
 
 def test_explicit_types_report_ppl_only_on_exact_match(session_factory, tmp_path):
+    _document(session_factory)
     c = _app(session_factory, tmp_path)
     r = c.post("/grants", json={"recipient": "r", "allowed_types": ["PERSON"],
                                 "document_id": DOC})

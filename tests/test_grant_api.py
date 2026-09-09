@@ -17,6 +17,10 @@ DOC = "8b4ad8ad-123b-406a-bdfa-4b30aed9199b"
 
 
 class _FakeSession:
+    """Stand-in session: the in-memory grant store ignores it, and `get` only
+    has to answer the existence check that `POST /grants` does on the document
+    it is scoped to."""
+
     def __enter__(self):
         return self
 
@@ -25,6 +29,9 @@ class _FakeSession:
 
     def commit(self):
         pass
+
+    def get(self, _model, pk):
+        return object() if str(pk) == DOC else None
 
 
 def _app(gs, tmp_path, allow_global_grants=False):
@@ -173,3 +180,32 @@ def test_intrekken_valt_onder_dezelfde_scope(tmp_path):
                   headers={"X-API-Key": "k-plain"}).status_code == 403
     assert c.post(f"/grants/{gid}/revoke",
                   headers={"X-API-Key": "k-issuer"}).json()["status"] == "revoked"
+
+
+def test_issue_with_unknown_document_is_404_and_writes_nothing(tmp_path):
+    """A well-formed document_id that does not exist used to fall through to the
+    INSERT and come back as a 500 with a ForeignKeyViolation. It is a client
+    error, and it must not leave a grant or an audit event behind."""
+    gs = InMemoryGrantStore()
+    audit = tmp_path / "ka.jsonl"
+    c = TestClient(create_app(session_factory=lambda: _FakeSession(), grant_store=gs,
+                              key_audit=JsonlKeyLifecycleAudit(audit)))
+
+    r = c.post("/grants", json={"recipient": "team-a", "ppl": 1,
+                                "document_id": "00000000-0000-0000-0000-000000000000"})
+
+    assert r.status_code == 404
+    assert r.json()["detail"] == "unknown document"
+    assert gs._d == {}
+    assert not audit.exists() or audit.read_text() == ""
+
+
+def test_issue_with_known_document_still_mints(tmp_path):
+    gs = InMemoryGrantStore()
+    c = TestClient(_app(gs, tmp_path))
+
+    r = c.post("/grants", json={"recipient": "team-a", "ppl": 1,
+                                "document_id": DOC})
+
+    assert r.status_code == 201
+    assert r.json()["document_id"] == DOC
