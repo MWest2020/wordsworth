@@ -19,7 +19,17 @@
 - [x] 3.1 `WORDSWORTH_GRANT_ISSUER_LABELS: "console,cli"` staat in
       `cluster-config/infra/wordsworth/configmap.yaml` (homelab 5d5b4be,
       gepusht). ArgoCD synct die app automatisch.
-- [ ] 3.2 Live bevestigen dat de pod de waarde heeft
-      (`kubectl -n wordsworth get cm wordsworth-config -o jsonpath=...`) en dat
-      een issuer-label wél en een ander label géén grant mint. Kon nu niet:
-      jumpy is onbereikbaar (ssh time-out).
+- [x] 3.2 Live bevestigd op 2026-09-09 tegen de draaiende pod:
+      `WORDSWORTH_GRANT_ISSUER_LABELS` = `console,cli` in de pod-env, en
+      `POST /grants` (geldig `document_id`, ppl 1) geeft **201** met een
+      `cli`-key en **403** ("caller not authorized to issue or revoke
+      grants") met een key op label `probe`. De testsleutels waren twee
+      wegwerpwaarden die tijdelijk aan `wordsworth-apikeys` zijn
+      toegevoegd (secret is handmatig beheerd, niet door ArgoCD); de
+      geminte grant is ingetrokken en het secret is byte-voor-byte
+      teruggezet.
+
+      Bijvangst, apart te verhelpen: een `document_id` dat niet bestaat
+      levert **500** met een `ForeignKeyViolation`-traceback in plaats
+      van een 400/404. Dat is een aparte robuustheidsbug op deze route,
+      niet in de issuer-scope.

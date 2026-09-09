@@ -66,38 +66,65 @@ recipient, allowed types, and actor. No key material SHALL ever be written.
 
 ### Requirement: Grant admin over HTTP
 
-The API SHALL let an operator issue, inspect, and revoke reveal grants over HTTP,
-mounted only when a grant store is configured. Issuing SHALL accept a recipient,
-a list of PII types, an optional document scope, and an optional timezone-aware
-expiry (a naive or malformed expiry, or a malformed document id, SHALL be
-rejected with 400). Issuing without a document scope SHALL be rejected with 400
-where the deployment does not allow global grants, writing neither a grant nor an
-audit event. Inspecting or revoking an unknown grant SHALL return 404; revoke
-SHALL be idempotent. Every issue and revoke SHALL be recorded in the
-key-lifecycle audit stream. No response SHALL contain key material or clear PII.
+De API SHALL een operator laten uitgeven, inspecteren en intrekken van
+reveal-grants over HTTP, gemount alleen wanneer een grant-store geconfigureerd is.
+Uitgeven en intrekken SHALL beperkt zijn tot callers die de deployment expliciet
+als uitgever aanwijst wanneer caller-authenticatie aanstaat; een caller buiten die
+kring SHALL 403 krijgen, ook als hij verder geauthenticeerd is. Staat er geen
+caller-authenticatie aan, dan is er geen caller om op te beslissen en blijft het
+gedrag ongewijzigd. Een lege uitgeverskring SHALL met authenticatie aan **niemand**
+toestaan — een grant is de sleutel tot klare PII en dat recht hoort een expliciete
+keuze te zijn, geen restwaarde.
+
+Uitgeven SHALL een recipient, een lijst PII-types, een optionele documentscope en
+een optionele tijdzone-bewuste expiry accepteren (een naïeve of ongeldige expiry,
+of een ongeldig document-id, SHALL met 400 geweigerd worden). Uitgeven zonder
+documentscope SHALL met 400 geweigerd worden waar de deployment geen globale
+grants toestaat. Inspecteren of intrekken van een onbekende grant SHALL 404 geven;
+intrekken SHALL idempotent zijn. Elke uitgifte en intrekking SHALL in de
+key-lifecycle-audit terechtkomen. Geen antwoord SHALL sleutelmateriaal of klare
+PII bevatten.
+
+#### Scenario: Een geauthenticeerde caller buiten de uitgeverskring mint niets
+
+- **WHEN** caller-authenticatie aanstaat en een caller die niet als uitgever is
+  aangewezen een grant probeert uit te geven of in te trekken
+- **THEN** wordt het geweigerd met 403 en ontstaat er geen grant en geen
+  audit-event
+
+#### Scenario: Vergeten kring betekent niemand
+
+- **WHEN** caller-authenticatie aanstaat maar er is geen uitgeverskring
+  geconfigureerd
+- **THEN** kan niemand een grant uitgeven of intrekken
+
+#### Scenario: Zonder authenticatie ongewijzigd
+
+- **WHEN** er geen caller-authenticatie is geconfigureerd
+- **THEN** gedraagt de grant-admin zich als voorheen
 
 #### Scenario: Issue, inspect, revoke
 
-- **WHEN** an operator issues a grant, then inspects it, then revokes it
-- **THEN** issue returns the grant with status active, inspect reflects it, and
-  revoke returns status revoked (a second revoke is a no-op)
+- **WHEN** een uitgever een grant uitgeeft, inspecteert en intrekt
+- **THEN** geeft uitgifte de grant met status active, weerspiegelt inspectie dat,
+  en geeft intrekken status revoked (een tweede intrekking is een no-op)
 
-#### Scenario: Revocation gates reveal
+#### Scenario: Revocatie sluit reveal af
 
-- **WHEN** a grant that authorised a reveal is revoked and the same reveal is
-  attempted again
-- **THEN** the reveal is refused (the revoked grant authorises nothing)
+- **WHEN** een grant die een reveal toestond wordt ingetrokken en dezelfde reveal
+  opnieuw wordt geprobeerd
+- **THEN** wordt de reveal geweigerd
 
-#### Scenario: An unscoped issue is refused while global grants are disallowed
+#### Scenario: Een unscoped issue wordt geweigerd zolang globale grants niet mogen
 
-- **WHEN** an operator issues a grant without a document scope on a deployment
-  that does not allow global grants
-- **THEN** the request is rejected with 400 and no grant is created
+- **WHEN** een uitgever een grant zonder documentscope uitgeeft op een deployment
+  die geen globale grants toestaat
+- **THEN** wordt het verzoek met 400 geweigerd en ontstaat er geen grant
 
-#### Scenario: Absent without a grant store
+#### Scenario: Afwezig zonder grant-store
 
-- **WHEN** the app is configured without a grant store
-- **THEN** the grant routes are not mounted
+- **WHEN** de app zonder grant-store is geconfigureerd
+- **THEN** zijn de grant-routes niet gemount
 
 ### Requirement: Grants may be issued by PPL level
 
