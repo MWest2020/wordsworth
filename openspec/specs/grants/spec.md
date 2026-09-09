@@ -78,7 +78,10 @@ keuze te zijn, geen restwaarde.
 
 Uitgeven SHALL een recipient, een lijst PII-types, een optionele documentscope en
 een optionele tijdzone-bewuste expiry accepteren (een naïeve of ongeldige expiry,
-of een ongeldig document-id, SHALL met 400 geweigerd worden). Uitgeven zonder
+of een ongeldig document-id, SHALL met 400 geweigerd worden). Uitgeven met een
+documentscope die naar een onbekend document wijst SHALL met 404 geweigerd
+worden, vóór enige write — dezelfde weigering als de andere document-routes
+geven, en niet een databasefout die als 500 naar buiten komt. Uitgeven zonder
 documentscope SHALL met 400 geweigerd worden waar de deployment geen globale
 grants toestaat. Inspecteren of intrekken van een onbekende grant SHALL 404 geven;
 intrekken SHALL idempotent zijn. Elke uitgifte en intrekking SHALL in de
@@ -103,28 +106,12 @@ PII bevatten.
 - **WHEN** er geen caller-authenticatie is geconfigureerd
 - **THEN** gedraagt de grant-admin zich als voorheen
 
-#### Scenario: Issue, inspect, revoke
+#### Scenario: Onbekend document
 
-- **WHEN** een uitgever een grant uitgeeft, inspecteert en intrekt
-- **THEN** geeft uitgifte de grant met status active, weerspiegelt inspectie dat,
-  en geeft intrekken status revoked (een tweede intrekking is een no-op)
-
-#### Scenario: Revocatie sluit reveal af
-
-- **WHEN** een grant die een reveal toestond wordt ingetrokken en dezelfde reveal
-  opnieuw wordt geprobeerd
-- **THEN** wordt de reveal geweigerd
-
-#### Scenario: Een unscoped issue wordt geweigerd zolang globale grants niet mogen
-
-- **WHEN** een uitgever een grant zonder documentscope uitgeeft op een deployment
-  die geen globale grants toestaat
-- **THEN** wordt het verzoek met 400 geweigerd en ontstaat er geen grant
-
-#### Scenario: Afwezig zonder grant-store
-
-- **WHEN** de app zonder grant-store is geconfigureerd
-- **THEN** zijn de grant-routes niet gemount
+- **WHEN** een uitgever een grant aanvraagt met een goed gevormd `document_id`
+  dat niet bestaat
+- **THEN** antwoordt de API met 404 "unknown document" en ontstaat er geen
+  grant en geen audit-event
 
 ### Requirement: Grants may be issued by PPL level
 

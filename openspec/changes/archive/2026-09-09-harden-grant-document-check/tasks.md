@@ -19,5 +19,9 @@
 
 ## 3. Deploy
 
-- [ ] 3.1 Image gebouwd en uitgerold; live nameten dat een onbekend document
-      404 geeft en een bestaand document nog steeds 201.
+- [x] 3.1 `sha-d708df6` gebouwd, in `MWest2020/homelab` gebumpt (api én
+      init-job samen) en door ArgoCD uitgerold. Live nagemeten op de pod:
+      een onbestaand `document_id` geeft **404 "unknown document"**, een
+      bestaand document nog steeds **201**. De testsleutel is daarna
+      weer uit `wordsworth-apikeys` gehaald en de geminte grant
+      ingetrokken.
