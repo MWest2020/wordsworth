@@ -1,15 +1,29 @@
 ---
 status: accepted
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-13
 ---
 
 # Gap analysis — wordsworth vs. "Anatomie van Anonimiseren & Pseudonimiseren bij de Bron"
 
 Source: NORA Expertgroep Gegevensmanagement deck (Gemeente Haarlem & Zandvoort,
 Programma Open Overheid / XENA), 15 slides. Method: every functional statement in
-the deck was extracted (≈120 atomic requirements) and tested against the code on
-`main` at `7d26cec` with file-level evidence. This page keeps the verdicts; the
-proposals under `openspec/changes/` and ADR-0005 carry the detail.
+the deck was extracted (≈120 atomic requirements) and tested against the code
+with file-level evidence. This page keeps the verdicts; the proposals under
+`openspec/changes/` and ADR-0005 carry the detail.
+
+**Herzien 2026-09-13.** De eerste versie toetste tegen `main` op `7d26cec`
+(2026-09-03). De dag erna zijn zeven changes gebouwd en gearchiveerd —
+`add-detection-confidence`, `add-detection-feedback`, `add-pii-categories-and-ppl`,
+`add-legible-placeholders`, `add-value-normalisation`, `add-domain-keys` en
+`add-dataset-pseudonymisation` — en dit document bleef staan alsof ze er niet
+waren. Het meldde dus **gap** bij dertien dingen die bestaan, waaronder #17, dat
+het zelf "the biggest correctness gap" noemde.
+
+Dat is de verkeerde kant om op te falen: dit is het document waarmee je aan een
+gemeente uitlegt wat wordsworth wel en niet kan, en het verzweeg wat er gebouwd
+is. Elke regel hieronder is opnieuw tegen de code gehouden, met bestand en
+regelnummer als bewijs. De drift-poort ving dit niet — die bewaakt `src/` en
+`scripts/`, niet `docs/`.
 
 Verdict legend: **have** = present and tested · **gap** = missing, fits the
 invariants, proposal written · **decision** = conflicts with a wordsworth
@@ -33,33 +47,33 @@ deck's "Swiss Cheese", just not named that).
 |---|---|---|---|---|
 | 1 | Multi-layer PII detection, deterministic + pattern + NER | regex (BSN elfproef, IBAN, email) + OpenAnonymiser (Presidio + NER) | **have** (2–3 layers; not named) | `detectors.py`, `openanonymiser_driver.py` |
 | 2 | Anonypy as layer 2 | banned in CLAUDE.md | **decision** D4 (recommend: no; NER covers it) | ADR-0005 |
-| 3 | Confidence + detection layer per PII, in audit | service returns `score`, driver drops it; no layer field | **gap** | `add-detection-confidence` |
-| 4 | Configurable thresholds per layer | none | **gap** (counting only; never weakens redaction) | `add-detection-confidence` |
-| 5 | FP/FN feedback → rule engine (Drools) | none | **gap** (boring variant: versioned allow/deny lists + audited feedback) | `add-detection-feedback` |
-| 6 | 17 PII types incl. gezondheid, religie, etniciteit, biometrie, strafrechtelijk, kenteken | no taxonomy; 3 hardcoded + passthrough | **gap** (registry) + detector work in OpenAnonymiser | `add-pii-categories-and-ppl` |
-| 7 | AVG Art. 6/9/10 legal basis per type | absent | **gap** | `add-pii-categories-and-ppl` |
-| 8 | PPL 0–3 levels | grants per type set (finer, no vocabulary) | **gap** (PPL = shorthand over grants) | `add-pii-categories-and-ppl` |
+| 3 | Confidence + detection layer per PII, in audit | driver keeps `score` + layer; pipeline writes per-layer aggregates to the audit (never a value or an offset) | **have** | `openanonymiser_driver.py`, `pipeline.py:226` |
+| 4 | Configurable thresholds per layer | present; counting only — a threshold never weakens redaction (spec `audit-trail`) | **have** | `detection_confidence` in `2026-09-04-add-detection-confidence` |
+| 5 | FP/FN feedback → rule engine (Drools) | versioned allow/deny lists; feedback is recorded, never auto-applied | **have** (the boring variant, deliberately) | `detection_lists.py` |
+| 6 | 17 PII types incl. gezondheid, religie, etniciteit, biometrie, strafrechtelijk, kenteken | registry present | **have** (registry) · detector coverage per type still depends on OpenAnonymiser | `pii_categories.py` |
+| 7 | AVG Art. 6/9/10 legal basis per type | `legal_basis` per type in the registry | **have** | `pii_categories.py` |
+| 8 | PPL 0–3 levels | PPL expands to a type set over the existing grants | **have** | `pii_categories.py`, spec `grants` |
 | 9 | ABAC, Entra ID/SSO, roles | grant_id is a bearer capability; auth model pending | **decision** D7 | ADR-0005 |
-| 10 | Legible placeholders `[PERSOON 1]` | `[PERSON:hash8]` stored + indexed | **gap** (as a view, not storage) | `add-legible-placeholders` |
+| 10 | Legible placeholders `[PERSOON 1]` | `[PERSON:hash8]` stays the stored form; `legible.py` renders `[PERSOON 1]` + a legend as a **view** | **have** (as a view, as intended) | `legible.py` |
 | 11 | Reversible via decryption, one document / many views | reversible tokens + grant-gated reveal | **have** | `pseudonymizer.py`, `api.py` reveal |
 | 12 | RDFa-embedded encrypted PII inside the document | separated encrypted mapping store, deliberately | **decision** D1 (recommend: RDFa as export view referencing tokens, ciphertext stays in store) | ADR-0005 |
 | 13 | Per-document keys derived from category key | random per-type keys, rotation, escrow | **decision** D2 (recommend: keep; add domain scope) | ADR-0005 |
 | 14 | Algorithm per article: AES-GCM / ChaCha20 / RSA-OAEP | AES-256-GCM everywhere (ChaCha20 only in escrow) | **decision** D3 (recommend: no; one AEAD, basis as metadata) | ADR-0005 |
 | 15 | Key fingerprint embedded | `key_id = sha256(material)[:12]` per mapping | **have** (different name) | `keys.py` |
 | 16 | HMAC-SHA256 pseudonyms, deterministic | yes | **have** | `pseudonymizer.py` |
-| 17 | `normalize()` before HMAC (BSN strip/lpad, NFC, casefold, postcode, ISO date) | none — `Jansen`≠`jansen` | **gap** (biggest correctness gap) | `add-value-normalisation` |
-| 18 | Domain keys per department, cross-domain blocked | one global scope per type | **gap** | `add-domain-keys` |
+| 17 | `normalize()` before HMAC (BSN strip/lpad, NFC, casefold, postcode, ISO date) | `normalize()` runs before the HMAC | **have** — was the biggest correctness gap | `normalization.py` |
+| 18 | Domain keys per department, cross-domain blocked | domain scope in the key derivation | **have** | `keys.py`, spec `pseudonymization` |
 | 19 | Key rotation with backward compatibility | rotate → re-encrypt mappings; old key_id still decrypts | **have** | `key_lifecycle.py` |
 | 20 | Master key in HSM, FIPS 140-2 L2 | OpenBao transit; HSM/auto-unseal documented as prod hardening | **out-of-core** (infra) | ADR-0002 |
 | 21 | Lookup table BSN→pseudonym persistent | `pii_mappings` encrypted store | **have** | `mapping_store.py` |
 | 22 | Re-identification only PPL 3, audited | reveal grant-gated + audited | **have** (PPL 3 mapping via #8) | |
-| 23 | Dataset/CSV column pseudonymisation, profiles, per-attribute/per-record | absent; unit of work is PDF | **decision** D8 → **gap** | `add-dataset-pseudonymisation` |
-| 24 | NEN 7524 format `01-0001-PB|base64` | absent | **gap** as output format; conformance **unverified** D9 | `add-dataset-pseudonymisation` |
-| 25 | Optional PII validation of unselected columns | detectors exist | **gap** (advisory only) | `add-dataset-pseudonymisation` |
+| 23 | Dataset/CSV column pseudonymisation, profiles, per-attribute/per-record | column selection by profile, per record; dataset and document pseudonyms coincide | **have** | `datasets.py`, spec `dataset-pseudonymization` |
+| 24 | NEN 7524 format `01-0001-PB|base64` | `format="nen7524"` output option | **have** as output format · conformance to NEN 7524:2019 remains **unverified** (D9 — nobody here has read the standard) | `datasets.py:25-54` |
+| 25 | Optional PII validation of unselected columns | `validate_unselected()` — advisory, never auto-pseudonymises a column nobody chose | **have** | `datasets.py:140` |
 | 26 | TTP key hand-over, PKCS#12 export | age escrow exists; no PKCS#12 | **decision** D6 (recommend: age/JSON envelope; PKCS#12 is for X.509 material) | ADR-0005 |
-| 27 | Audit: who/what/when/key/layer/confidence, tamper-evident, 7 y | hash chain + WORM, 10 y default; layer/confidence missing | **have** + **gap** via #3 | `audit.py`, `audit_export.py` |
-| 28 | Key-lifecycle stream WORM-exported | JSONL, not WORM | **gap** (known; small) | follow-up to `add-audit-export` |
-| 29 | Metrics precision/recall/F1 per type | IR eval only | **gap** | `add-pii-detection-eval` |
+| 27 | Audit: who/what/when/key/layer/confidence, tamper-evident, 7 y | hash chain + WORM, 10 y default; layer/confidence now included via #3 | **have** | `audit.py`, `audit_export.py` |
+| 28 | Key-lifecycle stream WORM-exported | `export_worm()` exports `audit.export_jsonl` — the **document** chain. The separate `key_audit` stream is append-only but never reaches Object Lock | **gap** — still open, verified 2026-09-13 | `audit_export.py:166`, `key_audit.py` |
+| 29 | Metrics precision/recall/F1 per type | `pii_run` scores precision/recall/F1 per type, span- and token-level, plus a leak count | **have** · a **real** gold corpus is still missing; only `pii_gold_synthetic.jsonl` (10 invented docs) exists | `eval/pii.py`, `eval/pii_run.py` |
 | 30 | NiFi orchestration, status tracking, retry | above wordsworth by ADR-0001 | **out-of-core** | ADR-0001 |
 | 31 | Word / Office / ZGW plugin, upload portal, beheerportaal, dashboards | headless core by ADR-0004; console-site partly | **out-of-core** | ADR-0004 |
 | 32 | Thin-client: Web Crypto + detection in the plugin | keys never leave OpenBao | **decision** D10 (recommend: server-side only) | ADR-0005 |
