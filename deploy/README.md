@@ -163,12 +163,13 @@ clear PII appears in results.
 
 ## Hardening follow-ups (alma decisions)
 
-- **Transport of pre-anonymization PII.** The ingest job POSTs raw text (still
-  containing PII) to the OpenAnonymiser service over in-cluster `http://`. This is
-  the one hop where clear PII crosses the pod network unencrypted — acceptable
-  under the sovereign in-cluster model, but consider mesh mTLS or `https` on the
-  service (set `WORDSWORTH_OPENANONYMISER_URL` to `https://...`; httpx verifies
-  by default).
+- **Transport of pre-anonymization PII — decided, see
+  [ADR-0006](../docs/explanation/adr/0006-clear-pii-over-the-in-cluster-hop.md).**
+  The ingest POSTs raw text (still containing PII) to OpenAnonymiser over
+  in-cluster `http://`. Accepted for a single-tenant cluster, **with a condition**:
+  the moment this cluster carries a second tenant, or any workload not operated by
+  the same party, it becomes a blocker. The step then is `https://` on the service,
+  not a mesh.
 - **Image pinning — done for our own images (2026-09-13).** The manifests pin by
   `@sha256:` digest and `scripts/pin_check.py` enforces it in CI. A tag is not a
   pin: `:latest` obviously moves, and `sha-<commit>` moves too, because nothing

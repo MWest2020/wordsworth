@@ -90,6 +90,27 @@ deck's "Swiss Cheese", just not named that).
 | 36 | EDPB 01/2025 TOM 1–5 | TOM 3 have; TOM 2/4/5 via #8, #18, PPL 0 exports | mostly **have/gap** | |
 | 37 | 1.5M mutations/hour batch, 3 h window | untested for datasets | measure after #23 | |
 
+## Bewust niet nu (2026-09-13, akkoord Mark)
+
+Drie dingen zijn geen gap en geen besluit maar een **keuze om te wachten**. Ze
+staan hier zodat ze niet over een maand terugkomen als vergeten werk.
+
+- **Een echte gelabelde PII-gold-set.** `pii_run` meet precision/recall/F1, maar
+  alleen tegen tien verzonnen documenten. Honderd echte documenten handmatig
+  labelen is dagen werk en levert één corpus op dat je niet mag delen. Goedkoper
+  en echter: Woo-documenten dragen `[5.1.2e]` precies waar een persoonsgegeven
+  is weggehaald — een gratis **negatieve** gold-set (daar hoort niets gevonden te
+  worden), en de niet-geredigeerde delen leveren de omgekeerde vraag op: vindt
+  wordsworth wat de publicerende overheid heeft laten staan? Controleerbaar
+  zonder annotatie. Zie `scripts/eval/README.md`.
+- **Qrels en queries voor ranking-kwaliteit.** Zelf verzinnen meet hoe goed je
+  vragen kon bedenken. Wachten tot er een gebruiker is die tien echte zoekvragen
+  aanlevert; dat is een halve middag voor hen en maakt het cijfer pas iets waard.
+- **NEN 7524-conformiteit (#24).** De norm kost geld en de claim koop je er niet
+  mee — verifiëren vraagt de tekst én iemand die hem toetst. Zolang we niet
+  claimen eraan te voldoen, is "NEN 7524-style" eerlijk en compleet. Zodra een
+  aanbesteding erom vraagt is het een dagtaak, geen project.
+
 ## 3. What to build, in order
 
 1. `add-value-normalisation` — correctness; unblocks consistent pseudonyms.
