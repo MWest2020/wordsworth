@@ -31,8 +31,19 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["wordsworth-ingest", "--corpus-dir", "/corpus"]
           envFrom:
+            # DE SECRETNAMEN MOETEN MATCHEN MET JE EIGEN UITROL. 10-config.yaml
+            # hierboven is een template met één gecombineerde `wordsworth-secrets`;
+            # de echte uitrol (MWest2020/homelab, cluster-config/infra/wordsworth)
+            # splitst hem in vier. Draai je deze Job met de verkeerde naam, dan
+            # blijft de pod hangen in CreateContainerConfigError — en dat is een
+            # toestand waarin `kubectl logs` NIETS teruggeeft, dus je ziet niet
+            # waaróm. Gemeten 2026-09-13: zes minuten zoeken in `describe` voor
+            # één regel "secret not found".
             - configMapRef: { name: wordsworth-config }
-            - secretRef: { name: wordsworth-secrets }
+            - secretRef: { name: wordsworth-db }        # WORDSWORTH_DATABASE_URL
+            - secretRef: { name: wordsworth-s3 }        # S3-sleutels
+            - secretRef: { name: wordsworth-openbao }   # WORDSWORTH_OPENBAO_TOKEN
+            - secretRef: { name: wordsworth-apikeys }   # WORDSWORTH_API_KEYS
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -41,11 +52,14 @@ spec:
             - { name: corpus, mountPath: /corpus, readOnly: true }
             - { name: tmp, mountPath: /tmp }   # ocrmypdf writes temp files here
           resources:
+            # Ruimer dan de api: OCR-recovery (ocrmypdf + tesseract) op een
+            # gescande pagina is geheugenhongerig, en een corpus van echte
+            # Woo-documenten zit vol scans. Gemeten op 200 documenten.
             requests: { cpu: "250m", memory: "512Mi" }
-            limits:   { cpu: "1000m", memory: "1Gi" }
+            limits:   { cpu: "2000m", memory: "3Gi" }
       volumes:
         - name: corpus
           persistentVolumeClaim:
-            claimName: wordsworth-corpus   # TODO: create this PVC / adjust source
+            claimName: wordsworth-corpus   # zie 50-corpus.yaml (PVC + loader-pod)
         - name: tmp
           emptyDir: {}

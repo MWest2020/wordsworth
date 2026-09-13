@@ -120,12 +120,41 @@ kubectl -n wordsworth delete pod wordsworth-corpus-loader # free the RWO PVC
 (Or rsync onto a node and adjust the PVC/volume source.) Size the PVC in
 `50-corpus.yaml` to the corpus.
 
+**Where a corpus comes from:** `scripts/eval/fetch_woo_corpus.py` pulls published
+Woo documents (see `scripts/eval/README.md` for which sources allow it and which
+do not). Run 2026-09-13: 200 PDFs, 428 MB, no errors.
+
+**Getting 400 MB through `kubectl cp` from a workstation** is slow and dies on a
+broken connection. What worked: tar it, `scp` to the jump host, unpack there, and
+`kubectl cp` from a machine that sits next to the cluster.
+
+```
+tar czf corpus.tgz -C ./corpus . && scp corpus.tgz jump:/tmp/
+ssh jump 'mkdir -p /tmp/c && tar xzf /tmp/corpus.tgz -C /tmp/c \
+  && cd /tmp/c && kubectl -n wordsworth cp . wordsworth-corpus-loader:/corpus/'
+```
+
 ## 6. Ingest a corpus
 
 ```
 kubectl apply -f k8s/40-ingest-job.yaml
 kubectl -n wordsworth logs -f job/wordsworth-ingest
 ```
+
+**If the pod never starts and `logs` says nothing**, look at `describe` — not at
+the logs. A wrong `secretRef` leaves the pod in `CreateContainerConfigError`, and
+in that state there is no container and therefore no log output at all:
+
+```
+kubectl -n wordsworth describe pod -l job=ingest | tail -5
+#   Error: secret "wordsworth-secrets" not found
+```
+
+The secret names in `40-ingest-job.yaml` must match **your** deployment. The
+template in `10-config.yaml` uses one combined `wordsworth-secrets`; the
+deployment in `MWest2020/homelab` splits it into `wordsworth-db`,
+`wordsworth-s3`, `wordsworth-openbao` and `wordsworth-apikeys`. The Job now names
+those four, because that is what actually runs.
 
 Each document prints its terminal state; the job exits 0 only if **all** reached
 `indexed`. A failure is loud (no clear text is stored or indexed). Then validate
