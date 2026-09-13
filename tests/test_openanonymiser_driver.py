@@ -104,7 +104,7 @@ def test_deterministic_runs_first_and_counts_merge():
     result = OpenAnonymiserAnonymizer(engine=engine).anonymize(
         f"{PII_NAME} BSN {PII_BSN}"
     )
-    assert result.counts == {"bsn": 1, "iban": 0, "email": 0, "person": 1}
+    assert result.counts == {"bsn": 1, "iban": 0, "email": 0, "postcode": 0, "person": 1}
     assert PII_NAME not in result.text and PII_BSN not in result.text
 
 

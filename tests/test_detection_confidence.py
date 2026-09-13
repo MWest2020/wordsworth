@@ -95,7 +95,7 @@ def test_audit_and_metadata_carry_aggregates(session_factory, mem_store, mem_ind
         s.commit()
     meta = TestClient(create_app(session_factory=session_factory)).get(
         f"/documents/{doc.id}").json()
-    assert meta["counts"] == {"bsn": 1, "iban": 1, "email": 1}
+    assert meta["counts"] == {"bsn": 1, "iban": 1, "email": 1, "postcode": 0}
     assert meta["detections"]["deterministic"]["BSN"]["count"] == 1
     assert PII_BSN not in str(meta["detections"])
 
