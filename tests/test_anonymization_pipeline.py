@@ -36,7 +36,7 @@ def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf,
     payload = _anonymize_payload(session, doc.id)
     # add-detection-confidence: counts per type + per-layer aggregates (no values)
     assert {k: v for k, v in payload.items() if k not in ("detections", "lists_hash")} == {
-        "email": 1, "iban": 1, "bsn": 1}
+        "email": 1, "iban": 1, "bsn": 1, "postcode": 0}
     assert payload["detections"]["deterministic"]["BSN"]["count"] == 1
 
     ok, bad = audit.verify_chain(session)

@@ -90,6 +90,16 @@ deck's "Swiss Cheese", just not named that).
 | 36 | EDPB 01/2025 TOM 1–5 | TOM 3 have; TOM 2/4/5 via #8, #18, PPL 0 exports | mostly **have/gap** | |
 | 37 | 1.5M mutations/hour batch, 3 h window | untested for datasets | measure after #23 | |
 
+## Nieuw gat, gevonden op echte documenten (2026-09-13)
+
+Niet uit het deck, want het deck noemt het ook niet: **pseudonimiseren op een
+combinatie van gegevens bestaat niet.** Elk gegeven wordt op zichzelf beoordeeld,
+dus een record als "vrouw, geboren 1978, postcode 6541 EX, functie X" komt
+ongemoeid door de straat terwijl die vier samen vaak één persoon aanwijzen.
+Raakt vooral `dataset-pseudonymization`, waar kolommen per profiel gekozen worden
+— precies de plek waar zo'n combinatie ontstaat. Zie
+[meting-woo-corpus-01](meting-woo-corpus-01.md), bevinding 3.
+
 ## Bewust niet nu (2026-09-13, akkoord Mark)
 
 Drie dingen zijn geen gap en geen besluit maar een **keuze om te wachten**. Ze
