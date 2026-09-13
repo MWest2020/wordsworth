@@ -79,3 +79,50 @@ als FAILED in het rapport.
 (map `smoke/` naast het script: `corpus/*.pdf`, `queries.tsv`, `qrels.txt`).
 De gegenereerde bestanden staan bewust niet in git — reproduceerbaar uit het
 script, nooit binair ingecheckt.
+
+## Een echt corpus ophalen (Woo-documenten)
+
+De synthetische mini-collectie bewijst de kéten; ze bewijst niet dat de straat
+duizend echte Nederlandse overheidsdocumenten overleeft. Daarvoor:
+
+    uv run python scripts/eval/fetch_woo_corpus.py --out ./corpus --max 50
+    uv run python scripts/eval/ingest_eval_corpus.py --corpus-dir ./corpus --db-url …
+
+### Waar het vandaan komt, en waarom niet ergens anders
+
+Nagemeten 2026-09-13:
+
+| bron | status |
+|---|---|
+| `open.overheid.nl` (landelijk Woo-portaal) | **dicht** — 401 voor bots, `Disallow: /` |
+| `bestuur.gooisemeren.nl` | **dicht** — proof-of-work-challenge (Anubis) |
+| `open.gelderland.nl` | **open** — `Allow: /`, 848 Woo-besluiten, directe PDF-links |
+| `woo.arnhem.nl` | open, maar `Crawl-delay: 60` |
+
+De fetcher gebruikt Gelderland, noemt zichzelf in de User-Agent, wacht een
+seconde tussen verzoeken en schrijft per document `herkomst.jsonl` — zonder
+herkomst is elke meting op het corpus onnavolgbaar.
+
+### Wat dit corpus wél en niet meet
+
+- **Wel: de pijplijn.** Op een steekproef van 6 PDF's: 5 born-digital en 1 scan
+  (0 tekens over 2 pagina's), dus zowel het gewone pad als OCR-recovery wordt
+  geraakt. Meet eindtoestanden, doorlooptijd en het aandeel `UNPROCESSABLE_OCR`.
+- **Wel: waar PII stónd.** Woo-documenten dragen de redactiegrond in de tekst —
+  `[5.1.2e]` is artikel 5.1.2e Woo, de persoonlijke levenssfeer. Dat is een
+  gratis, echt label voor "hier is persoonsgegeven weggehaald", op een plek waar
+  wordsworth dus niets meer hoort te vinden.
+- **Niet: IR-kwaliteit.** `wordsworth.eval` eist qrels en queries, en die bestaan
+  niet voor een Woo-corpus. Die moet iemand maken; zonder dat blijven de
+  IR-metrics op de synthetische collectie.
+- **Niet: PII-precisie en -recall.** Daarvoor is `pii_gold_synthetic.jsonl` nog
+  steeds de enige gelabelde bron. Een echt corpus heeft geen labels.
+
+### De meting die dit corpus wél mogelijk maakt
+
+Draai wordsworth over een Woo-besluit en kijk naar wat er **niet** geredigeerd
+is. Op de steekproef stond in een besluit van de provincie nog een direct
+telefoonnummer en twee e-mailadressen, naast de namen van ambtenaren in functie.
+Dat is een controleerbare vraag met echte waarde — vindt onze anonimisering de
+persoonsgegevens die de publicerende overheid heeft laten staan? — en het is
+precies waarvoor wordsworth bestaat.
