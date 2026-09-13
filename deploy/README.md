@@ -169,9 +169,20 @@ clear PII appears in results.
   under the sovereign in-cluster model, but consider mesh mTLS or `https` on the
   service (set `WORDSWORTH_OPENANONYMISER_URL` to `https://...`; httpx verifies
   by default).
-- **Image pinning.** The CI build (`docker-build.yml`) already Trivy-scans every
-  image. Remaining: manifests use `:latest` and the Dockerfile uses tag-pinned
-  bases — for full reproducibility/supply-chain, pin by digest.
+- **Image pinning — done for our own images (2026-09-13).** The manifests pin by
+  `@sha256:` digest and `scripts/pin_check.py` enforces it in CI. A tag is not a
+  pin: `:latest` obviously moves, and `sha-<commit>` moves too, because nothing
+  stops a re-push of that tag to different bytes. For a system that processes
+  personal data, "which code has seen this document" is an audit question.
+  The templates carry the placeholder `@sha256:<digest>` on purpose — a template
+  must not ship somebody else's digest. Fill it in with:
+
+      gh api user/packages/container/wordsworth/versions \
+        --jq '.[] | select(.metadata.container.tags[]? == "sha-<commit>") | .name'
+
+  **Still open:** the Dockerfile's base images use tag pins, and `busybox` in the
+  corpus loader is not pinned at all — deliberately, it is a throwaway helper
+  that touches nothing in the straat.
 
 ## Invariants (do not break)
 
