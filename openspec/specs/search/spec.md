@@ -1,7 +1,17 @@
 # search Specification
 
 ## Purpose
-TBD - created by archiving change add-bm25-indexing. Update Purpose after archive.
+
+Keyword retrieval: an index protocol, BM25 at document level, ranked hits.
+
+The protocol comes first because the index is the component most likely to be
+swapped — and because an analysis pipeline that can only run against one engine
+cannot be evaluated against alternatives.
+
+The rule that governs everything upstream of this: **no PII reaches the index.**
+Search is the part of the system with the widest audience, so it operates on
+de-identified text only. That is why anonymisation sits before indexing in the
+pipeline and not after.
 ## Requirements
 ### Requirement: Search index protocol
 

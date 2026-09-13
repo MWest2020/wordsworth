@@ -1,7 +1,21 @@
 # key-lifecycle Specification
 
 ## Purpose
-TBD - created by archiving change add-key-lifecycle. Update Purpose after archive.
+
+The keys behind pseudonymisation: how they are versioned, rotated, and recovered.
+
+A keyed pseudonym is only as good as the key management behind it, and key
+management is where systems like this quietly fail — usually by making rotation
+so expensive that it never happens.
+
+Hence the shape here. Deanonymisation **selects the key by the stored `key_id`**,
+so old data stays readable after a rotation instead of becoming a migration
+project. **Mapping re-encryption does not touch the documents**, which is what
+makes rotation affordable at all. Escrow and recovery are specified rather than
+improvised, because a lost key means a corpus whose pseudonyms can never be
+resolved again. And rotation is audited in its **own stream**, separate from
+document events — the questions "who read an identity" and "who changed the keys"
+deserve separate answers.
 ## Requirements
 ### Requirement: Versioned keys with rotation
 

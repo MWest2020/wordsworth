@@ -1,7 +1,20 @@
 # dataset-pseudonymization Specification
 
 ## Purpose
-TBD - created by archiving change add-dataset-pseudonymisation. Update Purpose after archive.
+
+Pseudonymising structured data — columns in a dataset — with the same pseudonyms
+the documents use.
+
+Datasets arrive alongside documents and would otherwise be a hole in the same
+wall. The requirement that makes this worth its own capability is that **dataset
+and document pseudonyms coincide**: the same person is the same pseudonym in both,
+so joining them does not require re-identifying anyone.
+
+**Missed-column validation is advisory**, on purpose. An automatic guess that
+silently pseudonymises a column nobody chose would corrupt data; flagging it
+leaves the decision with the person who knows what the column is. Runs are
+**audited without values**, so you can prove what ran without the audit becoming a
+copy of the data.
 ## Requirements
 ### Requirement: Column-selected pseudonymisation by profile
 

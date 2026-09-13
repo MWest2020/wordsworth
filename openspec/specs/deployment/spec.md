@@ -1,7 +1,17 @@
 # deployment Specification
 
 ## Purpose
-TBD - created by archiving change add-deployment-entrypoints. Update Purpose after archive.
+
+How the pieces are actually run: a composition root for the API, an ingestion
+entrypoint, schema bootstrap, an HTTP ingest endpoint, and a client CLI.
+
+The capability that stops wordsworth from being a library with a README. It is
+listed as requirements rather than left to operators because every one of these is
+a place where two deployments would otherwise diverge.
+
+**Idempotent schema bootstrap** is the one that pays for itself: startup either
+brings the schema to where it should be or does nothing, so deploying twice is
+safe and a fresh environment is not a separate procedure.
 ## Requirements
 ### Requirement: Servable API composition root
 

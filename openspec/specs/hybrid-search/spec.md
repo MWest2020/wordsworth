@@ -1,7 +1,17 @@
 # hybrid-search Specification
 
 ## Purpose
-TBD - created by archiving change add-hybrid-search. Update Purpose after archive.
+
+Combining keyword and vector retrieval, and being explicit about which one decides.
+
+Fusion tends to be where recall is claimed and precision is quietly lost, so the
+division of labour is pinned down: **RRF fuses for recall**, and **the Zeef cosine
+is the final selector**. One stage is allowed to be generous; exactly one stage
+decides what is returned.
+
+Embedding is **local with hard failure**. Falling back to keyword-only on an
+embedding outage would return plausible results that answer a different question
+than the one asked, and nothing in the output would say so.
 ## Requirements
 ### Requirement: Local embedding with hard failure
 

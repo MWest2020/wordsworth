@@ -1,7 +1,17 @@
 # observability Specification
 
 ## Purpose
-TBD - created by archiving change add-observability. Update Purpose after archive.
+
+Seeing what the pipeline is doing while it does it: metrics, structured logs,
+throughput.
+
+This exists because the work is long-running and batched. A run over tens of
+thousands of documents that reports only at the end is a run you cannot tell apart
+from a hung one, and the usual response to that uncertainty is to kill and restart
+it — which is exactly what you do not want with a pipeline that writes.
+
+Logs are structured so they can be queried rather than read, and throughput is
+reported so "is this going to finish" has a number behind it.
 ## Requirements
 ### Requirement: Metrics endpoint
 

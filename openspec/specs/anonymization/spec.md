@@ -1,7 +1,21 @@
 # anonymization Specification
 
 ## Purpose
-TBD - created by archiving change add-anonymization-adapter. Update Purpose after archive.
+
+Removing PII irreversibly, and being deliberate about what "removing" means.
+
+This is the step the whole privacy promise rests on, so the design refuses
+several tempting shortcuts. Detection is **deterministic** — the same document
+gives the same result, because an anonymiser whose output depends on the day you
+ran it cannot be audited. Replacement is **irreversible**: no key, no mapping, no
+"we could get it back if we had to". That is what separates this from
+pseudonymisation, and blurring the line would make the legal basis unclear for
+both.
+
+**Feedback is recorded, not auto-applied.** A missed name is valuable
+information, but an allow/deny list that updates itself from feedback is a
+detection rule nobody reviewed acting on real documents. Lists are versioned and
+changed on purpose.
 ## Requirements
 ### Requirement: Anonymizer driver protocol
 

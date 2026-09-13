@@ -1,7 +1,16 @@
 # rate-limiting Specification
 
 ## Purpose
-TBD - created by archiving change add-rate-limiting. Update Purpose after archive.
+
+Keeping one caller from consuming the instance.
+
+Deliberately small: per-client limits, a 429 when exceeded, and a swappable
+store. The store is pluggable because a single process and a multi-replica
+deployment need different answers, and hard-coding the first makes the second a
+rewrite.
+
+It is a protection, not a billing mechanism — the point is that the pipeline
+stays responsive for everyone, including the batch that is halfway through.
 ## Requirements
 ### Requirement: Per-client rate limiting
 

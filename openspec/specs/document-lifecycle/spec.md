@@ -1,7 +1,20 @@
 # document-lifecycle Specification
 
 ## Purpose
-TBD - created by archiving change add-pipeline-skeleton. Update Purpose after archive.
+
+The spine: a document's states, and the guarantee that it can never be half-way
+between two of them.
+
+Everything else in wordsworth hangs off this, because every stage — extract,
+de-identify, index — is a transition. Two requirements make the pipeline
+restartable, which is what you need when you are processing tens of thousands of
+government documents and something will fail.
+
+**A transition and its audit entry are written atomically.** A document that
+moved without leaving a record is a document whose history has a hole exactly
+where you will later need it. And **processing is idempotent and resumable**: a
+rerun after a crash must not re-do work or, worse, double it — the alternative is
+a pipeline nobody dares restart.
 ## Requirements
 ### Requirement: Document state machine
 

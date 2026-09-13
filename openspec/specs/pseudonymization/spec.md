@@ -1,7 +1,19 @@
 # pseudonymization Specification
 
 ## Purpose
-TBD - created by archiving change add-pseudonymization. Update Purpose after archive.
+
+Replacing PII with stable pseudonyms that *can* be resolved — by someone holding
+the key, under a grant, with a record.
+
+Anonymisation throws away; this keeps, and the whole spec is about making that
+safe. The encrypted mapping lives in a **separated store**, so possession of the
+corpus is not possession of the identities. Pseudonyms are **stable and keyed**,
+so the same person reads as the same pseudonym across documents — which is what
+makes the corpus useful — without that consistency leaking who they are.
+
+**Deanonymisation is audit-logged**, always. The ability to reverse is the one
+thing that distinguishes this from anonymisation, so every use of it has to leave
+a trace; otherwise the mapping store is just a slower plaintext.
 ## Requirements
 ### Requirement: Key provider protocol
 

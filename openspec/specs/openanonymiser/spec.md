@@ -1,7 +1,18 @@
 # openanonymiser Specification
 
 ## Purpose
-TBD - created by archiving change add-openanonymiser-driver. Update Purpose after archive.
+
+The OpenAnonymiser driver: the concrete detector behind the anonymisation
+protocol.
+
+It exists as its own capability because the choice of detector is exactly what
+should be replaceable, and pinning it to the interface keeps that true.
+
+Two rules carry it. **Local inference with hard failure** — no remote model, and
+no falling back to "no PII found" when the model is unavailable, because a silent
+failure there publishes exactly what this system exists to protect. And
+**detections carry layer and confidence**, so a decision can be inspected
+afterwards instead of being an unexplained verdict.
 ## Requirements
 ### Requirement: OpenAnonymiser anonymization driver
 

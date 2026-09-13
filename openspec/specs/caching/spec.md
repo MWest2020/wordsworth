@@ -1,7 +1,17 @@
 # caching Specification
 
 ## Purpose
-TBD - created by archiving change add-caching. Update Purpose after archive.
+
+Making repeated work cheap without making results depend on history.
+
+The one requirement that matters: **caching never changes results.** A cache that
+can alter an answer turns every bug report into an archaeology exercise, because
+the same input no longer implies the same output.
+
+The embedding cache is **content-addressed** for the same reason — the key is the
+content, so a stale entry is not a possible state rather than an unlikely one.
+The cache is pluggable because "none" has to be a supported configuration when
+you are trying to reproduce something.
 ## Requirements
 ### Requirement: Pluggable cache
 
