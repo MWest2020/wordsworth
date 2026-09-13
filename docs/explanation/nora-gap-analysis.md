@@ -26,9 +26,16 @@ regelnummer als bewijs. De drift-poort ving dit niet — die bewaakt `src/` en
 `scripts/`, niet `docs/`.
 
 Verdict legend: **have** = present and tested · **gap** = missing, fits the
-invariants, proposal written · **decision** = conflicts with a wordsworth
-invariant or ADR, needs Mark (ADR-0005) · **out-of-core** = belongs in a separate
-component per ADR-0001/0004.
+invariants, proposal written · **decided** = conflicted with a wordsworth
+invariant or ADR and was **settled in ADR-0005, accepted by Mark on 2026-09-03**
+(D8 explicitly, D1–D7 and D9–D11 as recommended) · **out-of-core** = belongs in a
+separate component per ADR-0001/0004.
+
+Let op bij het lezen: **decided** betekent niet "open". Die rijen dragen een
+D-nummer omdat het een besluit vergde, en dat besluit is genomen. Wie een van
+deze punten opnieuw wil aankaarten, doet dat door ADR-0005 te vervangen — niet in
+een PR. Op 2026-09-13 las ik ze zelf verkeerd als openstaand; vandaar deze
+alinea.
 
 ## 1. Where the two designs agree
 
@@ -46,19 +53,19 @@ deck's "Swiss Cheese", just not named that).
 | # | Deck requirement (cluster) | wordsworth today | Verdict | Where |
 |---|---|---|---|---|
 | 1 | Multi-layer PII detection, deterministic + pattern + NER | regex (BSN elfproef, IBAN, email) + OpenAnonymiser (Presidio + NER) | **have** (2–3 layers; not named) | `detectors.py`, `openanonymiser_driver.py` |
-| 2 | Anonypy as layer 2 | banned in CLAUDE.md | **decision** D4 (recommend: no; NER covers it) | ADR-0005 |
+| 2 | Anonypy as layer 2 | banned in CLAUDE.md | **decided** D4 (ADR-0005, 2026-09-03) (recommend: no; NER covers it) | ADR-0005 |
 | 3 | Confidence + detection layer per PII, in audit | driver keeps `score` + layer; pipeline writes per-layer aggregates to the audit (never a value or an offset) | **have** | `openanonymiser_driver.py`, `pipeline.py:226` |
 | 4 | Configurable thresholds per layer | present; counting only — a threshold never weakens redaction (spec `audit-trail`) | **have** | `detection_confidence` in `2026-09-04-add-detection-confidence` |
 | 5 | FP/FN feedback → rule engine (Drools) | versioned allow/deny lists; feedback is recorded, never auto-applied | **have** (the boring variant, deliberately) | `detection_lists.py` |
 | 6 | 17 PII types incl. gezondheid, religie, etniciteit, biometrie, strafrechtelijk, kenteken | registry present | **have** (registry) · detector coverage per type still depends on OpenAnonymiser | `pii_categories.py` |
 | 7 | AVG Art. 6/9/10 legal basis per type | `legal_basis` per type in the registry | **have** | `pii_categories.py` |
 | 8 | PPL 0–3 levels | PPL expands to a type set over the existing grants | **have** | `pii_categories.py`, spec `grants` |
-| 9 | ABAC, Entra ID/SSO, roles | grant_id is a bearer capability; auth model pending | **decision** D7 | ADR-0005 |
+| 9 | ABAC, Entra ID/SSO, roles | grant_id is a bearer capability; auth model pending | **decided** D7 (ADR-0005, 2026-09-03) | ADR-0005 |
 | 10 | Legible placeholders `[PERSOON 1]` | `[PERSON:hash8]` stays the stored form; `legible.py` renders `[PERSOON 1]` + a legend as a **view** | **have** (as a view, as intended) | `legible.py` |
 | 11 | Reversible via decryption, one document / many views | reversible tokens + grant-gated reveal | **have** | `pseudonymizer.py`, `api.py` reveal |
-| 12 | RDFa-embedded encrypted PII inside the document | separated encrypted mapping store, deliberately | **decision** D1 (recommend: RDFa as export view referencing tokens, ciphertext stays in store) | ADR-0005 |
-| 13 | Per-document keys derived from category key | random per-type keys, rotation, escrow | **decision** D2 (recommend: keep; add domain scope) | ADR-0005 |
-| 14 | Algorithm per article: AES-GCM / ChaCha20 / RSA-OAEP | AES-256-GCM everywhere (ChaCha20 only in escrow) | **decision** D3 (recommend: no; one AEAD, basis as metadata) | ADR-0005 |
+| 12 | RDFa-embedded encrypted PII inside the document | separated encrypted mapping store, deliberately | **decided** D1 (ADR-0005, 2026-09-03) (recommend: RDFa as export view referencing tokens, ciphertext stays in store) | ADR-0005 |
+| 13 | Per-document keys derived from category key | random per-type keys, rotation, escrow | **decided** D2 (ADR-0005, 2026-09-03) (recommend: keep; add domain scope) | ADR-0005 |
+| 14 | Algorithm per article: AES-GCM / ChaCha20 / RSA-OAEP | AES-256-GCM everywhere (ChaCha20 only in escrow) | **decided** D3 (ADR-0005, 2026-09-03) (recommend: no; one AEAD, basis as metadata) | ADR-0005 |
 | 15 | Key fingerprint embedded | `key_id = sha256(material)[:12]` per mapping | **have** (different name) | `keys.py` |
 | 16 | HMAC-SHA256 pseudonyms, deterministic | yes | **have** | `pseudonymizer.py` |
 | 17 | `normalize()` before HMAC (BSN strip/lpad, NFC, casefold, postcode, ISO date) | `normalize()` runs before the HMAC | **have** — was the biggest correctness gap | `normalization.py` |
@@ -70,14 +77,14 @@ deck's "Swiss Cheese", just not named that).
 | 23 | Dataset/CSV column pseudonymisation, profiles, per-attribute/per-record | column selection by profile, per record; dataset and document pseudonyms coincide | **have** | `datasets.py`, spec `dataset-pseudonymization` |
 | 24 | NEN 7524 format `01-0001-PB|base64` | `format="nen7524"` output option | **have** as output format · conformance to NEN 7524:2019 remains **unverified** (D9 — nobody here has read the standard) | `datasets.py:25-54` |
 | 25 | Optional PII validation of unselected columns | `validate_unselected()` — advisory, never auto-pseudonymises a column nobody chose | **have** | `datasets.py:140` |
-| 26 | TTP key hand-over, PKCS#12 export | age escrow exists; no PKCS#12 | **decision** D6 (recommend: age/JSON envelope; PKCS#12 is for X.509 material) | ADR-0005 |
+| 26 | TTP key hand-over, PKCS#12 export | age escrow exists; no PKCS#12 | **decided** D6 (ADR-0005, 2026-09-03) (recommend: age/JSON envelope; PKCS#12 is for X.509 material) | ADR-0005 |
 | 27 | Audit: who/what/when/key/layer/confidence, tamper-evident, 7 y | hash chain + WORM, 10 y default; layer/confidence now included via #3 | **have** | `audit.py`, `audit_export.py` |
 | 28 | Key-lifecycle stream WORM-exported | `export_worm()` exports `audit.export_jsonl` — the **document** chain. The separate `key_audit` stream is append-only but never reaches Object Lock | **gap** — still open, verified 2026-09-13 | `audit_export.py:166`, `key_audit.py` |
 | 29 | Metrics precision/recall/F1 per type | `pii_run` scores precision/recall/F1 per type, span- and token-level, plus a leak count | **have** · a **real** gold corpus is still missing; only `pii_gold_synthetic.jsonl` (10 invented docs) exists | `eval/pii.py`, `eval/pii_run.py` |
 | 30 | NiFi orchestration, status tracking, retry | above wordsworth by ADR-0001 | **out-of-core** | ADR-0001 |
 | 31 | Word / Office / ZGW plugin, upload portal, beheerportaal, dashboards | headless core by ADR-0004; console-site partly | **out-of-core** | ADR-0004 |
-| 32 | Thin-client: Web Crypto + detection in the plugin | keys never leave OpenBao | **decision** D10 (recommend: server-side only) | ADR-0005 |
-| 33 | DMS new version / Woo-portaal / TMLO metadata output | text-only pipeline; no docx/pdf re-render | **decision** D11 (render service is a separate component) | ADR-0005 |
+| 32 | Thin-client: Web Crypto + detection in the plugin | keys never leave OpenBao | **decided** D10 (ADR-0005, 2026-09-03) (recommend: server-side only) | ADR-0005 |
+| 33 | DMS new version / Woo-portaal / TMLO metadata output | text-only pipeline; no docx/pdf re-render | **decided** D11 (ADR-0005, 2026-09-03) (render service is a separate component) | ADR-0005 |
 | 34 | ZGW-API / CMIS / WebDAV connectors | connector pattern exists (Nextcloud, outside core) | **out-of-core** | `connectors/` |
 | 35 | CyberArk Conjur / Azure KV | banned / cloud in critical path banned | **have** (OpenBao) | CLAUDE.md |
 | 36 | EDPB 01/2025 TOM 1–5 | TOM 3 have; TOM 2/4/5 via #8, #18, PPL 0 exports | mostly **have/gap** | |
