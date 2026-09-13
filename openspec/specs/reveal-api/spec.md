@@ -1,7 +1,18 @@
 # reveal-api Specification
 
 ## Purpose
-TBD - created by archiving change add-reveal-api. Update Purpose after archive.
+
+The door through which an identity comes back: key-gated, per type, and legible
+about what it did not show.
+
+The interesting requirement is the **legible placeholder view**. A redacted
+document that hides the fact that it is redacted misleads the reader about what
+they have. Showing what was withheld, and **reporting the types per legal basis**,
+turns a reveal from a binary into something a case handler can reason about — and
+something they can ask for more of, on the right ground.
+
+Authorisation and error semantics are specified precisely because the difference
+between "you may not" and "there is nothing here" is itself information.
 ## Requirements
 ### Requirement: Key-gated per-type reveal endpoint
 

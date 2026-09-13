@@ -1,7 +1,18 @@
 # pii-categories Specification
 
 ## Purpose
-TBD - created by archiving change add-pii-categories-and-ppl. Update Purpose after archive.
+
+The vocabulary: every PII type has a category and a legal basis, and a PPL level
+expands to a set of types.
+
+This looks like a taxonomy and is really the seam between the law and the code.
+Without it, "what may this person see" is a decision spread across handlers and
+config; with it, that decision is one lookup, and the reason for it is written
+next to the type.
+
+**Every type carries a legal basis** because in a Woo context the question is
+never "can we technically reveal this" but "on what ground". A system that cannot
+answer the second question forces a human to reconstruct it per request.
 ## Requirements
 ### Requirement: Every PII type has a category and a legal basis
 

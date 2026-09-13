@@ -1,7 +1,17 @@
 # audit-export Specification
 
 ## Purpose
-TBD - created by archiving change add-audit-worm-export. Update Purpose after archive.
+
+Getting the audit chain out to WORM storage, where it is no longer ours to change.
+
+An audit chain that lives only in the database it audits proves less than it
+looks like it proves. Exporting it to write-once storage moves the evidence
+outside the reach of the system that produced it.
+
+**The export verifies against the database**, so a divergence is detected at the
+moment it is exportable rather than at the moment someone asks. Incremental with
+retention, because an audit that is too expensive to export regularly ends up
+exported once.
 ## Requirements
 ### Requirement: WORM export of the audit chain
 

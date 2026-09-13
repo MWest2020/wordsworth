@@ -1,7 +1,19 @@
 # audit-trail Specification
 
 ## Purpose
-TBD - created by archiving change add-pipeline-skeleton. Update Purpose after archive.
+
+The record of what happened to every document, chained so that it cannot be
+quietly edited.
+
+An append-only store plus a **global hash chain**: the chain is what makes the log
+evidence rather than a file the system wrote about itself. The derived JSONL
+export exists so that evidence can be read without the database.
+
+Two requirements go beyond bookkeeping. The de-identify step records
+**detection aggregates**, so you can see how much was found without the audit
+containing what was found. And **a threshold never weakens redaction** — tuning
+sensitivity may cause more to be hidden, never less, so no configuration change
+can retroactively expose what an earlier run protected.
 ## Requirements
 ### Requirement: Append-only audit store
 

@@ -1,7 +1,17 @@
 # evaluation Specification
 
 ## Purpose
-TBD - created by archiving change add-evaluation-harness. Update Purpose after archive.
+
+Measuring whether retrieval is any good: IR metrics, a runner that does not care
+which ranker, and standard test collections.
+
+Without this, "we improved search" is an opinion. The runner is deliberately
+**ranker- and collection-agnostic**, because an evaluation harness married to one
+implementation can only ever confirm it.
+
+**PII detection metrics** live here too, and that is the important part: precision
+and recall on detection are a safety measure, not a quality metric. Knowing how
+much is missed is the difference between a privacy claim and a privacy hope.
 ## Requirements
 ### Requirement: IR metric functions
 

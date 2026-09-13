@@ -1,7 +1,15 @@
 # api-key-auth Specification
 
 ## Purpose
-TBD - created by archiving change add-api-key-auth. Update Purpose after archive.
+
+Knowing which caller is on the other end — optional in general, required where it
+counts.
+
+Authentication is optional because wordsworth also runs as an engine inside a
+trusted boundary, and demanding keys there buys nothing. But it is not optional
+in effect: **the authenticated caller is recorded on reveal.** An identity that
+came back out of the system without a name attached to the request is the one
+audit gap that cannot be reconstructed afterwards.
 ## Requirements
 ### Requirement: Optional per-caller API-key authentication
 

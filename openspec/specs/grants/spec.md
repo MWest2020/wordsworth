@@ -1,7 +1,18 @@
 # grants Specification
 
 ## Purpose
-TBD - created by archiving change add-reveal-grants. Update Purpose after archive.
+
+Who may reveal what, for how long: per-type grants, revocable and expiring.
+
+Reveal capability is the sharpest thing this system has, so it is not a role or a
+flag — it is a grant: scoped to types (or to a PPL level), with an expiry, and
+revocable.
+
+**Revocation and expiry withhold authorisation** at use time, not at issue time.
+A grant that keeps working until something is cleaned up is a permission you
+cannot actually take back. And issuing and revoking are **audited without key
+material**, which is the rule this whole repository keeps returning to: the
+record proves what happened without becoming a second copy of the secret.
 ## Requirements
 ### Requirement: Per-type reveal grants
 

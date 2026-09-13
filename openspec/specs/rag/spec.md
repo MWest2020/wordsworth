@@ -1,7 +1,18 @@
 # rag Specification
 
 ## Purpose
-TBD - created by archiving change add-rag. Update Purpose after archive.
+
+Answering questions over the corpus with a local model, under tight rules about
+what it is allowed to say and see.
+
+RAG is where a careful pipeline usually leaks, so the constraints are hard.
+**Only de-identified text reaches the model** — the same rule as the index, and
+for the same reason. **Retrieval decides the sources**: the model may not go
+looking, so an answer's provenance is a property of the system rather than of the
+generation. And **citations are verified against the sources**, which is what
+separates an answer you can check from a fluent one.
+
+Generation is local, like everything else here: the documents do not leave.
 ## Requirements
 ### Requirement: Local answer generation
 

@@ -1,7 +1,17 @@
 # object-storage Specification
 
 ## Purpose
-TBD - created by archiving change add-object-storage. Update Purpose after archive.
+
+Where the bytes live: an object store behind a protocol, with an S3 driver.
+
+Ingest stores the original and the pipeline fetches it by key — nothing is passed
+around as a blob or a shared path, so a stage can be re-run on a different machine
+without having to reconstruct where the file was.
+
+**Sovereign credentials** is the requirement that is not about architecture: this
+runs against storage the organisation controls. S3 is an interface here, not a
+vendor, and the driver boundary is what keeps that a fact rather than an
+intention.
 ## Requirements
 ### Requirement: Object store protocol and S3 driver
 

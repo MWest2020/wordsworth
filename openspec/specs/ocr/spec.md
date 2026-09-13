@@ -1,7 +1,17 @@
 # ocr Specification
 
 ## Purpose
-TBD - created by archiving change add-ocr. Update Purpose after archive.
+
+Getting text out of documents that do not have any: scanned pages, through a
+local engine.
+
+Government archives are full of scans, so without OCR a large part of the corpus
+is invisible to search — not wrong, just silently absent, which is worse.
+
+**Local** is the requirement that matters. These are documents whose contents may
+not leave the country, let alone the organisation; an OCR service in someone
+else's cloud would undo the privacy posture of every other capability here before
+anonymisation ever ran.
 ## Requirements
 ### Requirement: Local OCR engine
 

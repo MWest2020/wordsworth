@@ -1,7 +1,17 @@
 # export Specification
 
 ## Purpose
-TBD - created by archiving change add-export. Update Purpose after archive.
+
+Getting data out: a de-identified corpus as a ZIP, rankings as CSV, both from a
+CLI.
+
+The word doing the work is **de-identified**. Export is the moment data leaves the
+boundary every other capability defends, so what leaves is the safe form — not the
+originals with a warning attached.
+
+CSV and ZIP rather than an API, because the consumer is usually a person with a
+spreadsheet or another system entirely, and wordsworth deliberately stops at the
+corpus.
 ## Requirements
 ### Requirement: De-identified corpus ZIP export
 

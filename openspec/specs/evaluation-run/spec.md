@@ -1,7 +1,16 @@
 # evaluation-run Specification
 
 ## Purpose
-TBD - created by archiving change add-thesis-evaluation. Update Purpose after archive.
+
+Actually running an evaluation over a real collection, from a CLI.
+
+Separate from `evaluation` because a metric you can compute and a run somebody
+performs are different things, and only the second produces a number anyone
+quotes. The adapters exist so the rankers in this repository can be measured on
+the same footing as anything they might be replaced by.
+
+From a CLI, because an evaluation that needs a notebook and a person is an
+evaluation that happens once.
 ## Requirements
 ### Requirement: Ranker adapters
 
