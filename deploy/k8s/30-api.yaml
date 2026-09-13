@@ -22,7 +22,12 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: api
-          image: ghcr.io/mwest2020/wordsworth:latest
+          # Pin op DIGEST, niet op een tag. Een tag kan verplaatst worden — ook
+          # `sha-<commit>`, want die is herpublicabel — en dan is "welke code
+          # heeft dit document gezien" niet meer te beantwoorden. Bij een
+          # systeem dat persoonsgegevens verwerkt is dat geen nieuwsgierigheid
+          # maar een auditvraag. `scripts/pin_check.py` bewaakt het.
+          image: ghcr.io/mwest2020/wordsworth@sha256:<digest>
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

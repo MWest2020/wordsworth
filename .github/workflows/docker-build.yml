@@ -44,6 +44,13 @@ jobs:
       - name: Run tests
         run: uv run pytest -q
 
+      # A convention nobody checks is a wish. A tag is not a pin — `:latest`
+      # obviously moves, but `sha-<commit>` moves too, because nothing stops a
+      # re-push of that tag to different bytes. For a system that processes
+      # personal data, "which code has seen this document" is an audit question.
+      - name: Images pinned by digest
+        run: python3 scripts/pin_check.py
+
   build:
     name: Build and push image
     runs-on: ubuntu-latest
