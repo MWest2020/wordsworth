@@ -147,9 +147,10 @@ class Pseudonymizer:
         text, foreign = neutralise_foreign_tokens(text)
         counts: dict[str, int] = {}
         stats = DetectionStats(settings.detection_min_score)
-        for label, pattern, validate in detectors.DETECTORS:
+        for label, pattern, validate, context in detectors.DETECTORS:
             text, counts[label] = detectors.substitute(
-                text, pattern, lambda v, label=label: self.pseudonym(label, v), validate)
+                text, pattern, lambda v, label=label: self.pseudonym(label, v),
+                validate, context)
             stats.add(DETERMINISTIC, label, 1.0, counts[label])  # validated = certain
         if foreign:
             counts["FOREIGN_TOKEN_NEUTRALISED"] = foreign

@@ -311,6 +311,43 @@ ziet de controle exact de grenzen die de vervanging zag. Naar niets strippen
 plakt de tekst aan elkaar; naar een vast niet-woordteken strippen maakt juist
 een grens waar een woordteken hoorde — allebei fout, in tegengestelde richting.
 
+## Bevinding 8 — de postbus-uitzondering draaide in de pijplijn nergens
+
+De acht documenten liepen na de grens-reparatie door: `reanonymized: 8,
+failed: 0`. Het corpus van 770 documenten: **nul postcodes die de code nog zou
+redigeren**, nul bsn, nul iban, nul e-mail.
+
+Maar de nameting van het rúwe aantal klopte niet met wat eerder in deze meting
+staat. Bevinding 1 meldt 56 postcodes die in postbus-context terecht blijven
+staan. In de echte tekst: **304 postbus-regels, waarvan 214 met een vervángen
+postcode en precies één met een leesbare.**
+
+De regel "een postbus houdt zijn postcode" bestond op drie plekken:
+
+- `find_deterministic()` — past hem toe;
+- `redact_postcode()` — past hem toe;
+- de generieke `substitute()` — past hem **niet** toe, want een validator ziet
+  alleen de waarde en geen context.
+
+En `substitute()` is precies wat de twee échte pijplijnen aanroepen, de
+irreversibele en de reversibele. De regel stond dus in de code, in de
+documentatie en in de tests, en draaide in productie nergens.
+
+**Het venijn zit in hoe het verborgen bleef.** De controle die de 56 telde,
+liep via `find_deterministic()`. Dat pad past de regel wél toe, dus meldde de
+meting keurig dat de uitzondering werkte. Het meetinstrument liep langs de ene
+weg en de productiecode langs de andere; er is gemeten wat een functie doet die
+in dat pad nooit draait.
+
+Opgelost door de contextregel een vierde kolom te maken in de gedeelde
+`DETECTORS`-definitie, waar `substitute()` en `find_deterministic()` hem allebei
+uit lezen. `redact_postcode()` roept nu gewoon `substitute()` aan in plaats van
+de regel na te bouwen. Eén implementatie, niet drie die op elkaar lijken.
+
+Dit is geen lek maar overredactie: 214 openbare contactadressen van overheden
+zijn onleesbaar gemaakt zonder dat het iemand beschermde — precies wat die
+uitzondering moest voorkomen.
+
 ## Wat deze meting NIET zegt
 
 Ze meet de pijplijn, niet de kwaliteit. **Hoeveel PII er gemist is, weet ik
