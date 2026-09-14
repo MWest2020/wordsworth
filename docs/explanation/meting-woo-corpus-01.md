@@ -249,6 +249,47 @@ Opgelost met `SET LOCAL lock_timeout = '5s'` in de migratie-transactie. Snel
 falen is hier de betere helft van de afspraak: het init-Job probeert het met
 backoff opnieuw, en een poging een seconde later vindt de lock meestal vrij.
 
+## Bevinding 7 — de controle hield acht documenten tegen op twee eigen fouten
+
+De kenmerken uit bevinding 6 wezen het aan. Acht documenten, allemaal
+`waarde-overleefde-vervanging`, met per document: label, lengte, aantal
+woorden, en hoe vaak de waarde vóór en ná de vervanging voorkomt.
+
+| aantal | label | lengte | woorden | in bron | na vervanging |
+|---|---|---|---|---|---|
+| 5 | person / email | 5, 11, 21 | 1–4 | 0 | 1 |
+| 3 | person | 3 | 1 | 15 | 1 |
+
+`alnum: false` bij alle acht: er zitten leestekens of spaties in. Dat zijn
+GLiNER-fragmenten, geen namen.
+
+**Twee oorzaken, allebei van ons.**
+
+De eerste: de controle vergeleek met een tekst waar de ingevoegde tokens uít
+gestript waren, naar *niets*. Weghalen naar niets plakt de tekst links en
+rechts aan elkaar, en zo ontstaat een woordgrens die in het origineel niet
+bestond. Opgelost door naar één niet-woordteken te strippen: de reden om te
+strippen (een token mag zelf geen waarde matchen) blijft overeind, de twee
+kanten blijven uit elkaar.
+
+De tweede kwam pas boven bij het schrijven van de test, en die is belangrijker.
+Een entiteitswaarde komt van de dienst (`e.text`), niet uit een slice van de
+tekst, en draagt de spatiëring van de span mee. Op `"Naarden "` mét spatie
+matchen mist het woord — er komt een woordteken achteraan, dus de grenscontrole
+slaat niet aan. Gevolg: **"Naarden" bleef leesbaar in de uitvoer** én de
+fail-hard-controle verwierp het hele document. Twee fouten in één keer, en de
+eerste is de ernstigste van de twee: dat is klare PII die bleef staan.
+
+Dat verklaart ook waarom `in_bron: 0` niets bewijst op zichzelf. Dat getal telt
+*woord-begrensde* voorkomens; een waarde met een spatie eraan heeft er nul,
+terwijl het woord er gewoon staat. Nu wordt op de gestripte waarde gematcht.
+
+**Wat dit zegt over de controle.** Hij stond aan de veilige kant en weigerde —
+er is niets gelekt via deze weg. Maar hij weigerde op zijn eigen artefact, en
+dat kostte acht documenten uit het corpus. Een controle die vals alarm slaat,
+wordt uiteindelijk uitgezet; dat is geen theoretisch risico maar de normale
+levensloop van zo'n controle.
+
 ## Wat deze meting NIET zegt
 
 Ze meet de pijplijn, niet de kwaliteit. **Hoeveel PII er gemist is, weet ik
