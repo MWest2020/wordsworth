@@ -157,3 +157,43 @@ def test_a_failing_document_is_named_and_left_in_the_audit(
     assert get_anonymized_text(session, doc.id) == before  # entry ongemoeid
     ok, eerste_fout = audit.verify_chain(session)
     assert ok, f"hash-keten brak bij seq {eerste_fout}"
+
+
+def test_de_oorzaak_onder_de_wrapper_komt_mee(
+        session_factory, session, mem_store, mem_index, fake_embedder,
+        born_digital_pii_pdf):
+    """De buitenste klasse alleen is niet genoeg.
+
+    Op 2026-09-14 meldden acht documenten alle acht `AnonymizationEngineError`.
+    Dat is de bewuste tekstloze wikkel van de driver: hij zegt dát de motor
+    weigerde, nooit waarom. De oorzaak eronder — een timeout, een 503, een
+    contractbreuk — is het deel waar je iets mee doet, en die viel weg.
+    """
+    from fastapi.testclient import TestClient
+
+    from wordsworth.api import create_app
+
+    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+                                born_digital_pii_pdf)
+
+    class Onderliggend(Exception):
+        pass
+
+    class Wikkel(Exception):
+        pass
+
+    def breekt(_session):
+        try:
+            raise Onderliggend("de motor kreeg de tekst 'Jan Jansen, 1234 AB'")
+        except Onderliggend as oorzaak:
+            raise Wikkel("motor weigerde") from oorzaak
+
+    app = create_app(session_factory=session_factory, store=mem_store,
+                     search_index=mem_index, embedder=fake_embedder,
+                     anonymizer_factory=breekt, rate_limiters={})
+    uit = TestClient(app).post("/reprocess",
+                               json={"document_ids": [str(doc.id)]}).json()
+
+    assert uit["problems"] == {str(doc.id): "Wikkel <- Onderliggend"}
+    assert "Jan Jansen" not in str(uit)                   # klassen, geen tekst
+    assert "1234 AB" not in str(uit)
