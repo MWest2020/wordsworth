@@ -166,13 +166,22 @@ class ReprocessRequest(BaseModel):
 
 
 class ReprocessResponse(BaseModel):
-    """Per-document outcome counts for a backfill run."""
+    """Per-document outcome counts for a backfill run, plus which documents did
+    not make it. Counts alone are not actionable: on 2026-09-14 a run reported
+    ``retryable: 8, failed: 2`` and there was no way to learn *which* ten, nor
+    why — the exception was counted and then dropped. Re-running the whole
+    corpus to find them is exactly the too-expensive gate this endpoint exists
+    to avoid."""
 
     total: int
     reanonymized: int
     skipped: int
     retryable: int
     failed: int
+    # document_id -> exception class name. The class only, never the message:
+    # an engine error can carry a fragment of the document it choked on, and
+    # this response is not a place where clear text may surface.
+    problems: dict[str, str] = {}
 
 
 class GrantIssueRequest(BaseModel):
@@ -615,6 +624,35 @@ def create_app(
         # reprocessing with the irreversible driver would be pointless.
         if anonymizer_factory is not None:
 
+            def _note_reprocess_failure(document_id: UUID, exc: Exception) -> None:
+                """Leave a trace in the audit chain that this document was tried
+                and did not make it.
+
+                Without this the run is invisible afterwards: the nine documents
+                that failed on 2026-09-14 had no audit record from that day at
+                all, so the chain said "nobody ever touched these" while ten
+                attempts had just been made. A failure that leaves no evidence is
+                indistinguishable from a step that never ran.
+
+                Only the exception CLASS is recorded. The message may quote the
+                document, and the audit chain is exportable — clear text has no
+                business in it. The state does not change: the existing entry is
+                intact, which is what continue-on-failure means.
+                """
+                from . import audit
+
+                try:
+                    with session_factory() as session:
+                        state = current_state(session, document_id)
+                        audit.append(session, document_id=document_id,
+                                     from_state=state.value, to_state=state.value,
+                                     step="reprocess_failed",
+                                     payload={"error_class": type(exc).__name__,
+                                              "transient": is_transient(exc)})
+                        session.commit()
+                except Exception:  # noqa: BLE001 — bookkeeping must never
+                    pass          # take down the run it is bookkeeping for
+
             def _reprocess_one(document_id: UUID) -> str:
                 from .pipeline import reanonymize
 
@@ -651,12 +689,16 @@ def create_app(
                             if current_state(session, i) == State.INDEXED]
                 counts = {"reanonymized": 0, "skipped": 0,
                           "retryable": 0, "failed": 0}
+                problems: dict[str, str] = {}
                 for document_id in ids:
                     try:
                         counts[_reprocess_one(document_id)] += 1
                     except Exception as exc:  # never leaks text; entry left intact
                         counts["retryable" if is_transient(exc) else "failed"] += 1
-                return ReprocessResponse(total=len(ids), **counts)
+                        problems[str(document_id)] = type(exc).__name__
+                        _note_reprocess_failure(document_id, exc)
+                return ReprocessResponse(total=len(ids), problems=problems,
+                                         **counts)
 
     # Dataset path (add-dataset-pseudonymisation): column-selected, profile-driven
     # pseudonymisation of CSV with the SAME derivation as documents. Reversible

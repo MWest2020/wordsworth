@@ -100,6 +100,48 @@ Het raakt vooral de datasetkant (`dataset-pseudonymization`), waar kolommen per
 profiel gekozen worden: precies de plek waar een combinatie ontstaat. Een eigen
 change waard, niet hier binnengesmokkeld.
 
+## Bevinding 4 — de herindexering telde haar eigen mislukkingen zonder ze aan te wijzen
+
+De postcode-detector kwam ná de eerste meting, dus moest het corpus opnieuw door
+de anonimisering. Nameting op het cluster (2026-09-14, 770 geïndexeerde
+documenten): nul e-mailadressen, nul geldige IBANs, nul geldige BSN's, en **164
+postcodes letterlijk in de tekst**. Daarvan staan er **56 in een
+postbus-context** en blijven terecht staan; **108 moesten alsnog weg**, verspreid
+over 31 documenten.
+
+Die 56 zijn het bewijs dat de contextregel doet wat hij belooft, nu op echte
+documenten in plaats van op een fixture: `Postbus 250, 6800 GD Arnhem` is het
+contactadres van een overheid, geen woonadres van een mens.
+
+Twee dingen gingen mis, en het tweede is het echte.
+
+**De herstelactie was te duur om te draaien.** De reprocess-Job stuurde altijd
+"herdraai alles": 770 documenten × ~2 min GLiNER is ruim 25 uur, voor werk van
+een uur. Zo'n run wordt afgebroken — op 2026-09-13 gebeurde dat toen om 03:00 de
+websocket van een `kubectl exec` wegviel. Een gate die te duur is om te draaien,
+wordt niet gedraaid, en dan is het geen gate. De Job neemt nu een lijst
+documenten aan.
+
+**De gerichte run faalde, en vertelde niet waarop.** 31 documenten in 1 u 58 m:
+21 gelukt, 8 retryable, 2 gefaald. De Job faalde daardoor netjes in plaats van
+stil `Completed` te melden. Maar wélke tien was niet te achterhalen: het antwoord
+gaf alleen tellers, en in de audit-keten stond van géén van die documenten een
+regel van die dag. De keten zei dus "hier heeft nooit iemand aan gezeten" terwijl
+er net tien pogingen waren gedaan. De exception werd geteld en weggegooid.
+
+Daarmee was de enige manier om de tien terug te vinden: alle 770 opnieuw draaien
+— precies de herstelactie van een dag die zojuist was weggebouwd.
+
+Dit is dezelfde vorm als bevinding 1. Daar was een PII-type end-to-end bedraad
+behalve aan het begin; hier is een run end-to-end bedraad behalve aan het eind.
+De gate telt wel, maar wijst niet aan, en een mislukking zonder spoor is niet te
+onderscheiden van een stap die nooit liep.
+
+Opgelost: het antwoord noemt per document de exception-**klasse** (niet de
+boodschap — die kan een fragment citeren van het document waarop hij afknapte),
+en er komt een `reprocess_failed`-regel in de audit-keten met de toestand
+ongewijzigd.
+
 ## Wat deze meting NIET zegt
 
 Ze meet de pijplijn, niet de kwaliteit. **Hoeveel PII er gemist is, weet ik
