@@ -27,7 +27,12 @@ from .mapping_store import MappingStore
 from .normalization import PROFILE_VERSION, normalize
 from .pii_categories import category_of
 from .models import AuditRecord
-from .openanonymiser_driver import AnonymizationEngineError, Entity, detect_entities
+from .openanonymiser_driver import (
+    AnonymizationEngineError,
+    AnonymizationInvariantError,
+    Entity,
+    detect_entities,
+)
 
 # A detection seam: text -> entity spans. The default calls OpenAnonymiser; tests
 # inject a fake so the reversible entity path is provable without the service.
@@ -271,7 +276,7 @@ class ReversibleAnonymizer:
         stripped = _PSEUDONYM_RE.sub("", text)  # remove inserted tokens
         for value in values:
             if re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", stripped):
-                raise AnonymizationEngineError(
+                raise AnonymizationInvariantError(
                     "a detected entity value survived pseudonymisation; refusing "
                     "to emit text that may contain clear PII"
                 )

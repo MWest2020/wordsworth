@@ -158,9 +158,37 @@ citeren.
 
 Handmatig nagemeten op het cluster, ná de mislukte run: de chunks van zo'n
 document slagen stuk voor stuk wél, los aangeroepen. Het gaat dus niet om een
-document dat de motor niet aankan, maar om iets in het gelijktijdige pad of in
-de belasting op dat moment. Dat is een aanwijzing, geen conclusie, en de
-volgende run schrijft hem zelf op.
+document dat de motor niet aankan.
+
+## Bevinding 6 — "retryable" was een verkeerd etiket, en dat verborg het echte werk
+
+De run mét oorzaakketen gaf een leeg vervolg: alleen
+`AnonymizationEngineError`, geen `<- oorzaak`. Dat is zelf het bewijs. De plek
+die de fout mét `from exc` doorgeeft, was het dus niet; er zijn maar twee
+plekken die hem zónder oorzaak gooien, en allebei zijn het
+**invariant-controles**:
+
+- `_score()` — de motor gaf een entiteit zonder score terug (contractbreuk);
+- `pseudonymizer.py` — *"a detected entity value survived pseudonymisation"*:
+  ná het vervangen staat een gedetecteerde waarde nog in de tekst, en de code
+  weigert die tekst uit te geven.
+
+Dat weigeren is goed en blijft zo. Het etiket erop was fout. `is_transient()`
+gaf voor élke `AnonymizationEngineError` "tijdelijk" terug, dus werden deze acht
+run na run als `retryable` gemeld. Ze waren niet tijdelijk: dezelfde invoer
+ontmoet dezelfde code en faalt identiek, voor altijd. De run zag er herstelbaar
+uit terwijl er een codewijziging nodig is, en elke poging kostte GLiNER-tijd om
+tot dezelfde conclusie te komen.
+
+Opgelost met `AnonymizationInvariantError`, een subklasse — zodat elke
+bestaande `except AnonymizationEngineError` hem nog vangt en het fail-closed
+gedrag onveranderd blijft. Alleen het etiket is nu waar: deze acht tellen
+voortaan als `failed`, niet als `retryable`.
+
+**Nog onbekend: waaróm een gedetecteerde waarde de vervanging overleeft.** Dat
+is de volgende vraag, en hij is nu tenminste de juiste vraag. Wat we weten: het
+is deterministisch, het treft acht van de 770 documenten, en zes van die acht
+delen onderling twee PDF's — het corpus bevat dubbelen.
 
 ## Bevinding 5 — de schema-migratie kon de hele api meetrekken
 
