@@ -56,9 +56,14 @@ class AnonymizationInvariantError(AnonymizationEngineError):
     escapes.
     """
 
-    def __init__(self, *args: object, code: str = "onbekend") -> None:
+    def __init__(self, *args: object, code: str = "onbekend",
+                 kenmerken: dict | None = None) -> None:
         super().__init__(*args)
         self.code = code
+        # Veilige kenmerken van de schending: type, lengte, aantallen. NOOIT een
+        # waarde uit het document. Wie hier tekst in stopt, zet document-inhoud
+        # in de audit-keten, en die is exporteerbaar.
+        self.kenmerken = kenmerken or {}
 
 
 class _EngineFn(Protocol):

@@ -624,6 +624,22 @@ def create_app(
         # reprocessing with the irreversible driver would be pointless.
         if anonymizer_factory is not None:
 
+            def _safe_traits(exc: BaseException) -> dict:
+                """`kenmerken` van de eerste fout in de keten die ze draagt.
+
+                Alleen wat de raise-site zelf als veilig heeft aangemerkt:
+                type, lengte, aantallen. De audit-keten is exporteerbaar, dus
+                hier hoort nooit iets uit een document in te staan.
+                """
+                e, gezien = exc, set()
+                while e is not None and id(e) not in gezien:
+                    gezien.add(id(e))
+                    k = getattr(e, "kenmerken", None)
+                    if isinstance(k, dict) and k:
+                        return {"kenmerken": k}
+                    e = e.__cause__ or e.__context__
+                return {}
+
             def _cause_chain(exc: BaseException) -> str:
                 """The exception classes from outside in, e.g.
                 ``AnonymizationEngineError <- ReadTimeout``.
@@ -674,7 +690,8 @@ def create_app(
                                      from_state=state.value, to_state=state.value,
                                      step="reprocess_failed",
                                      payload={"error_class": _cause_chain(exc),
-                                              "transient": is_transient(exc)})
+                                              "transient": is_transient(exc),
+                                              **_safe_traits(exc)})
                         session.commit()
                 except Exception:  # noqa: BLE001 — bookkeeping must never
                     pass          # take down the run it is bookkeeping for

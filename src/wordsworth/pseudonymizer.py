@@ -271,15 +271,31 @@ class ReversibleAnonymizer:
         # wins; re.sub does not re-scan the tokens it inserts.
         values = sorted(label_of, key=len, reverse=True)
         alt = "|".join(re.escape(v) for v in values)
+        bron = text                      # vóór de vervanging, voor de diagnose
         text = re.compile(r"(?<!\w)(?:" + alt + r")(?!\w)").sub(repl, text)
 
         stripped = _PSEUDONYM_RE.sub("", text)  # remove inserted tokens
         for value in values:
-            if re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", stripped):
+            grens = r"(?<!\w)" + re.escape(value) + r"(?!\w)"
+            if re.search(grens, stripped):
+                # Veilige kenmerken van de overlever, géén waarde. Op
+                # 2026-09-14 stond deze controle acht documenten tegen te
+                # houden en was van buitenaf niet te achterhalen wat er
+                # overleefde: twee nabouwpogingen reproduceerden hem niet. Type,
+                # lengte en aantal zijn genoeg om de oorzaak te vinden en kunnen
+                # niemand identificeren.
                 raise AnonymizationInvariantError(
                     "a detected entity value survived pseudonymisation; refusing "
                     "to emit text that may contain clear PII",
                     code="waarde-overleefde-vervanging",
+                    kenmerken={
+                        "label": label_of[value],
+                        "lengte": len(value),
+                        "in_bron": len(re.findall(grens, bron)),
+                        "na_vervanging": len(re.findall(grens, stripped)),
+                        "woorden": len(value.split()),
+                        "alnum": value.isalnum(),
+                    },
                 )
         return text, counts
 

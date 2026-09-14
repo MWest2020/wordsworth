@@ -226,3 +226,39 @@ def test_de_code_van_de_invariant_komt_mee_in_problems(
         str(doc.id): "AnonymizationInvariantError[waarde-overleefde-vervanging]"}
     assert uit["failed"] == 1 and uit["retryable"] == 0   # niet tijdelijk
     assert "Jan Jansen" not in str(uit)
+
+
+def test_de_kenmerken_van_de_invariant_komen_in_de_audit(
+        session_factory, session, mem_store, mem_index, fake_embedder,
+        born_digital_pii_pdf):
+    """Zonder kenmerken stond deze controle acht documenten tegen te houden en
+    was van buitenaf niet te achterhalen wát er overleefde — twee
+    nabouwpogingen reproduceerden hem niet."""
+    from fastapi.testclient import TestClient
+
+    from wordsworth.api import create_app
+    from wordsworth.models import AuditRecord
+    from wordsworth.openanonymiser_driver import AnonymizationInvariantError
+
+    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+                                born_digital_pii_pdf)
+
+    def breekt(_session):
+        raise AnonymizationInvariantError(
+            "Jan Jansen overleefde", code="waarde-overleefde-vervanging",
+            kenmerken={"label": "PERSON", "lengte": 10, "in_bron": 2,
+                       "na_vervanging": 1, "woorden": 2, "alnum": False})
+
+    app = create_app(session_factory=session_factory, store=mem_store,
+                     search_index=mem_index, embedder=fake_embedder,
+                     anonymizer_factory=breekt, rate_limiters={})
+    TestClient(app).post("/reprocess", json={"document_ids": [str(doc.id)]})
+
+    session.expire_all()
+    rec = session.execute(
+        select(AuditRecord).where(AuditRecord.document_id == doc.id,
+                                  AuditRecord.step == "reprocess_failed")
+    ).scalars().one()
+    assert rec.payload["kenmerken"]["label"] == "PERSON"
+    assert rec.payload["kenmerken"]["lengte"] == 10
+    assert "Jan Jansen" not in str(rec.payload)          # nooit de waarde zelf
