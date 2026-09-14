@@ -242,8 +242,15 @@ class ReversibleAnonymizer:
         entity PII (names/places/orgs) is >= 3 chars, so this cannot leak."""
         label_of: dict[str, str] = {}
         for e in entities:
-            value = e.text
-            if value and len(value.strip()) >= _MIN_ENTITY_LEN:
+            # Op de GESTRIPTE waarde matchen, niet op wat de dienst letterlijk
+            # teruggaf. Een span komt binnen met toevallige spatiëring — een
+            # dienst die "Naarden " met spatie meldt, bedoelt Naarden. Matchen
+            # op "Naarden " mist het woord, want er staat een woordteken
+            # achteraan en de grenscontrole slaat dan niet aan; "Naarden" blijft
+            # dan leesbaar in de uitvoer en de fail-hard-controle verwerpt het
+            # hele document. Gemeten 2026-09-14 op acht Woo-documenten.
+            value = e.text.strip() if e.text else ""
+            if len(value) >= _MIN_ENTITY_LEN:
                 label_of.setdefault(value, e.entity_type.lower())
         if not label_of:
             return text, {}
@@ -274,7 +281,21 @@ class ReversibleAnonymizer:
         bron = text                      # vóór de vervanging, voor de diagnose
         text = re.compile(r"(?<!\w)(?:" + alt + r")(?!\w)").sub(repl, text)
 
-        stripped = _PSEUDONYM_RE.sub("", text)  # remove inserted tokens
+        # De ingevoegde tokens eruit — maar naar één NIET-woordteken, niet naar
+        # niets. Weghalen naar niets plakt de tekst links en rechts aan elkaar,
+        # en zo ontstaat een woordgrens die in het origineel niet bestond.
+        #
+        # Gemeten op 2026-09-14, op acht documenten die hierdoor wekenlang
+        # werden geweigerd: vijf overlevers kwamen `in_bron: 0` binnen — de
+        # waarde stónd niet in de brontekst en verscheen pas ná de vervanging.
+        # De controle fabriceerde zijn eigen bewijs. Dat kon omdat een
+        # entiteitswaarde van de service komt (`e.text`) en dus niet per se
+        # woord-begrensd in de tekst voorkomt.
+        #
+        # De reden om te strippen blijft overeind: een ingevoegd token mag zelf
+        # geen gedetecteerde waarde matchen. Een sentinel doet dat net zo goed
+        # en houdt de twee kanten uit elkaar.
+        stripped = _PSEUDONYM_RE.sub("\x00", text)
         for value in values:
             grens = r"(?<!\w)" + re.escape(value) + r"(?!\w)"
             if re.search(grens, stripped):
