@@ -112,3 +112,48 @@ def test_reanonymize_skips_non_indexed(session, mem_store, mem_index,
                      search_index=mem_index, embedder=fake_embedder)
     assert st == State.REGISTERED                            # no-op skip
     assert str(doc.id) not in mem_index._docs
+
+
+def test_a_failing_document_is_named_and_left_in_the_audit(
+        session_factory, session, mem_store, mem_index, fake_embedder,
+        born_digital_pii_pdf):
+    """A backfill that cannot finish a document must say which one, and why.
+
+    On 2026-09-14 a cluster run reported `retryable: 8, failed: 2` and that was
+    the whole story: no ids, and no audit record from that day on any of the ten
+    documents. The chain said nobody had ever touched them while ten attempts had
+    just been made. Counts without identity are not a report, they are a rumour —
+    and the only way left to find the ten was to re-run all 770.
+    """
+    from fastapi.testclient import TestClient
+
+    from wordsworth.api import create_app
+
+    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+                                born_digital_pii_pdf)
+    before = get_anonymized_text(session, doc.id)
+
+    class Kapot(Exception):
+        pass
+
+    def breekt(_session):
+        raise Kapot("engine weg")
+
+    app = create_app(session_factory=session_factory, store=mem_store,
+                     search_index=mem_index, embedder=fake_embedder,
+                     anonymizer_factory=breekt, rate_limiters={})
+    uit = TestClient(app).post("/reprocess",
+                               json={"document_ids": [str(doc.id)]}).json()
+
+    assert uit["failed"] + uit["retryable"] == 1
+    assert uit["problems"] == {str(doc.id): "Kapot"}      # welk document, welke fout
+    assert "engine weg" not in str(uit)                   # nooit de boodschap zelf
+
+    session.expire_all()
+    stappen = list(session.execute(
+        select(AuditRecord.step).where(AuditRecord.document_id == doc.id)
+    ).scalars())
+    assert "reprocess_failed" in stappen                  # sporen, geen stilte
+    assert get_anonymized_text(session, doc.id) == before  # entry ongemoeid
+    ok, eerste_fout = audit.verify_chain(session)
+    assert ok, f"hash-keten brak bij seq {eerste_fout}"
