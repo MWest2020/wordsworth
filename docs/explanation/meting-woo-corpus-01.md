@@ -142,6 +142,32 @@ boodschap — die kan een fragment citeren van het document waarop hij afknapte)
 en er komt een `reprocess_failed`-regel in de audit-keten met de toestand
 ongewijzigd.
 
+## Bevinding 5 — de schema-migratie kon de hele api meetrekken
+
+Gevonden tijdens het uitrollen van de reparatie uit bevinding 4, niet gezocht.
+Het init-Job faalde bij de eerste poging en slaagde bij de retry. In het log:
+
+    Process 272007 waits for AccessShareLock on relation 16400;
+    blocked by process 272113.
+
+`init_schema` zet een trigger en voegt kolommen toe; beide hebben ACCESS
+EXCLUSIVE nodig op tabellen waar de api uit leest. Er stond geen `lock_timeout`,
+in de code noch in de deploy.
+
+Wachten is niet het probleem. Het probleem is wat een *wachtend* ACCESS
+EXCLUSIVE-verzoek doet met alles wat erna komt: die parkeren er allemaal
+achter, ook gewone lezers. Eén vastgelopen init stalt daarmee de complete api,
+en van buiten ziet dat er niet uit als een migratie — het ziet eruit alsof de
+database weg is.
+
+Dat het deze keer goed ging, is geluk: Postgres' eigen deadlock-detectie brak
+de cyclus op. Bij een gewone lock-wachtrij zónder cyclus grijpt die niet in en
+wacht hij door.
+
+Opgelost met `SET LOCAL lock_timeout = '5s'` in de migratie-transactie. Snel
+falen is hier de betere helft van de afspraak: het init-Job probeert het met
+backoff opnieuw, en een poging een seconde later vindt de lock meestal vrij.
+
 ## Wat deze meting NIET zegt
 
 Ze meet de pijplijn, niet de kwaliteit. **Hoeveel PII er gemist is, weet ik
