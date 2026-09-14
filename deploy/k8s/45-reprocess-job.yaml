@@ -57,8 +57,19 @@ spec:
                   kop["X-API-Key"] = next(
                       (k for k, label in sleutels.items() if label == "console"),
                       next(iter(sleutels)))
+              # Leeg = alle INDEXED documenten. Een lijst = alleen die documenten.
+              # Waarom dat de moeite is: op 2026-09-14 moesten er van 770
+              # documenten nog 31 opnieuw door de anonimisering, omdat de
+              # postcode-detector er later bij kwam. Alles herdraaien kost ~25 uur
+              # GLiNER, die 31 een uur. Een herstelactie die een dag duurt wordt
+              # afgebroken; een die een uur duurt wordt afgemaakt.
+              ids = [x.strip() for x in
+                     os.environ.get("WORDSWORTH_REPROCESS_IDS", "").split(",")
+                     if x.strip()]
+              lijf = json.dumps({"document_ids": ids} if ids else {}).encode()
+              print(f"reprocess: {len(ids) or 'alle INDEXED'} document(en)", flush=True)
               req = urllib.request.Request(basis.rstrip("/") + "/reprocess",
-                                           data=b"{}", headers=kop, method="POST")
+                                           data=lijf, headers=kop, method="POST")
               t0 = time.time()
               # Geen timeout-vangnet met een kleine waarde: dit duurt uren en een
               # afgekapte client laat de server dóórwerken zonder dat iemand het
