@@ -44,3 +44,19 @@ def test_de_invariantfout_blijft_een_motorfout():
 
 def test_transporte_fouten_blijven_tijdelijk():
     assert is_transient(httpx.ConnectTimeout("traag")) is True
+
+
+def test_de_code_zegt_welke_invariant_brak():
+    """Twee invariant-controles delen één klasse; de code onderscheidt ze.
+
+    Zonder die code weet je na een mislukte run wél dat een invariant brak,
+    maar niet welke — en dat is precies het verschil tussen "de motor hield
+    zich niet aan het contract" en "onze eigen vervanging liet iets staan".
+    """
+    fout = AnonymizationInvariantError("x", code="waarde-overleefde-vervanging")
+    assert fout.code == "waarde-overleefde-vervanging"
+    assert is_transient(fout) is False
+
+
+def test_zonder_code_valt_hij_terug_op_onbekend():
+    assert AnonymizationInvariantError("x").code == "onbekend"

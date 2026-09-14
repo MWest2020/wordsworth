@@ -278,7 +278,8 @@ class ReversibleAnonymizer:
             if re.search(r"(?<!\w)" + re.escape(value) + r"(?!\w)", stripped):
                 raise AnonymizationInvariantError(
                     "a detected entity value survived pseudonymisation; refusing "
-                    "to emit text that may contain clear PII"
+                    "to emit text that may contain clear PII",
+                    code="waarde-overleefde-vervanging",
                 )
         return text, counts
 

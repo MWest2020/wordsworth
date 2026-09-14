@@ -640,7 +640,13 @@ def create_app(
                 namen, e, gezien = [], exc, set()
                 while e is not None and id(e) not in gezien and len(namen) < 5:
                     gezien.add(id(e))
-                    namen.append(type(e).__name__)
+                    naam = type(e).__name__
+                    # Een vaste code zegt WELKE invariant brak. Alleen een code
+                    # uit een gesloten woordenlijst — nooit `str(e)`.
+                    code = getattr(e, "code", None)
+                    if isinstance(code, str) and code:
+                        naam = f"{naam}[{code}]"
+                    namen.append(naam)
                     e = e.__cause__ or e.__context__
                 return " <- ".join(namen)
 

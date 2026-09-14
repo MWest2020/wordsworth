@@ -185,10 +185,26 @@ bestaande `except AnonymizationEngineError` hem nog vangt en het fail-closed
 gedrag onveranderd blijft. Alleen het etiket is nu waar: deze acht tellen
 voortaan als `failed`, niet als `retryable`.
 
-**Nog onbekend: waaróm een gedetecteerde waarde de vervanging overleeft.** Dat
-is de volgende vraag, en hij is nu tenminste de juiste vraag. Wat we weten: het
-is deterministisch, het treft acht van de 770 documenten, en zes van die acht
-delen onderling twee PDF's — het corpus bevat dubbelen.
+**Nog onbekend: wélke van de twee invarianten brak, en waarom.** De klasse is
+voor beide dezelfde, dus er is nu een vaste `code` per plek
+(`entiteit-zonder-score`, `waarde-overleefde-vervanging`) die meegeschreven
+wordt naast de klassenaam. Een code uit een gesloten woordenlijst kan niets
+citeren; een foutboodschap wel, en daarom blijft die eruit.
+
+Twee pogingen om het van buitenaf te reproduceren liepen dood, en dat is zelf
+informatie:
+
+- De opgeslagen tekst van zo'n document bevat **nul** bestaande pseudoniem-
+  tokens. De gedachte dat het residu van een vorige ronde zou zijn, klopt niet.
+- Een nagebouwde herhaling van de detectie-en-vervangingslus op diezelfde tekst
+  leverde **geen** overlever op. De nabouw is dus niet trouw genoeg: de echte
+  route draait eerst de deterministische laag en chunkt op andere grenzen. Dat
+  is een aanwijzing dat het aan de chunkgrenzen of aan die voorlaag ligt, en
+  géén bewijs.
+
+Wat er wél hard staat, komt uit de code en niet uit een gok: er zijn precies
+twee plekken die deze fout zónder `from` gooien, en dat is waarom de keten leeg
+bleef. De volgende run wijst aan welke van de twee.
 
 ## Bevinding 5 — de schema-migratie kon de hele api meetrekken
 
