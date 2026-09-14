@@ -37,9 +37,10 @@ class DeterministicAnonymizer:
     def anonymize(self, text: str) -> AnonymizationResult:
         counts: dict[str, int] = {}
         stats = DetectionStats()
-        for label, pattern, validate in detectors.DETECTORS:
+        for label, pattern, validate, context in detectors.DETECTORS:
             text, counts[label] = detectors.substitute(
-                text, pattern, lambda v, label=label: f"[{label.upper()}]", validate
+                text, pattern, lambda v, label=label: f"[{label.upper()}]",
+                validate, context
             )
             stats.add(DETERMINISTIC, label, 1.0, counts[label])  # validated = certain
         return AnonymizationResult(text=text, counts=counts, detections=stats.to_dict())
