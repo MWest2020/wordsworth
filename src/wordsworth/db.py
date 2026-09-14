@@ -51,9 +51,23 @@ ALTER TABLE grants ADD COLUMN IF NOT EXISTS domain VARCHAR;
 
 
 def init_schema(engine: Engine) -> None:
-    """Apply the schema migration: tables + columns + the append-only trigger."""
+    """Apply the schema migration: tables + columns + the append-only trigger.
+
+    Bounded by a lock timeout, because both statements below need ACCESS
+    EXCLUSIVE on a table the API is reading. Without a bound a blocked
+    migration does not merely wait: a queued ACCESS EXCLUSIVE request parks
+    every later reader behind it, so one stalled init takes the whole API down
+    with it. On 2026-09-14 an init during a running reprocess was broken up by
+    Postgres' own deadlock detector — that is luck, not a design.
+
+    Failing fast is the better half of the deal: the init Job retries with
+    backoff, and a retry that starts a second later usually finds the lock
+    free.
+    """
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
+        # SET LOCAL: scoped to this transaction, gone on commit.
+        conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         conn.execute(text(_COLUMN_MIGRATIONS_SQL))
         conn.execute(text(_APPEND_ONLY_SQL))
 
