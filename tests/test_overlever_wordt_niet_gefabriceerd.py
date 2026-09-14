@@ -81,23 +81,48 @@ def test_de_dienst_mag_spatie_eromheen_geven(session):
     assert uit.count("[LOCATION:") == 1 and uit.count("[PERSON:") == 1
 
 
-def test_de_sentinel_verwijdert_het_token_maar_plakt_niets_aan_elkaar():
-    """De twee eisen aan het strippen, allebei vastgelegd.
+def test_het_masker_houdt_dezelfde_woordgrenzen_als_de_waarde():
+    """Een token vervangen door iets met dezelfde woord-eigenschap aan beide
+    kanten, zodat de controle dezelfde grenzen ziet als de vervanging.
 
-    Strippen bestaat omdat een ingevoegd token zelf geen gedetecteerde waarde
-    mag matchen — die eis blijft. Wat eraan ontbrak is de tweede: het weghalen
-    mag de tekst links en rechts niet aan elkaar plakken, want dan ontstaat een
-    woordgrens die er niet was.
+    Naar niets strippen plakt de tekst aan elkaar; naar een vast niet-woordteken
+    strippen maakt een grens waar een woordteken stond. Allebei fout, in
+    tegengestelde richting.
     """
     import re
 
     from wordsworth.pseudonymizer import _PSEUDONYM_RE
 
-    tekst = "J. [PERSON:ab12cd34] B"
-    gestript = _PSEUDONYM_RE.sub("\x00", tekst)
+    # "Jansen" begint en eindigt met een woordteken, dus het masker ook.
+    tekst = "voorJansenna"
+    met_token = "voor[PERSON:ab12cd34]na"
 
-    assert "PERSON" not in gestript          # het token is weg
-    assert "ab12cd34" not in gestript
-    # en "J." en "B" zijn niet buren geworden:
-    assert re.search(r"(?<!\w)J\.\s+B(?!\w)", gestript) is None
-    assert re.search(r"(?<!\w)J\.\s+B(?!\w)", _PSEUDONYM_RE.sub("", tekst))
+    naar_niets = _PSEUDONYM_RE.sub("", met_token)          # "voorna"
+    naar_sentinel = _PSEUDONYM_RE.sub("\x00", met_token)   # "voor\x00na"
+    naar_masker = _PSEUDONYM_RE.sub("xx", met_token)       # "voorxxna"
+
+    # "voor" stond midden in een woord en hoort dat te blijven.
+    grens = r"(?<!\w)voor(?!\w)"
+    assert re.search(grens, tekst) is None                 # in de bron: geen grens
+    assert re.search(grens, naar_niets) is None            # toevallig ook niet
+    assert re.search(grens, naar_sentinel) is not None     # FOUT: grens gemaakt
+    assert re.search(grens, naar_masker) is None           # goed: grens behouden
+
+
+def test_een_waarde_middenin_een_woord_geeft_geen_vals_alarm(session):
+    """Het geval van de drie documenten, in het klein.
+
+    De waarde staat woord-begrensd in de tekst én een keer middenin een woord.
+    De begrensde voorkomens worden vervangen; het voorkomen middenin blijft
+    staan, want dat vervangen zou gewone tekst mangelen. Dat mag geen alarm zijn.
+    """
+    tekst = "B.V staat hier, en ook in aB.Vc verstopt."
+
+    def detect(_t):
+        return [Entity(entity_type="ORGANIZATION", text="B.V", start=0, end=3)]
+
+    anon = ReversibleAnonymizer(InMemoryKeyProvider(),
+                                PostgresMappingStore(session), detect=detect)
+    uit = anon.anonymize(tekst).text
+    assert uit.startswith("[ORGANIZATION:")     # het begrensde voorkomen is weg
+    assert "aB.Vc" in uit                       # het ingebedde is met rust gelaten
