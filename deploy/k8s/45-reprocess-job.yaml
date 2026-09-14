@@ -1,0 +1,81 @@
+# Herindexeren van een bestaand corpus: elk INDEXED document opnieuw door de
+# de-identify-stap van de HUIDIGE code, dan opnieuw embedden en indexeren.
+#
+# WAAROM DIT EEN JOB IS EN GEEN `kubectl exec`. Op 2026-09-13 startte ik zo'n run
+# met `kubectl exec … python3 -c 'urllib.request.urlopen(/reprocess)'`. Om 03:00
+# viel de websocket van die exec weg:
+#
+#     "Copying stdout failed" err="websocket: close 1006 (abnormal closure)"
+#
+# Het WERK liep gewoon door — de HTTP-aanroep draait binnen de api-pod — maar de
+# client die het antwoord zou lezen was weg. Het eindresultaat van dat endpoint
+# is daarmee voorgoed verloren; de voortgang was alleen nog uit de audit-tabel te
+# halen. Een run van uren aan een interactieve verbinding hangen is het probleem,
+# niet de verbinding die wegviel.
+#
+# Een Job overleeft dat: hij heeft zijn eigen log, zijn eigen eindtoestand en
+# `kubectl -n wordsworth wait --for=condition=complete`.
+#
+#   kubectl -n wordsworth apply -f 45-reprocess-job.yaml
+#   kubectl -n wordsworth logs -f job/wordsworth-reprocess
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wordsworth-reprocess
+  namespace: wordsworth
+spec:
+  backoffLimit: 0          # een halve herindexering opnieuw beginnen helpt niemand
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: { app: wordsworth, job: reprocess }
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: reprocess
+          # Zelfde image als de api, want het is dezelfde code; pin op digest.
+          image: ghcr.io/mwest2020/wordsworth@sha256:<digest>
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-c"]
+          args:
+            - |
+              import json, os, time, urllib.request
+              from wordsworth.auth import parse_api_keys
+              basis = os.environ.get("WORDSWORTH_API_URL",
+                                     "http://wordsworth-api.wordsworth.svc.cluster.local:8000")
+              kop = {"Content-Type": "application/json"}
+              # Auth is opt-in; zonder sleutels draait de api open en hoort er
+              # geen header bij. Een lege header sturen zou een 401 geven op een
+              # installatie die juist GEEN auth gebruikt.
+              sleutels = parse_api_keys(os.environ.get("WORDSWORTH_API_KEYS", ""))
+              if sleutels:
+                  kop["X-API-Key"] = next(
+                      (k for k, label in sleutels.items() if label == "console"),
+                      next(iter(sleutels)))
+              req = urllib.request.Request(basis.rstrip("/") + "/reprocess",
+                                           data=b"{}", headers=kop, method="POST")
+              t0 = time.time()
+              # Geen timeout-vangnet met een kleine waarde: dit duurt uren en een
+              # afgekapte client laat de server dóórwerken zonder dat iemand het
+              # resultaat nog leest — precies de storing die deze Job vervangt.
+              with urllib.request.urlopen(req, timeout=86400) as r:
+                  uit = json.loads(r.read())
+              print(json.dumps(uit), "in", round(time.time() - t0), "s", flush=True)
+              # Niet-nul afsluiten als er iets bleef liggen, zodat de Job faalt in
+              # plaats van stil 'Completed' te melden.
+              raise SystemExit(0 if uit.get("failed", 0) == 0 else 1)
+          envFrom:
+            - configMapRef: { name: wordsworth-config }
+            - secretRef: { name: wordsworth-apikeys }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "200m", memory: "256Mi" }

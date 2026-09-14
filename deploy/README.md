@@ -161,6 +161,44 @@ Each document prints its terminal state; the job exits 0 only if **all** reached
 functionally over the tailnet API (`/search`, `/hybrid`, `/ask`) — confirm no
 clear PII appears in results.
 
+## 7. Re-index an existing corpus
+
+After a detector change, the documents already in the index still carry the old
+de-identification. `/reprocess` re-runs the de-identify step over every `indexed`
+document with the **current** code.
+
+```
+kubectl -n wordsworth apply -f k8s/45-reprocess-job.yaml
+kubectl -n wordsworth logs -f job/wordsworth-reprocess
+```
+
+**Run it as a Job, never through `kubectl exec`.** Measured 2026-09-13: an
+`exec`-driven run lost its websocket after four hours —
+
+    "Copying stdout failed" err="websocket: close 1006 (abnormal closure)"
+
+The *work* carried on (the HTTP call runs inside the api pod), but the client
+that would read the result was gone, so the endpoint's outcome was lost for good
+and progress could only be read from the audit table. A run of hours does not
+belong on an interactive connection.
+
+Expect roughly two minutes per document: every one goes through GLiNER and
+bge-m3 again. Progress while it runs:
+
+```
+kubectl -n wordsworth exec deploy/wordsworth-api -- python3 -c "
+import os; from sqlalchemy import create_engine, text
+e=create_engine(os.environ['WORDSWORTH_DATABASE_URL'])
+with e.connect() as c:
+    print(c.execute(text(\"select count(*) from audit_records where step='reanonymize'\")).scalar())"
+```
+
+Note that `/reprocess` writes through the **reversible** pseudonymizer: a corpus
+first indexed with the irreversible anonymizer changes placeholder shape from
+`<PERSON>` to `[PERSON:hash8]`. That is the documented purpose of the endpoint —
+less is exposed, not more, since the value moves into the encrypted mapping store
+instead of being discarded.
+
 ## Hardening follow-ups (alma decisions)
 
 - **Transport of pre-anonymization PII — decided, see
