@@ -290,6 +290,27 @@ dat kostte acht documenten uit het corpus. Een controle die vals alarm slaat,
 wordt uiteindelijk uitgezet; dat is geen theoretisch risico maar de normale
 levensloop van zo'n controle.
 
+**Geen van beide reparaties hielp, en dat was het beslissende gegeven.** Na de
+herdraai: dezelfde acht, dezelfde kenmerken, tot op het getal. Drie ervan
+lieten zien wat er werkelijk aan de hand was — een waarde van drie tekens die
+**vijftien keer** woord-begrensd in de bron voorkomt, alle vijftien vervangen,
+en er verschijnt er **één nieuwe**.
+
+Dat kan maar op één manier. De vervanging maakt die grens zelf: een buurwoord
+wordt een token, en een token begint met `[`. Het zestiende voorkomen stond in
+de bron midden in een woord, en dat wordt bewust niet vervangen omdat het
+gewone tekst zou mangelen — dezelfde reden waarom `_MIN_ENTITY_LEN` bestaat.
+
+De kern: **de vervanging beoordeelt de woordgrenzen vóór de vervanging, de
+controle beoordeelde ze erna.** Twee verschillende metingen op twee
+verschillende teksten, en het verschil heet vals alarm.
+
+Opgelost door een token te vervangen door iets met dezelfde
+woord-of-niet-woord-eigenschap aan beide kanten als de waarde die er stond. Dan
+ziet de controle exact de grenzen die de vervanging zag. Naar niets strippen
+plakt de tekst aan elkaar; naar een vast niet-woordteken strippen maakt juist
+een grens waar een woordteken hoorde — allebei fout, in tegengestelde richting.
+
 ## Wat deze meting NIET zegt
 
 Ze meet de pijplijn, niet de kwaliteit. **Hoeveel PII er gemist is, weet ik

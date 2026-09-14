@@ -256,6 +256,7 @@ class ReversibleAnonymizer:
             return text, {}
 
         counts: dict[str, int] = {}
+        waarde_van_token: dict[str, str] = {}
 
         def repl(match: re.Match[str]) -> str:
             value = match.group(0)
@@ -266,6 +267,7 @@ class ReversibleAnonymizer:
             self._store.put(pseudonym, ciphertext, nonce, key.id,
                             norm_version=PROFILE_VERSION)  # idempotent
             counts[label] = counts.get(label, 0) + 1
+            waarde_van_token[pseudonym] = value
             return pseudonym
 
         # Match values only as WHOLE tokens — not as substrings inside larger
@@ -281,21 +283,33 @@ class ReversibleAnonymizer:
         bron = text                      # vóór de vervanging, voor de diagnose
         text = re.compile(r"(?<!\w)(?:" + alt + r")(?!\w)").sub(repl, text)
 
-        # De ingevoegde tokens eruit — maar naar één NIET-woordteken, niet naar
-        # niets. Weghalen naar niets plakt de tekst links en rechts aan elkaar,
-        # en zo ontstaat een woordgrens die in het origineel niet bestond.
+        # De ingevoegde tokens eruit — maar vervangen door iets dat aan beide
+        # kanten dezelfde woord-of-niet-woord-eigenschap heeft als de waarde die
+        # er stond. Anders beoordeelt deze controle de woordgrenzen ná de
+        # vervanging, terwijl de vervanging ze vóóraf beoordeelt, en dan meet je
+        # twee verschillende dingen.
         #
-        # Gemeten op 2026-09-14, op acht documenten die hierdoor wekenlang
-        # werden geweigerd: vijf overlevers kwamen `in_bron: 0` binnen — de
-        # waarde stónd niet in de brontekst en verscheen pas ná de vervanging.
-        # De controle fabriceerde zijn eigen bewijs. Dat kon omdat een
-        # entiteitswaarde van de service komt (`e.text`) en dus niet per se
-        # woord-begrensd in de tekst voorkomt.
+        # Gemeten op 2026-09-14, op acht documenten die hierdoor werden
+        # geweigerd. Drie ervan: een waarde van drie tekens kwam vijftien keer
+        # woord-begrensd in de bron voor, alle vijftien werden vervangen, en er
+        # verscheen er één nieuwe. Dat kan alleen als de vervanging zelf die
+        # grens maakt: een buurwoord wordt een token, en een token begint met
+        # "[". Het zestiende voorkomen stond in de bron midden in een woord en
+        # wordt bewust niet vervangen — dat zou gewone tekst mangelen (zie de
+        # toelichting bij _MIN_ENTITY_LEN). Het hoort dus ook geen alarm te zijn.
         #
-        # De reden om te strippen blijft overeind: een ingevoegd token mag zelf
-        # geen gedetecteerde waarde matchen. Een sentinel doet dat net zo goed
-        # en houdt de twee kanten uit elkaar.
-        stripped = _PSEUDONYM_RE.sub("\x00", text)
+        # Onbekende tokens (van de deterministische laag, die hier al stonden)
+        # krijgen "xx": BSN, IBAN, e-mail en postcode beginnen en eindigen alle
+        # vier met een woordteken.
+        def _masker(m: re.Match[str]) -> str:
+            waarde = waarde_van_token.get(m.group(0))
+            if waarde is None:
+                return "xx"
+            kop = "x" if waarde[0].isalnum() or waarde[0] == "_" else "\x00"
+            staart = "x" if waarde[-1].isalnum() or waarde[-1] == "_" else "\x00"
+            return kop + staart
+
+        stripped = _PSEUDONYM_RE.sub(_masker, text)
         for value in values:
             grens = r"(?<!\w)" + re.escape(value) + r"(?!\w)"
             if re.search(grens, stripped):
