@@ -204,7 +204,24 @@ informatie:
 
 Wat er wél hard staat, komt uit de code en niet uit een gok: er zijn precies
 twee plekken die deze fout zónder `from` gooien, en dat is waarom de keten leeg
-bleef. De volgende run wijst aan welke van de twee.
+bleef.
+
+**De run wees het aan.** Alle acht:
+`AnonymizationInvariantError[waarde-overleefde-vervanging]`, en `failed: 8,
+retryable: 0`. Het is dus niet de motor die zijn contract brak — het is onze
+eigen vervanging die een gedetecteerde waarde laat staan.
+
+Waarom die waarde blijft staan, was van buitenaf niet te achterhalen: twee
+nabouwen reproduceerden het niet. Daarom schrijft de controle nu zelf veilige
+kenmerken van de overlever op — type, lengte, aantal woorden, hoe vaak hij vóór
+en ná de vervanging voorkomt. Nooit de waarde. De audit-keten is exporteerbaar,
+en een "handige" foutboodschap met de waarde erin zou document-inhoud in een
+exporteerbaar spoor zetten — precies wat deze hele laag moet voorkomen.
+
+`in_bron` tegenover `na_vervanging` is het getal dat de vraag beslecht. Zijn ze
+gelijk, dan heeft de vervangings-regex de waarde nooit geraakt. Is
+`na_vervanging` kleiner, dan zijn sommige voorkomens wél vervangen en andere
+niet, en dan zit het in de context rond die voorkomens — niet in de waarde zelf.
 
 ## Bevinding 5 — de schema-migratie kon de hele api meetrekken
 

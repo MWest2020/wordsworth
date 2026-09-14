@@ -60,3 +60,26 @@ def test_de_code_zegt_welke_invariant_brak():
 
 def test_zonder_code_valt_hij_terug_op_onbekend():
     assert AnonymizationInvariantError("x").code == "onbekend"
+
+
+def test_de_kenmerken_dragen_nooit_een_waarde():
+    """Wat de raise-site meegeeft moet type/lengte/aantal zijn, geen tekst.
+
+    De audit-keten is exporteerbaar. Een 'handige' foutboodschap met de waarde
+    erin is document-inhoud in een exporteerbaar spoor, en dat is precies wat
+    deze hele laag moet voorkomen.
+    """
+    fout = AnonymizationInvariantError(
+        "x", code="waarde-overleefde-vervanging",
+        kenmerken={"label": "PERSON", "lengte": 9, "in_bron": 3,
+                   "na_vervanging": 1, "woorden": 2, "alnum": False})
+    assert set(fout.kenmerken) == {"label", "lengte", "in_bron",
+                                   "na_vervanging", "woorden", "alnum"}
+    assert all(isinstance(v, (int, bool, str)) for v in fout.kenmerken.values())
+    assert fout.kenmerken["label"] in ("PERSON", "LOCATION", "ORGANIZATION",
+                                       "DATE_TIME", "EMAIL", "PHONE_NUMBER",
+                                       "BSN", "IBAN", "POSTCODE")
+
+
+def test_zonder_kenmerken_is_het_een_lege_dict():
+    assert AnonymizationInvariantError("x").kenmerken == {}
