@@ -28,7 +28,14 @@ def is_transient(exc: BaseException) -> bool:
     connection/timeout error names (httpx and opensearch-py alike)."""
     if isinstance(exc, _PERMANENT):
         return False
-    from .openanonymiser_driver import AnonymizationEngineError
+    from .openanonymiser_driver import (
+        AnonymizationEngineError,
+        AnonymizationInvariantError,
+    )
+    # Order matters: the invariant error IS an engine error, and it is the one
+    # retrying cannot fix.
+    if isinstance(exc, AnonymizationInvariantError):
+        return False
     if isinstance(exc, AnonymizationEngineError):
         return True
     if isinstance(exc, (ConnectionError, TimeoutError, OSError, httpx.TransportError)):

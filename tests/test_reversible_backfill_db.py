@@ -197,3 +197,32 @@ def test_de_oorzaak_onder_de_wrapper_komt_mee(
     assert uit["problems"] == {str(doc.id): "Wikkel <- Onderliggend"}
     assert "Jan Jansen" not in str(uit)                   # klassen, geen tekst
     assert "1234 AB" not in str(uit)
+
+
+def test_de_code_van_de_invariant_komt_mee_in_problems(
+        session_factory, session, mem_store, mem_index, fake_embedder,
+        born_digital_pii_pdf):
+    """`AnonymizationInvariantError[waarde-overleefde-vervanging]` — welke
+    invariant brak, zonder ook maar een teken uit het document."""
+    from fastapi.testclient import TestClient
+
+    from wordsworth.api import create_app
+    from wordsworth.openanonymiser_driver import AnonymizationInvariantError
+
+    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+                                born_digital_pii_pdf)
+
+    def breekt(_session):
+        raise AnonymizationInvariantError(
+            "een waarde 'Jan Jansen' overleefde", code="waarde-overleefde-vervanging")
+
+    app = create_app(session_factory=session_factory, store=mem_store,
+                     search_index=mem_index, embedder=fake_embedder,
+                     anonymizer_factory=breekt, rate_limiters={})
+    uit = TestClient(app).post("/reprocess",
+                               json={"document_ids": [str(doc.id)]}).json()
+
+    assert uit["problems"] == {
+        str(doc.id): "AnonymizationInvariantError[waarde-overleefde-vervanging]"}
+    assert uit["failed"] == 1 and uit["retryable"] == 0   # niet tijdelijk
+    assert "Jan Jansen" not in str(uit)

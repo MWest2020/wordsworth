@@ -158,9 +158,53 @@ citeren.
 
 Handmatig nagemeten op het cluster, ná de mislukte run: de chunks van zo'n
 document slagen stuk voor stuk wél, los aangeroepen. Het gaat dus niet om een
-document dat de motor niet aankan, maar om iets in het gelijktijdige pad of in
-de belasting op dat moment. Dat is een aanwijzing, geen conclusie, en de
-volgende run schrijft hem zelf op.
+document dat de motor niet aankan.
+
+## Bevinding 6 — "retryable" was een verkeerd etiket, en dat verborg het echte werk
+
+De run mét oorzaakketen gaf een leeg vervolg: alleen
+`AnonymizationEngineError`, geen `<- oorzaak`. Dat is zelf het bewijs. De plek
+die de fout mét `from exc` doorgeeft, was het dus niet; er zijn maar twee
+plekken die hem zónder oorzaak gooien, en allebei zijn het
+**invariant-controles**:
+
+- `_score()` — de motor gaf een entiteit zonder score terug (contractbreuk);
+- `pseudonymizer.py` — *"a detected entity value survived pseudonymisation"*:
+  ná het vervangen staat een gedetecteerde waarde nog in de tekst, en de code
+  weigert die tekst uit te geven.
+
+Dat weigeren is goed en blijft zo. Het etiket erop was fout. `is_transient()`
+gaf voor élke `AnonymizationEngineError` "tijdelijk" terug, dus werden deze acht
+run na run als `retryable` gemeld. Ze waren niet tijdelijk: dezelfde invoer
+ontmoet dezelfde code en faalt identiek, voor altijd. De run zag er herstelbaar
+uit terwijl er een codewijziging nodig is, en elke poging kostte GLiNER-tijd om
+tot dezelfde conclusie te komen.
+
+Opgelost met `AnonymizationInvariantError`, een subklasse — zodat elke
+bestaande `except AnonymizationEngineError` hem nog vangt en het fail-closed
+gedrag onveranderd blijft. Alleen het etiket is nu waar: deze acht tellen
+voortaan als `failed`, niet als `retryable`.
+
+**Nog onbekend: wélke van de twee invarianten brak, en waarom.** De klasse is
+voor beide dezelfde, dus er is nu een vaste `code` per plek
+(`entiteit-zonder-score`, `waarde-overleefde-vervanging`) die meegeschreven
+wordt naast de klassenaam. Een code uit een gesloten woordenlijst kan niets
+citeren; een foutboodschap wel, en daarom blijft die eruit.
+
+Twee pogingen om het van buitenaf te reproduceren liepen dood, en dat is zelf
+informatie:
+
+- De opgeslagen tekst van zo'n document bevat **nul** bestaande pseudoniem-
+  tokens. De gedachte dat het residu van een vorige ronde zou zijn, klopt niet.
+- Een nagebouwde herhaling van de detectie-en-vervangingslus op diezelfde tekst
+  leverde **geen** overlever op. De nabouw is dus niet trouw genoeg: de echte
+  route draait eerst de deterministische laag en chunkt op andere grenzen. Dat
+  is een aanwijzing dat het aan de chunkgrenzen of aan die voorlaag ligt, en
+  géén bewijs.
+
+Wat er wél hard staat, komt uit de code en niet uit een gok: er zijn precies
+twee plekken die deze fout zónder `from` gooien, en dat is waarom de keten leeg
+bleef. De volgende run wijst aan welke van de twee.
 
 ## Bevinding 5 — de schema-migratie kon de hele api meetrekken
 

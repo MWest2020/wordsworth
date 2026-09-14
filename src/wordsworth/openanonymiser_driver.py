@@ -32,6 +32,35 @@ class AnonymizationEngineError(RuntimeError):
     """The anonymization engine failed. Deliberately carries no document text."""
 
 
+class AnonymizationInvariantError(AnonymizationEngineError):
+    """An invariant broke, deterministically — retrying changes nothing.
+
+    Both parents of this distinction refuse to emit text, and that stays the
+    same. What differs is what the operator should do next. "The service is
+    unreachable" passes on its own; "the service returned an entity without a
+    score" and "a detected value survived pseudonymisation" do not — they are
+    the same input meeting the same code, and they will fail identically for
+    ever.
+
+    Why it matters, measured: on 2026-09-14 eight documents were reported as
+    `retryable` run after run. They were not. The run looked recoverable while
+    it needed a code change, and every retry cost GLiNER time to reach the same
+    conclusion. A subclass, so every existing `except AnonymizationEngineError`
+    keeps catching it — the fail-closed behaviour is unchanged, only the label
+    on the failure is now true.
+
+    ``code`` names WHICH invariant broke, in a fixed vocabulary chosen at the
+    raise site. It is recorded where the class name is recorded. A fixed code
+    cannot quote a document, which is why it is a separate field and not the
+    message: a message is free text, and free text near a document is how PII
+    escapes.
+    """
+
+    def __init__(self, *args: object, code: str = "onbekend") -> None:
+        super().__init__(*args)
+        self.code = code
+
+
 class _EngineFn(Protocol):
     """(redacted text, counts[, per-layer detection aggregates]). The third
     element is optional so a plain 2-tuple test double still satisfies it."""
@@ -54,7 +83,8 @@ def _score(e: dict) -> float:
     """The service's confidence; its absence is a contract break → hard error
     (no silent default), per the no-silent-fallback rule."""
     if "score" not in e:
-        raise AnonymizationEngineError("OpenAnonymiser entity without score")
+        raise AnonymizationInvariantError(
+            "OpenAnonymiser entity without score", code="entiteit-zonder-score")
     return float(e["score"])
 
 
