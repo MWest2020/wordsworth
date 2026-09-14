@@ -142,6 +142,26 @@ boodschap — die kan een fragment citeren van het document waarop hij afknapte)
 en er komt een `reprocess_failed`-regel in de audit-keten met de toestand
 ongewijzigd.
 
+**Wat die reparatie meteen opleverde.** De gerichte herdraai van de acht
+overgebleven documenten meldde: `retryable: 8, failed: 0`, en alle acht met
+dezelfde oorzaak — `AnonymizationEngineError`. Niet de data dus, en niet de
+grootte: de anonimiseringsmotor. Een antwoord dat een uur eerder nog helemaal
+niet te krijgen was.
+
+En meteen de volgende laag van hetzelfde. `AnonymizationEngineError` is de
+bewuste tekstloze wikkel van de driver: hij zegt dát de motor weigerde, nooit
+waarom. De oorzaak eronder — een timeout, een 503, een contractbreuk — is het
+deel waar je iets mee doet, en die viel weg in de wikkel. De keten van
+exception-**klassen** wordt nu meegeschreven (`AnonymizationEngineError <-
+ReadTimeout`); nog steeds geen boodschappen, want een klassenaam kan niets
+citeren.
+
+Handmatig nagemeten op het cluster, ná de mislukte run: de chunks van zo'n
+document slagen stuk voor stuk wél, los aangeroepen. Het gaat dus niet om een
+document dat de motor niet aankan, maar om iets in het gelijktijdige pad of in
+de belasting op dat moment. Dat is een aanwijzing, geen conclusie, en de
+volgende run schrijft hem zelf op.
+
 ## Bevinding 5 — de schema-migratie kon de hele api meetrekken
 
 Gevonden tijdens het uitrollen van de reparatie uit bevinding 4, niet gezocht.

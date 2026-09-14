@@ -624,6 +624,26 @@ def create_app(
         # reprocessing with the irreversible driver would be pointless.
         if anonymizer_factory is not None:
 
+            def _cause_chain(exc: BaseException) -> str:
+                """The exception classes from outside in, e.g.
+                ``AnonymizationEngineError <- ReadTimeout``.
+
+                The outermost class alone was not enough. On 2026-09-14 eight
+                documents all reported `AnonymizationEngineError`, which is the
+                driver's deliberate no-text wrapper: it says the engine refused,
+                never why. The cause underneath — a timeout, a 503, a contract
+                break — is the part you act on, and it was being dropped.
+
+                Class NAMES only. `str(exc)` of an engine error can quote the
+                fragment it choked on; a class name cannot.
+                """
+                namen, e, gezien = [], exc, set()
+                while e is not None and id(e) not in gezien and len(namen) < 5:
+                    gezien.add(id(e))
+                    namen.append(type(e).__name__)
+                    e = e.__cause__ or e.__context__
+                return " <- ".join(namen)
+
             def _note_reprocess_failure(document_id: UUID, exc: Exception) -> None:
                 """Leave a trace in the audit chain that this document was tried
                 and did not make it.
@@ -647,7 +667,7 @@ def create_app(
                         audit.append(session, document_id=document_id,
                                      from_state=state.value, to_state=state.value,
                                      step="reprocess_failed",
-                                     payload={"error_class": type(exc).__name__,
+                                     payload={"error_class": _cause_chain(exc),
                                               "transient": is_transient(exc)})
                         session.commit()
                 except Exception:  # noqa: BLE001 — bookkeeping must never
@@ -695,7 +715,7 @@ def create_app(
                         counts[_reprocess_one(document_id)] += 1
                     except Exception as exc:  # never leaks text; entry left intact
                         counts["retryable" if is_transient(exc) else "failed"] += 1
-                        problems[str(document_id)] = type(exc).__name__
+                        problems[str(document_id)] = _cause_chain(exc)
                         _note_reprocess_failure(document_id, exc)
                 return ReprocessResponse(total=len(ids), problems=problems,
                                          **counts)
