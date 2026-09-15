@@ -375,6 +375,35 @@ contextregel omdat briefhoofden hun regels met een pijp naast elkaar zetten:
 `Postbus 2341 | 6800 GD Arnhem`. De regel verwachtte een komma, punt of
 witruimte tussen nummer en postcode. De pijp hoort erbij.
 
+## Bevinding 10 — het venster leek wankel en is dat niet
+
+De contextregel voor postbussen kijkt veertig tekens terug, en doet dat op tekst
+waar bsn, iban en e-mail al vervangen zijn. Placeholders hebben een andere lengte
+dan de waarden die ze vervingen, dus leek de reikwijdte van die regel mee te
+schuiven met wat er toevallig vóór stond. Er lag een voorstel om contextregels de
+**brontekst** te laten zien, met positievertaling.
+
+Gebouwd (68 regels), nagemeten, weer weggegooid. **Op alle 1016
+postcode-voorkomens in 627 documenten geeft de regel op de brontekst precies
+hetzelfde antwoord als op de werktekst. Nul verschillen.**
+
+De reden zat al in de code, in één teken. `_POSTBUS_RE` eindigt op `$`: de
+markering moet pál vóór de postcode staan. Stond hij daar in de bron, dan zat er
+niets tussen, dus is er ook niets vervangen, dus staat hij er in de werktekst
+ook. En andersom kan een vervanging de match niet máken — een placeholder bevat
+`[`, en dat zit niet in de toegestane scheidingstekens, dus tussenliggende
+vervanging breekt hem juist.
+
+De aanleiding was bovendien een meetfout van mij: vier postcodes die "onterecht
+bewaard" leken, waren vergeleken op **waarde** in plaats van op **positie**.
+Dezelfde postcode komt in zo'n briefhoofd meerdere keren voor; de bewaarde
+voorkomens stonden wel degelijk achter een postbus.
+
+Wat er wél moest gebeuren is geen machinerie maar borging: de stabiliteit hing
+aan één teken dat nergens vastlag. Er staat nu een test op die verankering, met
+de redenering erbij — losmaken is voortaan een bewuste daad en geen bijvangst.
+Nagemeten dat die test bijt: haal de `$` weg en drie van de vier vallen om.
+
 ## Wat deze meting over zichzelf leert
 
 Drie keer op één dag gaf een meting een vals antwoord omdat ze op de verkéérde
