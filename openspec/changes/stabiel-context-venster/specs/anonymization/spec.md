@@ -15,6 +15,16 @@ redacting it makes a decision unreadable without protecting anyone. The rule SHA
 be defined once, in the shared detector table, so that every path that replaces
 PII applies the same exceptions.
 
+A context rule SHALL be written so that text rewritten by detectors running
+earlier cannot change its answer. The detectors run in sequence and each replaces
+values with placeholders of a different length, so a rule that merely scans a
+window backwards would have a reach that shifts with whatever happened to precede
+the match — the same rule, on the same source, answering differently depending on
+how many email addresses came before. Requiring the marker to sit **directly**
+before the match is what rules that out: if nothing stood between them in the
+source, nothing was replaced there either; and an inserted placeholder can only
+break such a match, never create one.
+
 #### Scenario: Valid BSN is replaced
 
 - **WHEN** the text contains a 9-digit number that passes the elfproef
@@ -45,31 +55,15 @@ PII applies the same exceptions.
 - **WHEN** the text contains `Brinklaan 35, 1404 GZ Bussum`
 - **THEN** the postcode is replaced and the postcode count increments
 
-## ADDED Requirements
-
-### Requirement: Context rules see the source text
-
-A context rule SHALL be evaluated against the text as it entered the deterministic
-pass, at the position the match holds in that text — never against the partially
-rewritten text produced by detectors that ran earlier.
-
-The detectors run in sequence, and each one replaces values with placeholders of a
-different length than the values they replace. A context rule that looks backwards
-over the working text therefore has a reach that shifts with whatever happened to
-precede it: the same rule, on the same source, answers differently depending on how
-many email addresses came before. Such a rule cannot be reasoned about and cannot
-be tested for what it promises, and the accident cuts both ways — a household
-postcode can be kept because a replacement pulled the word `Postbus` into reach.
-
-#### Scenario: A replacement before the match does not change the answer
+#### Scenario: An earlier replacement does not change the answer
 
 - **WHEN** the same PO box line is de-identified twice, once with an email address
-  on the preceding line and once without
+  on the line before it and once without
 - **THEN** the postcode is left readable in both cases
 
-#### Scenario: A replacement cannot pull a marker into reach
+#### Scenario: A marker that is not directly before the postcode does not count
 
-- **WHEN** a street-address postcode has `Postbus 6000` in the source text further
-  back than the context rule reaches, and an earlier replacement shortens the text
-  in between
-- **THEN** the postcode is still replaced
+- **WHEN** the text contains `Postbus 16005` and a line of other text before
+  `3500 DA`
+- **THEN** the postcode is replaced, because the rule requires the marker directly
+  before the match

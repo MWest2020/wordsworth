@@ -6,57 +6,55 @@ De postbus-uitzondering ("een postbus houdt zijn postcode") kijkt veertig tekens
 terug vanaf de postcode en zoekt daar `Postbus <nummer>`. Dat venster wordt
 gemeten op tekst die **al half herschreven is**: de detectoren draaien op
 volgorde (bsn, iban, e-mail, postcode), dus tegen de tijd dat de postcode aan de
-beurt is, staan er op de plek van e-mailadressen al tokens. Een token is korter
-of langer dan de waarde die het verving, en dus schuift de reikwijdte van de
-regel mee met wat er toevallig vóór staat.
+beurt is, staan er op de plek van e-mailadressen al placeholders van een andere
+lengte.
 
-Gemeten op het Woo-corpus (2026-09-15, 770 documenten): van de 420 leesbare
-postcodes waren er vier waar de brontekst `Postbus 16005` respectievelijk
-`Postbus 20301` op een eerdere regel heeft, met een KvK-regel ertussen. In de
-ruwe tekst valt dat buiten de veertig tekens; ná het vervangen van die KvK-regel
-viel het erbinnen. Ze zijn bewaard, en dat was ook juist — het zíjn postbussen.
-Maar de regel kwam tot het goede antwoord via een toevalligheid, niet via zijn
-eigen logica.
+Dat rook naar een regel die van toeval afhangt. Het eerste voorstel hier was dan
+ook om contextregels de brontekst te laten zien in plaats van de werktekst, met
+een positievertaling erbij.
 
-Dat is de kern: **niet de uitkomst is fout, de grond is instabiel.** Dezelfde
-regel op dezelfde brontekst geeft een ander antwoord al naar gelang hoeveel
-e-mailadressen ervóór stonden. Zo'n regel is niet te beredeneren en niet te
-testen op wat hij belooft, en de volgende keer valt het toeval de andere kant op:
-dan wordt een woonadres-postcode bewaard omdat er toevallig "Postbus" binnen
-bereik kwam.
+**Dat voorstel was fout, en dit is het bewijs.** Nagemeten op alle 1016
+postcode-voorkomens in 627 documenten van het Woo-corpus: de contextregel geeft
+op de brontekst **precies hetzelfde antwoord** als op de werktekst. Nul
+verschillen.
 
-Dit is geen lek en het haalt de huidige meting niet onderuit. Het is een regel
-die om de verkeerde reden werkt, en dat is precies het soort ding dat later een
-incident heet.
+De reden is structureel en zit al in de code. `_POSTBUS_RE` eindigt op `$`: de
+markering moet pál voor de postcode staan. Staat hij daar in de bron, dan zat er
+niets tussen, dus is er ook niets vervangen, dus staat hij er in de werktekst
+óók. En andersom kan een vervanging de afstand nooit verkleinen — een
+placeholder bevat `[`, wat niet in de scheidingstekens `[,.\s|]` zit, dus elke
+tussenliggende vervanging bréékt de match in plaats van hem te maken.
+
+Het vermoeden waar dit voorstel op begon — vier postcodes die "per ongeluk"
+bewaard bleven — was een meetfout van mij: ik vergeleek op **waarde** in plaats
+van op **positie**, en dezelfde postcode komt in zo'n document meerdere keren
+voor. De bewaarde voorkomens stonden wel degelijk achter een postbus.
 
 ## What changes
 
-- **Contextregels krijgen de brontekst te zien**, niet de gedeeltelijk
-  herschreven tekst. De detectorlus houdt de oorspronkelijke tekst vast en geeft
-  die, met de bijbehorende positie, aan de contextfunctie door.
-- **`substitute()` krijgt daarvoor een expliciete `bron`-parameter.** Zonder die
-  parameter blijft het gedrag zoals het is — de aanroepers die geen contextregel
-  hebben (bsn, iban, e-mail) merken er niets van.
-- **Positie-afbeelding van bron naar werktekst.** De detectorlus weet per
-  vervanging hoeveel tekens er zijn bijgekomen of afgegaan; daarmee is de positie
-  in de werktekst terug te rekenen naar de positie in de bron.
+Niet de machinerie, maar de **borging**. De stabiliteit van deze regel hangt
+vandaag aan één teken — de `$` in `_POSTBUS_RE` — en dat is nergens vastgelegd.
+Wie die verankering ooit losser maakt (`Postbus` ergens in het venster in plaats
+van er pal voor), zet de instabiliteit aan zonder het te merken.
+
+- **Een eis in de spec**: een contextregel moet zó geschreven zijn dat
+  herschreven tekst zijn antwoord niet kan veranderen.
+- **Een test die de verankering vastpint**, met de redenering erbij, zodat het
+  losmaken ervan een bewuste daad wordt en geen bijvangst.
+- **Een test op het gedrag zelf**: dezelfde postbusregel met en zonder een
+  e-mailadres ervóór geeft hetzelfde antwoord.
 
 ## Wat hier NIET in zit
 
-- **Het venster van veertig tekens zelf.** Dat getal is een aparte vraag (een
-  postbusregel met een KvK-nummer ertussen valt er nog steeds buiten). Eerst de
-  grond stabiel, dan pas praten over de reikwijdte — anders verander je twee
-  dingen tegelijk en weet je achteraf niet welke hielp.
-- **Andere contextregels.** Er is er vandaag precies één. De parameter maakt het
-  mogelijk dat er meer komen; dit voorstel voegt er geen toe.
+- **Positievertaling naar de brontekst.** Gebouwd, gemeten, weer weggegooid: 68
+  regels machinerie voor een verschil dat in 1016 gevallen nul keer optreedt.
+  Zou er ooit een contextregel bijkomen die níét verankerd kan zijn, dan is dit
+  het moment om het terug te halen — en dan staat hier waarom.
+- **Het venster van veertig tekens zelf.** Een postbusregel met een KvK-nummer
+  ertussen valt er nog steeds buiten. Dat is een vraag over reikwijdte, niet
+  over stabiliteit.
 
 ## Impact
 
-- `src/wordsworth/detectors.py` (de lus en `substitute`), `anonymizer.py` en
-  `pseudonymizer.py` (die de lus draaien).
-- Gedrag verandert alleen daar waar het vandaag van toeval afhing. Op het
-  Woo-corpus zijn dat vier voorkomens; die blijven bewaard, nu omdat de regel het
-  zegt en niet omdat een e-mailadres toevallig kort was.
-- Een herindexering is **niet** nodig om dit uit te rollen: het raakt geen
-  bestaande tekst. Wie de vier voorkomens opnieuw wil laten beoordelen, draait de
-  betreffende documenten door `/reprocess`.
+- Geen gedragsverandering. Geen herindexering nodig.
+- Twee tests en één spec-eis erbij; de code blijft zoals hij is.
