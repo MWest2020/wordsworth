@@ -348,6 +348,52 @@ Dit is geen lek maar overredactie: 214 openbare contactadressen van overheden
 zijn onleesbaar gemaakt zonder dat het iemand beschermde — precies wat die
 uitzondering moest voorkomen.
 
+## Bevinding 9 — tokens in tokens: stil dataverlies in een vijfde van het corpus
+
+Gevonden bij de nameting van de postbus-herstelrun, niet gezocht. **266 geneste
+tokens in 150 van de 770 documenten**, van de vorm:
+
+    [POSTCODE:[EMAIL:52a0d245]]
+
+De deterministische laag maakt `[POSTCODE:007f03af]`. Daarna draait de
+entiteitslaag over díé tekst, en GLiNER geeft iets terug wat op een e-mailadres
+lijkt — de hash staat tussen `:` en `]`, dus tussen twee niet-woordtekens, en de
+grenscontrole slaat netjes aan. De vervanging grijpt dus midden in een token.
+
+Er lekt niets: er staat nog steeds geen klare PII. Maar het POSTCODE-token is
+kapot. De pseudoniem-string komt niet meer overeen met de sleutel in de
+mapping, dus **die waarde is niet meer te onthullen** — en onthulbaarheid is de
+hele belofte van de reversibele kant. Stil dataverlies in bijna een vijfde van
+het corpus, en niemand had het gemerkt.
+
+Opgelost: de entiteitslaag kent de posities van de al geplaatste tokens (één
+`finditer`) en vervangt daar niet in. Nagemeten dat de test niet vacuüm slaagt —
+zonder die wacht faalt hij.
+
+**En een restje uit dezelfde meting.** Negentien postbus-regels vielen buiten de
+contextregel omdat briefhoofden hun regels met een pijp naast elkaar zetten:
+`Postbus 2341 | 6800 GD Arnhem`. De regel verwachtte een komma, punt of
+witruimte tussen nummer en postcode. De pijp hoort erbij.
+
+## Wat deze meting over zichzelf leert
+
+Drie keer op één dag gaf een meting een vals antwoord omdat ze op de verkéérde
+tekst keek:
+
+1. "56 postbus-postcodes blijven terecht staan" — gemeten met
+   `find_deterministic()`, het enige pad dat de uitzondering toepast, terwijl de
+   pijplijn hem nergens toepaste.
+2. "35 postcodes moeten alsnog weg" — gemeten op de uitvoer, waar het woord
+   `Postbus` inmiddels zelf gepseudonimiseerd was tot `[LOCATION:…]`. Het waren
+   gewone postbus-regels.
+3. De overlever-controle zelf, die de woordgrenzen ná de vervanging beoordeelde
+   terwijl de vervanging ze ervóór beoordeelde.
+
+Dat is geen toeval meer maar een eigenschap van dit systeem: **de enige tekst
+waarop je de anonimisering kunt beoordelen is de tekst zoals de anonimisering
+hem zág, niet zoals hij eruitkwam.** Elke controle die de uitvoer opnieuw door
+een detector haalt, meet iets anders dan wat er gebeurd is.
+
 ## Wat deze meting NIET zegt
 
 Ze meet de pijplijn, niet de kwaliteit. **Hoeveel PII er gemist is, weet ik

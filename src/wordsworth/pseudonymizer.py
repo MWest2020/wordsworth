@@ -259,7 +259,26 @@ class ReversibleAnonymizer:
         counts: dict[str, int] = {}
         waarde_van_token: dict[str, str] = {}
 
+        # Waar staan de tokens die de deterministische laag al plaatste? Daar
+        # mag deze laag NIET in vervangen.
+        #
+        # Gemeten op 2026-09-14: 266 geneste tokens in 150 van de 770
+        # documenten, zoals `[POSTCODE:[EMAIL:52a0d245]]`. De deterministische
+        # laag maakt `[POSTCODE:007f03af]`, en daarna ziet GLiNER in díé tekst
+        # iets wat op een e-mailadres lijkt en vervangt het. Het POSTCODE-token
+        # is dan kapot: de pseudoniem-string komt niet meer overeen met de
+        # sleutel in de mapping, dus die waarde is niet meer te onthullen.
+        #
+        # Er lekt niets — er staat nog steeds geen klare PII. Maar het is stil
+        # dataverlies, en onthulbaarheid is de hele belofte van deze kant.
+        token_spans = [m.span() for m in _PSEUDONYM_RE.finditer(text)]
+
+        def _in_token(pos: int) -> bool:
+            return any(begin <= pos < eind for begin, eind in token_spans)
+
         def repl(match: re.Match[str]) -> str:
+            if _in_token(match.start()):
+                return match.group(0)      # binnen een bestaand token: afblijven
             value = match.group(0)
             label = label_of[value]
             key = self._keys.current_key(scope=scope_for(self._domain, label.upper()))
