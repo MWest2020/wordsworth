@@ -68,3 +68,22 @@ def test_de_reversibele_pijplijn_laat_de_postbus_staan(session):
 
     uit = anon.anonymize(WOONADRES).text
     assert "1404 GZ" not in uit and "[POSTCODE:" in uit
+
+
+def test_een_briefhoofd_met_pijp_scheiding_telt_ook_als_postbus():
+    """Briefhoofden zetten hun regels vaak naast elkaar met een pijp.
+
+    `Postbus 2341 | 1234 AB Arnhem` viel buiten de contextregel, want die
+    verwachtte een komma, punt of witruimte tussen nummer en postcode. Gemeten
+    op het corpus: 19 van zulke regels werden alsnog geredigeerd.
+    """
+    from wordsworth.anonymizer import DeterministicAnonymizer
+
+    pijp = "Postbus 2341 | 6800 GD Arnhem"
+    assert detectors.redact_postcode(pijp) == (pijp, 0)
+    assert "6800 GD" in DeterministicAnonymizer().anonymize(pijp).text
+
+    # en een woonadres met dezelfde pijp blijft gewoon geredigeerd worden
+    woon = "Brinklaan 35 | 1404 GZ Bussum"
+    uit, n = detectors.redact_postcode(woon)
+    assert n == 1 and "[POSTCODE]" in uit
