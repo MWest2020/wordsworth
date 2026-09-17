@@ -24,7 +24,20 @@
       is auth-vrij; zonder deze vrijstelling rendert hij zonder letters.
 - [x] Subtree, geen blanket: `/console/staticky` blijft 401.
 
-## 4. Nagemeten
+## 4. De licenties
+- [x] Ik vendorde lettertypebestanden in een MIT-repo en dacht er eerst niet aan.
+      Alle drie de families zijn OFL-1.1; die licentie staat verspreiding toe,
+      óók gebundeld in software, zolang de tekst meereist.
+- [x] Per familie de eigen OFL met eigen copyrightregel naast de fonts, plus één
+      generieke `LICENSES/OFL-1.1.txt` zónder familie-copyright — een centrale
+      kopie die Spectral's regel bovenaan draagt, liegt over de andere twee.
+- [x] `static/fonts/README.md` met de tabel en waarom dit de MIT-invariant niet
+      raakt: OFL is permissief voor de fonts en werkt niet door op de software
+      die ze insluit.
+- [x] De bestanden zijn ongewijzigd overgenomen, dus de Reserved Font
+      Names-clausule speelt niet.
+
+## 5. Nagemeten
 - [x] 561 tests groen.
 - [x] Lokaal gedraaid op 12 echte gegenereerde documenten door de echte
       pseudonimiseerder: alle vier de pagina's 200, `fonts.css` 200, geen

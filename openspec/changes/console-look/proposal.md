@@ -20,6 +20,10 @@ werkende ding er minder af uitzien dan de illustratie ervan.
   opnieuw bedacht.
 - **De lettertypen worden hier gehost.** De demo haalt ze bij Google; dit scherm
   serveert ze zelf uit `/console/static`. Negen latijnse faces, 224 KB.
+- **De licenties reizen mee.** Alle drie de families zijn OFL-1.1: per familie
+  de eigen tekst naast de fonts, plus één generieke in `LICENSES/`. OFL is
+  permissief voor de fonts zelf en werkt niet door op de software die ze
+  insluit, dus de MIT-invariant blijft staan.
 - **De statische map is auth-vrij**, als subtree. De inlogpagina is zelf auth-vrij
   en een inlogscherm dat zonder zijn letters rendert is een kapotte deur.
 
