@@ -9,7 +9,7 @@ future option; this is the minimal key→label layer."""
 from __future__ import annotations
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 
@@ -57,6 +57,17 @@ def authorize_corpus_read(caller: str | None, allowed_labels: list[str]) -> bool
     return caller in set(allowed_labels)
 
 
+def wants_html(accept: str) -> bool:
+    """Is this a browser navigation rather than an API call?
+
+    ``text/html`` in Accept is what a navigating browser sends and what a
+    programmatic client (which sends ``*/*`` or asks for JSON) does not. Crude,
+    and the crudeness is the point: the alternative is guessing from User-Agent,
+    which is a much worse guess.
+    """
+    return "text/html" in (accept or "").lower()
+
+
 #: Cookie the console logs in with. A browser cannot set ``X-API-Key`` on a
 #: plain navigation, so the console needs a second TRANSPORT for the key — not a
 #: second check. Same key set, same label, same middleware; only the envelope
@@ -74,10 +85,14 @@ class ApiKeyAuthMiddleware:
     The key may also arrive in the ``ww_console`` cookie (see CONSOLE_COOKIE).
     One decision point, two transports."""
 
-    def __init__(self, app: ASGIApp, keys: dict[str, str], exempt: frozenset[str]) -> None:
+    def __init__(self, app: ASGIApp, keys: dict[str, str], exempt: frozenset[str],
+                 login_path: str | None = None) -> None:
         self.app = app
         self.keys = dict(keys)
         self.exempt = exempt
+        # Where to send a person. None when there is no console mounted: sending
+        # a browser to a route that answers 404 replaces the wall with a circle.
+        self.login_path = login_path
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("path", "") in self.exempt:
@@ -88,6 +103,14 @@ class ApiKeyAuthMiddleware:
             CONSOLE_COOKIE, "")
         label = self.keys.get(key)
         if label is None:
+            # A person gets a page; a program gets the API error. A 303 to an
+            # HTML form is the wrong answer for a client that will try to parse
+            # it, and a JSON body is the wrong answer for someone who just typed
+            # the hostname into a browser.
+            if self.login_path and wants_html(request.headers.get("accept", "")):
+                await RedirectResponse(self.login_path, status_code=303)(
+                    scope, receive, send)
+                return
             # 401 with no hint about which/why — and never echo the key.
             await JSONResponse({"detail": "invalid or missing API key"},
                                status_code=401)(scope, receive, send)

@@ -82,7 +82,7 @@ def reach(session, types: set[str]) -> tuple[int, list[str]]:
             sorted(wanted - seen))
 
 
-def build_router(session_factory) -> APIRouter:
+def build_router(session_factory, keys: dict[str, str]) -> APIRouter:
     router = APIRouter(prefix="/console", tags=["console"])
 
     def _caller(request: Request) -> str:
@@ -93,13 +93,31 @@ def build_router(session_factory) -> APIRouter:
         return TEMPLATES.TemplateResponse(request, "login.html", {"fout": fout})
 
     @router.post("/login", include_in_schema=False)
-    def login(key: str = Form(...)):
+    def login(request: Request, key: str = Form(...)):
+        # Checked here, against the same key set the middleware uses, so that a
+        # typo says so. Storing an unchecked key hands back a cookie that leads
+        # to the same refusal — with the added confusion of having apparently
+        # logged in. This decides whether to set a cookie; the middleware still
+        # decides who gets in.
+        if key not in keys:
+            return TEMPLATES.TemplateResponse(
+                request, "login.html",
+                {"fout": "Die sleutel staat niet in de configuratie."},
+                status_code=401)
         # The cookie holds the key itself, so it is exactly as strong as the
         # header: same key set, same label. HttpOnly keeps it away from script,
         # SameSite=strict keeps it off cross-site requests.
         r = RedirectResponse("/console", status_code=303)
         r.set_cookie(CONSOLE_COOKIE, key, httponly=True, samesite="strict",
                      max_age=8 * 3600)
+        return r
+
+    @router.get("/logout", include_in_schema=False)
+    def logout():
+        """Without this, a stale cookie is a trap you escape only by digging
+        through browser settings."""
+        r = RedirectResponse("/console/login", status_code=303)
+        r.delete_cookie(CONSOLE_COOKIE)
         return r
 
     @router.get("", response_class=HTMLResponse, include_in_schema=False)

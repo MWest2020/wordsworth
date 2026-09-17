@@ -282,15 +282,35 @@ def create_app(
             # bring a key to the page that asks for one. It stays subject to
             # rate limiting, because that is the one path worth guessing at.
             ApiKeyAuthMiddleware, keys=keys,
-            exempt=EXEMPT_PATHS | {"/console/login"}
+            exempt=EXEMPT_PATHS | {"/console/login"},
+            # Only when there is a console to send someone to.
+            login_path="/console/login" if session_factory is not None else None,
         )
 
     # The reading console (document-console). Mounted only WITH api-key auth:
     # a screen listing every document and its PII types is not something to hang
     # on an open port, and "no screen" beats "a screen without a lock".
     if keys and session_factory is not None:
+        from starlette.responses import JSONResponse, RedirectResponse
+
+        from .auth import wants_html
         from .console import build_router
-        app.include_router(build_router(session_factory))
+        app.include_router(build_router(session_factory, keys))
+
+        @app.get("/", include_in_schema=False)
+        def root(request: Request):
+            """The bare hostname is what a person types. Send them somewhere."""
+            if wants_html(request.headers.get("accept", "")):
+                return RedirectResponse("/console", status_code=303)
+            return JSONResponse({"detail": "see /docs"})
+
+        @app.exception_handler(404)
+        def not_found(request: Request, exc):
+            """A mistyped path is not a reason to show someone a JSON body."""
+            if wants_html(request.headers.get("accept", "")):
+                return RedirectResponse("/console", status_code=303)
+            return JSONResponse({"detail": getattr(exc, "detail", "not found")},
+                                status_code=404)
 
     # Opt-in CORS for browser frontends (e.g. the Wordsworth Console). Added
     # LAST so it runs FIRST (outermost): it answers OPTIONS preflight and sets
