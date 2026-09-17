@@ -117,6 +117,28 @@ Only the granted types are revealed; every other type stays pseudonymised. The
 access is audited (actor = grant recipient, plus the `grant_id`), never logging
 clear values.
 
+### The caller must be the recipient
+
+With caller authentication enabled (`WORDSWORTH_API_KEYS` set), the endpoint
+refuses a caller who is not the grant's recipient — same 403, no text revealed.
+
+This matters more than it looks. Until 2026-09-17 the recipient was recorded but
+never checked, which made a `grant_id` a bearer token: one leak from a log line,
+a ticket or a screenshot handed clear PII to whoever found it.
+
+The comparison is **exact**. `Console` is not `console`, `console-2` is not
+`console`. A recipient is a label from the same vocabulary as the caller, and a
+reveal is the wrong place to be generous. Only surrounding whitespace is ignored.
+
+Without caller authentication there is no caller to decide on and nothing
+changes — the documented tailnet-internal mode.
+
+> **Deploy-stap.** Turning auth on (or upgrading with it already on) means an
+> existing grant whose recipient is not the caller's label now gets 403. Check
+> the active grants before this goes live:
+> `curl $API/grants/<id>` and compare `recipient` with the label behind the key
+> that uses it.
+
 ## Notes
 - Grant routes mount only when the deployment runs in reversible mode (a grant
   store is configured). In the irreversible default they are absent.
