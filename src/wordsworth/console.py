@@ -13,9 +13,16 @@ not a re-run of the detectors over the source. A re-run answers "what would the
 detectors say today", which is a different question from "what did the pipeline
 do", and confusing the two is how you end up reporting on your instrument.
 
-It never reveals. Re-identification has exactly one door: the grant-gated,
-audited reveal. An inspection screen that may also reveal is a second door with
-a friendlier name, and it is the one nobody audits.
+It has no way out of its own. Revealing happens through the existing grant-gated,
+audited endpoint, called from the page with the viewer's own cookie — no
+authorisation logic here, no keys here, no audit of its own. The rule that
+matters is not "the console must not reveal" but "the console must not have a
+second door"; a person using the same audited door with a screen instead of
+``curl`` walks through the first one.
+
+A refusal is therefore shown, not hidden. A department that does not hold the key
+does not get it from a prettier page either, and watching that happen is the
+demonstration.
 """
 from __future__ import annotations
 
@@ -29,9 +36,10 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
 from . import combinations as _combinations
+from . import console_data
 from .auth import CONSOLE_COOKIE
-from .models import (AuditRecord, DeclaredCombination, Document,
-                     DocumentPseudonym, DocumentText)
+from .console_data import _Missing, marked, reach, types_per_document
+from .models import AuditRecord, DeclaredCombination, Document, DocumentText
 from .pipeline import current_state
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -40,54 +48,10 @@ TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 #: be looked at closely. Mounted on the app (see api.py) because a Mount added to
 #: an APIRouter does not pick up the router's prefix.
 STATIC_DIR = Path(__file__).parent / "static"
-_TOKEN = re.compile(r"\[([A-Z0-9_]+):([0-9a-f]{8})\]")
 
 
-def marked(text: str) -> list[dict]:
-    """Split pseudonymised text into plain runs and typed tokens.
-
-    Done here rather than in the template so the page never has to decide what
-    is a token; the regex is the same shape the registry uses.
-    """
-    parts, at = [], 0
-    for m in _TOKEN.finditer(text or ""):
-        if m.start() > at:
-            parts.append({"text": text[at:m.start()], "type": None})
-        parts.append({"text": m.group(0), "type": m.group(1)})
-        at = m.end()
-    if at < len(text or ""):
-        parts.append({"text": text[at:], "type": None})
-    return parts
-
-
-def types_per_document(session) -> dict:
-    """``document_id -> {LABEL: count}`` from the registered pseudonyms."""
-    rows = session.execute(select(DocumentPseudonym.document_id,
-                                  DocumentPseudonym.pseudonym))
-    out: dict = {}
-    for doc_id, token in rows:
-        label = token[1:].split(":")[0].upper()
-        out.setdefault(doc_id, {})
-        out[doc_id][label] = out[doc_id].get(label, 0) + 1
-    return out
-
-
-def reach(session, types: set[str]) -> tuple[int, list[str]]:
-    """How many documents carry EVERY one of these types, and which of them the
-    corpus cannot show at all.
-
-    A type no detector emits occurs nowhere, and a bare 0 then reads as "does
-    not occur" when the true answer is "cannot be seen". The screen has to say
-    which, or the number quietly reassures.
-    """
-    wanted = {t.upper() for t in types}
-    per_doc = types_per_document(session)
-    seen = {lbl for present in per_doc.values() for lbl in present}
-    return (sum(1 for present in per_doc.values() if wanted <= set(present)),
-            sorted(wanted - seen))
-
-
-def build_router(session_factory, keys: dict[str, str]) -> APIRouter:
+def build_router(session_factory, keys: dict[str, str],
+                 search_index=None) -> APIRouter:
     router = APIRouter(prefix="/console", tags=["console"])
 
     def _caller(request: Request) -> str:
@@ -149,6 +113,39 @@ def build_router(session_factory, keys: dict[str, str]) -> APIRouter:
         return TEMPLATES.TemplateResponse(request, "index.html", {
             "docs": docs, "total": total, "caller": _caller(request)})
 
+    @router.get("/search", response_class=HTMLResponse, include_in_schema=False)
+    def search(request: Request, q: str = "", size: int = 10):
+        """Search the pseudonymised index — the claim this project rests on.
+
+        The fragment comes from the STORED pseudonymised text, so what you read
+        is a quotation of what the index actually holds. A fragment taken from a
+        source document would look the same and prove the opposite.
+        """
+        hits, fout = [], ""
+        if q and search_index is None:
+            fout = "Deze instantie draait zonder zoekindex."
+        elif q:
+            try:
+                raw = search_index.search(q, size=size)
+            except Exception as exc:                     # index down, query bad
+                raw, fout = [], f"De zoekindex gaf een fout: {type(exc).__name__}"
+            else:
+                with session_factory() as session:
+                    for h in raw:
+                        doc_id = UUID(str(h.document_id))
+                        row = session.get(DocumentText, doc_id)
+                        hits.append({
+                            "id": str(doc_id),
+                            "key": (session.get(Document, doc_id) or
+                                    _Missing()).object_key,
+                            "score": round(float(h.score), 2),
+                            "fragment": console_data.fragment(
+                                row.anonymized_text if row else "", q),
+                        })
+        return TEMPLATES.TemplateResponse(request, "search.html", {
+            "q": q, "hits": hits, "fout": fout,
+            "suggested": console_data.SUGGESTED, "searchable": search_index is not None})
+
     @router.get("/documents/{document_id}", response_class=HTMLResponse,
                 include_in_schema=False)
     def document(request: Request, document_id: UUID):
@@ -163,12 +160,16 @@ def build_router(session_factory, keys: dict[str, str]) -> APIRouter:
                         if not ({t.upper() for t in d["types"]} & present)]
             carried = [d for d in declared
                        if {t.upper() for t in d["types"]} <= present]
+            grants = console_data.grants_for(session, document_id)
+            history = console_data.reveal_history(session, document_id)
         return TEMPLATES.TemplateResponse(request, "document.html", {
             "id": str(document_id), "key": doc.object_key if doc else None,
             "state": state.value if state else "—",
             "parts": marked(row.anonymized_text if row else ""),
             "missing": row is None, "counts": sorted(counts.items()),
-            "unbroken": unbroken, "carried": carried})
+            "unbroken": unbroken, "carried": carried,
+            "grants": grants, "history": history,
+            "caller": _caller(request)})
 
     @router.get("/combinations", response_class=HTMLResponse,
                 include_in_schema=False)

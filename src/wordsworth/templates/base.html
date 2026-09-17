@@ -81,7 +81,14 @@ tbody tr:hover{background:var(--surface-2)}
 td a{font-weight:600; text-decoration:none}
 
 .tok{font-family:"IBM Plex Mono",monospace; font-size:.8rem; background:var(--token-bg);
-  color:var(--token-ink); border:1px solid transparent; border-radius:5px; padding:1px 5px}
+  color:var(--token-ink); border:1px solid transparent; border-radius:5px; padding:1px 5px;
+  transition:background .25s, color .25s, border-color .25s}
+@media (prefers-reduced-motion:reduce){.tok{transition:none}}
+.tok.revealed{background:var(--reveal-bg); color:var(--reveal-ink);
+  border-color:var(--reveal-line); font-weight:500}
+label.pill{display:inline-flex; align-items:center; gap:5px}
+label.pill input{margin:0}
+[hidden]{display:none!important}
 .doc{font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:.83rem; line-height:1.95;
   padding:18px 20px 22px; white-space:pre-wrap; word-break:break-word; margin:0}
 .pill{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:.7rem;
@@ -116,6 +123,7 @@ input:focus-visible,textarea:focus-visible{outline:2px solid var(--brass); outli
   <span class="brand">words<span class="mark">worth</span></span>
   <nav>
     <a href="/console" {% if page == 'documents' %}aria-current="page"{% endif %}>documenten</a>
+    <a href="/console/search" {% if page == 'search' %}aria-current="page"{% endif %}>zoeken</a>
     <a href="/console/combinations" {% if page == 'combinations' %}aria-current="page"{% endif %}>combinaties</a>
   </nav>
   <span class="who">{% block who %}{% endblock %} · <a href="/console/logout">afmelden</a></span>

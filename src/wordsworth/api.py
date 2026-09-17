@@ -298,7 +298,7 @@ def create_app(
         from fastapi.staticfiles import StaticFiles
 
         from .console import STATIC_DIR, build_router
-        app.include_router(build_router(session_factory, keys))
+        app.include_router(build_router(session_factory, keys, search_index))
         app.mount("/console/static",
                   StaticFiles(directory=str(STATIC_DIR)), name="console-static")
 
