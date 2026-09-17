@@ -83,6 +83,36 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-measure-combinations`
+
+Counts, per declared combination, in how many documents **every** type occurs.
+Measure before claiming: without this number, any statement about quasi-
+identifiers in a corpus is a guess.
+
+```bash
+wordsworth-measure-combinations profiles/example-wi.json
+```
+
+It accepts a profile (it reads the `combinations` block) or a bare JSON list of
+`{types, reason}` declarations. Output is one line per combination:
+
+```
+    12  BSN + POSTCODE
+     0  DATE + GENDER + POSTCODE  [unobservable: DATE, GENDER]
+```
+
+Two things to read carefully.
+
+The count comes from the pseudonyms the pipeline **minted** per document
+(`document_pseudonyms`), not from re-running the detectors over the source text.
+That makes it a statement about what the pipeline did, on the text it saw.
+
+`unobservable` names types the corpus carries nowhere, because the pipeline has
+no detector for them. "Does not occur" and "cannot be seen" are different
+answers, and a bare zero gives the reassuring one.
+
+Exit code 2 if the file declares no combinations.
+
 ## Examples
 
 ```bash
@@ -95,6 +125,9 @@ wordsworth --url http://100.100.181.23:8000 ingest /data/corpus --batch 5
 # search and inspect
 wordsworth search "vergunning" --size 5
 wordsworth state 66c86e91-830f-4ed7-99cf-ac4407d262fb
+
+# how often does a declared combination actually occur?
+wordsworth-measure-combinations profiles/example-wi.json
 ```
 
 See also the live, interactive API docs at `/docs` (Swagger) and `/redoc` on a

@@ -18,6 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, model_validator
 
+from . import combinations as _combinations
 from .detectors import find_deterministic
 from .keys import DEFAULT_DOMAIN
 from .normalization import normalize
@@ -42,6 +43,7 @@ class Profile(BaseModel):
     format: Literal["token", "nen7524"] = "token"
     ttp_id: str = "0001"
     validate_pii: bool = False
+    combinations: list[dict] = []               # [{types: [...], reason: "..."}]
 
     @model_validator(mode="after")
     def _check(self):
@@ -51,12 +53,27 @@ class Profile(BaseModel):
             raise ValueError("select at least one column")
         if self.mode == "per_record" and not self.record_key:
             raise ValueError("per_record needs record_key")
+        _combinations.parse(self.combinations)  # a declaration without a reason is refused here
         if self.format == "nen7524":
             types = set(self.columns.values()) if self.mode == "per_attribute" else {RECORD_TYPE}
             unknown = sorted(t for t in types if t.upper() not in _NEN_LETTER)
             if unknown:   # no silent 'X' letter for a typo'd type
                 raise ValueError(f"nen7524 format has no type letter for {unknown}")
         return self
+
+    def unbroken_combinations(self) -> list[_combinations.Combination]:
+        """Declared combinations this profile breaks nowhere.
+
+        A finding, not a refusal: whether a combination identifies is the
+        controller's call, and a tool that refuses on its own judgement teaches
+        people to route around it. Says nothing about whether those types occur
+        in the data — the profile knows its own columns, not the others.
+        """
+        # Both modes replace every selected column (see ``transform``); the mode
+        # only decides whether they share one token. So what is broken is the
+        # same set either way — the declared type of each selected column.
+        return _combinations.findings(_combinations.parse(self.combinations),
+                                      set(self.columns.values()))
 
     def sha256(self) -> str:
         return hashlib.sha256(self.model_dump_json().encode()).hexdigest()

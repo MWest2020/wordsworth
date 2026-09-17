@@ -56,6 +56,37 @@ pseudonyms, `rows_without_record_key`, warned columns — never a cell value.
 Dataset artefacts stay in state `registered` (they are never profiled or
 extracted), so `wordsworth_documents_total{state="registered"}` includes them.
 
+## Declaring combinations
+
+Some types identify nobody alone and a person together. *Woman, born 1978,
+postcode 6541 EX* contains no direct identifier and still often points at one
+person — the classic quasi-identifier, and the reason "we removed the names" has
+not been a valid claim for thirty years.
+
+A profile can name such a set, with a reason:
+
+```json
+"combinations": [
+  {"types": ["GENDER", "DATE", "POSTCODE"],
+   "reason": "gender + year of birth + postcode narrows a Dutch municipality to a handful of people"}
+]
+```
+
+The reason is required. A bare list of types is a rule nobody can review: in a
+year, the only way to judge whether it still holds is to know what it was for.
+
+A run reports, in `combinations`, every declared set of which it pseudonymises
+**no** member — breaking one is enough, because the combination identifies only
+while all its parts line up. It is a finding, not a refusal: whether a set
+identifies depends on the population and the context, and that is the
+controller's call. A tool that refuses on its own judgement teaches people to
+route around it.
+
+What the report does **not** say is whether those types occur in your data. A
+profile knows the columns it handles, not what stands in the others. For the
+corpus side of that question see `wordsworth-measure-combinations` in
+[the CLI reference](../reference/cli.md).
+
 ## Re-identification
 
 Dataset tokens live in the same mapping store as document tokens. A grant in the
@@ -71,3 +102,6 @@ which appear in no document) is a follow-up change.
 - Empty selected cells stay empty (no pseudonym is invented for a missing value).
 - `validate_pii` covers only the deterministic detectors (BSN/IBAN/email); an
   unselected name or address column is not warned about.
+- Adding `combinations` to a profile changes its `profile_sha256`, because the
+  field is part of the hashed profile. Audit records from before the change keep
+  their old hash.
