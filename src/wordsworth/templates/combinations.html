@@ -1,0 +1,32 @@
+{% extends "base.html" %}{% block title %}combinaties — wordsworth{% endblock %}
+{% block body %}
+<h1>Combinaties die samen identificeren</h1>
+<p>Geen van deze types wijst alleen iemand aan; samen vaak precies één persoon.
+Wélke combinatie dat is, hangt af van de populatie en de context — dat is het
+oordeel van wie de documenten leest, niet van wie de code schrijft.</p>
+
+{% if fout %}<p class="fout">{{ fout }}</p>{% endif %}
+<form class="declare" method="post" action="/console/combinations">
+ <p><label>Types (gescheiden door komma's)<br>
+   <input type="text" name="types" placeholder="GENDER, DATE, POSTCODE"></label></p>
+ <p><label>Reden — welke populatie versmalt dit tot één persoon, en waarom?<br>
+   <textarea name="reason"></textarea></label></p>
+ <p><button type="submit">Vastleggen</button></p>
+</form>
+
+{% if rows %}
+<table><thead><tr><th>types</th><th>documenten</th><th>reden</th><th>door</th></tr>
+</thead><tbody>
+{% for r in rows %}
+<tr><td><code>{{ r.types|join(' + ') }}</code></td>
+    <td>{{ r.documents }}{% if r.unobservable %}
+      <span class="note" title="geen detector geeft dit type uit">niet te zien:
+      {{ r.unobservable|join(', ') }}</span>{% endif %}</td>
+    <td>{{ r.reason }}</td><td class="note">{{ r.by }}</td></tr>
+{% endfor %}
+</tbody></table>
+<p class="note">"Documenten" telt waarin élk type van de combinatie voorkomt.
+Staat er "niet te zien" bij, dan geeft geen enkele detector dat type uit: die
+nul betekent dan niet "komt niet voor" maar "hier niet vast te stellen".</p>
+{% else %}<p class="note">Nog niets vastgelegd.</p>{% endif %}
+{% endblock %}

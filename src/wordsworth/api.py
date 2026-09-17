@@ -278,8 +278,19 @@ def create_app(
     keys = api_keys if api_keys is not None else default_settings.api_keys
     if keys:
         app.add_middleware(
-            ApiKeyAuthMiddleware, keys=keys, exempt=EXEMPT_PATHS
+            # The console's login page is exempt from AUTH only — you cannot
+            # bring a key to the page that asks for one. It stays subject to
+            # rate limiting, because that is the one path worth guessing at.
+            ApiKeyAuthMiddleware, keys=keys,
+            exempt=EXEMPT_PATHS | {"/console/login"}
         )
+
+    # The reading console (document-console). Mounted only WITH api-key auth:
+    # a screen listing every document and its PII types is not something to hang
+    # on an open port, and "no screen" beats "a screen without a lock".
+    if keys and session_factory is not None:
+        from .console import build_router
+        app.include_router(build_router(session_factory))
 
     # Opt-in CORS for browser frontends (e.g. the Wordsworth Console). Added
     # LAST so it runs FIRST (outermost): it answers OPTIONS preflight and sets
