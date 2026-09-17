@@ -35,6 +35,11 @@ from .models import (AuditRecord, DeclaredCombination, Document,
 from .pipeline import current_state
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+#: Self-hosted fonts and stylesheet. A sovereignty demo that fetches its letters
+#: from Google refutes itself in the network inspector, and this screen exists to
+#: be looked at closely. Mounted on the app (see api.py) because a Mount added to
+#: an APIRouter does not pick up the router's prefix.
+STATIC_DIR = Path(__file__).parent / "static"
 _TOKEN = re.compile(r"\[([A-Z0-9_]+):([0-9a-f]{8})\]")
 
 

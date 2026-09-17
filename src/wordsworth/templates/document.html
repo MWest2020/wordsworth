@@ -1,26 +1,45 @@
 {% extends "base.html" %}{% block title %}{{ key or id }} — wordsworth{% endblock %}
+{% set page = 'documents' %}
 {% block body %}
-<h1><code>{{ key or id }}</code></h1>
-<p class="note">toestand: {{ state }} ·
-{% for t, n in counts %}<code>{{ t }}</code>&nbsp;{{ n }}{% if not loop.last %}, {% endif %}{% else %}geen PII aangetroffen{% endfor %}</p>
+<p class="eyebrow">Document</p>
+<h1>{{ key or id }}</h1>
+<p class="lede"><span class="state">{{ state }}</span>
+  {% for t, n in counts %}<span class="pill"><b>{{ t }}</b> {{ n }}</span>{% else %}geen PII aangetroffen{% endfor %}</p>
 
 {% if missing %}
-<p class="fout">Geen gepseudonimiseerde tekst opgeslagen voor dit document.</p>
+<p class="fout" style="margin-top:20px">Geen gepseudonimiseerde tekst opgeslagen voor dit document.</p>
 {% else %}
-<pre class="doc">{% for p in parts %}{% if p.type %}<span class="tok" title="{{ p.type }}">{{ p.text }}</span>{% else %}{{ p.text }}{% endif %}{% endfor %}</pre>
+<div class="card" style="margin-top:20px">
+ <div class="panel-head"><span class="dot"></span><h3>Na pseudonimisering</h3>
+   <span class="badge">{{ counts|sum(attribute=1) }} tokens</span></div>
+ <pre class="doc">{% for p in parts %}{% if p.type %}<span class="tok" title="{{ p.type }}">{{ p.text }}</span>{% else %}{{ p.text }}{% endif %}{% endfor %}</pre>
+</div>
 {% endif %}
 
 {% if carried %}
 <h2>Draagt deze combinaties volledig</h2>
-<ul>{% for c in carried %}<li><code>{{ c.types|join(' + ') }}</code> — {{ c.reason }}</li>{% endfor %}</ul>
+<div class="card">
+ <table><tbody>
+ {% for c in carried %}<tr><td style="width:15rem"><span class="pill"><b>{{ c.types|join(' + ') }}</b></span></td>
+   <td class="note">{{ c.reason }}</td></tr>{% endfor %}
+ </tbody></table>
+</div>
 {% endif %}
 {% if unbroken %}
 <h2>Onaangeroerd</h2>
-<ul>{% for c in unbroken %}<li><code>{{ c.types|join(' + ') }}</code> — {{ c.reason }}</li>{% endfor %}</ul>
+<div class="card">
+ <table><tbody>
+ {% for c in unbroken %}<tr><td style="width:15rem"><span class="pill"><b>{{ c.types|join(' + ') }}</b></span></td>
+   <td class="note">{{ c.reason }}</td></tr>{% endfor %}
+ </tbody></table>
+</div>
 {% endif %}
 
-<p class="note">Dit is de tekst ná pseudonimisering — het artefact dat de straat
-werkelijk heeft geproduceerd. De originele waarden staan hier niet en zijn hier
-niet op te vragen: dat loopt over <code>reveal</code>, met een grant en een
-auditrecord.</p>
+<div class="card pad sovereign">
+  <p class="eyebrow">Wat hier niet staat</p>
+  <p class="note" style="margin:0">De originele waarden. Die zijn hier ook niet op
+  te vragen: dat loopt over <code>reveal</code>, met een grant en een auditrecord.
+  Een inspectiescherm dat zelf mag onthullen is een tweede deur met een nette
+  naam, en dat is degene die niemand controleert.</p>
+</div>
 {% endblock %}
