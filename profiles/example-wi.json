@@ -1,7 +1,22 @@
 {
   "domain": "wi",
-  "columns": {"bsn": "BSN", "naam": "PERSON", "geboortedatum": "DATE", "postcode": "POSTCODE"},
+  "columns": {
+    "bsn": "BSN",
+    "naam": "PERSON",
+    "geboortedatum": "DATE",
+    "postcode": "POSTCODE"
+  },
   "mode": "per_attribute",
   "format": "token",
-  "validate_pii": true
+  "validate_pii": true,
+  "combinations": [
+    {
+      "types": [
+        "GENDER",
+        "DATE",
+        "POSTCODE"
+      ],
+      "reason": "geslacht + geboortejaar + postcode wijst in een Nederlandse gemeente vaak een handvol mensen aan, met de letters erbij niet zelden precies een"
+    }
+  ]
 }

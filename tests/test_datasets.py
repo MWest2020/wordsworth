@@ -190,3 +190,35 @@ def test_endpoint_400s_and_profile_specific_artefact(session_factory):
     ragged = b"bsn,naam\n123456782,Jan,extra\n"
     assert c.post("/datasets/pseudonymize", files={"file": ("in.csv", ragged, "text/csv")},
                   data={"profile": json.dumps(prof_wi)}).status_code == 400
+
+
+def test_endpoint_reports_a_combination_it_breaks_nowhere(session_factory):
+    """A declared quasi-identifier the profile does not touch (identifying-
+    combinations): reported alongside the CSV, counted in the audit record, and
+    the run still succeeds — a finding, not a refusal."""
+    c = TestClient(create_app(session_factory=session_factory,
+                              key_provider=InMemoryKeyProvider()))
+    declared = {"types": ["GENDER", "DATE", "POSTCODE"],
+                "reason": "gender + year of birth + postcode often names one person"}
+    rows = [{"bsn": PII_BSN, "geslacht": "v", "postcode": "6541 EX"}]
+    prof = {"columns": {"bsn": "BSN"}, "combinations": [declared]}
+    body = c.post("/datasets/pseudonymize",
+                  files={"file": ("in.csv", _csv(rows), "text/csv")},
+                  data={"profile": json.dumps(prof)}).json()
+    assert body["combinations"] == [
+        {"types": ["DATE", "GENDER", "POSTCODE"], "reason": declared["reason"]}]
+    with session_factory() as s:
+        rec = s.execute(select(AuditRecord).where(
+            AuditRecord.step == "dataset_pseudonymize")).scalar_one()
+        assert rec.payload["unbroken_combinations"] == 1
+    # break one member and the finding is gone
+    prof["columns"]["postcode"] = "POSTCODE"
+    ok = c.post("/datasets/pseudonymize",
+                files={"file": ("in.csv", _csv(rows), "text/csv")},
+                data={"profile": json.dumps(prof)}).json()
+    assert ok["combinations"] == []
+    # a declaration without a reason never reaches a run
+    prof["combinations"] = [{"types": ["GENDER", "DATE"]}]
+    assert c.post("/datasets/pseudonymize",
+                  files={"file": ("in.csv", _csv(rows), "text/csv")},
+                  data={"profile": json.dumps(prof)}).status_code == 400

@@ -142,7 +142,12 @@ _TOKEN_RE = re.compile(r"\[[A-Z0-9_]+:[0-9a-f]{8}\]")
 class DatasetResponse(BaseModel):
     """Result of a dataset run (add-dataset-pseudonymisation): the transformed
     CSV, aggregates, advisory warnings for unselected columns that look like
-    PII, and the audit record's sequence number. Never an input value."""
+    PII, and the audit record's sequence number. Never an input value.
+
+    ``combinations`` lists declared quasi-identifiers this profile breaks
+    nowhere (identifying-combinations). Kept apart from ``warnings``: a warning
+    says a column looks like PII, a combination says a set of types identifies
+    together even though none does alone. Both are advisory."""
 
     csv: str
     rows: int
@@ -154,6 +159,7 @@ class DatasetResponse(BaseModel):
     format: str
     profile_sha256: str
     warnings: list[dict]
+    combinations: list[dict] = []
     dataset_id: str
     audit_seq: int
 
@@ -808,6 +814,8 @@ def create_app(
                 writer.writeheader()
                 writer.writerows(out_rows)
                 warnings = validate_unselected(rows, prof) if prof.validate_pii else []
+                unbroken = [{"types": sorted(c.types), "reason": c.reason}
+                            for c in prof.unbroken_combinations()]
                 # The dataset is an artefact with identity (content hash); its run
                 # is an access event on it — aggregates only, never a cell value.
                 doc = session.execute(select(Document).where(
@@ -820,9 +828,11 @@ def create_app(
                                    from_state=state.value, to_state=state.value,
                                    step="dataset_pseudonymize",
                                    payload={**stats, "kind": "dataset",
-                                            "warnings": [w["column"] for w in warnings]})
+                                            "warnings": [w["column"] for w in warnings],
+                                            "unbroken_combinations": len(unbroken)})
                 session.commit()
             return DatasetResponse(csv=buf.getvalue(), warnings=warnings,
+                                   combinations=unbroken,
                                    dataset_id=str(doc.id), audit_seq=rec.seq, **stats)
 
     # Key-gated reveal: turn a document's pseudonyms back into originals, but
