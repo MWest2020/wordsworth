@@ -40,6 +40,41 @@ Breakglass is dan geen opruimactie maar een feit: de rol is uit, de
 typeverzameling is leeg, elke grant die hem noemt autoriseert niets. Eén plek,
 geen venster.
 
+## Hoe ver dit gaat in de PoC
+
+Mark, 2026-09-17: *"console en grant [zijn] voor nu nog echt in PoC-fase. Dat
+komt meestal met een gebruikstest wat meer naar voren. Voor mij mag een admin nu
+alle grants hebben en later toewijzen aan rollen."*
+
+Dat verandert het tempo en niet de vorm. Wat nú nodig is, is dat één beheerder
+alles kan zien; het verdelen over rollen komt zodra een gebruikstest laat zien
+wélke rollen er zijn. Rollen bedenken vóór die test is precies het soort werk dat
+er af moet als de werkelijkheid binnenkomt.
+
+De vorm blijft dus staan — een grant mag een rol noemen, `authorize()` lost hem
+op — want daar bouw je later op verder. Maar in de PoC is er één rol, hij heet
+beheerder, en hij houdt alles.
+
+**En dat botst op iets dat we in augustus bewust hebben dichtgezet.** "Alles"
+betekent alle types én alle documenten, en dat laatste is een ongescopete grant.
+`harden-global-grant-gate` weigert die: `WORDSWORTH_ALLOW_GLOBAL_GRANTS` staat op
+false, staat niet in de productie-configmap, en een ongescopete grant wordt bij
+uitgifte geweigerd én autoriseert niets.
+
+Drie manieren eruit, en twee ervan zijn fout:
+
+1. **De vlag omzetten.** Dan mag élke ongescopete grant weer alles — niet alleen
+   die van de beheerder. Dat draait de hardening terug voor iedereen om hem voor
+   één iemand te openen.
+2. **Per document een grant.** 791 stuks, en morgen meer. Geen.
+3. **De poort op de rol zetten in plaats van op een vlag.** Een ongescopete grant
+   is toegestaan wanneer hij de beheerdersrol noemt, en anders niet. De
+   hardening blijft voor alle andere grants staan, en de uitzondering draagt de
+   naam van wie hem krijgt in plaats van te schuilen achter een boolean.
+
+Ik stel 3 voor. Het is ook de enige van de drie waarbij het auditspoor achteraf
+kan laten zien dát er een uitzondering gold en voor wie.
+
 ## Wat deze change WEL doet
 
 - **Rollen als benoemde typeverzamelingen**, met een actief/inactief-stand.
@@ -53,6 +88,9 @@ geen venster.
   `authorize()`. Elke onthulling door een beheerder is een gewone, geauditeerde
   onthulling — anders is de beheerder de tweede deur die dit project nergens
   heeft.
+- **De ongescopete grant wordt toegestaan op naam van die rol**, niet op een
+  vlag. De hardening uit `harden-global-grant-gate` blijft staan voor elke andere
+  grant.
 
 ## Wat deze change NIET doet
 
@@ -86,11 +124,15 @@ geen venster.
 2. **Wat betekent een rol veranderen voor wat er al is onthuld?** Niets — dat is
    gebeurd en staat in het spoor. Maar het scherm moet dat zeggen, anders leest
    iemand een ingeperkte rol als "die gegevens zijn nooit gezien".
-3. **Wat gebeurt er met de bestaande grants op losse labels?** Ze blijven
+3. **Welke rollen zijn er eigenlijk, naast beheerder?** Niet beantwoorden vóór
+   de gebruikstest. Dit voorstel levert de vorm; de inhoud komt uit wat mensen
+   werkelijk blijken te doen, en een rol die wij nu verzinnen is een aanname met
+   een juridische staart.
+4. **Wat gebeurt er met de bestaande grants op losse labels?** Ze blijven
    werken. Maar zolang beide vormen bestaan, is "wie mag wat" op twee plaatsen
    te lezen, en dat is precies hoe autorisatiefouten ontstaan. Is er een pad
    waarop de losse vorm verdwijnt?
-4. **Breakglass: wie mag hem overhalen, en hoe komt de rol terug?** Een noodrem
+5. **Breakglass: wie mag hem overhalen, en hoe komt de rol terug?** Een noodrem
    die iedereen kan indrukken is een schakelaar; een die niemand kan overhalen is
    een versiering.
 

@@ -51,6 +51,30 @@ It is also the one that gets used most and reviewed least.
 - **WHEN** the administrator role is switched off
 - **THEN** an administrator reveal authorises nothing
 
+### Requirement: An unscoped grant is allowed by role, not by a flag
+
+A grant that names no document SHALL be permitted when it names the
+administrator role, and SHALL stay refused otherwise.
+
+Seeing everything means every type AND every document, and the second half is an
+unscoped grant — which was deliberately closed off, because one such grant reveals
+the whole corpus. Reopening it with a setting would reopen it for every unscoped
+grant in order to open it for one role. The exception belongs on the role, where
+it carries the name of whoever holds it instead of hiding behind a boolean.
+
+An audit trail SHALL therefore be able to show afterwards that an exception
+applied and to whom.
+
+#### Scenario: The administrator role may hold an unscoped grant
+
+- **WHEN** a grant naming the administrator role and no document is issued
+- **THEN** it is accepted
+
+#### Scenario: Any other unscoped grant stays refused
+
+- **WHEN** a grant naming no document and not the administrator role is issued
+- **THEN** it is refused, exactly as before
+
 ### Requirement: Pulling the emergency stop is recorded
 
 Switching a role off SHALL record who did it and why, and the record SHALL be
