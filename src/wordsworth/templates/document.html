@@ -35,11 +35,68 @@
 </div>
 {% endif %}
 
-<div class="card pad sovereign">
-  <p class="eyebrow">Wat hier niet staat</p>
-  <p class="note" style="margin:0">De originele waarden. Die zijn hier ook niet op
-  te vragen: dat loopt over <code>reveal</code>, met een grant en een auditrecord.
-  Een inspectiescherm dat zelf mag onthullen is een tweede deur met een nette
-  naam, en dat is degene die niemand controleert.</p>
+<h2>Onthullen</h2>
+<p class="note" style="max-width:66ch">Zelfde document, andere sleutelbos. Elke
+grant noemt een ontvanger en precies de types waarvoor die de sleutel houdt. Je
+bent hier ingelogd als <b>{{ caller }}</b>; een grant van iemand anders staat er
+gewoon bij en wordt geweigerd — dát is de demonstratie.</p>
+
+{% if grants %}
+<div class="card" id="reveal" data-doc="{{ id }}">
+ <div class="panel-head"><span class="dot"></span><h3>Grants voor dit document</h3>
+   <span class="badge">{{ grants|length }}</span></div>
+ <table><tbody>
+ {% for g in grants %}
+ <tr data-grant="{{ g.grant_id }}">
+  <td style="width:11rem">
+    <div><b>{{ g.recipient }}</b>{% if g.recipient == caller %}
+      <span class="pill" style="margin-left:6px">jij</span>{% endif %}</div>
+    <div class="state">{{ g.status }} · {{ g.scope }}</div></td>
+  <td>
+    {% for t in g.types %}<label class="pill" style="cursor:pointer">
+      <input type="checkbox" name="type" value="{{ t }}" checked
+             data-grant="{{ g.grant_id }}"> {{ t }}</label>{% endfor %}
+  </td>
+  <td style="width:8rem; text-align:right">
+    <button class="btn" type="button" data-reveal="{{ g.grant_id }}"
+            {% if g.status != 'active' %}disabled{% endif %}>Onthul</button></td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ <div id="reveal-status" class="empty" hidden></div>
 </div>
+{% else %}
+<p class="empty">Geen grants voor dit document. De console mag er zelf geen
+uitgeven — dat recht ligt bij de issuer-labels. Uitgeven gaat via
+<code>POST /grants</code> met een sleutel die dat mag.</p>
+{% endif %}
+
+<h2>Auditspoor</h2>
+<div class="card">
+ <div class="panel-head"><span class="dot"></span><h3>Onthullingen op dit document</h3>
+   <span class="badge">{{ history|length }}</span></div>
+ {% if history %}
+ <table><thead><tr><th>wanneer</th><th>beller</th><th>grant</th><th>opgelost</th></tr></thead>
+ <tbody>
+ {% for h in history %}
+ <tr><td class="state">{{ h.ts.strftime('%Y-%m-%d %H:%M') }}</td>
+     <td>{{ h.caller }}</td><td class="state">{{ h.grant }}…</td>
+     <td>{% for t in h.resolved %}<span class="pill">{{ t }}</span>{% else %}<span class="note">niets</span>{% endfor %}
+       {% if h.unresolved %}<div class="note">gevraagd maar niet opgelost:
+         {{ h.unresolved|join(', ') }}</div>{% endif %}
+       {% if h.withheld %}<div class="note">geweigerd: {{ h.withheld|join(', ') }}</div>{% endif %}</td></tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog niets onthuld op dit document.</p>{% endif %}
+</div>
+
+<div class="card pad sovereign">
+  <p class="eyebrow">Waar dit scherm géén deur is</p>
+  <p class="note" style="margin:0">Onthullen gebeurt via het bestaande
+  <code>reveal</code>-eindpunt, met jouw eigen cookie, dezelfde
+  <code>authorize()</code> en hetzelfde auditrecord. Er staat hier geen regel
+  autorisatiecode, geen sleutel en geen eigen spoor. De regel die telt is niet
+  "de console mag niet onthullen" maar "de console mag geen tweede deur hebben".</p>
+</div>
+<script src="/console/static/console.js"></script>
 {% endblock %}

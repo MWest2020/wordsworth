@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}zoeken — wordsworth{% endblock %}
+{% set page = 'search' %}
+{% block body %}
+<p class="eyebrow">Zoeken &amp; rangschikken</p>
+<h1>Zoek door het corpus</h1>
+<p class="lede">De rangschikking draait volledig over de gepseudonimiseerde
+index. Het fragment hieronder komt uit de ópgeslagen tekst — wat je leest is een
+citaat van wat de index werkelijk bevat, niet van een brondocument.</p>
+
+<form method="get" action="/console/search" style="margin-top:20px; display:flex; gap:8px">
+ <input type="text" name="q" value="{{ q }}" placeholder="vergunning" autofocus
+        aria-label="zoekterm" style="flex:1">
+ <button class="btn" type="submit">Zoek</button>
+</form>
+
+<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:12px">
+ {% for t in suggested %}<a class="pill" style="text-decoration:none"
+   href="/console/search?q={{ t }}">{{ t }}</a>{% endfor %}
+</div>
+<p class="note" style="margin-top:8px">Voorbeelden om mee te beginnen, geen
+belofte dat ze raak zijn — dat hangt af van het corpus dat toevallig geladen is.</p>
+
+{% if fout %}<p class="fout" style="margin-top:18px">{{ fout }}</p>{% endif %}
+
+{% if q and not fout %}
+<div class="card" style="margin-top:20px">
+ <div class="panel-head"><span class="dot"></span><h3>Resultaten</h3>
+   <span class="badge">{{ hits|length }} voor "{{ q }}"</span></div>
+ {% if hits %}
+ <table><tbody>
+ {% for h in hits %}
+ <tr>
+  <td style="width:4rem"><span class="state">{{ h.score }}</span></td>
+  <td><a href="/console/documents/{{ h.id }}">{{ h.key }}</a>
+      <div class="note" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem; margin-top:3px">{{ h.fragment }}</div></td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Geen resultaten voor "{{ q }}".</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

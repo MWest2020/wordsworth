@@ -82,6 +82,41 @@ That subtree is reachable without a key — the login page is too, and a login
 screen rendered without its letters is a broken door. The exemption covers that
 subtree only.
 
+## Searching
+
+`/console/search` runs over the same index the API serves, and shows per hit its
+score and a fragment **of the stored pseudonymised text**. A fragment taken from
+a source document would look identical and prove the opposite of what this page
+is for.
+
+The offered terms are examples, not a promise: whether one matches depends on the
+corpus that happens to be loaded. A term with no hits says so; an index that is
+down says *that*, rather than returning an empty list that reads as "nothing
+matched".
+
+## Revealing
+
+The document page lists the grants that apply to it — including grants issued to
+someone else. That is deliberate: the screen offers it, the door refuses it, and
+watching the refusal is the demonstration that the keys are role-bound.
+
+Per grant there is a switch per PII type. These are not decoration: the reveal
+request carries the checked types and `authorize()` intersects them with the
+grant.
+
+The page has no way out of its own. Revealing calls the existing
+`POST /documents/{id}/reveal` with the cookie you already hold — the same
+`authorize()`, the same recipient binding, the same audit record as for any
+other caller. There is no authorisation code, no key handling and no separate
+trail in the console. The rule that matters is not "the console must not reveal"
+but "the console must not have a second door".
+
+The document's reveal history sits under the button. An audit trail nobody looks
+at is a promise, not a control; putting it on the same page is what makes it one.
+It separates **resolved** from **requested**: a token minted under a key this
+deployment no longer holds resolves to nothing, and one list would make that look
+identical to a reveal nobody asked anything of.
+
 ## What it deliberately cannot do
 
 It never reveals. Re-identification has exactly one door: the grant-gated,
@@ -89,7 +124,9 @@ audited `reveal` endpoint (see [grants](grants.md)). An inspection screen that
 may also reveal is a second door with a friendlier name, and it is the one
 nobody audits.
 
-It does not edit documents. Reading, and recording a combination.
+It does not edit documents, and it cannot issue grants — that right belongs to
+the issuer labels. When a document has no grant, the page says so and says how to
+make one.
 
 ## A caveat worth seeing on screen
 
