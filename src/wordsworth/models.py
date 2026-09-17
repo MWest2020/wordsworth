@@ -4,7 +4,7 @@ truth). ``audit_records`` is append-only (enforced by a trigger, see db.py)."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -151,25 +151,3 @@ class KeyVaultRecord(Base):
         Index("uq_key_vault_active_scope", "scope", unique=True,
               postgresql_where=text("status = 'active'")),
     )
-
-
-class DeclaredCombination(Base):
-    """A set of PII types an operator judged to identify together, and why.
-
-    Stored rather than kept in a profile file, because establishing this depends
-    on the population and the context and is therefore the reader's judgement,
-    not the developer's. A rule that lives only in a file a developer edits is
-    established by nobody.
-
-    ``types`` is the sorted set joined by ``+``: it is the identity of the
-    declaration, so the same set cannot be recorded twice with two reasons.
-    """
-
-    __tablename__ = "declared_combinations"
-
-    types: Mapped[str] = mapped_column(String, primary_key=True)
-    reason: Mapped[str] = mapped_column(String, nullable=False)
-    declared_by: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
-        default=lambda: datetime.now(timezone.utc))

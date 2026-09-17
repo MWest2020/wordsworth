@@ -57,22 +57,11 @@ def authorize_corpus_read(caller: str | None, allowed_labels: list[str]) -> bool
     return caller in set(allowed_labels)
 
 
-#: Cookie the console logs in with. A browser cannot set ``X-API-Key`` on a
-#: plain navigation, so the console needs a second TRANSPORT for the key — not a
-#: second check. Same key set, same label, same middleware; only the envelope
-#: differs. Putting the key in a query string instead would leak it into logs,
-#: history and referrers.
-CONSOLE_COOKIE = "ww_console"
-
-
 class ApiKeyAuthMiddleware:
     """ASGI middleware: require a valid ``X-API-Key`` on every path except the
     exempt ops probes. Mounted only when there is at least one configured key,
     so an empty key set leaves the API open. On success the caller's label is
-    stashed at ``scope['state']['caller']`` for downstream audit attribution.
-
-    The key may also arrive in the ``ww_console`` cookie (see CONSOLE_COOKIE).
-    One decision point, two transports."""
+    stashed at ``scope['state']['caller']`` for downstream audit attribution."""
 
     def __init__(self, app: ASGIApp, keys: dict[str, str], exempt: frozenset[str]) -> None:
         self.app = app
@@ -83,9 +72,7 @@ class ApiKeyAuthMiddleware:
         if scope["type"] != "http" or scope.get("path", "") in self.exempt:
             await self.app(scope, receive, send)
             return
-        request = Request(scope, receive)
-        key = request.headers.get("x-api-key", "") or request.cookies.get(
-            CONSOLE_COOKIE, "")
+        key = Request(scope, receive).headers.get("x-api-key", "")
         label = self.keys.get(key)
         if label is None:
             # 401 with no hint about which/why — and never echo the key.
