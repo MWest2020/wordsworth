@@ -1,8 +1,9 @@
 # Tasks
 
-Nog niet gebouwd. Vraag 2 uit het voorstel — wat er met de bestaande grants op
-`console` gebeurt — wil ik beantwoord hebben vóór er code komt, want dat is
-dezelfde stille breuk als bij de recipient-binding.
+Nog niet gebouwd. Vraag 2 is beantwoord langs de rollen-beslissing: de
+(super)admin geeft de bestaande grants opnieuw uit op een identiteit. Wat deze
+change moet doen is ze **benoemen vóór de omschakeling**, want bij de
+recipient-binding merkten we pas achteraf dat er vier stil waren gevallen.
 
 ## 1. De verificatie
 - [ ] RS256-verificatie tegen `/cdn-cgi/access/certs` van het team, met `aud`

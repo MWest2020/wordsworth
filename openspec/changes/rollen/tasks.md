@@ -7,8 +7,11 @@ papier.
 ## 0. Eerst beslissen
 - [ ] Sjabloon, entiteit of het voorgestelde derde (grant noemt een rol,
       `authorize()` lost hem op)? De rest van deze lijst gaat uit van het derde.
-- [ ] Vraag 1 uit het voorstel: mag een beheerder zichzelf de beheerdersrol
-      geven? Zonder antwoord is de rol een formaliteit of een impasse.
+- [x] Vraag 1 beantwoord (Mark, 2026-09-17): bij het installeren bestaat er één
+      (super)admin die de RBAC bepaalt. De eerste rol komt uit de installatie,
+      niet uit het rollenstelsel. **Richting productie hoort hier degelijke RBAC
+      te staan** — Keycloak of gelijkwaardig — dus deze change mag nergens
+      aannemen dat rollen hier vandaan blijven komen.
 
 ## 1. Het model
 - [ ] `Role` (naam, types, actief) en de koppeling grant → rol.

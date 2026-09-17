@@ -4,8 +4,8 @@ This file is the single contract. Every agent reads it. The **reviewer** and
 **security** agents test a change against **this file + the change only** —
 never against anything else. If a rule matters, it lives here, literally.
 
-> SKELETON — Mark sharpens this. Values below are transcribed from the project
-> brief; edit here, not in the agents.
+> Values below come from the project brief and from decisions since; edit here,
+> not in the agents. Maintained by Claude, sharpened by Mark.
 
 ## What wordsworth is
 
@@ -70,8 +70,32 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
 
 ## Working method & governance
 
-- Work follows OpenSpec: propose → apply → archive. One builder run implements
-  exactly one change, nothing outside it. "Done = green" (tests pass).
-- **Merges belong to Mark** (Habitat v0 rule). `main` is protected.
-- `CLAUDE.md`, `.claude/agents/`, and CI config are owned by Mark (CODEOWNERS).
-  Agents must never modify them — the reviewer hard-fails any diff that does.
+- **Does it change a promise?** That is the test, not how big the work is. A
+  change to what the system guarantees — what search means, who may see what,
+  what a token resolves to — follows OpenSpec: propose → apply → archive, and no
+  code before the change is applied. Everything else is a GitHub issue and can
+  simply be done. Labels: `spec-nodig` and `direct`.
+  Size correlates with this and is the wrong test: three lines in `authorize()`
+  can be the most dangerous change in the repo, and a rewritten stylesheet is
+  not.
+- **One change per run**, nothing outside it. "Done = green" (tests pass).
+- **Green is not the same as working.** Before calling something done, run the
+  real artefact: the installed binary, the deployed service, the page as a
+  browser requests it. And run it from the side where you do NOT already hold
+  the key — the path a newcomer takes is the one that is actually used, and it
+  is the one a green suite is most likely to miss. A refusal that is correct can
+  still be a dead end.
+- **Measure the artefact the system produced**, not a re-run of the logic over
+  the same input. Those answer different questions ("what did it do" versus
+  "what would it do now"), and confusing them means reporting on the instrument
+  instead of the thing.
+- **Merging.** Claude merges its own PRs once the gates are green and reports
+  that it did. `main` is deliberately NOT protected (Mark declined branch
+  protection; the gate is CI plus the local pre-push hook). What still goes to
+  Mark: anything that changes a promise and has an open question in it, and the
+  agent definitions in `.claude/agents/`.
+- **This file is maintained by Claude** (Mark, 2026-09-17) and records how we
+  actually work. `.claude/agents/`, `CODEOWNERS` and CI config stay Mark's.
+  Note that `CODEOWNERS` still lists `/CLAUDE.md` as his and says agents must
+  never modify it; that line is now out of date and its correction is his call,
+  not something to change from here.

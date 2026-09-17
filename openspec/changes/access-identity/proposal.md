@@ -64,10 +64,18 @@ De regel is daarmee kort: **de header is nooit een bron, de handtekening wel.**
    een grant op een rol vergt #80. Mogelijk moet deze change alleen mogelijk
    maken dat het e-mailadres het callerlabel ís, en de grant-kant ongemoeid laten
    tot #80 er is.
-2. **Wat gebeurt er met de bestaande grants op `console`?** Zodra het callerlabel
-   een e-mailadres wordt, komt er niemand meer binnen als `console` en zijn die
-   grants inert — dezelfde stille breuk als bij de recipient-binding, en die wil
-   ik deze keer vóóraf zien en niet erna.
+2. ~~Wat gebeurt er met de bestaande grants op `console`?~~ **Beantwoord langs
+   de rollen-beslissing (Mark, 2026-09-17): de (super)admin geeft ze opnieuw
+   uit.** Zodra het callerlabel een e-mailadres wordt, heet niemand meer
+   `console` en autoriseert zo'n grant niemand. Dat is geen breuk maar een
+   migratiestap, en hij hoort benoemd te worden voordat hij plaatsvindt — bij de
+   recipient-binding merkten we het pas achteraf.
+
+   Concreet: bij het aanzetten van deze change worden de bestaande grants op een
+   sleutellabel opgesomd, en wie ze opnieuw wil op een identiteit geeft ze
+   opnieuw uit. De oude blijven staan en doen niets, precies zoals de vier
+   demo-grants van augustus deden — en zichtbaar in de console, die actieve van
+   ingetrokken scheidt.
 3. **Waar komt de teamnaam en de `aud` vandaan?** Configuratie, ongetwijfeld —
    maar een verkeerd ingestelde `aud` is een stil gat: de JWT klopt dan wel en
    hoort bij iets anders. Fail-closed: geen configuratie is geen identiteit, geen

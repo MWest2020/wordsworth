@@ -70,3 +70,30 @@ what it was for.
 
 - **WHEN** a role has been switched off
 - **THEN** the trail names the caller, the role and the reason
+
+### Requirement: The first administrator comes from installation, not from the role system
+
+Installing the system SHALL establish exactly one administrator, and every other
+role assignment SHALL be made by an administrator.
+
+A role system cannot hand out its own first role without either letting anyone
+claim it or deadlocking. Naming installation as the origin makes the bootstrap an
+explicit moment instead of a gap — the same reason a root account is not created
+by a user manager.
+
+That one identity is therefore the whole of the system's authority at the start,
+and SHALL be recorded as such: who it is, and when it was established.
+
+The origin of roles SHALL NOT be assumed to stay here. A production deployment is
+expected to delegate identity and role assignment to an external provider, and
+nothing in this capability may depend on roles being defined locally.
+
+#### Scenario: Installation establishes one administrator
+
+- **WHEN** the system is installed
+- **THEN** exactly one administrator exists, and its establishment is recorded
+
+#### Scenario: Nobody assigns themselves a role
+
+- **WHEN** someone who is not an administrator assigns a role
+- **THEN** it is refused, whoever they are and whichever role it is
