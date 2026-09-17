@@ -1,7 +1,21 @@
 # console Specification
 
 ## Purpose
-TBD - created by archiving change document-console. Update Purpose after archive.
+
+A screen for reading what the pipeline produced, so that judging the quality of
+this system does not require reading its API.
+
+The console exists for one conversation: put a document in front of someone, put
+the pseudonymised version next to it, and ask whether it is right. Everything it
+does serves that — the corpus is searchable from it, a combination of PII types
+is established in it by whoever reads the documents, and a reveal can be
+performed from it and is then visible in the same trail as any other.
+
+It is a reader, not a second system. It shows the artefact the pipeline actually
+produced rather than what the detectors would say today; it has no
+authorisation, keys or audit of its own; and it cannot issue a grant. The rule
+that holds it together is not "the console must not reveal" but **the console
+must not have a second door**.
 
 ## Requirements
 
