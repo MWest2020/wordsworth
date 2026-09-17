@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from wordsworth import audit
+from wordsworth import pseudonym_registry
 from wordsworth.keys import DurableKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.pipeline import register
@@ -39,6 +40,9 @@ def test_reveal_survives_restart_with_postgres_vault(session):
 
     # a fresh provider (cold cache) re-unwraps the persisted wrapped keys
     fresh = DurableKeyProvider(vault, transit)
+    # De pijplijn registreert de tokens van een document; deze test
+    # anonimiseert buiten de pijplijn om en doet het daarom zelf.
+    pseudonym_registry.register(session, doc.id, result.text)
     restored = deanonymize(
         session, doc.id, result.text, fresh, PostgresMappingStore(session),
         actor="mark",

@@ -28,6 +28,7 @@ dependencies = [
 wordsworth = "wordsworth.client:main"
 wordsworthctl = "wordsworth.client:main"
 wordsworth-init = "wordsworth.bootstrap:main"
+wordsworth-backfill-pseudonyms = "wordsworth.backfill_pseudonyms:main"
 wordsworth-ingest = "wordsworth.ingest_corpus:main"
 
 [build-system]

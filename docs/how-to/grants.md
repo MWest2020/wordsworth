@@ -139,6 +139,36 @@ changes — the documented tailnet-internal mode.
 > `curl $API/grants/<id>` and compare `recipient` with the label behind the key
 > that uses it.
 
+## A token only resolves for its own document
+
+Since 2026-09-17 a reveal resolves only pseudonyms registered for the document
+being revealed. Anything else is left in place, silently.
+
+The mapping store is global on purpose — one value, one token, across documents,
+which is what makes pseudonymised text searchable. The cost was that a reveal
+resolved any token it met, whoever minted it. `neutralise_foreign_tokens` closes
+the entrance an attacker can walk; this closes the exit, and an exit is cheaper
+to guard: there is one reveal path and an unbounded number of ways text enters a
+system.
+
+Refusals are silent by design. Reporting which tokens were refused would answer
+"does this value exist elsewhere in the corpus", and that answer is itself an
+oracle.
+
+> **Deploy-stap, vóór dit live gaat.** A document with no registry rows reveals
+> nothing. Documents anonymised before this change have none, so run the backfill
+> as part of the rollout:
+>
+> ```sh
+> wordsworth-backfill-pseudonyms --dry-run   # telt eerst
+> wordsworth-backfill-pseudonyms
+> ```
+>
+> Backfilled rows are marked `backfilled`, not `minted`: reading stored text
+> cannot tell whether a token was minted there or arrived before the guard
+> existed. That difference should be visible to whoever investigates an incident,
+> not assumed away.
+
 ## Notes
 - Grant routes mount only when the deployment runs in reversible mode (a grant
   store is configured). In the irreversible default they are absent.
