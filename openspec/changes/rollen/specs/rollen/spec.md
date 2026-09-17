@@ -1,0 +1,72 @@
+## ADDED Requirements
+
+### Requirement: A role names a set of PII types, and can be switched off
+
+The system SHALL support named roles, each holding a set of PII types and an
+active/inactive state.
+
+A grant MAY name a role instead of a type list. Authorisation SHALL resolve the
+role at the moment it decides, not at the moment the grant was issued.
+
+Resolving at decision time is what makes switching a role off mean something.
+Resolving at issue time would copy the types into the grant, and turning the role
+off would then leave every copy standing — you would believe you had closed
+something that is still open.
+
+An inactive role SHALL resolve to no types at all. It SHALL NOT fall back to the
+grant's own list, to a previous version of the role, or to any default.
+
+#### Scenario: Switching a role off closes every grant that names it
+
+- **WHEN** a role is switched off
+- **THEN** a reveal under a grant naming that role authorises nothing, without
+  any grant being modified
+
+#### Scenario: Narrowing a role narrows what its grants authorise
+
+- **WHEN** a type is removed from a role
+- **THEN** a reveal under a grant naming that role no longer authorises that type
+
+#### Scenario: A grant with its own type list is unaffected
+
+- **WHEN** a grant names types directly
+- **THEN** it behaves exactly as before
+
+### Requirement: Seeing everything is a role, not a bypass
+
+An administrator's ability to see all PII types SHALL be expressed as a role
+holding those types, and every reveal an administrator performs SHALL pass the
+same authorisation and produce the same audit record as any other reveal.
+
+A special path for administrators is the second door this system does not have.
+It is also the one that gets used most and reviewed least.
+
+#### Scenario: An administrator's reveal is an ordinary reveal
+
+- **WHEN** an administrator reveals PII
+- **THEN** it passes the same authorisation and is audited identically
+
+#### Scenario: Switching off the administrator role stops it too
+
+- **WHEN** the administrator role is switched off
+- **THEN** an administrator reveal authorises nothing
+
+### Requirement: Pulling the emergency stop is recorded
+
+Switching a role off SHALL record who did it and why, and the record SHALL be
+part of the same append-only trail as every other event.
+
+An emergency stop without a record is an outage nobody can explain afterwards.
+The reason is required for the same result the reason on a combination is
+required for: in a year, the only way to judge whether it was right is to know
+what it was for.
+
+#### Scenario: A switch-off without a reason is refused
+
+- **WHEN** a role is switched off without a reason
+- **THEN** it is refused and the role stays active
+
+#### Scenario: The trail names who pulled it
+
+- **WHEN** a role has been switched off
+- **THEN** the trail names the caller, the role and the reason
