@@ -858,11 +858,16 @@ def create_app(
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404, detail="unknown document")
                 dom = document_domain(session, document_id)
+                # De geauthenticeerde caller, nodig vóór de autorisatie: een
+                # grant noemt WIE mag onthullen, en dat kunnen we pas toetsen als
+                # we weten wie er belt. Zonder auth is dit None en verandert er
+                # niets (tailnet-interne modus).
+                caller = getattr(request.state, "caller", None)
                 # A grant that authorises none of its own types here is revoked,
-                # expired, scoped to another document or bound to another domain
-                # → explicit denial.
+                # expired, scoped to another document, bound to another domain, or
+                # presented by someone other than its recipient → explicit denial.
                 if not authorize(grant, document_id, set(grant.allowed_types),
-                                 now, dom, allow_global_grants):
+                                 now, dom, allow_global_grants, caller, auth_enabled):
                     raise HTTPException(status_code=403, detail="grant not applicable")
                 pseudo_text = get_anonymized_text(session, document_id)
                 if pseudo_text is None:
@@ -870,11 +875,10 @@ def create_app(
                         status_code=409, detail="document not yet de-identified")
                 requested = body.types if body.types else list(grant.allowed_types)
                 allowed = authorize(grant, document_id, set(requested), now, dom,
-                                    allow_global_grants)
-                # The authenticated caller (from api-key auth, if enabled) is
-                # recorded distinctly from the grant recipient; None when auth
-                # is off (tailnet-internal, grant_id as bearer capability).
-                caller = getattr(request.state, "caller", None)
+                                    allow_global_grants, caller, auth_enabled)
+                # De caller staat los in de audit van de recipient: met auth aan
+                # zijn ze nu gelijk, maar het spoor moet blijven zeggen wie er
+                # belde en niet alleen wie het mocht.
                 extra_audit = {"grant_id": body.grant_id}
                 if caller:
                     extra_audit["caller"] = caller

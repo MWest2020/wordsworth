@@ -49,6 +49,20 @@ class Grant:
     domain: str = DEFAULT_DOMAIN
 
 
+def _is_recipient(caller: str | None, recipient: str) -> bool:
+    """Exact match, deliberately.
+
+    A recipient is a label from the same vocabulary as the caller. Two labels
+    that merely resemble each other are not the same label, and a reveal is the
+    wrong place to be generous: no case folding, no prefix, no wildcard. Only
+    surrounding whitespace is ignored, because that is a transport artefact and
+    not a different name.
+    """
+    if not caller or not recipient:
+        return False
+    return caller.strip() == recipient.strip()
+
+
 def authorize(
     grant: Grant,
     document_id: uuid.UUID | None,
@@ -56,16 +70,30 @@ def authorize(
     now: datetime,
     domain: str = DEFAULT_DOMAIN,
     allow_global: bool = False,
+    caller: str | None = None,
+    auth_enabled: bool = False,
 ) -> set[str]:
     """The subset of ``requested_types`` this grant permits right now — the empty
     set if the grant is revoked, expired, scoped to another document, bound to
-    another domain, or unscoped where global grants are not allowed. Never raises
-    for the denied case: the caller reveals exactly the returned types.
+    another domain, unscoped where global grants are not allowed, or presented by
+    someone other than its recipient. Never raises for the denied case: the caller
+    reveals exactly the returned types.
 
     ``allow_global`` defaults to False for the same reason ``domain`` defaults to
     one domain: a grant never widens implicitly. A caller that wants the
-    reveal-any-document behaviour asks for it."""
+    reveal-any-document behaviour asks for it.
+
+    ``caller`` is checked against ``grant.recipient`` only when ``auth_enabled``.
+    Without caller authentication there is no caller to decide on and behaviour is
+    unchanged — the documented tailnet-internal mode, the same line
+    ``authorize_grant_issue`` already follows.
+    """
     if grant.status != ACTIVE:
+        return set()
+    if auth_enabled and not _is_recipient(caller, grant.recipient):
+        # A grant names WHO may reveal. Until that name is checked, the grant id
+        # is a bearer token: one leak — a log line, a ticket, a screenshot — and
+        # clear PII is open to whoever finds it.
         return set()
     if (grant.domain or DEFAULT_DOMAIN) != domain:
         return set()  # fail-safe: a grant never spans domains implicitly
