@@ -87,8 +87,12 @@ subtree only.
 
 ## Searching
 
-`/console/search` runs over the same index the API serves, and shows per hit its
-score and a fragment **of the stored pseudonymised text**. A fragment taken from
+`/console/search` runs over the same index the API serves, **within a dossier**.
+Picking one is compulsory; "alle dossiers" is possible but has to be said. A
+forgotten scope must never mean the widest possible answer — that is the whole
+point of scoping.
+
+It shows per hit its score and a fragment **of the stored pseudonymised text**. A fragment taken from
 a source document would look identical and prove the opposite of what this page
 is for.
 

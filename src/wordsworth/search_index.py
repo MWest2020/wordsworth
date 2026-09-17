@@ -27,10 +27,16 @@ class Hit:
 class SearchIndex(Protocol):
     def ensure_ready(self) -> None: ...
     def index(self, document_id: str, text: str, object_key: str,
-              vector: list[float] | None = None) -> None: ...
-    def search(self, query: str, size: int = 10) -> list[Hit]: ...
+              vector: list[float] | None = None,
+              dossiers: list[str] | None = None) -> None: ...
+    # ``only`` is the scope: a list of dossier ids, or None for every dossier.
+    # None means "all" ONLY here, where it arrives from a caller that said so —
+    # the API refuses a missing scope before it ever gets this far.
+    def search(self, query: str, size: int = 10,
+               only: list[str] | None = None) -> list[Hit]: ...
     def hybrid_search(self, query: str, query_vector: list[float],
-                      recall: int = 50) -> list[Hit]: ...
+                      recall: int = 50,
+                      only: list[str] | None = None) -> list[Hit]: ...
     def has_object_key(self, object_key: str) -> bool:
         """Is a document with this content key already in the index? Used for
         idempotent ingest — the index is the source of truth for 'searchable',
@@ -47,37 +53,49 @@ class InMemoryIndex:
     """Term-overlap BM25 stand-in + cosine kNN — enough to prove wiring in tests."""
 
     _docs: dict[str, tuple[str, str, list[float] | None]] = field(default_factory=dict)
+    #: document id -> the dossiers it belongs to. A document in two dossiers is
+    #: ONE entry with two values, not two entries.
+    _dossiers: dict[str, set[str]] = field(default_factory=dict)
 
     def ensure_ready(self) -> None:
         pass
 
-    def index(self, document_id, text, object_key, vector=None) -> None:
+    def index(self, document_id, text, object_key, vector=None,
+              dossiers=None) -> None:
         self._docs[document_id] = (text, object_key, vector)  # idempotent upsert
+        self._dossiers[document_id] = set(dossiers or ())
 
     def has_object_key(self, object_key: str) -> bool:
         return any(key == object_key for _t, key, _v in self._docs.values())
 
-    def _lexical(self, query: str) -> list[tuple[str, float]]:
+    def _in_scope(self, doc_id, only) -> bool:
+        return only is None or bool(self._dossiers.get(doc_id, set()) & set(only))
+
+    def _lexical(self, query: str, only=None) -> list[tuple[str, float]]:
         q = set(_terms(query))
         scored = []
         for doc_id, (text, _key, _vec) in self._docs.items():
+            if not self._in_scope(doc_id, only):
+                continue
             score = float(sum(1 for t in _terms(text) if t in q))
             if score > 0:
                 scored.append((doc_id, score))
         scored.sort(key=lambda p: p[1], reverse=True)
         return scored
 
-    def search(self, query: str, size: int = 10) -> list[Hit]:
+    def search(self, query: str, size: int = 10, only=None) -> list[Hit]:
         return [
             Hit(doc_id, score, self._docs[doc_id][1])
-            for doc_id, score in self._lexical(query)[:size]
+            for doc_id, score in self._lexical(query, only)[:size]
         ]
 
-    def hybrid_search(self, query, query_vector, recall: int = 50) -> list[Hit]:
-        lexical_ids = [doc_id for doc_id, _ in self._lexical(query)]
+    def hybrid_search(self, query, query_vector, recall: int = 50,
+                      only=None) -> list[Hit]:
+        lexical_ids = [doc_id for doc_id, _ in self._lexical(query, only)]
         knn = sorted(
             ((doc_id, cosine(query_vector, vec))
-             for doc_id, (_t, _k, vec) in self._docs.items() if vec),
+             for doc_id, (_t, _k, vec) in self._docs.items()
+             if vec and self._in_scope(doc_id, only)),
             key=lambda p: p[1], reverse=True,
         )
         knn_ids = [doc_id for doc_id, _ in knn]

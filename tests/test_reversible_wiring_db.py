@@ -49,7 +49,7 @@ def test_reversible_wiring_end_to_end(session_factory, mem_store, mem_index,
     client = TestClient(app)
 
     # 1. Ingest through the reversible straat (anonymizer_factory).
-    r = client.post("/ingest", files={
+    r = client.post("/ingest", params={"dossier": "zaak"}, files={
         "files": ("doc.pdf", born_digital_pii_pdf, "application/pdf")})
     assert r.status_code == 200
     result = r.json()["results"][0]

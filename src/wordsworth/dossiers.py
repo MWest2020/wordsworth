@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: MIT
+"""Dossiers: the scope a search is asked to state (dossier-scope).
+
+Searching everything by default means that forgetting the scope and having no
+scope are the same thing. In a system that holds personal data the widest answer
+must never be the one you get by not thinking, so a scope is asked for and
+"everything" is an explicit choice.
+
+Membership is a fact about a PAIR. Content-addressing decides what a document IS
+— the same bytes are one document — so the same PDF delivered in two cases must
+not become two documents and the second case must not overwrite the first. Both
+memberships simply exist, and adding one that is already there changes nothing.
+"""
+from __future__ import annotations
+
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .models import Dossier, DossierDocument
+
+#: What a caller passes to say "every dossier". A word and not an empty value,
+#: so that a scope left out by accident cannot be read as this.
+ALL = "alle"
+
+
+class DossierError(ValueError):
+    """A scope that cannot be acted on."""
+
+
+def ensure(session: Session, name: str) -> Dossier:
+    """The dossier with this name, created if it does not exist yet."""
+    name = (name or "").strip()
+    if not name:
+        raise DossierError("a dossier needs a name")
+    if name.lower() == ALL:
+        raise DossierError(f"{ALL!r} is the word for every dossier, not a name")
+    found = session.execute(
+        select(Dossier).where(Dossier.name == name)).scalars().first()
+    if found is not None:
+        return found
+    created = Dossier(name=name)
+    session.add(created)
+    session.flush()
+    return created
+
+
+def add(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
+    """Make this document a member. Returns whether it was not already one.
+
+    Adding an existing membership is not an error: content that already exists
+    being delivered into another case is the normal thing, not a mistake.
+    """
+    existing = session.get(DossierDocument, (dossier_id, document_id))
+    if existing is not None:
+        return False
+    session.add(DossierDocument(dossier_id=dossier_id, document_id=document_id))
+    session.flush()
+    return True
+
+
+def documents_in(session: Session, dossier_ids: list[UUID]) -> set[UUID]:
+    """Every document in any of these dossiers."""
+    if not dossier_ids:
+        return set()
+    rows = session.execute(
+        select(DossierDocument.document_id)
+        .where(DossierDocument.dossier_id.in_(dossier_ids)))
+    return {r[0] for r in rows}
+
+
+def resolve(session: Session, scope: str | None) -> list[UUID] | None:
+    """Turn a scope as a caller wrote it into dossier ids, or None for "all".
+
+    A missing scope is an error and never "all": that is the whole point.
+    """
+    if scope is None or not str(scope).strip():
+        raise DossierError("name a dossier, or 'alle' for every dossier")
+    names = [n.strip() for n in str(scope).split(",") if n.strip()]
+    if any(n.lower() == ALL for n in names):
+        if len(names) > 1:
+            raise DossierError(f"{ALL!r} cannot be combined with a name")
+        return None
+    found = list(session.execute(
+        select(Dossier).where(Dossier.name.in_(names))).scalars())
+    missing = sorted(set(names) - {d.name for d in found})
+    if missing:
+        raise DossierError(f"unknown dossier(s): {', '.join(missing)}")
+    return [d.id for d in found]
+
+
+def listing(session: Session) -> list[dict]:
+    """Every dossier with how many documents it holds, newest first."""
+    out = []
+    for d in session.execute(
+            select(Dossier).order_by(Dossier.created_at.desc())).scalars():
+        count = len(documents_in(session, [d.id]))
+        out.append({"id": str(d.id), "name": d.name, "documents": count})
+    return out

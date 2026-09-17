@@ -19,13 +19,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import audit
+from . import dossiers
 from . import pseudonym_registry
 from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
 from .keys import DEFAULT_DOMAIN
-from .models import AuditRecord, Document, DocumentText
+from .models import AuditRecord, Document, DocumentText, DossierDocument
 from .object_store import ObjectStore
 from .profiling import ProfilingError, profile_pdf
 from .retry import retry_transient
@@ -114,7 +115,8 @@ def document_domain(session: Session, document_id: UUID) -> str:
 
 
 def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
-           domain: str = DEFAULT_DOMAIN, filename: str | None = None) -> Document:
+           domain: str = DEFAULT_DOMAIN, filename: str | None = None,
+           dossier: str | None = None) -> Document:
     """Store the PDF in object storage under a content-addressed key, then register
     the document against that key. `process` later fetches the bytes back by key —
     this closes the PoC shortcut of passing raw bytes across the pipeline seam.
@@ -123,7 +125,26 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
     same bytes is idempotent at the object layer."""
     key = "documents/" + hashlib.sha256(pdf_bytes).hexdigest()
     store.put(key, pdf_bytes)
-    return register(session, key, domain, filename)
+    # Content already ingested is one document, not a second. Delivering it into
+    # another dossier adds a membership; that is the normal case, not an error.
+    existing = session.execute(
+        select(Document).where(Document.object_key == key)).scalars().first()
+    doc = existing if existing is not None else register(session, key, domain, filename)
+    if dossier:
+        dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id)
+    return doc
+
+
+def dossiers_of(session: Session, document_id: UUID) -> list[str]:
+    """The dossiers this document belongs to, as strings for the index.
+
+    Read at indexing time rather than passed down, because a document can gain a
+    membership after it was first indexed (the same bytes delivered into another
+    case) and the index has to learn that on the next pass.
+    """
+    return [str(r[0]) for r in session.execute(
+        select(DossierDocument.dossier_id)
+        .where(DossierDocument.document_id == document_id))]
 
 
 def get_anonymized_text(session: Session, document_id: UUID) -> str | None:
@@ -251,7 +272,8 @@ def process(
         def _index() -> None:
             index.ensure_ready()
             # Idempotent (upsert by id) so a crash between index and commit is safe.
-            index.index(str(document_id), anonymized, doc.object_key, vector=vector)
+            index.index(str(document_id), anonymized, doc.object_key, vector=vector,
+                        dossiers=dossiers_of(session, document_id))
 
         retry_transient(_index, settings.retry_attempts, settings.retry_base_delay)
         transition(session, document_id, State.INDEXED, step="index",
@@ -311,7 +333,8 @@ def reanonymize(
 
     def _index() -> None:
         index.ensure_ready()
-        index.index(str(document_id), result.text, doc.object_key, vector=vector)
+        index.index(str(document_id), result.text, doc.object_key, vector=vector,
+                    dossiers=dossiers_of(session, document_id))
 
     retry_transient(_index, settings.retry_attempts, settings.retry_base_delay)
 

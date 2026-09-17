@@ -182,3 +182,43 @@ class DeclaredCombination(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False,
         default=lambda: datetime.now(timezone.utc))
+
+
+class Dossier(Base):
+    """A named collection of documents: a case, a Woo request, a delivery.
+
+    The thing search is scoped to. It has a name because a person picks it from a
+    list, and an id because a name is not unique and a reference must be.
+    """
+
+    __tablename__ = "dossiers"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))
+
+
+class DossierDocument(Base):
+    """Which document belongs to which dossier.
+
+    A table of its own and not a column on `documents`, because membership is a
+    fact about a PAIR. Content-addressing says the same bytes are one document,
+    so the same PDF delivered in two cases must not become two documents and the
+    second case must not overwrite the first. Both memberships simply exist.
+
+    The pair is the key, so adding the same one twice changes nothing — which is
+    what makes re-ingesting a directory safe.
+    """
+
+    __tablename__ = "dossier_documents"
+
+    dossier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dossiers.id"), primary_key=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), primary_key=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))

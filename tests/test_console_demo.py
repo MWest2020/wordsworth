@@ -29,15 +29,16 @@ class FakeIndex:
     """Returns what it was given; records the query it was asked."""
 
     def __init__(self, hits=()):
-        self.hits, self.asked = list(hits), []
+        self.hits, self.asked, self.scopes = list(hits), [], []
 
-    def search(self, q, size=10):
+    def search(self, q, size=10, only=None):
         self.asked.append((q, size))
+        self.scopes.append(only)
         return self.hits[:size]
 
 
 class BrokenIndex:
-    def search(self, q, size=10):
+    def search(self, q, size=10, only=None):
         raise ConnectionError("opensearch weg")
 
 
@@ -77,7 +78,7 @@ def test_the_search_page_reports_score_and_fragment(session_factory):
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
                               search_index=index), follow_redirects=False)
     c.post("/console/login", data={"key": "s3cret"})
-    page = c.get("/console/search?q=vergunning").text
+    page = c.get("/console/search?q=vergunning&dossier=alle").text
     assert "11.07" in page                       # score, rounded for reading
     assert "vergunning" in page and "[PERSON:aabbccdd]" in page
     assert f"/console/documents/{d.id}" in page
@@ -88,7 +89,8 @@ def test_a_term_with_no_hits_says_so_plainly(session_factory):
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
                               search_index=FakeIndex()), follow_redirects=False)
     c.post("/console/login", data={"key": "s3cret"})
-    assert "Geen resultaten" in c.get("/console/search?q=nietsdan").text
+    assert "Geen resultaten" in c.get(
+        "/console/search?q=nietsdan&dossier=alle").text
 
 
 def test_the_suggestions_are_offered_as_examples_not_promises(session_factory):
@@ -107,7 +109,7 @@ def test_a_broken_index_reports_the_failure_instead_of_an_empty_result(session_f
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
                               search_index=BrokenIndex()), follow_redirects=False)
     c.post("/console/login", data={"key": "s3cret"})
-    page = c.get("/console/search?q=iets").text
+    page = c.get("/console/search?q=iets&dossier=alle").text
     assert "ConnectionError" in page and "Geen resultaten" not in page
 
 
@@ -115,7 +117,8 @@ def test_without_an_index_the_page_says_so(session_factory):
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
                    follow_redirects=False)
     c.post("/console/login", data={"key": "s3cret"})
-    assert "zonder zoekindex" in c.get("/console/search?q=iets").text
+    assert "zonder zoekindex" in c.get(
+        "/console/search?q=iets&dossier=alle").text
 
 
 # --- grants and history on the document page -------------------------------
@@ -443,3 +446,40 @@ def test_the_same_bytes_under_two_names_give_a_deterministic_answer(tmp_path):
     (tmp_path / "b-tweede.pdf").write_bytes(b"zelfde")
     (tmp_path / "a-eerste.pdf").write_bytes(b"zelfde")
     assert list(keys_in(tmp_path).values()) == ["a-eerste.pdf"]
+
+
+def test_the_console_asks_for_a_dossier_before_it_searches(session_factory):
+    """Not silently searching everything is exactly what dossier-scope is for."""
+    index = FakeIndex()
+    c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
+                              search_index=index), follow_redirects=False)
+    c.post("/console/login", data={"key": "s3cret"})
+    page = c.get("/console/search?q=vergunning").text
+    assert "Kies eerst een dossier" in page
+    assert index.asked == []            # and it did not quietly ask anyway
+
+
+def test_the_console_passes_the_chosen_scope_to_the_index(session_factory):
+    from wordsworth import dossiers
+
+    with session_factory() as s:
+        d = dossiers.ensure(s, "zaak-a")
+        ident = str(d.id)
+        s.commit()
+    index = FakeIndex()
+    c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
+                              search_index=index), follow_redirects=False)
+    c.post("/console/login", data={"key": "s3cret"})
+    c.get("/console/search?q=x&dossier=zaak-a")
+    assert index.scopes == [[ident]]
+    c.get("/console/search?q=x&dossier=alle")
+    assert index.scopes[-1] is None
+
+
+def test_an_unknown_dossier_in_the_console_says_so(session_factory):
+    index = FakeIndex()
+    c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
+                              search_index=index), follow_redirects=False)
+    c.post("/console/login", data={"key": "s3cret"})
+    page = c.get("/console/search?q=x&dossier=verzonnen").text
+    assert "verzonnen" in page and index.asked == []

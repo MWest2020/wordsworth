@@ -7,7 +7,7 @@ one file to a machine on the tailnet and run it, or use the installed
 
     wordsworthctl --url http://100.100.181.23:8000 health
     wordsworthctl --url http://100.100.181.23:8000 ingest /path/to/corpus
-    wordsworthctl --url http://100.100.181.23:8000 search "vergunning"
+    wordsworthctl --url http://100.100.181.23:8000 search "vergunning" --dossier alle
     wordsworthctl --url http://100.100.181.23:8000 state <document-id>
 
 ``ingest`` takes a file or a directory (walked recursively; ``*.pdf`` by default,
@@ -90,7 +90,7 @@ def _download(base: str, path: str, dest: str, params: dict | None = None,
 
 
 def _post_files(base: str, paths: list[Path], timeout: float = 600,
-                domain: str | None = None):
+                domain: str | None = None, dossier: str | None = None):
     """Upload files to POST /ingest as multipart/form-data (field name ``files``)."""
     boundary = uuid.uuid4().hex
     body = bytearray()
@@ -104,9 +104,10 @@ def _post_files(base: str, paths: list[Path], timeout: float = 600,
         body += p.read_bytes()
         body += b"\r\n"
     body += f"--{boundary}--\r\n".encode()
+    params = {k: v for k, v in (("domain", domain), ("dossier", dossier)) if v}
     req = urllib.request.Request(
         base.rstrip("/") + "/ingest"
-        + ("?" + urllib.parse.urlencode({"domain": domain}) if domain else ""),
+        + ("?" + urllib.parse.urlencode(params) if params else ""),
         data=bytes(body),
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
@@ -122,7 +123,8 @@ def _iter_files(root: Path, include_all: bool) -> list[Path]:
     return sorted(p for p in root.rglob(pattern) if p.is_file())
 
 
-def _post_batch_with_retry(url, chunk, timeout, retries, index, domain: str | None = None):
+def _post_batch_with_retry(url, chunk, timeout, retries, index,
+                           domain: str | None = None, dossier: str | None = None):
     """POST one batch, retrying on transport errors / 5xx (transient: a server
     worker recycle drops the in-flight connection). Returns the parsed response,
     or None if every attempt failed. Prints each attempt's failure visibly."""
@@ -130,8 +132,9 @@ def _post_batch_with_retry(url, chunk, timeout, retries, index, domain: str | No
     for attempt in range(1, retries + 1):
         try:
             # keyword only when set, so a domain-unaware seam/test double still fits
-            return _post_files(url, chunk, timeout=timeout,
-                               **({"domain": domain} if domain else {}))
+            extra = {k: v for k, v in (("domain", domain), ("dossier", dossier))
+                     if v}
+            return _post_files(url, chunk, timeout=timeout, **extra)
         except urllib.error.HTTPError as e:
             transient = e.code >= 500
             reason = f"HTTP {e.code} {e.reason}"
@@ -170,7 +173,8 @@ def _cmd_ingest(args) -> int:
     for i in range(0, total, args.batch):
         chunk = files[i:i + args.batch]
         resp = _post_batch_with_retry(args.url, chunk, args.timeout,
-                                      args.retries, i, domain=args.domain)
+                                      args.retries, i, domain=args.domain,
+                                      dossier=args.dossier)
         if resp is None:
             # Whole batch failed after retries — the server may or may not have
             # processed some; report each file so nothing fails silently.
@@ -216,13 +220,15 @@ def _cmd_health(args) -> int:
 
 def _cmd_search(args) -> int:
     print(json.dumps(_get(args.url, "/search",
-                          {"q": args.query, "size": args.size}), indent=2))
+                          {"q": args.query, "size": args.size,
+                           "dossier": args.dossier}), indent=2))
     return 0
 
 
 def _cmd_hybrid(args) -> int:
     print(json.dumps(_get(args.url, "/hybrid",
-                          {"q": args.query, "size": args.size}), indent=2))
+                          {"q": args.query, "size": args.size,
+                           "dossier": args.dossier}), indent=2))
     return 0
 
 
@@ -364,6 +370,9 @@ def main(argv: list[str] | None = None) -> int:
 
     pi = sub.add_parser("ingest", help="upload a file or directory to /ingest")
     pi.add_argument("path", help="a PDF file or a directory of PDFs")
+    # Required: a document in no dossier is invisible to every scoped search.
+    pi.add_argument("--dossier", required=True,
+                    help="the dossier these documents belong to")
     pi.add_argument("--all", action="store_true",
                     help="upload every file, not just *.pdf")
     pi.add_argument("--batch", type=int, default=None,
@@ -379,11 +388,17 @@ def main(argv: list[str] | None = None) -> int:
     ps = sub.add_parser("search", help="lexical (BM25) search")
     ps.add_argument("query")
     ps.add_argument("--size", type=int, default=10)
+    # Required, and no default: leaving the scope out must never be the same as
+    # asking for everything. Pass "alle" to mean every dossier.
+    ps.add_argument("--dossier", required=True,
+                    help="dossier to search, or 'alle' for every dossier")
     ps.set_defaults(func=_cmd_search)
 
     ph = sub.add_parser("hybrid", help="hybrid (BM25 + vector) relevance search")
     ph.add_argument("query")
     ph.add_argument("--size", type=int, default=10)
+    ph.add_argument("--dossier", required=True,
+                    help="dossier to search, or 'alle' for every dossier")
     ph.set_defaults(func=_cmd_hybrid)
 
     pa = sub.add_parser("ask", help="RAG question answering (local LLM)")

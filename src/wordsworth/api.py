@@ -35,13 +35,15 @@ from .grants import GrantStore
 from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
 from .keys import DEFAULT_DOMAIN, KeyProvider
+from . import dossiers as dossiers_mod
 from .models import AuditRecord, Document
 from .object_store import ObjectStore
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
 from .pipeline import (
-    current_state, document_domain, get_anonymized_text, ingest, process,
+    current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
+    process,
 )
 from .rate_limit import (
     EXEMPT_PATHS,
@@ -510,11 +512,29 @@ def create_app(
 
     if search_index is not None:
 
+        def _scope(dossier):
+            """The dossier scope for this request, or None for every dossier.
+
+            Searching needs a session to look the names up, so the scope is
+            resolved per request against the same session factory the rest uses.
+            Without one there is nothing to resolve against and a scope cannot be
+            required — so that deployment keeps searching everything, as it did.
+            """
+            if session_factory is None:
+                return None
+            return _scope_with(session_factory, dossier)
+
         @app.get("/search", summary="Lexical (BM25) search", tags=["read"])
-        def search(q: str, size: int = 10) -> dict:
-            """Full-text search over the anonymized corpus."""
-            hits = search_index.search(q, size=size)
-            return {"query": q, "hits": [_hit(h) for h in hits]}
+        def search(q: str, size: int = 10, dossier: str | None = None) -> dict:
+            """Full-text search over the anonymized corpus, within a dossier.
+
+            ``dossier`` is required: a comma-separated list of names, or
+            ``alle`` for every dossier. Leaving it out is a 400 and never a
+            search over everything — a forgotten scope must not be able to mean
+            the widest possible answer."""
+            only = _scope(dossier)
+            hits = search_index.search(q, size=size, only=only)
+            return {"query": q, "dossier": dossier, "hits": [_hit(h) for h in hits]}
 
         @app.get("/export/ranking.csv", summary="Export a ranking as CSV",
                  tags=["export"])
@@ -531,12 +551,15 @@ def create_app(
 
             @app.get("/hybrid", summary="Hybrid (BM25 + kNN) search",
                      tags=["read"])
-            def hybrid(q: str, size: int = 10) -> dict:
-                """RRF recall over BM25 + vector kNN, ranked by cosine."""
+            def hybrid(q: str, size: int = 10, dossier: str | None = None) -> dict:
+                """RRF recall over BM25 + vector kNN, ranked by cosine. Takes the
+                same required ``dossier`` scope as ``/search``."""
                 from .hybrid import hybrid_search
 
-                hits = hybrid_search(search_index, embedder, q, size=size)
-                return {"query": q, "hits": [_hit(h) for h in hits]}
+                hits = hybrid_search(search_index, embedder, q, size=size,
+                                     only=_scope(dossier))
+                return {"query": q, "dossier": dossier,
+                        "hits": [_hit(h) for h in hits]}
 
             if generator is not None:
 
@@ -575,7 +598,8 @@ def create_app(
             return anonymizer_factory(session)
 
         def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN,
-                        filename: str | None = None) -> dict:
+                        filename: str | None = None,
+                        dossier: str | None = None) -> dict:
             """Drive one document to its terminal state; return its metadata
             (id, state, duration, counts). The un-redacted bytes never leave this
             frame and no exception it raises carries document text (fail-hard, no
@@ -589,13 +613,30 @@ def create_app(
             processing only what is actually missing from the index."""
             key = "documents/" + hashlib.sha256(data).hexdigest()
             if search_index.has_object_key(key):
-                return {"state": "skipped"}
+                # Already processed — but a delivery into ANOTHER dossier still
+                # has to add that membership, or the skip would silently swallow
+                # the one thing this request was actually asking for.
+                with session_factory() as session:
+                    doc = session.execute(select(Document).where(
+                        Document.object_key == key)).scalars().first()
+                    added = bool(doc and dossier and dossiers_mod.add(
+                        session, dossiers_mod.ensure(session, dossier).id, doc.id))
+                    if added:
+                        # The index holds the dossiers per document; a new
+                        # membership has to reach it too.
+                        text = get_anonymized_text(session, doc.id)
+                        if text is not None:
+                            search_index.index(str(doc.id), text, key,
+                                               dossiers=dossiers_of(session, doc.id))
+                    session.commit()
+                    return {"state": "added_to_dossier" if added else "skipped",
+                            "document_id": str(doc.id) if doc else None}
             with session_factory() as session:
                 # Reversible mode binds a fresh session-scoped anonymizer (durable
                 # keys + mapping store) per document; default mode uses the shared
                 # irreversible driver.
                 anon = _make_anonymizer(session, domain)
-                doc = ingest(session, store, data, domain, filename)
+                doc = ingest(session, store, data, domain, filename, dossier)
                 session.commit()
                 document_id = doc.id
                 state = process(session, document_id, store, anonymizer=anon,
@@ -617,6 +658,7 @@ def create_app(
         def ingest_documents(
             files: list[UploadFile] = File(..., description="One or more PDF files"),
             domain: str | None = None,
+            dossier: str | None = None,
         ) -> IngestResponse:
             """Upload one or more PDFs. Each is driven through
             ingest → OCR recovery (if scanned) → anonymize → store → index and
@@ -633,6 +675,14 @@ def create_app(
             dom = domain or default_settings.default_domain
             if "/" in dom:
                 raise HTTPException(status_code=400, detail="domain must not contain '/'")
+            # A dossier is required, and there is no default. A document that
+            # belongs nowhere is invisible to every scoped search, so letting it
+            # be optional would quietly produce documents nobody can find.
+            if not (dossier or "").strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail="name a dossier: a document that belongs to none is "
+                           "invisible to a scoped search")
             results: list[IngestResult] = []
             for f in files:
                 data = f.file.read()
@@ -641,7 +691,7 @@ def create_app(
                         filename=f.filename, state="error", error="empty upload"))
                     continue
                 try:
-                    meta = _ingest_one(data, dom, f.filename)
+                    meta = _ingest_one(data, dom, f.filename, dossier)
                     results.append(IngestResult(
                         filename=f.filename,
                         document_id=meta.get("document_id"),
@@ -1090,6 +1140,23 @@ def _accepts_domain(factory) -> bool:
         inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)]
     return len(positional) >= 2 or any(
         p.kind is inspect.Parameter.VAR_POSITIONAL for p in params)
+
+
+def _scope_with(session_factory, dossier):
+    """Turn the ``dossier`` parameter into dossier ids, or None for every one.
+
+    A missing scope is a 400. That is the whole promise of dossier-scope: a
+    forgotten scope must not be able to mean the widest possible answer, so
+    "everything" has to be spelled out.
+    """
+    from .dossiers import DossierError, resolve
+
+    with session_factory() as session:
+        try:
+            ids = resolve(session, dossier)
+        except DossierError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+    return None if ids is None else [str(i) for i in ids]
 
 
 def _hit(h) -> dict:
