@@ -74,4 +74,4 @@ summary. A file that fails does not abort the batch. See `wordsworth --help` and
 
 ## License
 
-EUPL-1.2 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
