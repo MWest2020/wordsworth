@@ -66,6 +66,14 @@ gepseudonimiseerd; ze zijn hier geteld aan hun tokens. De vraag die dit getal
 stelt is een andere: of één token per type genoeg is, of dat de combinatie ook
 als geheel een eigen behandeling verdient.
 
+## Het antwoord op de vraag die dit getal stelt
+
+Beantwoord door Mark op 2026-09-17: **los**. Eén token per waarde per type; een
+benoemde combinatie wordt gemeld en gemeten, niet samengevoegd. Samenvoegen zou
+de per-type-grens breken waar elke grant aan hangt, het zoeken onmogelijk maken,
+en de keuze wélke combinatie identificeert in de code leggen. Zie
+[ADR-0007](adr/0007-one-token-per-type.md).
+
 ## Hoe het na te rekenen
 
 ```bash

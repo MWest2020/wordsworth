@@ -27,6 +27,12 @@ under `openspec/`.
     verdict per requirement, build order.
   - [ADR-0005](explanation/adr/0005-nora-target-architecture-alignment.md) —
     what wordsworth adopts, adapts and declines from that architecture.
+  - [ADR-0007](explanation/adr/0007-one-token-per-type.md) — one token per type,
+    also where a combination identifies: why a named quasi-identifier is
+    reported and measured but never fused.
+  - [meting 02](explanation/meting-combinaties-02.md) — 654 of 751 documents
+    carry PERSON + DATE_TIME + LOCATION together, and what that number does and
+    does not say.
   - [detection lists](how-to/detection-lists.md) — allow/deny JSON lists,
     `lists_hash` in audit, the feedback endpoint.
   - [dataset pseudonymisation](how-to/dataset-pseudonymisation.md) — CSV
