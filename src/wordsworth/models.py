@@ -54,6 +54,36 @@ class DocumentText(Base):
     anonymized_text: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class DocumentPseudonym(Base):
+    """Which pseudonyms belong to which document.
+
+    The mapping store is global — lookup by pseudonym, not by document — because
+    one value must yield one token everywhere, or pseudonymised text stops being
+    searchable. The cost is that `_reveal` resolves any token it meets, whoever
+    minted it.
+
+    Neutralising tokens that arrive in supplied text closes the path an attacker
+    can walk today, but that is one line of defence at one entrance. This table
+    guards the exit instead: a token that is not registered here for the document
+    being revealed does not resolve, no matter how it got into the text.
+
+    `source` is load-bearing, not decoration. A row written by an anonymisation
+    run is "minted"; a row written by a backfill that read already-stored text is
+    "backfilled", because a backfill cannot tell whether a token was minted there
+    or slipped in before the guard existed. An incident investigation should be
+    able to see that difference instead of assuming it.
+    """
+
+    __tablename__ = "document_pseudonyms"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), primary_key=True
+    )
+    pseudonym: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # minted | backfilled
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class PiiMapping(Base):
     """Separated encrypted mapping store: pseudonym -> AES-GCM ciphertext of the
     original PII. Holds only ciphertext, never clear PII, and never lives in the

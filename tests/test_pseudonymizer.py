@@ -3,6 +3,7 @@ import re
 from sqlalchemy import select
 
 from wordsworth import audit
+from wordsworth import pseudonym_registry
 from wordsworth.anonymizer import Anonymizer
 from wordsworth.keys import InMemoryKeyProvider, StubKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
@@ -42,6 +43,12 @@ def test_roundtrip_and_audit_logged(session):
     for secret in (PII_BSN, PII_IBAN, PII_EMAIL):
         assert secret not in result.text
 
+    # De pijplijn registreert de tokens van een document; deze test
+
+    # anonimiseert buiten de pijplijn om en doet het daarom zelf.
+
+    pseudonym_registry.register(session, doc.id, result.text)
+
     restored = deanonymize(
         session, doc.id, result.text,
         StubKeyProvider("pass"), PostgresMappingStore(session), actor="mark",
@@ -71,6 +78,12 @@ def test_selective_reveal_by_type_and_audit(session):
         f"BSN {PII_BSN} mail {PII_EMAIL}"
     )
     session.commit()
+
+    # De pijplijn registreert de tokens van een document; deze test
+
+    # anonimiseert buiten de pijplijn om en doet het daarom zelf.
+
+    pseudonym_registry.register(session, doc.id, result.text)
 
     restored = deanonymize(
         session, doc.id, result.text,
@@ -107,6 +120,12 @@ def test_injectable_into_pipeline(session, born_digital_pii_pdf, mem_index,
         assert secret not in stored
     assert "[BSN:" in stored  # keyed pseudonym, not the plain [BSN] placeholder
 
+    # De pijplijn registreert de tokens van een document; deze test
+
+    # anonimiseert buiten de pijplijn om en doet het daarom zelf.
+
+    pseudonym_registry.register(session, doc.id, stored)
+
     restored = deanonymize(
         session, doc.id, stored,
         StubKeyProvider("pass"), PostgresMappingStore(session), actor="index",
@@ -138,6 +157,12 @@ def test_reversible_entity_deanonymize_and_audit(session):
     session.commit()
     assert name not in result.text and PII_BSN not in result.text
     assert "[PERSON:" in result.text and "[BSN:" in result.text
+
+    # De pijplijn registreert de tokens van een document; deze test
+
+    # anonimiseert buiten de pijplijn om en doet het daarom zelf.
+
+    pseudonym_registry.register(session, doc.id, result.text)
 
     restored = deanonymize(
         session, doc.id, result.text,

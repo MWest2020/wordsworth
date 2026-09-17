@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import audit, detectors
+from . import pseudonym_registry
 from .anonymizer import AnonymizationResult
 from .config import settings
 from .crypto import decrypt, encrypt
@@ -93,15 +94,27 @@ def _reveal(
     allowed_types: set[str] | None,
     get_mapping,
     get_key,
+    registered: set[str] | None = None,
 ) -> tuple[str, list[str]]:
     """Pure reveal substitution (no DB, no audit). Replace each token with its
-    original only when its type is allowed AND its key resolves; otherwise leave
-    the token untouched. Two independent gates: the ``allowed_types`` filter and
-    cryptographic key availability. Returns (restored text, revealed tokens)."""
+    original only when it belongs to this document, its type is allowed AND its
+    key resolves; otherwise leave the token untouched. Three independent gates.
+    Returns (restored text, revealed tokens).
+
+    ``registered`` is the set of pseudonyms belonging to the document being
+    revealed. ``None`` means "do not check" and exists only for callers that have
+    no document (the pure tests); the pipeline always passes a set.
+
+    A refused token is left in place silently. Saying which tokens were refused
+    would answer the question "does this value exist elsewhere in the corpus",
+    and that answer is itself an oracle.
+    """
     revealed: list[str] = []
 
     def repl(match: re.Match[str]) -> str:
         pseudonym = match.group(0)
+        if registered is not None and pseudonym not in registered:
+            return pseudonym  # not this document's token
         if allowed_types is not None and _label_of(pseudonym) not in allowed_types:
             return pseudonym  # type not granted
         mapping = get_mapping(pseudonym)
@@ -386,7 +399,8 @@ def deanonymize(
         raise ValueError("unknown document")
 
     restored, revealed = _reveal(
-        text, allowed_types, mapping_store.get, key_provider.key
+        text, allowed_types, mapping_store.get, key_provider.key,
+        pseudonym_registry.registered(session, document_id),
     )
     types = sorted({_label_of(p) for p in revealed})
     payload = {

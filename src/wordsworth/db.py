@@ -49,6 +49,13 @@ ALTER TABLE pii_mappings ADD COLUMN IF NOT EXISTS norm_version VARCHAR;
 ALTER TABLE grants ADD COLUMN IF NOT EXISTS domain VARCHAR;
 """
 
+# Reveal walks this table on every call; without the index it is a sequential
+# scan over every pseudonym in the corpus.
+_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_document_pseudonyms_doc
+  ON document_pseudonyms (document_id);
+"""
+
 
 def init_schema(engine: Engine) -> None:
     """Apply the schema migration: tables + columns + the append-only trigger.
@@ -69,6 +76,7 @@ def init_schema(engine: Engine) -> None:
         # SET LOCAL: scoped to this transaction, gone on commit.
         conn.execute(text("SET LOCAL lock_timeout = '5s'"))
         conn.execute(text(_COLUMN_MIGRATIONS_SQL))
+        conn.execute(text(_INDEX_SQL))
         conn.execute(text(_APPEND_ONLY_SQL))
 
 

@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import audit
+from . import pseudonym_registry
 from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
@@ -222,6 +223,10 @@ def process(
             settings.retry_attempts, settings.retry_base_delay,
         )
         session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))
+        # Welke pseudonymen bij dit document horen. Mag uit de uitvoer gelezen
+        # worden omdat neutralise_foreign_tokens ervóór draait: wat er ná afloop
+        # in staat, is hier gemunt.
+        pseudonym_registry.register(session, document_id, result.text)
         session.flush()
         # Counts per type + per-layer confidence aggregates (add-detection-
         # confidence): aggregates only, never a value or an offset.
@@ -312,6 +317,10 @@ def reanonymize(
 
     # Only now overwrite the stored text — after the index holds the new tokens.
     session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))
+    # Idem bij een herindexering: de nieuwe tokens komen erbij. Oude blijven
+    # staan -- een registratie die krimpt onder een lopende reveal is een race,
+    # geen waarborg.
+    pseudonym_registry.register(session, document_id, result.text)
     session.flush()
     # An update/access event (from==to), like deanonymize: keeps the hash-chain
     # valid without an illegal state transition. Counts only, never clear values.

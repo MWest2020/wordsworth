@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from wordsworth import audit
+from wordsworth import pseudonym_registry
 from wordsworth.escrow import AgeEscrow
 from wordsworth.key_audit import ROTATION_ACTION, STREAM, JsonlKeyLifecycleAudit
 from wordsworth.key_lifecycle import rotate_keys
@@ -46,6 +47,9 @@ def test_mixed_pre_and_post_rotation_mappings_all_decrypt(session):
     assert store.get(_PSEUDO_RE.search(pre.text).group(0)).key_id == old_id
     assert store.get(_PSEUDO_RE.search(post.text).group(0)).key_id == new_id
 
+    # De pijplijn registreert de tokens van een document; deze test anonimiseert
+    # buiten de pijplijn om en doet het daarom zelf.
+    pseudonym_registry.register(session, doc.id, pre.text + " " + post.text)
     restored = deanonymize(
         session, doc.id, pre.text + " " + post.text, kp, store, actor="mark"
     )
@@ -81,6 +85,9 @@ def test_reencrypt_moves_entries_to_new_key_documents_untouched(session):
     assert session.get(DocumentText, doc.id).anonymized_text == result.text
 
     # and it still deanonymizes, now via the new key
+    # De pijplijn registreert de tokens van een document; deze test
+    # anonimiseert buiten de pijplijn om en doet het daarom zelf.
+    pseudonym_registry.register(session, doc.id, result.text)
     restored = deanonymize(
         session, doc.id, result.text, kp, store, actor="x"
     )
@@ -173,6 +180,7 @@ def test_no_sentinel_document_and_deanonymize_by_key_id_survives_rotation(
 
     # deanonymize-by-key_id decrypts pre-rotation (re-encrypted) and
     # post-rotation mappings alike
+    pseudonym_registry.register(session, doc.id, pre.text + " " + post.text)
     restored = deanonymize(
         session, doc.id, pre.text + " " + post.text, kp, store, actor="r"
     )
