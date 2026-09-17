@@ -60,3 +60,29 @@ that only opens behind one vendor is not sovereign software.
 
 - **WHEN** a request arrives with no verified identity and a valid key
 - **THEN** it is accepted, with the key's label as caller, exactly as before
+
+### Requirement: Grants tied to a key label are named before identities replace them
+
+Turning on identity-based callers SHALL, before it takes effect, report which
+existing grants are issued to a key label and therefore authorise nobody once
+callers are identities.
+
+Such grants do not become dangerous; they become inert, and an inert grant that
+still reads as "active" is a lie in the table. The recipient binding taught this
+the expensive way: four grants went quiet and it was noticed afterwards, by
+looking.
+
+Reporting SHALL happen before the switch. Re-issuing them to an identity is an
+administrator's decision and SHALL NOT happen automatically — moving an
+authorisation from a shared key to a person is exactly the judgement a machine
+should not make.
+
+#### Scenario: The switch names what it will make inert
+
+- **WHEN** identity-based callers are about to be enabled
+- **THEN** the grants issued to key labels are reported first
+
+#### Scenario: Nothing is re-issued on its own
+
+- **WHEN** identity-based callers are enabled
+- **THEN** no grant is created, changed or moved to an identity

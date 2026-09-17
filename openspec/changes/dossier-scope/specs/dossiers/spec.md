@@ -10,12 +10,28 @@ Delivering the same PDF in two cases must therefore not create two documents, an
 must not make the second dossier overwrite the first. Membership is a fact about
 a document and a dossier, not a property of either.
 
+Ingesting content that already exists SHALL add a membership rather than fail.
+Ingestion is therefore idempotent on the document and additive on membership. One
+PDF that turns up in two cases is one document belonging to two cases, which is
+what it is in the world as well.
+
 Ingestion SHALL name a dossier. Leaving it out SHALL be an error, not a default.
 
 #### Scenario: The same bytes in two dossiers stay one document
 
 - **WHEN** identical content is ingested into two dossiers
 - **THEN** there is one document, and it is a member of both
+
+#### Scenario: Ingesting content that already exists adds a membership
+
+- **WHEN** content that is already a document is ingested into a dossier it does
+  not yet belong to
+- **THEN** it becomes a member of that dossier, and this is not an error
+
+#### Scenario: Ingesting into the same dossier twice changes nothing
+
+- **WHEN** the same content is ingested twice into the same dossier
+- **THEN** there is still one document with one membership
 
 #### Scenario: Ingesting without a dossier is refused
 

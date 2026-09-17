@@ -60,13 +60,29 @@ geen venster.
   gedeelde api-sleutels is er een op papier: "HR mag dit" wordt dan "wie de
   HR-sleutel heeft mag dit". **#81 hoort hiervóór.**
 - **Geen rollen per dossier.** Dat vergt #78 en is een eigen vraag.
-- **Geen zelfbediening.** Een beheerder wijst toe; niemand geeft zichzelf een rol.
+- **Geen zelfbediening.** Een beheerder wijst toe; niemand geeft zichzelf een
+  rol. De uitzondering is de installatie, waar de eerste beheerder per definitie
+  niet door een beheerder is aangewezen.
+- **Geen eigen identiteitsbeheer.** Richting productie komt daar een echte
+  oplossing voor (Keycloak of gelijkwaardig). Deze change moet daar ruimte voor
+  laten en er niet omheen groeien: waar een rol vandaan komt, is straks niet
+  meer hier.
 
 ## Open vragen die deze change moet beantwoorden
 
-1. **Mag een beheerder zichzelf de beheerdersrol geven?** Als ja, is de rol geen
-   grens maar een formaliteit. Als nee, wie geeft de eerste? Dat is de vraag die
-   elk rolmodel stelt en waar de meeste hem stil laten liggen.
+1. ~~Mag een beheerder zichzelf de beheerdersrol geven? Wie geeft de eerste?~~
+   **Beantwoord door Mark (2026-09-17): bij het installeren van de applicatie
+   bestaat er één (super)admin, en die bepaalt de RBAC.** De eerste rol komt dus
+   niet uit het rollenstelsel maar uit de installatie — precies zoals een
+   root-account niet door een gebruikersbeheerder wordt aangemaakt. Dat maakt de
+   bootstrap een expliciet moment in plaats van een gat, en het betekent ook dat
+   die ene identiteit vanaf dag één iets is om zuinig op te zijn.
+
+   Mark tekende erbij aan dat dit een MVP-antwoord is: **richting productie moet
+   er degelijke RBAC staan**, te zijner tijd met Keycloak of iets gelijkwaardigs.
+   Deze change bouwt dus niet het eindmodel maar de vorm die daarnaartoe kan
+   groeien — en moet daarom nergens aannemen dat rollen hier vandaan blijven
+   komen.
 2. **Wat betekent een rol veranderen voor wat er al is onthuld?** Niets — dat is
    gebeurd en staat in het spoor. Maar het scherm moet dat zeggen, anders leest
    iemand een ingeperkte rol als "die gegevens zijn nooit gezien".
