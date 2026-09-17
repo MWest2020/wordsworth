@@ -72,6 +72,60 @@ python -m wordsworth.eval.pii_run gold.jsonl [--layers deterministic,openanonymi
   service failure is a hard error, never an empty result. Read-only: nothing is
   ingested, indexed or audited.
 
+## Generating a corpus whose answer we know
+
+Measurement 01 ran on 31 documents: enough to find a bug, too little to carry a
+percentage. `scripts/eval/generate_ground_truth.py` writes ~500 documents and,
+from the same run, everything needed to score them:
+
+```bash
+python scripts/eval/generate_ground_truth.py /tmp/gt --count 500
+python -m wordsworth.eval.pii_run /tmp/gt/gold.jsonl --layers deterministic
+```
+
+| file | read by |
+| --- | --- |
+| `documents/*.txt` | ingestion |
+| `gold.jsonl` | `wordsworth.eval.pii_run` |
+| `queries.tsv` + `qrels.txt` | `wordsworth.eval.run` |
+| `manifest.json` | what was seeded, and the caveat |
+
+One generation, two evaluations, the same documents — two corpora give two
+numbers that cannot be held next to each other.
+
+The offsets are recorded by the step that writes the text, not by an annotation
+pass over it afterwards. Two sources of truth about the same 500 documents
+disagree quietly, and in the direction that flatters the score.
+
+**Seeded on purpose**, from what measurement 01 actually met: postcodes behind
+`Postbus` (in the text, *not* in the answers — an organisation's contact address
+is not personal data), text arriving with a token-shaped string in it, and the
+full `GENDER + DATE + POSTCODE` quasi-identifier in part of the corpus.
+
+`GENDER` and a bare year of birth are carried but are deliberately **not gold**:
+no detector emits them, and scoring a detector on what it never claimed to find
+measures us rather than it.
+
+Measured on 2026-09-17 over 500 generated documents, deterministic layer only:
+
+```
+documents=500  gold_entities=1700  leaks=500
+overall/span: P=1.000 R=0.706 F1=0.828
+  BSN P=1.000 R=1.000 | EMAIL P=1.000 R=1.000
+  IBAN P=1.000 R=1.000 | POSTCODE P=1.000 R=1.000
+  PERSON P=0.000 R=0.000  (fn=500)
+```
+
+The 500 leaks are all PERSON: the deterministic layer has no name detector, so
+this is a finding about the *absence* of the GLiNER layer in that run, not about
+its quality. The 123 seeded `Postbus` postcodes produced **zero** false
+positives — the exception previously demonstrated on two lines of text holds at
+corpus scale.
+
+And the limit, which also travels inside `manifest.json`: this text was written
+by us and is more regular than administrative reality. A score here is a lower
+bound for the machinery, not a prediction for production.
+
 ## A real corpus, and what it can and cannot settle
 
 The synthetic collections above settle the *machinery*: the state machine, the
