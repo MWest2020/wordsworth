@@ -1,12 +1,29 @@
 {% extends "base.html" %}{% block title %}aanmelden — wordsworth{% endblock %}
+{% block chrome %}{% endblock %}
 {% block body %}
-<h1>Aanmelden</h1>
-{% if fout %}<p class="fout">{{ fout }}</p>{% endif %}
-<form method="post" action="/console/login">
- <p><label>API-sleutel<br><input type="password" name="key" autofocus></label></p>
- <p><button type="submit">Aanmelden</button></p>
-</form>
-<p class="note">De sleutel gaat in een HttpOnly-cookie. Dezelfde sleutelverzameling
-en hetzelfde label als de API-header — alleen een andere envelop, want een
-browser kan bij het navigeren geen header meesturen.</p>
+<p class="eyebrow">Console</p>
+<h1>words<span style="color:var(--brass)">worth</span></h1>
+<p class="lede">De straat van binnen: welke documenten erin zitten, wat er ná
+pseudonimisering van over is, en welke combinaties van gegevens samen iemand
+aanwijzen.</p>
+
+{% if fout %}<p class="fout" style="margin-top:22px">{{ fout }}</p>{% endif %}
+
+<div class="card pad" style="max-width:26rem; margin-top:22px">
+ <form method="post" action="/console/login">
+  <div class="field">
+    <label for="key">API-sleutel</label>
+    <input type="password" id="key" name="key" autofocus autocomplete="current-password">
+  </div>
+  <button class="btn" type="submit">Aanmelden</button>
+ </form>
+</div>
+
+<div class="card pad sovereign" style="max-width:44rem">
+  <p class="eyebrow">Waarom een sleutel en geen wachtwoord</p>
+  <p class="note" style="margin:0">De sleutel gaat in een HttpOnly-cookie —
+  dezelfde sleutelverzameling en hetzelfde label als de API-header, alleen een
+  andere envelop, want een browser kan bij het navigeren geen header meesturen.
+  Afmelden wist hem.</p>
+</div>
 {% endblock %}

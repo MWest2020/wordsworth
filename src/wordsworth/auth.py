@@ -86,16 +86,23 @@ class ApiKeyAuthMiddleware:
     One decision point, two transports."""
 
     def __init__(self, app: ASGIApp, keys: dict[str, str], exempt: frozenset[str],
-                 login_path: str | None = None) -> None:
+                 login_path: str | None = None,
+                 exempt_prefixes: tuple[str, ...] = ()) -> None:
         self.app = app
         self.keys = dict(keys)
         self.exempt = exempt
+        # Whole subtrees that carry nothing worth gating — the console's fonts.
+        # They also have to be reachable from the login page, which is itself
+        # exempt: a login screen rendered without its letters is a broken door.
+        self.exempt_prefixes = exempt_prefixes
         # Where to send a person. None when there is no console mounted: sending
         # a browser to a route that answers 404 replaces the wall with a circle.
         self.login_path = login_path
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope.get("path", "") in self.exempt:
+        path = scope.get("path", "")
+        if (scope["type"] != "http" or path in self.exempt
+                or path.startswith(self.exempt_prefixes or ())):
             await self.app(scope, receive, send)
             return
         request = Request(scope, receive)

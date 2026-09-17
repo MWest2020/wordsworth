@@ -1,18 +1,27 @@
 {% extends "base.html" %}{% block title %}documenten — wordsworth{% endblock %}
+{% set page = 'documents' %}
 {% block who %}{{ caller }}{% endblock %}
 {% block body %}
-<h1>Documenten <span class="note">({{ total }})</span></h1>
-{% if not docs %}<p class="note">Nog geen documenten.</p>{% endif %}
-<table><thead><tr><th>sleutel</th><th>toestand</th><th>aangetroffen types</th></tr>
-</thead><tbody>
-{% for d in docs %}
-<tr>
- <td><a href="/console/documents/{{ d.id }}"><code>{{ d.key }}</code></a></td>
- <td>{{ d.state }}</td>
- <td>{% for t, n in d.types %}<code>{{ t }}</code>&nbsp;{{ n }}{% if not loop.last %}, {% endif %}{% else %}<span class="note">—</span>{% endfor %}</td>
-</tr>
-{% endfor %}
-</tbody></table>
-<p class="note">De types komen uit de pseudoniemen die de pijplijn zelf heeft
-gemunt, niet uit een herdraai van de detectoren over de brontekst.</p>
+<p class="eyebrow">Documenten</p>
+<h1>Wat er in de straat zit</h1>
+<p class="lede">De types komen uit de pseudoniemen die de pijplijn zélf heeft
+gemunt — niet uit een herdraai van de detectoren over de brontekst. Dit is wat
+er gebeurd is, niet wat er zou gebeuren.</p>
+
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Corpus</h3>
+   <span class="badge">{{ total }} document{{ '' if total == 1 else 'en' }}{% if total > docs|length %} · nieuwste {{ docs|length }}{% endif %}</span></div>
+ {% if docs %}
+ <table><thead><tr><th>sleutel</th><th>toestand</th><th>aangetroffen types</th></tr></thead>
+ <tbody>
+ {% for d in docs %}
+ <tr>
+  <td><a href="/console/documents/{{ d.id }}">{{ d.key }}</a></td>
+  <td><span class="state">{{ d.state }}</span></td>
+  <td>{% for t, n in d.types %}<span class="pill"><b>{{ t }}</b> {{ n }}</span>{% else %}<span class="note">—</span>{% endfor %}</td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog geen documenten.</p>{% endif %}
+</div>
 {% endblock %}

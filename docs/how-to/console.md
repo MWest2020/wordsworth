@@ -65,6 +65,23 @@ A type no detector emits is marked **"niet te zien"** rather than counted as
 zero. That zero would read as "does not occur" when the answer is "cannot be
 established here".
 
+## Look and feel
+
+The console carries the same design as the public demo
+(`MWest2020/wordsworth-demo`): the same palette in light and dark, the same
+families, the same token chips. Two different looks for one story is a missed
+opportunity, and it makes the working thing look less finished than the
+illustration of it.
+
+The fonts are served from `/console/static`, not from a CDN. This is the screen
+where wordsworth's claim to sovereignty is demonstrated and also the screen
+people inspect; a page fetching its letters from Google refutes that claim in the
+network inspector, whatever the surrounding text says. Nine Latin faces, 224 KB.
+
+That subtree is reachable without a key — the login page is too, and a login
+screen rendered without its letters is a broken door. The exemption covers that
+subtree only.
+
 ## What it deliberately cannot do
 
 It never reveals. Re-identification has exactly one door: the grant-gated,

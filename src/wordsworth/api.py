@@ -283,6 +283,7 @@ def create_app(
             # rate limiting, because that is the one path worth guessing at.
             ApiKeyAuthMiddleware, keys=keys,
             exempt=EXEMPT_PATHS | {"/console/login"},
+            exempt_prefixes=("/console/static/",),
             # Only when there is a console to send someone to.
             login_path="/console/login" if session_factory is not None else None,
         )
@@ -294,8 +295,12 @@ def create_app(
         from starlette.responses import JSONResponse, RedirectResponse
 
         from .auth import wants_html
-        from .console import build_router
+        from fastapi.staticfiles import StaticFiles
+
+        from .console import STATIC_DIR, build_router
         app.include_router(build_router(session_factory, keys))
+        app.mount("/console/static",
+                  StaticFiles(directory=str(STATIC_DIR)), name="console-static")
 
         @app.get("/", include_in_schema=False)
         def root(request: Request):

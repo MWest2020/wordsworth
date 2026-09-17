@@ -226,3 +226,51 @@ def test_logging_out_clears_the_cookie(session_factory):
     r = c.get("/console/logout")
     assert r.status_code == 303 and r.headers["location"] == "/console/login"
     assert c.get("/console", headers=HTML).headers["location"] == "/console/login"
+
+
+# --- console-look: same design as the public demo, served from here ---
+
+def test_the_fonts_are_served_from_the_console_not_from_google(session_factory):
+    """A sovereignty demo that fetches its letters from Google refutes itself in
+    the network inspector — and this screen exists to be looked at closely."""
+    c = _app(session_factory)
+    c.post("/console/login", data={"key": "s3cret"})
+    page = c.get("/console").text
+    assert "fonts.googleapis.com" not in page and "fonts.gstatic.com" not in page
+    assert '/console/static/fonts.css' in page
+    css = c.get("/console/static/fonts.css")
+    assert css.status_code == 200 and "@font-face" in css.text
+    # and the file the CSS points at is really there (a packaging regression
+    # would leave the CSS intact and the woff2 missing)
+    import re
+    first = re.search(r"url\((/console/static/fonts/[^)]+)\)", css.text).group(1)
+    font = c.get(first)
+    assert font.status_code == 200 and font.content[:4] == b"wOF2"
+
+
+def test_the_pages_use_the_demo_design_tokens(session_factory):
+    with session_factory() as s:
+        d = _seed(s, "besluit.pdf", "Aan [PERSON:aabbccdd] te [POSTCODE:11223344].")
+    c = _app(session_factory)
+    c.post("/console/login", data={"key": "s3cret"})
+    for path in ["/console", "/console/combinations", f"/console/documents/{d.id}"]:
+        page = c.get(path).text
+        assert "--brass" in page and "Public Sans" in page and "Spectral" in page, path
+    # the login page carries the design too, without the signed-in chrome
+    login = c.get("/console/login").text
+    assert "--brass" in login and "/console/logout" not in login
+
+
+def test_the_login_page_can_load_its_fonts_without_a_key(session_factory):
+    """The login page is exempt from auth; a login screen rendered without its
+    letters is a broken door."""
+    c = _app(session_factory)
+    assert c.get("/console/static/fonts.css").status_code == 200
+    # the exemption is a subtree, not a blanket: a real path still needs a key
+    assert c.get("/console", headers={"Accept": "*/*"}).status_code == 401
+
+
+def test_a_static_path_outside_the_subtree_is_not_exempt(session_factory):
+    c = _app(session_factory)
+    r = c.get("/console/staticky", headers={"Accept": "*/*"})
+    assert r.status_code == 401

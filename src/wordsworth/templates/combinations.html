@@ -1,32 +1,49 @@
 {% extends "base.html" %}{% block title %}combinaties — wordsworth{% endblock %}
+{% set page = 'combinations' %}
 {% block body %}
-<h1>Combinaties die samen identificeren</h1>
-<p>Geen van deze types wijst alleen iemand aan; samen vaak precies één persoon.
-Wélke combinatie dat is, hangt af van de populatie en de context — dat is het
-oordeel van wie de documenten leest, niet van wie de code schrijft.</p>
+<p class="eyebrow">Combinaties</p>
+<h1>Wat samen iemand aanwijst</h1>
+<p class="lede">Geen van deze types wijst alleen iemand aan; samen vaak precies
+één persoon. Wélke combinatie dat is, hangt af van de populatie en de context —
+dat is het oordeel van wie de documenten leest, niet van wie de code schrijft.</p>
 
-{% if fout %}<p class="fout">{{ fout }}</p>{% endif %}
-<form class="declare" method="post" action="/console/combinations">
- <p><label>Types (gescheiden door komma's)<br>
-   <input type="text" name="types" placeholder="GENDER, DATE, POSTCODE"></label></p>
- <p><label>Reden — welke populatie versmalt dit tot één persoon, en waarom?<br>
-   <textarea name="reason"></textarea></label></p>
- <p><button type="submit">Vastleggen</button></p>
-</form>
+{% if fout %}<p class="fout" style="margin-top:20px">{{ fout }}</p>{% endif %}
 
-{% if rows %}
-<table><thead><tr><th>types</th><th>documenten</th><th>reden</th><th>door</th></tr>
-</thead><tbody>
-{% for r in rows %}
-<tr><td><code>{{ r.types|join(' + ') }}</code></td>
-    <td>{{ r.documents }}{% if r.unobservable %}
-      <span class="note" title="geen detector geeft dit type uit">niet te zien:
-      {{ r.unobservable|join(', ') }}</span>{% endif %}</td>
-    <td>{{ r.reason }}</td><td class="note">{{ r.by }}</td></tr>
-{% endfor %}
-</tbody></table>
-<p class="note">"Documenten" telt waarin élk type van de combinatie voorkomt.
-Staat er "niet te zien" bij, dan geeft geen enkele detector dat type uit: die
-nul betekent dan niet "komt niet voor" maar "hier niet vast te stellen".</p>
-{% else %}<p class="note">Nog niets vastgelegd.</p>{% endif %}
+<div class="card pad" style="margin-top:20px; max-width:44rem">
+ <form method="post" action="/console/combinations">
+  <div class="field">
+    <label for="types">Types</label>
+    <input type="text" id="types" name="types" placeholder="GENDER, DATE, POSTCODE">
+  </div>
+  <div class="field">
+    <label for="reason">Reden — welke populatie versmalt dit tot één persoon, en waarom?</label>
+    <textarea id="reason" name="reason"></textarea>
+  </div>
+  <button class="btn" type="submit">Vastleggen</button>
+ </form>
+</div>
+
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Vastgelegd</h3>
+   <span class="badge">{{ rows|length }}</span></div>
+ {% if rows %}
+ <table><thead><tr><th>types</th><th>documenten</th><th>reden</th><th>door</th></tr></thead>
+ <tbody>
+ {% for r in rows %}
+ <tr>
+  <td><span class="pill"><b>{{ r.types|join(' + ') }}</b></span></td>
+  <td><span class="state">{{ r.documents }}</span>{% if r.unobservable %}
+    <div class="note" title="geen detector geeft dit type uit">niet te zien: {{ r.unobservable|join(', ') }}</div>{% endif %}</td>
+  <td class="note">{{ r.reason }}</td>
+  <td class="state">{{ r.by }}</td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog niets vastgelegd.</p>{% endif %}
+</div>
+
+<p class="note" style="margin-top:14px">"Documenten" telt waarin élk type van de
+combinatie voorkomt. Staat er "niet te zien" bij, dan geeft geen enkele detector
+dat type uit: die nul betekent niet "komt niet voor" maar "hier niet vast te
+stellen".</p>
 {% endblock %}
