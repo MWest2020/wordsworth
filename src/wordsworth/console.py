@@ -37,6 +37,7 @@ from sqlalchemy import func, select
 
 from . import combinations as _combinations
 from . import console_data
+from . import console_search
 from .auth import CONSOLE_COOKIE
 from .console_data import _Missing, label, marked, reach, types_per_document
 from .models import AuditRecord, DeclaredCombination, Document, DocumentText
@@ -113,37 +114,7 @@ def build_router(session_factory, keys: dict[str, str],
         return TEMPLATES.TemplateResponse(request, "index.html", {
             "docs": docs, "total": total, "caller": _caller(request)})
 
-    @router.get("/search", response_class=HTMLResponse, include_in_schema=False)
-    def search(request: Request, q: str = "", size: int = 10):
-        """Search the pseudonymised index — the claim this project rests on.
-
-        The fragment comes from the STORED pseudonymised text, so what you read
-        is a quotation of what the index actually holds. A fragment taken from a
-        source document would look the same and prove the opposite.
-        """
-        hits, fout = [], ""
-        if q and search_index is None:
-            fout = "Deze instantie draait zonder zoekindex."
-        elif q:
-            try:
-                raw = search_index.search(q, size=size)
-            except Exception as exc:                     # index down, query bad
-                raw, fout = [], f"De zoekindex gaf een fout: {type(exc).__name__}"
-            else:
-                with session_factory() as session:
-                    for h in raw:
-                        doc_id = UUID(str(h.document_id))
-                        row = session.get(DocumentText, doc_id)
-                        hits.append({
-                            "id": str(doc_id),
-                            "key": label(session.get(Document, doc_id) or _Missing()),
-                            "score": round(float(h.score), 2),
-                            "fragment": console_data.fragment(
-                                row.anonymized_text if row else "", q),
-                        })
-        return TEMPLATES.TemplateResponse(request, "search.html", {
-            "q": q, "hits": hits, "fout": fout,
-            "suggested": console_data.SUGGESTED, "searchable": search_index is not None})
+    console_search.mount(router, session_factory, search_index, TEMPLATES)
 
     @router.get("/documents/{document_id}", response_class=HTMLResponse,
                 include_in_schema=False)

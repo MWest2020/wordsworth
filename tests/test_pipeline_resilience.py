@@ -107,7 +107,7 @@ def test_batch_continues_past_a_failing_document(
     ok_pdf = _pdf("Een net document met tekst, niets mis.")
     bad_pdf = _pdf("Dit document bevat FAILME en de dienst ligt plat.")
 
-    resp = client.post("/ingest", files=[
+    resp = client.post("/ingest", params={"dossier": "zaak"}, files=[
         ("files", ("ok.pdf", ok_pdf, "application/pdf")),
         ("files", ("bad.pdf", bad_pdf, "application/pdf")),
     ])

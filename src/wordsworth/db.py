@@ -55,6 +55,11 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS filename VARCHAR;
 _INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_document_pseudonyms_doc
   ON document_pseudonyms (document_id);
+-- Every scoped search walks this the other way round: from a dossier to its
+-- documents. The primary key covers (dossier, document); this covers the
+-- reverse question, "which dossiers is this document in".
+CREATE INDEX IF NOT EXISTS idx_dossier_documents_doc
+  ON dossier_documents (document_id);
 """
 
 

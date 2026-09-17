@@ -87,7 +87,7 @@ def test_ingest_binds_domain_and_reveal_is_domain_gated(
         born_digital_pii_pdf):
     kp, gs = InMemoryKeyProvider(), InMemoryGrantStore()
     c = _client(session_factory, tmp_path, kp, gs, mem_store, mem_index, fake_embedder)
-    r = c.post("/ingest", params={"domain": "wi"},
+    r = c.post("/ingest", params={"domain": "wi", "dossier": "zaak"},
                files=[("files", ("a.pdf", born_digital_pii_pdf, "application/pdf"))])
     assert r.status_code == 200, r.text
     doc_id = r.json()["results"][0]["document_id"]
@@ -108,7 +108,7 @@ def test_ingest_binds_domain_and_reveal_is_domain_gated(
                                    "domain": "wi", "document_id": doc_id}).json()
     r = c.post(f"/documents/{doc_id}/reveal", json={"grant_id": g_wi["grant_id"]})
     assert r.status_code == 200 and PII_EMAIL in r.json()["revealed_text"]
-    assert c.post("/ingest", params={"domain": "a/b"},
+    assert c.post("/ingest", params={"domain": "a/b", "dossier": "zaak"},
                   files=[("files", ("b.pdf", born_digital_pii_pdf, "application/pdf"))]
                   ).status_code == 400
 
@@ -121,12 +121,13 @@ def test_legacy_one_arg_factory_still_works_for_default_domain(
         session_factory=session_factory, store=mem_store, search_index=mem_index,
         embedder=fake_embedder,
         anonymizer_factory=lambda s: Pseudonymizer(kp, PostgresMappingStore(s))))
-    ok = c.post("/ingest", files=[("files", ("a.pdf", born_digital_pii_pdf,
+    ok = c.post("/ingest", params={"dossier": "zaak"},
+                files=[("files", ("a.pdf", born_digital_pii_pdf,
                                               "application/pdf"))])
     assert ok.json()["results"][0]["state"] == "indexed"
     # a non-default domain with a domain-unaware factory is an error, not a
     # silent fall-back to the global keys
-    bad = c.post("/ingest", params={"domain": "wi"},
+    bad = c.post("/ingest", params={"domain": "wi", "dossier": "zaak"},
                  files=[("files", ("c.pdf", born_digital_pii_pdf + b"\n%x",
                                    "application/pdf"))])
     assert bad.json()["results"][0]["state"] == "error"

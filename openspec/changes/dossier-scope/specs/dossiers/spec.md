@@ -50,6 +50,12 @@ must never be the one you get by not thinking.
 
 Results SHALL come only from the dossiers in scope.
 
+Where there is no store of dossiers to resolve a name against, there is nothing
+to scope to, and a scope SHALL NOT be required — requiring one that cannot be
+satisfied would leave search unusable. Such a deployment searches everything, as
+it did before. This is a condition of the requirement and not a way around it:
+the moment dossiers exist, naming one is compulsory.
+
 #### Scenario: A scoped search answers from that dossier only
 
 - **WHEN** a search names one dossier
@@ -57,8 +63,13 @@ Results SHALL come only from the dossiers in scope.
 
 #### Scenario: A search without a scope is refused
 
-- **WHEN** a search names no scope at all
+- **WHEN** a search names no scope at all, and dossiers can be resolved
 - **THEN** it is refused, and does not fall back to searching everything
+
+#### Scenario: A deployment without dossiers keeps searching
+
+- **WHEN** a search is performed where no dossiers can be resolved at all
+- **THEN** it answers over everything, as it did before
 
 #### Scenario: Searching everything is possible and deliberate
 
@@ -74,8 +85,19 @@ A scope that makes the existing corpus unfindable is not a migration but a loss.
 The name SHALL say where they came from rather than pretend they were always a
 case, because they were not.
 
+The index holds the dossiers per document, so placing a document into a dossier
+SHALL also tell the index. A membership the index does not know about is a
+document a scoped search still cannot reach, and the migration would then not
+have done the one thing it exists for.
+
 #### Scenario: The existing corpus is reachable after the change
 
 - **WHEN** a scoped search is performed over the dossier holding the migrated
   corpus
 - **THEN** documents ingested before dossiers existed are found
+
+#### Scenario: A delivery of known content reaches the index too
+
+- **WHEN** content that is already indexed is delivered into another dossier
+- **THEN** the index learns the new membership, so a search scoped to that
+  dossier finds it

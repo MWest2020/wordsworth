@@ -17,9 +17,10 @@ def hybrid_search(
     query: str,
     size: int = 10,
     recall: int = 50,
+    only: list[str] | None = None,
 ) -> list[Hit]:
     query_vector = embedder.embed([query])[0]
-    candidates = index.hybrid_search(query, query_vector, recall=recall)
+    candidates = index.hybrid_search(query, query_vector, recall=recall, only=only)
     for hit in candidates:
         hit.score = round(cosine(query_vector, hit.vector), 6) if hit.vector else 0.0
     candidates.sort(key=lambda h: h.score, reverse=True)

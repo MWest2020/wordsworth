@@ -26,7 +26,7 @@ from .recovery import recover
 from .states import State
 
 
-def ingest_corpus(corpus_dir: Path) -> list[tuple[str, State]]:
+def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
     """Ingest every ``*.pdf`` in ``corpus_dir`` through the full straat.
 
     Returns ``(filename, terminal_state)`` per document. Backends are the real
@@ -44,7 +44,8 @@ def ingest_corpus(corpus_dir: Path) -> list[tuple[str, State]]:
     results: list[tuple[str, State]] = []
     for pdf in sorted(corpus_dir.glob("*.pdf")):
         with session_factory() as session:
-            doc = ingest(session, store, pdf.read_bytes(), filename=pdf.name)
+            doc = ingest(session, store, pdf.read_bytes(), filename=pdf.name,
+                         dossier=dossier)
             session.commit()
             state = process(session, doc.id, store, anonymizer=anonymizer,
                             search_index=index, embedder=embedder)
@@ -68,11 +69,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--corpus-dir", required=True, type=Path,
                         help="Directory of *.pdf files to ingest.")
+    # Required, with no default: a document in no dossier is invisible to every
+    # scoped search, so an optional flag would quietly make unfindable documents.
+    parser.add_argument("--dossier", required=True,
+                        help="The dossier these documents belong to.")
     args = parser.parse_args(argv)
     if not args.corpus_dir.is_dir():
         print(f"corpus-dir not found: {args.corpus_dir}", file=sys.stderr)
         return 2
-    results = ingest_corpus(args.corpus_dir)
+    results = ingest_corpus(args.corpus_dir, args.dossier)
     indexed = sum(1 for _, s in results if s == State.INDEXED)
     print(f"\n{indexed}/{len(results)} indexed")
     return 0 if results and indexed == len(results) else 1

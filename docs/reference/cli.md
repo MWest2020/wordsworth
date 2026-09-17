@@ -83,6 +83,32 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-backfill-dossier`
+
+Places documents that predate dossiers into one named dossier, so a scoped search
+can still reach them.
+
+```bash
+wordsworth-backfill-dossier "corpus-2026-09" --dry-run
+wordsworth-backfill-dossier "corpus-2026-09"
+```
+
+A scoped search answers only from the dossiers in scope, so documents belonging
+to none are invisible — and every document ingested before dossiers existed
+belongs to none. A scope that makes the existing corpus unfindable is not a
+migration but a loss.
+
+Name them for where they came from rather than pretending they were a case. They
+arrived as one corpus, in one go.
+
+It also **updates the index**, because the index holds the dossiers per document:
+a membership the index does not know about is a document a scoped search still
+cannot reach, and then the command would not have done the one thing it exists
+for. `--no-index` skips that and says plainly that a reindex stays due.
+
+Run it **after** deploying the new code, not before: in between, the existing
+documents are in no dossier while the new code already requires a scope.
+
 ## `wordsworth-backfill-filenames`
 
 Gives existing documents back the name their file arrived under, by content hash.
@@ -146,7 +172,7 @@ wordsworth --url http://100.100.181.23:8000 health
 wordsworth --url http://100.100.181.23:8000 ingest /data/corpus --batch 5
 
 # search and inspect
-wordsworth search "vergunning" --size 5
+wordsworth search "vergunning" --dossier zaak-a --size 5
 wordsworth state 66c86e91-830f-4ed7-99cf-ac4407d262fb
 
 # how often does a declared combination actually occur?

@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: MIT
+"""Give documents from before dossiers existed a place to be found (dossier-scope).
+
+A scoped search answers only from the dossiers in scope. Documents that belong to
+none are therefore invisible — and every document ingested before this change
+belongs to none. A scope that makes the existing corpus unfindable is not a
+migration but a loss.
+
+The name has to say where they came from rather than pretend they were always a
+case, because they were not: they arrived as one corpus, in one go, and that is
+the honest thing to call them.
+"""
+from __future__ import annotations
+
+import argparse
+
+from sqlalchemy import select
+
+from . import dossiers
+from .db import make_engine, make_session_factory
+from .models import Document, DossierDocument
+from .pipeline import dossiers_of, get_anonymized_text
+
+
+def orphans(session) -> list[Document]:
+    """Documents that are in no dossier at all."""
+    member = select(DossierDocument.document_id)
+    return list(session.execute(
+        select(Document).where(Document.id.not_in(member))).scalars())
+
+
+def adopt(session, name: str, index=None) -> dict:
+    """Put every dossier-less document into the named dossier, and tell the index.
+
+    The index has to learn it here. It holds the dossiers per document, so a
+    membership the index does not know about is a document a scoped search still
+    cannot reach — and then this command would not have done the one thing it
+    exists for. Without an index the memberships are still written, and the
+    caller is told that a reindex is outstanding.
+    """
+    found = orphans(session)
+    if not found:
+        return {"dossier": name, "adopted": 0, "already_placed": True,
+                "reindexed": 0, "without_text": 0}
+    dossier = dossiers.ensure(session, name)
+    added = [d for d in found if dossiers.add(session, dossier.id, d.id)]
+    reindexed = without_text = 0
+    for doc in added if index is not None else []:
+        text = get_anonymized_text(session, doc.id)
+        if text is None:
+            # Never indexed in the first place (never got through the straat),
+            # so there is nothing to update and nothing was lost.
+            without_text += 1
+            continue
+        index.index(str(doc.id), text, doc.object_key,
+                    dossiers=dossiers_of(session, doc.id))
+        reindexed += 1
+    return {"dossier": name, "adopted": len(added), "already_placed": False,
+            "reindexed": reindexed, "without_text": without_text}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="wordsworth-backfill-dossier",
+        description="Place documents that predate dossiers into one named dossier")
+    ap.add_argument("name", help="e.g. 'corpus-2026-09' — say where they came "
+                                 "from, do not pretend they were a case")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-index", action="store_true",
+                    help="skip updating the search index (a reindex stays due)")
+    args = ap.parse_args(argv)
+
+    index = None
+    if not args.no_index:
+        from .opensearch_index import OpenSearchIndex
+        index = OpenSearchIndex.from_config()
+    with make_session_factory(make_engine())() as session:
+        stats = adopt(session, args.name, index)
+        if args.dry_run:
+            session.rollback()
+        else:
+            session.commit()
+    verb = "zou plaatsen" if args.dry_run else "geplaatst"
+    print(f"{verb}: {stats['adopted']} document(en) in dossier {stats['dossier']!r}")
+    if stats["already_placed"]:
+        print("  elk document zat al in een dossier")
+    else:
+        print(f"  index bijgewerkt       : {stats['reindexed']}")
+        print(f"  zonder opgeslagen tekst: {stats['without_text']} "
+              f"(stond nooit in de index)")
+        if args.no_index:
+            print("  LET OP: de index is niet bijgewerkt; tot een herindexering "
+                  "vindt een gescopete zoekopdracht deze documenten niet")
+    return 0
+
+
+if __name__ == "__main__":     # pragma: no cover
+    raise SystemExit(main())

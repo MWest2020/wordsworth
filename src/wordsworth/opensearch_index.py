@@ -54,6 +54,9 @@ def _mapping(dim: int) -> dict:
                     },
                 },
                 "object_key": {"type": "keyword"},
+                # A document can be in several dossiers; a keyword field holds
+                # them all and filters exactly, without analysis.
+                "dossiers": {"type": "keyword"},
                 "vector": {
                     "type": "knn_vector",
                     "dimension": dim,
@@ -74,6 +77,21 @@ def _bm25(query: str) -> dict:
             "type": "most_fields",
         }
     }
+
+
+def _scoped(query: dict, only) -> dict:
+    """Wrap a query in a dossier filter.
+
+    ``only`` None means every dossier and reaches here only from a caller that
+    said so — a missing scope is refused at the API, long before this.
+
+    A filter and not a must: it narrows without touching the score, so a hit
+    ranks the same whether you searched one dossier or all of them.
+    """
+    if only is None:
+        return query
+    return {"bool": {"must": [query],
+                     "filter": [{"terms": {"dossiers": list(only)}}]}}
 
 
 class OpenSearchIndex:
@@ -103,16 +121,18 @@ class OpenSearchIndex:
         )
         return result.get("count", 0) > 0
 
-    def index(self, document_id, text, object_key, vector=None) -> None:
-        body = {"text": text, "object_key": object_key}
+    def index(self, document_id, text, object_key, vector=None,
+              dossiers=None) -> None:
+        body = {"text": text, "object_key": object_key,
+                "dossiers": list(dossiers or ())}
         if vector is not None:
             body["vector"] = vector
         self._client.index(index=self._index, id=document_id, body=body, refresh=True)
 
-    def search(self, query: str, size: int = 10) -> list[Hit]:
+    def search(self, query: str, size: int = 10, only=None) -> list[Hit]:
         result = self._client.search(
             index=self._index,
-            body={"query": _bm25(query), "size": size},
+            body={"query": _scoped(_bm25(query), only), "size": size},
         )
         return [
             Hit(h["_id"], float(h["_score"]), h["_source"].get("object_key"))
@@ -123,12 +143,14 @@ class OpenSearchIndex:
         result = self._client.search(index=self._index, body=body)
         return [h["_id"] for h in result["hits"]["hits"]]
 
-    def hybrid_search(self, query, query_vector, recall: int = 50) -> list[Hit]:
+    def hybrid_search(self, query, query_vector, recall: int = 50,
+                      only=None) -> list[Hit]:
         bm25 = self._ranked_ids(
-            {"query": _bm25(query), "size": recall, "_source": False}
+            {"query": _scoped(_bm25(query), only), "size": recall, "_source": False}
         )
         knn = self._ranked_ids(
-            {"query": {"knn": {"vector": {"vector": query_vector, "k": recall}}},
+            {"query": _scoped(
+                {"knn": {"vector": {"vector": query_vector, "k": recall}}}, only),
              "size": recall, "_source": False}
         )
         fused = fuse_ranked_ids([bm25, knn])[:recall]
