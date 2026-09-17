@@ -83,6 +83,29 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-backfill-filenames`
+
+Gives existing documents back the name their file arrived under, by content hash.
+
+```bash
+wordsworth-backfill-filenames /data/corpus --dry-run
+wordsworth-backfill-filenames /data/corpus
+```
+
+Ingestion has always been content-addressed (`documents/<sha256>`) — the right
+identity, and unreadable. Documents ingested before the `filename` column existed
+have no name in the database, but the bytes on disk still do, and the hash is the
+bridge.
+
+It does not guess. A document whose bytes are not in the directory keeps no name,
+and the console then says `naamloos (<first 8 of the hash>)` rather than printing
+a hash where a name belongs. A name already recorded is kept — that one came from
+the caller at ingest time, which beats a file that happens to sit in a directory
+today; `--overwrite` says otherwise.
+
+Reports four numbers: named, kept, documents without a file, files without a
+document.
+
 ## `wordsworth-measure-combinations`
 
 Counts, per declared combination, in how many documents **every** type occurs.

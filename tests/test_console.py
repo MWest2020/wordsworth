@@ -20,7 +20,7 @@ def _app(session_factory, keys=KEYS):
 
 
 def _seed(session, key, text):
-    d = register(session, key)
+    d = register(session, key, filename=key)
     session.merge(DocumentText(document_id=d.id, anonymized_text=text))
     pseudonym_registry.register(session, d.id, text)
     session.commit()
@@ -80,7 +80,7 @@ def test_a_document_page_shows_the_artefact_and_marks_its_tokens(session_factory
 def test_a_document_without_stored_text_says_so_instead_of_rendering_nothing(
         session_factory):
     with session_factory() as s:
-        d = register(s, "leeg.pdf")
+        d = register(s, "leeg.pdf", filename="leeg.pdf")
         s.commit()
     c = _app(session_factory)
     c.post("/console/login", data={"key": "s3cret"})

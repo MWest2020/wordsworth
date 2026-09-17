@@ -90,8 +90,8 @@ def transition(
 
 
 def register(session: Session, object_key: str,
-             domain: str = DEFAULT_DOMAIN) -> Document:
-    doc = Document(object_key=object_key)
+             domain: str = DEFAULT_DOMAIN, filename: str | None = None) -> Document:
+    doc = Document(object_key=object_key, filename=filename)
     session.add(doc)
     session.flush()
     # The document's pseudonymisation domain is an audit fact from birth
@@ -114,7 +114,7 @@ def document_domain(session: Session, document_id: UUID) -> str:
 
 
 def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
-           domain: str = DEFAULT_DOMAIN) -> Document:
+           domain: str = DEFAULT_DOMAIN, filename: str | None = None) -> Document:
     """Store the PDF in object storage under a content-addressed key, then register
     the document against that key. `process` later fetches the bytes back by key —
     this closes the PoC shortcut of passing raw bytes across the pipeline seam.
@@ -123,7 +123,7 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
     same bytes is idempotent at the object layer."""
     key = "documents/" + hashlib.sha256(pdf_bytes).hexdigest()
     store.put(key, pdf_bytes)
-    return register(session, key, domain)
+    return register(session, key, domain, filename)
 
 
 def get_anonymized_text(session: Session, document_id: UUID) -> str | None:

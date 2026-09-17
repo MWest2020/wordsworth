@@ -22,6 +22,15 @@ class Document(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     object_key: Mapped[str] = mapped_column(String, nullable=False)
+    # The name the file arrived under. A LABEL, not an identity: the content
+    # hash in object_key stays what this document IS. Two uploads of the same
+    # bytes under two names are one document, and it keeps the first name it
+    # got — renaming a file does not make it a different document.
+    #
+    # Nullable because it is genuinely unknown for everything ingested before
+    # this column existed. A screen that prints the hash where the name is
+    # missing is presenting an identifier as a name; it has to say "naamloos".
+    filename: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class AuditRecord(Base):

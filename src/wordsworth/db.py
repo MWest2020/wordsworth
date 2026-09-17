@@ -47,6 +47,7 @@ def make_engine(url: str | None = None) -> Engine:
 _COLUMN_MIGRATIONS_SQL = """
 ALTER TABLE pii_mappings ADD COLUMN IF NOT EXISTS norm_version VARCHAR;
 ALTER TABLE grants ADD COLUMN IF NOT EXISTS domain VARCHAR;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS filename VARCHAR;
 """
 
 # Reveal walks this table on every call; without the index it is a sequential

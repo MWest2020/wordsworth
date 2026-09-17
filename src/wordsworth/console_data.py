@@ -137,10 +137,28 @@ def marked(text: str) -> list[dict]:
     return parts
 
 
+def label(doc) -> str:
+    """What to call this document on screen.
+
+    The name it arrived under when we have it. Otherwise "naamloos" with the
+    first eight characters of the content hash — enough to tell two documents
+    apart and honest about what it is. Printing the full hash as if it were a
+    name is the thing this replaces: it answers "which document is this?" with
+    a string nobody can hold in their head.
+    """
+    if doc is None:
+        return "(document niet meer aanwezig)"
+    if doc.filename:
+        return doc.filename
+    key = (doc.object_key or "").split("/")[-1]
+    return f"naamloos ({key[:8]})" if key else "naamloos"
+
+
 class _Missing:
     """An object_key for a hit whose document row is gone. The index can outlive
     a delete; showing the id beats rendering an empty cell."""
     object_key = "(document niet meer aanwezig)"
+    filename = None
 
 
 def types_per_document(session) -> dict:

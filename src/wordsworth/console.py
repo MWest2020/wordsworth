@@ -38,7 +38,7 @@ from sqlalchemy import func, select
 from . import combinations as _combinations
 from . import console_data
 from .auth import CONSOLE_COOKIE
-from .console_data import _Missing, marked, reach, types_per_document
+from .console_data import _Missing, label, marked, reach, types_per_document
 from .models import AuditRecord, DeclaredCombination, Document, DocumentText
 from .pipeline import current_state
 
@@ -106,7 +106,7 @@ def build_router(session_factory, keys: dict[str, str],
                                                latest.c.document_id == Document.id)
                     .order_by(latest.c.seq.desc().nullslast()).limit(200)).scalars():
                 state = current_state(session, d.id)
-                docs.append({"id": str(d.id), "key": d.object_key,
+                docs.append({"id": str(d.id), "key": label(d),
                              "state": state.value if state else "—",
                              "types": sorted(per_doc.get(d.id, {}).items())})
             total = session.execute(select(func.count(Document.id))).scalar_one()
@@ -136,8 +136,7 @@ def build_router(session_factory, keys: dict[str, str],
                         row = session.get(DocumentText, doc_id)
                         hits.append({
                             "id": str(doc_id),
-                            "key": (session.get(Document, doc_id) or
-                                    _Missing()).object_key,
+                            "key": label(session.get(Document, doc_id) or _Missing()),
                             "score": round(float(h.score), 2),
                             "fragment": console_data.fragment(
                                 row.anonymized_text if row else "", q),
@@ -163,7 +162,7 @@ def build_router(session_factory, keys: dict[str, str],
             grants, revoked = console_data.grants_for(session, document_id)
             history = console_data.reveal_history(session, document_id)
         return TEMPLATES.TemplateResponse(request, "document.html", {
-            "id": str(document_id), "key": doc.object_key if doc else None,
+            "id": str(document_id), "key": label(doc),
             "state": state.value if state else "—",
             "parts": marked(row.anonymized_text if row else ""),
             "missing": row is None, "counts": sorted(counts.items()),
