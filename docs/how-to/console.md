@@ -20,8 +20,18 @@ export WORDSWORTH_API_KEYS="mark:<key>"
 uvicorn wordsworth.serve:app
 ```
 
-Then open `/console/login` and enter the key. It is stored in an HttpOnly,
-SameSite=strict cookie for eight hours.
+Then open the hostname. Anything you type lands somewhere useful: `/` goes to
+the console, an unknown path goes to the console, and any page you are not
+logged in for goes to `/console/login`. Enter the key there; it is stored in an
+HttpOnly, SameSite=strict cookie for eight hours. `/console/logout` clears it.
+
+A wrong key is refused at the form, not stored — otherwise a typo hands you a
+cookie that leads back to the same refusal, with the added confusion of having
+apparently logged in.
+
+Only a request that asks for HTML is redirected. An API client keeps getting the
+unchanged 401 with its JSON body: a program handed a 303 to an HTML form will
+try to parse the form.
 
 The cookie is a second **transport** for the key, not a second check: the same
 middleware, the same key set, the same caller label. A browser cannot set

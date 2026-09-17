@@ -162,3 +162,67 @@ def test_an_injected_script_in_a_document_is_escaped(session_factory):
     page = c.get(f"/console/documents/{d.id}").text
     assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page
     assert "<img src=x onerror=alert(1)>" not in c.get("/console").text
+
+
+# --- console-entry: a browser must always land on a page that works ---
+
+HTML = {"Accept": "text/html,application/xhtml+xml"}
+
+
+def test_a_browser_refused_on_any_path_lands_on_the_login_page(session_factory):
+    """The bug Mark hit: /console answered a JSON 401 and pointed nowhere."""
+    c = _app(session_factory)
+    for path in ["/console", "/console/combinations", "/documents", "/docs", "/"]:
+        r = c.get(path, headers=HTML)
+        assert r.status_code == 303, path
+        assert r.headers["location"] == "/console/login", path
+
+
+def test_an_api_client_still_gets_the_api_error(session_factory):
+    """A program handed a 303 to an HTML form will try to parse the form."""
+    c = _app(session_factory)
+    for accept in ["*/*", "application/json"]:
+        r = c.get("/console", headers={"Accept": accept})
+        assert r.status_code == 401 and r.json()["detail"]
+
+
+def test_the_bare_hostname_opens_the_console(session_factory):
+    c = _app(session_factory)
+    c.post("/console/login", data={"key": "s3cret"})
+    r = c.get("/", headers=HTML)
+    assert r.status_code == 303 and r.headers["location"] == "/console"
+
+
+def test_an_unknown_path_opens_the_console(session_factory):
+    c = _app(session_factory)
+    c.post("/console/login", data={"key": "s3cret"})
+    r = c.get("/deze-route-bestaat-niet", headers=HTML)
+    assert r.status_code == 303 and r.headers["location"] == "/console"
+    # and a program still gets its 404
+    assert c.get("/deze-route-bestaat-niet", headers={"Accept": "*/*"}).status_code == 404
+
+
+def test_without_a_console_nothing_is_redirected(session_factory):
+    """Sending a browser to a route that 404s replaces the wall with a circle."""
+    c = TestClient(create_app(api_keys=KEYS), follow_redirects=False)
+    r = c.get("/documents", headers=HTML)
+    assert r.status_code == 401 and r.json()["detail"]
+
+
+def test_a_wrong_key_is_refused_at_the_form_and_sets_no_cookie(session_factory):
+    c = _app(session_factory)
+    r = c.post("/console/login", data={"key": "niet-de-sleutel"}, headers=HTML)
+    assert r.status_code == 401
+    assert "staat niet in de configuratie" in r.text
+    assert "set-cookie" not in {k.lower() for k in r.headers}
+    # and the refusal did not quietly let anyone in
+    assert c.get("/console", headers={"Accept": "*/*"}).status_code == 401
+
+
+def test_logging_out_clears_the_cookie(session_factory):
+    c = _app(session_factory)
+    c.post("/console/login", data={"key": "s3cret"})
+    assert c.get("/console").status_code == 200
+    r = c.get("/console/logout")
+    assert r.status_code == 303 and r.headers["location"] == "/console/login"
+    assert c.get("/console", headers=HTML).headers["location"] == "/console/login"
