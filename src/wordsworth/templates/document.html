@@ -44,7 +44,7 @@ gewoon bij en wordt geweigerd — dát is de demonstratie.</p>
 {% if grants %}
 <div class="card" id="reveal" data-doc="{{ id }}">
  <div class="panel-head"><span class="dot"></span><h3>Grants voor dit document</h3>
-   <span class="badge">{{ grants|length }}</span></div>
+   <span class="badge">{{ grants|length }} actief{% if revoked %} · {{ revoked }} ingetrokken{% endif %}</span></div>
  <table><tbody>
  {% for g in grants %}
  <tr data-grant="{{ g.grant_id }}">
@@ -66,7 +66,8 @@ gewoon bij en wordt geweigerd — dát is de demonstratie.</p>
  <div id="reveal-status" class="empty" hidden></div>
 </div>
 {% else %}
-<p class="empty">Geen grants voor dit document. De console mag er zelf geen
+<p class="empty">Geen actieve grants voor dit document{% if revoked %}
+({{ revoked }} ingetrokken, die gelden niet meer){% endif %}. De console mag er zelf geen
 uitgeven — dat recht ligt bij de issuer-labels. Uitgeven gaat via
 <code>POST /grants</code> met een sleutel die dat mag.</p>
 {% endif %}

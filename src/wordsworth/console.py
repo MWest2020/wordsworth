@@ -160,7 +160,7 @@ def build_router(session_factory, keys: dict[str, str],
                         if not ({t.upper() for t in d["types"]} & present)]
             carried = [d for d in declared
                        if {t.upper() for t in d["types"]} <= present]
-            grants = console_data.grants_for(session, document_id)
+            grants, revoked = console_data.grants_for(session, document_id)
             history = console_data.reveal_history(session, document_id)
         return TEMPLATES.TemplateResponse(request, "document.html", {
             "id": str(document_id), "key": doc.object_key if doc else None,
@@ -168,7 +168,7 @@ def build_router(session_factory, keys: dict[str, str],
             "parts": marked(row.anonymized_text if row else ""),
             "missing": row is None, "counts": sorted(counts.items()),
             "unbroken": unbroken, "carried": carried,
-            "grants": grants, "history": history,
+            "grants": grants, "revoked": revoked, "history": history,
             "caller": _caller(request)})
 
     @router.get("/combinations", response_class=HTMLResponse,

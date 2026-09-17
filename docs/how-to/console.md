@@ -96,9 +96,14 @@ matched".
 
 ## Revealing
 
-The document page lists the grants that apply to it — including grants issued to
-someone else. That is deliberate: the screen offers it, the door refuses it, and
+The document page lists the **active** grants that apply to it — including grants
+issued to someone else. That is deliberate: the screen offers it, the door refuses it, and
 watching the refusal is the demonstration that the keys are role-bound.
+
+Revoked grants are counted, not listed. One authorises nothing, and a row per
+piece of history buries the grant that can actually be used — six dead ones from
+a test in August did exactly that. The count stays, because "revocable" is half
+the claim and a screen showing no trace of it quietly drops that half.
 
 Per grant there is a switch per PII type. These are not decoration: the reveal
 request carries the checked types and `authorize()` intersects them with the

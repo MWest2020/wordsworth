@@ -173,7 +173,7 @@ def test_without_grants_the_page_says_the_console_may_not_issue_them(session_fac
                    follow_redirects=False)
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
-    assert "Geen grants" in page and "POST /grants" in page
+    assert "Geen actieve grants" in page and "POST /grants" in page
 
 
 def test_the_trail_names_types_and_never_values(session_factory):
@@ -334,3 +334,34 @@ def test_nothing_resolved_does_not_look_like_nothing_asked(session_factory):
         s.commit()
         row = reveal_history(s, d.id)[0]
     assert row["resolved"] == [] and row["unresolved"] == ["BSN"]
+
+
+def test_revoked_grants_are_counted_not_listed(session_factory):
+    """Six dead grants from a test in August buried the one that worked. A
+    revoked grant authorises nothing, so it gets a number, not a row — and it
+    keeps a number, because "revocable" is half the claim."""
+    with session_factory() as s:
+        d = _seed(s, "a.pdf", "Aan [PERSON:aabbccdd].")
+        _grant(s, d.id, "levend", ["PERSON"])
+        for naam in ["oud-een", "oud-twee", "oud-drie"]:
+            _grant(s, None, naam, ["PERSON"], status="revoked")
+        actief, ingetrokken = grants_for(s, d.id)
+    assert [g["recipient"] for g in actief] == ["levend"]
+    assert ingetrokken == 3
+    c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
+                   follow_redirects=False)
+    c.post("/console/login", data={"key": "s3cret"})
+    page = c.get(f"/console/documents/{d.id}").text
+    assert "levend" in page and "oud-een" not in page
+    assert "3 ingetrokken" in page
+
+
+def test_only_revoked_grants_reads_as_no_grants_with_the_count(session_factory):
+    with session_factory() as s:
+        d = _seed(s, "a.pdf", "Aan [PERSON:aabbccdd].")
+        _grant(s, d.id, "oud", ["PERSON"], status="revoked")
+    c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
+                   follow_redirects=False)
+    c.post("/console/login", data={"key": "s3cret"})
+    page = c.get(f"/console/documents/{d.id}").text
+    assert "Geen actieve grants" in page and "1 ingetrokken" in page
