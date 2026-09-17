@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="nl"><head><meta charset="utf-8">
+<title>{% block title %}wordsworth{% endblock %}</title>
+<style>
+ :root { color-scheme: light dark; }
+ body { font: 15px/1.55 system-ui, sans-serif; margin: 0 auto; max-width: 62rem;
+        padding: 1.5rem; }
+ nav a { margin-right: 1rem; }
+ header { border-bottom: 1px solid #8884; margin-bottom: 1.5rem;
+          padding-bottom: .75rem; display: flex; justify-content: space-between; }
+ table { border-collapse: collapse; width: 100%; }
+ td, th { border-bottom: 1px solid #8884; padding: .35rem .5rem; text-align: left;
+          vertical-align: top; }
+ code, pre { font-family: ui-monospace, monospace; }
+ pre.doc { white-space: pre-wrap; background: #8881; padding: 1rem;
+           border-radius: .4rem; overflow-x: auto; }
+ .tok { background: #f5c33b55; border: 1px solid #f5c33b; border-radius: .2rem;
+        padding: 0 .15rem; }
+ .note { color: #8a8a8a; }
+ .fout { background: #e5534b22; border: 1px solid #e5534b; padding: .6rem .8rem;
+         border-radius: .4rem; }
+ form.declare input[type=text] { width: 18rem; }
+ form.declare textarea { width: 100%; min-height: 4rem; }
+</style></head><body>
+<header>
+ <nav><a href="/console">documenten</a><a href="/console/combinations">combinaties</a></nav>
+ <span class="note">{% block who %}{% endblock %}</span>
+</header>
+{% block body %}{% endblock %}
+</body></html>
