@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
+from .grants import ACTIVE
 from .models import AuditRecord, DocumentPseudonym, GrantRecord
 
 #: Terms offered on the search page. Examples, not a promise: whether one matches
@@ -82,23 +83,30 @@ def reveal_history(session, document_id: UUID) -> list[dict]:
     return out
 
 
-def grants_for(session, document_id: UUID) -> list[dict]:
-    """Grants that could apply to this document — scoped to it, or global.
+def grants_for(session, document_id: UUID) -> tuple[list[dict], int]:
+    """The ACTIVE grants that apply to this document, and how many revoked ones
+    also point at it.
 
-    Listed whoever they belong to. A grant issued to someone else is exactly what
-    makes the point: the screen offers it, the door refuses it, and the refusal
-    is the demonstration.
+    Active ones are listed whoever they belong to: a grant issued to someone else
+    is exactly what makes the point — the screen offers it, the door refuses it.
+
+    Revoked ones are counted, not listed. A revoked grant authorises nothing, so
+    a row per piece of history buries the one grant that can actually be used;
+    six dead ones from a test in August did exactly that. The count stays,
+    because "revocable" is part of the claim and a screen that shows no trace of
+    it quietly drops that half.
     """
-    rows = session.execute(
+    rows = list(session.execute(
         select(GrantRecord)
         .where((GrantRecord.document_id == document_id)
                | (GrantRecord.document_id.is_(None)))
-        .order_by(GrantRecord.created_at.desc()).limit(20)).scalars()
-    return [{"grant_id": g.grant_id, "recipient": g.recipient,
-             "types": sorted(g.allowed_types or []), "status": g.status,
-             "expires_at": g.expires_at,
-             "scope": "dit document" if g.document_id else "alle documenten"}
-            for g in rows]
+        .order_by(GrantRecord.created_at.desc()).limit(50)).scalars())
+    active = [{"grant_id": g.grant_id, "recipient": g.recipient,
+               "types": sorted(g.allowed_types or []), "status": g.status,
+               "expires_at": g.expires_at,
+               "scope": "dit document" if g.document_id else "alle documenten"}
+              for g in rows if g.status == ACTIVE]
+    return active, sum(1 for g in rows if g.status != ACTIVE)
 
 
 def token_types(session, document_id: UUID) -> dict[str, int]:
