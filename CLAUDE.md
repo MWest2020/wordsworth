@@ -19,7 +19,9 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
 
 ## Hard constraints (invariants — non-negotiable)
 
-- **EUPL-1.2.** All code and dependencies must be license-compatible. Reject
+- **MIT.** All code and dependencies must be license-compatible. Copyleft
+  dependencies (EUPL, GPL) cannot be linked into an MIT work — `zeef` moved to
+  MIT for exactly this reason. Reject
   AGPL where it would infect distribution (e.g. PyMuPDF — use pypdf/pdfminer).
 - **No clear PII toward the search index.** Anonymization is irreversible;
   pseudonymization is controlled and reversible and sits *before* indexing.
@@ -62,7 +64,7 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
 - **OpenAnonymiser** (`ConductionNL/openanonymiser_light`, EUPL-1.2) —
   anonymization adapter (Presidio + GLiNER + deterministic regex; BSN elfproef,
   IBAN mod-97).
-- **zeef** (`MWest2020/zeef`, EUPL-1.2) — ranking (local Ollama embeddings,
+- **zeef** (`MWest2020/zeef`, MIT) — ranking (local Ollama embeddings,
   cosine, UPGMA clustering, append-only audit-JSONL). clustering ≠ ranking;
   reach ≠ relevance; `--no-llm` + cosine is the proven path.
 

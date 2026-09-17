@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: EUPL-1.2
+# SPDX-License-Identifier: MIT
 """Haal een corpus echte Woo-documenten op, om de straat end-to-end te draaien.
 
 Waarom dit bestaat: `ingest_corpus.py` kan al een map PDF's door de hele

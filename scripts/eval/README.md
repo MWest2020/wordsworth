@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: EUPL-1.2 -->
+<!-- SPDX-License-Identifier: MIT -->
 # Evaluatierun — operator-tooling
 
 Operator-scripts om een testcollectie door de wordsworth-pipeline te halen en

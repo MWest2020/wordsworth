@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: EUPL-1.2
+# SPDX-License-Identifier: MIT
 # CI: draait de volledige testsuite incl. de DB-, object-store- en
 # search-integratietests tegen echte service-containers (Postgres + SeaweedFS +
 # OpenSearch). Sluit de tests die lokaal skippen als docker/testcontainers

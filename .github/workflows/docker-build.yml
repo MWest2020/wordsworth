@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: EUPL-1.2
+# SPDX-License-Identifier: MIT
 # Build + push the Wordsworth image to GHCR (factory). Gate: a fast offline test
 # run, then build deploy/Dockerfile, Trivy-scan the built image (HIGH/CRITICAL),
 # and push on main. The full integration suite runs separately in ci.yml.
