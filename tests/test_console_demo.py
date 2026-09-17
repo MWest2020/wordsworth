@@ -11,7 +11,7 @@ from wordsworth import audit, pseudonym_registry
 from wordsworth.api import create_app
 from wordsworth.console_data import (SUGGESTED, fragment, grants_for,
                                      reveal_history)
-from wordsworth.models import AuditRecord, DocumentText, GrantRecord
+from wordsworth.models import AuditRecord, Document, DocumentText, GrantRecord
 from wordsworth.pipeline import register
 
 KEYS = {"s3cret": "mark"}
@@ -42,7 +42,7 @@ class BrokenIndex:
 
 
 def _seed(session, key, text):
-    d = register(session, key)
+    d = register(session, key, filename=key)
     session.merge(DocumentText(document_id=d.id, anonymized_text=text))
     pseudonym_registry.register(session, d.id, text)
     session.commit()
@@ -365,3 +365,81 @@ def test_only_revoked_grants_reads_as_no_grants_with_the_count(session_factory):
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
     assert "Geen actieve grants" in page and "1 ingetrokken" in page
+
+
+# --- names instead of hashes (#77) ------------------------------------------
+
+def test_a_document_shows_the_name_it_arrived_under(session_factory):
+    from wordsworth.console_data import label
+
+    with session_factory() as s:
+        d = register(s, "documents/" + "ab" * 32,
+                     filename="0000_Tweede_Woo_verzoek_Z26_WO_0032.pdf")
+        s.commit()
+        assert label(d) == "0000_Tweede_Woo_verzoek_Z26_WO_0032.pdf"
+
+
+def test_without_a_name_it_says_naamloos_and_not_a_hash(session_factory):
+    """Printing the hash where a name belongs answers "which document is this?"
+    with a string nobody can hold in their head."""
+    from wordsworth.console_data import label
+
+    with session_factory() as s:
+        d = register(s, "documents/" + "cd" * 32)
+        s.commit()
+        assert label(d) == "naamloos (cdcdcdcd)"
+        c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
+                       follow_redirects=False)
+        c.post("/console/login", data={"key": "s3cret"})
+        page = c.get("/console").text
+    assert "naamloos (cdcdcdcd)" in page
+    assert "cd" * 32 not in page        # the full hash never appears as a name
+
+
+def test_the_backfill_links_names_by_content_hash(session_factory, tmp_path):
+    import hashlib
+
+    from wordsworth.backfill_filenames import backfill, keys_in
+
+    inhoud = b"%PDF-1.4 een besluit"
+    (tmp_path / "Woo-besluit Engie.pdf").write_bytes(inhoud)
+    (tmp_path / "iets-anders.pdf").write_bytes(b"%PDF-1.4 niet in de database")
+    key = "documents/" + hashlib.sha256(inhoud).hexdigest()
+
+    with session_factory() as s:
+        d = register(s, key)
+        register(s, "documents/" + "ee" * 32)      # bytes are not in the directory
+        s.commit()
+        stats = backfill(s, keys_in(tmp_path))
+        s.commit()
+        assert s.get(Document, d.id).filename == "Woo-besluit Engie.pdf"
+    assert stats["named"] == 1 and stats["unmatched_documents"] == 1
+    assert stats["files_without_document"] == 1
+
+
+def test_the_backfill_keeps_a_name_that_came_from_the_caller(session_factory, tmp_path):
+    """A name recorded at ingest came from the caller; a file sitting in a
+    directory today is a weaker source."""
+    import hashlib
+
+    from wordsworth.backfill_filenames import backfill, keys_in
+
+    inhoud = b"%PDF-1.4 x"
+    (tmp_path / "van-de-schijf.pdf").write_bytes(inhoud)
+    key = "documents/" + hashlib.sha256(inhoud).hexdigest()
+    with session_factory() as s:
+        d = register(s, key, filename="bij-ingest.pdf")
+        s.commit()
+        assert backfill(s, keys_in(tmp_path))["kept"] == 1
+        assert s.get(Document, d.id).filename == "bij-ingest.pdf"
+        assert backfill(s, keys_in(tmp_path), overwrite=True)["named"] == 1
+        s.commit()
+        assert s.get(Document, d.id).filename == "van-de-schijf.pdf"
+
+
+def test_the_same_bytes_under_two_names_give_a_deterministic_answer(tmp_path):
+    from wordsworth.backfill_filenames import keys_in
+
+    (tmp_path / "b-tweede.pdf").write_bytes(b"zelfde")
+    (tmp_path / "a-eerste.pdf").write_bytes(b"zelfde")
+    assert list(keys_in(tmp_path).values()) == ["a-eerste.pdf"]

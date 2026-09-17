@@ -44,8 +44,11 @@ one route where guessing pays.
 
 ## What the pages show
 
-**`/console`** lists documents with their state and the PII types found, most
-recently touched first. The types come from the pseudonyms the pipeline *minted*
+**`/console`** lists documents by the name they arrived under, with their state
+and the PII types found, most recently touched first. A document ingested before
+names were recorded shows as `naamloos (<first 8 of the hash>)` —
+`wordsworth-backfill-filenames` can give those their names back where the files
+are still on disk. The full content hash is never shown as if it were a name. The types come from the pseudonyms the pipeline *minted*
 per document, not from re-running the detectors over the source text: that would
 answer "what would the detectors say today", which is a different question from
 "what did the pipeline do".

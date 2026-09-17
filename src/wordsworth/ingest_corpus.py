@@ -44,7 +44,7 @@ def ingest_corpus(corpus_dir: Path) -> list[tuple[str, State]]:
     results: list[tuple[str, State]] = []
     for pdf in sorted(corpus_dir.glob("*.pdf")):
         with session_factory() as session:
-            doc = ingest(session, store, pdf.read_bytes())
+            doc = ingest(session, store, pdf.read_bytes(), filename=pdf.name)
             session.commit()
             state = process(session, doc.id, store, anonymizer=anonymizer,
                             search_index=index, embedder=embedder)

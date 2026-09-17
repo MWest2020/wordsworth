@@ -574,7 +574,8 @@ def create_app(
                     "anonymizer factory is domain-unaware; refusing non-default domain")
             return anonymizer_factory(session)
 
-        def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN) -> dict:
+        def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN,
+                        filename: str | None = None) -> dict:
             """Drive one document to its terminal state; return its metadata
             (id, state, duration, counts). The un-redacted bytes never leave this
             frame and no exception it raises carries document text (fail-hard, no
@@ -594,7 +595,7 @@ def create_app(
                 # keys + mapping store) per document; default mode uses the shared
                 # irreversible driver.
                 anon = _make_anonymizer(session, domain)
-                doc = ingest(session, store, data, domain)
+                doc = ingest(session, store, data, domain, filename)
                 session.commit()
                 document_id = doc.id
                 state = process(session, document_id, store, anonymizer=anon,
@@ -640,7 +641,7 @@ def create_app(
                         filename=f.filename, state="error", error="empty upload"))
                     continue
                 try:
-                    meta = _ingest_one(data, dom)
+                    meta = _ingest_one(data, dom, f.filename)
                     results.append(IngestResult(
                         filename=f.filename,
                         document_id=meta.get("document_id"),
