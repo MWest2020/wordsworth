@@ -13,6 +13,16 @@ papier.
       te staan** — Keycloak of gelijkwaardig — dus deze change mag nergens
       aannemen dat rollen hier vandaan blijven komen.
 
+## 0b. Hoe ver dit gaat in de PoC
+- [x] Mark (2026-09-17): een beheerder mag nu alle grants hebben; het verdelen
+      over rollen komt na een gebruikstest. De vorm blijft staan, het tempo
+      verandert. Eén rol, hij heet beheerder, hij houdt alles.
+- [ ] De ongescopete grant toestaan **op naam van de beheerdersrol**, niet door
+      `WORDSWORTH_ALLOW_GLOBAL_GRANTS` om te zetten. Die vlag omzetten opent hem
+      voor élke ongescopete grant om hem voor één rol te openen.
+- [ ] Welke rollen er verder zijn: niet nu beantwoorden. Een rol die wij
+      verzinnen vóór de gebruikstest is een aanname met een juridische staart.
+
 ## 1. Het model
 - [ ] `Role` (naam, types, actief) en de koppeling grant → rol.
 - [ ] Een grant heeft óf types óf een rol, niet allebei. Twee bronnen voor één
