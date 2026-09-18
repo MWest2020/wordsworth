@@ -166,6 +166,18 @@ none, and locking them out would cost more than the hole. That is also the limit
 of this defence: it stops a browser, not a script — and a browser is exactly what
 the hole needed.
 
+## Two deliveries at once
+
+Ingesting into a dossier that does not exist yet creates it. Two requests doing
+that at the same moment used to make one of them wait on the unique index for as
+long as the other took — and in `/ingest` that transaction spans the whole
+straat for a document — and then fail with a 500.
+
+The insert now sits in a savepoint: if it collides, only that savepoint rolls
+back and the loser reads what the winner just wrote. The savepoint is not there
+to survive the collision but to save the rest of the session, which is carrying
+half a document's work.
+
 ## What it deliberately cannot do
 
 It reads the corpus through the same gate as `/documents/{id}/anonymized` and
