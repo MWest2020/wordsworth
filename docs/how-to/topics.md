@@ -48,7 +48,9 @@ lijst op waarvan niemand weet welke helft nog klopt.
 | `seen` | documenten van dit dossier in de index |
 | `with_vector` | daarvan met een embedding; zonder vector kan een document niet meedoen |
 | `without_topic` | documenten die in geen groep terechtkwamen |
-| `distance` / `min_size` | de keuzes waaronder deze indeling ontstond |
+| `distance` | de hoogte waarop de boom is doorgesneden — gevónden, niet gekozen |
+| `max_share` | geen onderwerp mag groter zijn dan dit deel van het dossier |
+| `min_size` | kleiner dan dit is geen onderwerp maar een toevalligheid |
 
 Die getallen staan er omdat een lijst van vier onderwerpen over 118 documenten
 anders leest als een uitspraak over alle 120.
@@ -66,10 +68,61 @@ curl "$API/search?q=dakkapel&dossier=gooise-meren-woo-2022&topic=<topic-uuid>"
 `topic` versmalt binnen de `dossier`-scope. De documenten die overblijven staan
 onderling in dezelfde volgorde als zonder het onderwerp.
 
+## Hoeveel groepen, en waarom niet een vast getal
+
+De eerste versie knipte op een vaste cosinusafstand van 0.45. Op het eerste
+echte corpus (Gooise Meren, 567 documenten) gaf dat **één groep van 443** — 78%
+van het dossier — met de naam "zoals · gebruik · waar". Gemeten over hetzelfde
+corpus:
+
+| afkapafstand | grootste groep |
+| --- | --- |
+| 0.45 | 78% |
+| 0.30 | 62% |
+| 0.20 | 50% |
+| 0.15 | 24% |
+
+Een vast getal is dus geen eigenschap van de wereld maar van één corpus.
+Bestuurlijke stukken lijken sterk op elkaar; op een ander corpus staat de goede
+waarde ergens anders.
+
+De eigenschap die je wél wilt, is direct op te schrijven: **geen enkel onderwerp
+mag het dossier zijn.** De boom wordt daarom doorgesneden op de hoogtes die hij
+zélf heeft, en gezocht wordt de hóógste snede waarbij geen groep groter is dan
+`max_share` (standaard 25%). Grof is goed, zolang het antwoord op "waar gaat dit
+over" niet "hier gaat het over" is.
+
 ## Namen
 
 De berekende naam bestaat uit de drie meest onderscheidende termen (TF-IDF over
-het dossier: vaak in deze groep, zeldzaam daarbuiten). Dezelfde vorm die `zeef`
+het dossier: vaak in deze groep, zeldzaam daarbuiten), met één eis erbij: **een
+term moet de groep vertegenwoordigen, niet één document erin** (minstens twee
+documenten en minstens 30% van de groep).
+
+Zonder die eis kiest TF-IDF met voorliefde OCR-ruis. Een scanfout staat in
+precies één document en nergens anders in het dossier, en scoort daarmee
+maximaal onderscheidend. Het eerste echte corpus gaf namen als
+`2anleg · aannemersbedrif · aannemersbedtif` — drie spellingen van hetzelfde
+woord, geen van alle een onderwerp.
+
+Twee eisen erbij, allebei gemeten op datzelfde corpus:
+
+- **een naam bestaat uit woorden**: minstens vier letters, geen cijfers. Dat
+  haalt `81in`, `egeee2`, `1485m`, `ddl4` en `12112018pdf` eruit — scanfouten en
+  bestandsnamen;
+- **en de term is niet corpuszeldzaam**: minstens 1% van het dossier (met een
+  bodem van 3 documenten). De idf-helft van TF-IDF beloont zeldzaamheid, en een
+  scanfout is het zeldzaamste wat er is.
+
+Wat er dan overblijft, op hetzelfde corpus:
+
+    avondperiode · bedrijfsduur · berekeningswijze
+    informatiebijeenkomst · nieuws · noodoproep
+    telefoonnummer · vooraf · precaire
+
+De grootste groep houdt een vlakke naam (`vastgesteld · genoemde · geval`). Dat
+is geen fout in de naamgeving maar een eigenschap van die groep: hij ís
+heterogeen bestuurlijk proza. Een naam die dat verbergt zou slechter zijn. Dezelfde vorm die `zeef`
 onder `--no-llm` gebruikt, en om dezelfde reden: een door een taalmodel bedachte
 titel is een bewering waarvan niemand de herkomst kan navertellen, en dit
 systeem verwerkt persoonsgegevens.

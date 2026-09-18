@@ -204,3 +204,79 @@ def test_the_mapping_is_ensured_before_a_topic_is_ever_written(session_factory):
         tp.compute(s, index, d.id)
         assert "set_topics" in index.stappen, "er is niets geschreven"
         assert index.stappen[0] == "ensure_ready"
+
+
+def test_no_topic_may_be_the_whole_dossier(session_factory):
+    """Het eerste echte corpus (Gooise Meren, 567 documenten) gaf op de vaste
+    afkapafstand van 0.45 één groep van 443 — 78% van het dossier, met de naam
+    "zoals · gebruik · waar". Dat is "waar gaat dit over?" beantwoorden met
+    "hier gaat het over".
+
+    Een vaste afstand is een eigenschap van één corpus. De eigenschap die je
+    wilt is direct op te schrijven, en dat is wat hier getoetst wordt.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "dicht-op-elkaar")
+        index = InMemoryIndex()
+        # Bijna identieke vectoren: precies het geval waarin een grove afstand
+        # alles op één hoop gooit. Vier kleine kernen, licht uit elkaar.
+        for kern in range(4):
+            for i in range(5):
+                hoek = 0.05 * kern + 0.002 * i
+                _index_doc(index, f"k{kern}-{i}",
+                           f"besluit over onderwerp{kern} nummer {i}",
+                           [1.0, hoek, hoek * hoek], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
+        assert uitkomst.topics, "er is helemaal niets gegroepeerd"
+        grootste = max(t.document_count for t in uitkomst.topics)
+        assert grootste <= 0.25 * uitkomst.with_vector, (
+            f"grootste groep {grootste} van {uitkomst.with_vector}")
+        assert 0 < uitkomst.distance <= 0.45, "de gevonden afstand hoort erbij"
+
+
+def test_a_scan_error_in_one_document_does_not_name_the_group(session_factory):
+    """TF-IDF kiest met voorliefde OCR-ruis: een scanfout staat in precies één
+    document en nergens anders in het dossier, en scoort daarmee maximaal
+    onderscheidend. Het eerste echte corpus gaf namen als
+    "2anleg · aannemersbedrif · aannemersbedtif" — drie spellingen van hetzelfde
+    woord, geen van alle een onderwerp.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "scanfouten")
+        index = InMemoryIndex()
+        for i in range(5):
+            # Eén document draagt de ruis; alle vijf dragen het echte woord.
+            ruis = " aannemersbedtif 2anleg oofrom" if i == 0 else ""
+            _index_doc(index, f"v{i}", f"omgevingsvergunning dakkapel {i}{ruis}",
+                       [1.0, 0.0, 0.0], [str(d.id)])
+        for i in range(5):
+            _index_doc(index, f"s{i}", f"subsidie cultuur regeling {i}",
+                       [0.0, 1.0, 0.0], [str(d.id)])
+        namen = [t.computed_name for t in tp.compute(s, index, d.id).topics]
+        alles = " ".join(namen)
+        for scanfout in ("aannemersbedtif", "2anleg", "oofrom"):
+            assert scanfout not in alles, f"{scanfout} benoemt een groep van vijf"
+        assert "omgevingsvergunning" in alles or "dakkapel" in alles
+
+
+def test_a_term_with_digits_never_names_a_group(session_factory):
+    """Gemeten op het echte corpus: "81in · egeee2 · fdeling", "1485m · 195m ·
+    ddl4", "12112018pdf". Scanfouten en bestandsnamen, geen onderwerpen.
+
+    Hier zit het cijferwoord in élk document van de groep, dus de
+    groepsdrempel uit de vorige test houdt hem niet tegen. Alleen de eis dat een
+    naam uit woorden bestaat doet dat.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "cijfers")
+        index = InMemoryIndex()
+        for i in range(5):
+            _index_doc(index, f"v{i}",
+                       f"omgevingsvergunning dakkapel 12112018pdf 1485m {i}",
+                       [1.0, 0.0, 0.0], [str(d.id)])
+        for i in range(5):
+            _index_doc(index, f"s{i}", f"subsidie cultuur regeling {i}",
+                       [0.0, 1.0, 0.0], [str(d.id)])
+        alles = " ".join(t.computed_name for t in tp.compute(s, index, d.id).topics)
+        assert "12112018pdf" not in alles and "1485m" not in alles
+        assert "omgevingsvergunning" in alles or "dakkapel" in alles
