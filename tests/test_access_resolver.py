@@ -204,7 +204,8 @@ def test_the_key_form_stays_reachable_from_behind_a_provider(session_factory, ke
     for m in app.user_middleware:
         if m.cls.__name__ == "ApiKeyAuthMiddleware":
             m.kwargs["identity"] = _Ident()
-    c = TestClient(app, follow_redirects=False)
+    c = TestClient(app, follow_redirects=False,
+                      base_url="https://testserver")
     h = {"cf-access-jwt-assertion": "iets"}
     vraag = c.get("/console/login", headers=h)
     assert vraag.status_code == 200 and "API-sleutel" in vraag.text

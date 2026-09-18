@@ -114,7 +114,7 @@ def test_an_assertion_signed_by_an_unknown_key_is_refused(key):
 
 
 def test_an_assertion_without_an_email_is_refused(key, keys):
-    with pytest.raises(AccessError, match="no email"):
+    with pytest.raises(AccessError, match="no usable email"):
         email_from(_token(key, email=""), keys, VERIFIER, NU)
 
 

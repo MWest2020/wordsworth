@@ -76,7 +76,8 @@ def test_the_search_page_reports_score_and_fragment(session_factory):
         d = _seed(s, "besluit.pdf", "Het besluit over de vergunning voor [PERSON:aabbccdd].")
     index = FakeIndex([FakeHit(d.id, 11.0682745)])
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
-                              search_index=index), follow_redirects=False)
+                              search_index=index), follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get("/console/search?q=vergunning&dossier=alle").text
     assert "11.07" in page                       # score, rounded for reading
@@ -87,7 +88,8 @@ def test_the_search_page_reports_score_and_fragment(session_factory):
 
 def test_a_term_with_no_hits_says_so_plainly(session_factory):
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
-                              search_index=FakeIndex()), follow_redirects=False)
+                              search_index=FakeIndex()), follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     assert "Geen resultaten" in c.get(
         "/console/search?q=nietsdan&dossier=alle").text
@@ -95,7 +97,8 @@ def test_a_term_with_no_hits_says_so_plainly(session_factory):
 
 def test_the_suggestions_are_offered_as_examples_not_promises(session_factory):
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
-                              search_index=FakeIndex()), follow_redirects=False)
+                              search_index=FakeIndex()), follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get("/console/search").text
     for t in SUGGESTED:
@@ -107,7 +110,8 @@ def test_a_broken_index_reports_the_failure_instead_of_an_empty_result(session_f
     """An empty result list and a dead index look identical to a reader, and
     one of them means 'nothing matched'."""
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
-                              search_index=BrokenIndex()), follow_redirects=False)
+                              search_index=BrokenIndex()), follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get("/console/search?q=iets&dossier=alle").text
     assert "ConnectionError" in page and "Geen resultaten" not in page
@@ -115,7 +119,8 @@ def test_a_broken_index_reports_the_failure_instead_of_an_empty_result(session_f
 
 def test_without_an_index_the_page_says_so(session_factory):
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     assert "zonder zoekindex" in c.get(
         "/console/search?q=iets&dossier=alle").text
@@ -141,7 +146,8 @@ def test_the_page_lists_grants_of_others_too(session_factory):
         _grant(s, d.id, "mark", ["PERSON"])
         _grant(s, d.id, "hr", ["PERSON", "BSN"])
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
     assert "mark" in page and "hr" in page
@@ -153,7 +159,8 @@ def test_a_global_grant_applies_to_the_document(session_factory):
         d = _seed(s, "a.pdf", "Aan [PERSON:aabbccdd].")
         _grant(s, None, "mark", ["PERSON"])
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     assert "alle documenten" in c.get(f"/console/documents/{d.id}").text
 
@@ -164,7 +171,8 @@ def test_a_grant_for_another_document_is_not_offered(session_factory):
         b = _seed(s, "b.pdf", "Aan [PERSON:eeff0011].")
         _grant(s, b.id, "iemand-anders", ["PERSON"])
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     assert "iemand-anders" not in c.get(f"/console/documents/{a.id}").text
 
@@ -173,7 +181,8 @@ def test_without_grants_the_page_says_the_console_may_not_issue_them(session_fac
     with session_factory() as s:
         d = _seed(s, "a.pdf", "Aan [PERSON:aabbccdd].")
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
     assert "Geen actieve grants" in page and "POST /grants" in page
@@ -194,7 +203,8 @@ def test_the_trail_names_types_and_never_values(session_factory):
     assert rows[0]["unresolved"] == ["LOCATION"]
     assert rows[0]["withheld"] == ["BSN"] and rows[0]["grant"] == "abcdef12"
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
     assert "abcdef12" in page and "geweigerd: BSN" in page
@@ -218,7 +228,8 @@ def test_the_script_is_loaded_on_the_document_page_only(session_factory):
     with session_factory() as s:
         d = _seed(s, "a.pdf", "Aan [PERSON:aabbccdd].")
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     assert "/console/static/console.js" in c.get(f"/console/documents/{d.id}").text
     assert "console.js" not in c.get("/console").text
@@ -230,7 +241,8 @@ def test_the_script_is_loaded_on_the_document_page_only(session_factory):
 def _app_with_reveal(session_factory, kp, gs):
     return TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
                                  key_provider=kp, grant_store=gs),
-                      follow_redirects=False)
+                      follow_redirects=False,
+                      base_url="https://testserver")
 
 
 def _pseudonymised(session_factory):
@@ -352,7 +364,8 @@ def test_revoked_grants_are_counted_not_listed(session_factory):
     assert [g["recipient"] for g in actief] == ["levend"]
     assert ingetrokken == 3
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
     assert "levend" in page and "oud-een" not in page
@@ -364,7 +377,8 @@ def test_only_revoked_grants_reads_as_no_grants_with_the_count(session_factory):
         d = _seed(s, "a.pdf", "Aan [PERSON:aabbccdd].")
         _grant(s, d.id, "oud", ["PERSON"], status="revoked")
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                   follow_redirects=False)
+                   follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
     assert "Geen actieve grants" in page and "1 ingetrokken" in page
@@ -392,7 +406,8 @@ def test_without_a_name_it_says_naamloos_and_not_a_hash(session_factory):
         s.commit()
         assert label(d) == "naamloos (cdcdcdcd)"
         c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS),
-                       follow_redirects=False)
+                       follow_redirects=False,
+                      base_url="https://testserver")
         c.post("/console/login", data={"key": "s3cret"})
         page = c.get("/console").text
     assert "naamloos (cdcdcdcd)" in page
@@ -452,7 +467,8 @@ def test_the_console_asks_for_a_dossier_before_it_searches(session_factory):
     """Not silently searching everything is exactly what dossier-scope is for."""
     index = FakeIndex()
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
-                              search_index=index), follow_redirects=False)
+                              search_index=index), follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get("/console/search?q=vergunning").text
     assert "Kies eerst een dossier" in page
@@ -468,7 +484,8 @@ def test_the_console_passes_the_chosen_scope_to_the_index(session_factory):
         s.commit()
     index = FakeIndex()
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
-                              search_index=index), follow_redirects=False)
+                              search_index=index), follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     c.get("/console/search?q=x&dossier=zaak-a")
     assert index.scopes == [[ident]]
@@ -479,7 +496,8 @@ def test_the_console_passes_the_chosen_scope_to_the_index(session_factory):
 def test_an_unknown_dossier_in_the_console_says_so(session_factory):
     index = FakeIndex()
     c = TestClient(create_app(session_factory=session_factory, api_keys=KEYS,
-                              search_index=index), follow_redirects=False)
+                              search_index=index), follow_redirects=False,
+                      base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get("/console/search?q=x&dossier=verzonnen").text
     assert "verzonnen" in page and index.asked == []

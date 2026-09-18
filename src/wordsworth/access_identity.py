@@ -87,8 +87,12 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         head_raw, body_raw, sig_raw = token.split(".")
         head = json.loads(_b64(head_raw))
         body = json.loads(_b64(body_raw))
-    except (ValueError, KeyError, json.JSONDecodeError) as exc:
-        raise AccessError(f"not a readable assertion: {exc}")
+    except Exception as exc:
+        # Alles wat hier stukgaat komt van een aanvaller: de header wordt gelezen
+        # vóór enige authenticatie, op elk niet-vrijgesteld pad. Een misvormde
+        # base64 gooide binascii.Error, dat is géén AccessError, en die liep door
+        # de middleware heen naar een 500. Elke misvorming is een weigering.
+        raise AccessError(f"not a readable assertion: {type(exc).__name__}")
 
     if head.get("alg") != "RS256":
         # Refusing anything else is what closes the "alg: none" family of
@@ -98,7 +102,11 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
     if key is None:
         raise AccessError("assertion signed by an unknown key")
     try:
-        key.verify(_b64(sig_raw), f"{head_raw}.{body_raw}".encode(),
+        handtekening = _b64(sig_raw)
+    except Exception as exc:
+        raise AccessError(f"unreadable signature: {type(exc).__name__}")
+    try:
+        key.verify(handtekening, f"{head_raw}.{body_raw}".encode(),
                    padding.PKCS1v15(), hashes.SHA256())
     except InvalidSignature:
         raise AccessError("signature does not match")
@@ -111,11 +119,18 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         raise AccessError("assertion is for another application")
     if body.get("iss") != verifier.issuer:
         raise AccessError("assertion is from another issuer")
-    if float(body.get("exp", 0)) <= now:
+    try:
+        verloopt = float(body.get("exp", 0))
+    except (TypeError, ValueError):
+        raise AccessError("assertion has an unreadable expiry")
+    if verloopt <= now:
         raise AccessError("assertion has expired")
     email = body.get("email")
-    if not email:
-        raise AccessError("assertion names no email")
+    if not isinstance(email, str) or not email.strip():
+        # Een niet-string zou doorstromen naar het callerlabel en het
+        # auditspoor. Dat is niet bereikbaar zonder Cloudflares sleutel, maar
+        # "niet bereikbaar" is een slechtere garantie dan "afgewezen".
+        raise AccessError("assertion names no usable email")
     return email
 
 
@@ -129,10 +144,13 @@ class Identity:
     have never seen is refused either way.
     """
 
-    def __init__(self, verifier: Verifier, fetch=None, ttl: float = 900.0) -> None:
+    def __init__(self, verifier: Verifier, fetch=None, ttl: float = 900.0,
+                 backoff: float = 30.0) -> None:
         self.verifier = verifier
         self._fetch = fetch or _fetch
         self._ttl = ttl
+        #: Hoe lang na een mislukte verversing we het niet opnieuw proberen.
+        self._backoff = backoff
         self._keys: dict = {}
         self._at = 0.0
 
@@ -146,7 +164,11 @@ class Identity:
         except Exception:
             # Keep what we have; see the class docstring. If we have nothing,
             # the empty dict refuses every assertion, which is the safe end.
-            pass
+            #
+            # En wél het moment onthouden: zonder dat probeerde ELK verzoek het
+            # opnieuw, en met een hangend endpoint is dat een blokkerende fetch
+            # per verzoek.
+            self._at = now - self._ttl + self._backoff
         return self._keys
 
     def caller(self, request, now: float | None = None):

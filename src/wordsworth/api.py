@@ -301,17 +301,28 @@ def create_app(
             login_path="/console/login" if session_factory is not None else None,
         )
 
+    def _guard_corpus_read(request: Request) -> None:
+        caller = getattr(request.state, "caller", None)
+        if not authorize_corpus_read(caller, corpus_read_labels):
+            raise HTTPException(
+                status_code=403, detail="caller not authorized for corpus read")
+
     # The reading console (document-console). Mounted only WITH api-key auth:
     # a screen listing every document and its PII types is not something to hang
     # on an open port, and "no screen" beats "a screen without a lock".
-    if keys and session_factory is not None:
+    if (keys or identity is not None) and session_factory is not None:
         from starlette.responses import JSONResponse, RedirectResponse
 
         from .auth import wants_html
         from fastapi.staticfiles import StaticFiles
 
         from .console import STATIC_DIR, build_router
-        app.include_router(build_router(session_factory, keys, search_index))
+        # S5: de console las het corpus zonder langs dezelfde poort te gaan als
+        # /documents/{id}/anonymized en /export. Dezelfde gegevens, dezelfde
+        # grens -- anders IS de console de tweede deur die zijn eigen docstring
+        # verbiedt.
+        app.include_router(build_router(session_factory, keys, search_index,
+                                        _guard_corpus_read))
         app.mount("/console/static",
                   StaticFiles(directory=str(STATIC_DIR)), name="console-static")
 
@@ -373,7 +384,15 @@ def create_app(
     if grant_issuer_labels is None:
         grant_issuer_labels = default_settings.grant_issuer_labels
     # Auth aan? Dan is er een caller om op te beslissen en geldt de issuer-scope.
-    auth_enabled = bool(keys)   # `keys` valt terug op de config, `api_keys` niet
+    # S1: dit moet meebewegen met waaróp de middleware mount (zie boven:
+    # `keys or identity is not None`). Deed het niet, en dan is een installatie
+    # met alléén een identiteitsprovider geauthenticeerd terwijl de
+    # recipient-binding uit staat: elke grant wordt weer een bearer-token en
+    # iedereen mag er minten. Precies wat bind-reveal-to-recipient repareerde.
+    #
+    # Eén bron voor "is er een beller om over te beslissen", niet twee die uit
+    # elkaar kunnen lopen.
+    auth_enabled = bool(keys) or identity is not None
 
     def _check_view(view: str) -> None:
         if view not in ("tokens", "legible"):
@@ -388,12 +407,6 @@ def create_app(
             raise HTTPException(
                 status_code=403,
                 detail="caller not authorized to issue or revoke grants")
-
-    def _guard_corpus_read(request: Request) -> None:
-        caller = getattr(request.state, "caller", None)
-        if not authorize_corpus_read(caller, corpus_read_labels):
-            raise HTTPException(
-                status_code=403, detail="caller not authorized for corpus read")
 
     @app.get("/health", summary="Liveness probe", tags=["ops"])
     def health() -> dict[str, str]:

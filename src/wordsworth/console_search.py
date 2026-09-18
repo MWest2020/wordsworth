@@ -39,7 +39,7 @@ def scope_ids(session, dossier: str):
     return None if ids is None else [str(i) for i in ids]
 
 
-def mount(router, session_factory, search_index, TEMPLATES) -> None:
+def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> None:
     @router.get("/search", response_class=HTMLResponse, include_in_schema=False)
     def search(request: Request, q: str = "", size: int = 10,
                dossier: str = ""):
@@ -49,6 +49,8 @@ def mount(router, session_factory, search_index, TEMPLATES) -> None:
         is a quotation of what the index actually holds. A fragment taken from a
         source document would look the same and prove the opposite.
         """
+        if mag_lezen is not None:
+            mag_lezen(request)
         hits, fout, keuzes = [], "", []
         with session_factory() as session:
             keuzes = dossier_choices(session)

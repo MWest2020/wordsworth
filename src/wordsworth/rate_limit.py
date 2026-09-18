@@ -152,4 +152,12 @@ def limiters_from_settings(
         "/search": TokenBucket(rate, burst, store_factory(), clock),
         "/hybrid": TokenBucket(rate, burst, store_factory(), clock),
         "/ask": TokenBucket(ask_rate, ask_burst, store_factory(), clock),
+        # Het enige pad dat auth-vrij is EN een schoon orakel geeft op de
+        # sleutelset: 401 bij fout, 303 met cookie bij goed. `api.py` beweerde
+        # dat dit gelimiteerd was en dat was onwaar -- twaalf pogingen op rij
+        # gaven twaalf keer 401 en geen enkele 429. Strakker dan de rest, want
+        # hier is elk verzoek een gok.
+        "/console/login": TokenBucket(settings.rate_limit_login_rate,
+                                      settings.rate_limit_login_burst,
+                                      store_factory(), clock),
     }
