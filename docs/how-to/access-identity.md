@@ -46,6 +46,23 @@ failed refresh **keeps the keys we have** — an assertion we can still verify i
 not less trustworthy because a fetch timed out, and locking everyone out over a
 network hiccup is the wrong failure. A key never seen is refused either way.
 
+## Keeping the key route
+
+**A credential you send beats one that rides along.** An identity provider
+injects its assertion on every request through it, so with the identity first a
+person behind that provider could never be anything else — and the way back to a
+key would exist only on routes that bypass the provider, which may be exactly the
+routes they cannot reach.
+
+So: a valid `X-API-Key` (or the console cookie) wins; the assertion applies when
+no key is presented. Not weaker — both come from the same configured sets, and a
+forged header carries no valid key any more than a forged assertion carries a
+valid signature.
+
+`/console/login` stays reachable from behind the provider, and `/console/logout`
+clears the cookie and hands the identity back. That is the switch, in both
+directions.
+
 ## Before you switch: what goes quiet
 
 A grant names who may reveal, and the caller must BE that recipient. Today a

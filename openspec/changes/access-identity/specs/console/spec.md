@@ -33,10 +33,21 @@ warning and an accepted header.
 - **WHEN** the verification is not configured
 - **THEN** no identity is derived, and the request is handled as it was before
 
-### Requirement: A verified identity is the caller, and replaces the second login
+### Requirement: A verified identity is the caller, unless a key is presented
 
-A verified identity SHALL become the caller recorded in the audit trail, and the
-console SHALL NOT ask for a key from someone who already has one.
+A verified identity SHALL become the caller recorded in the audit trail.
+
+A credential the caller SENT SHALL take precedence over one that rides along. An
+identity provider injects its assertion on every request through it, so without
+this order a person behind that provider could never be anything else, and the
+way back to a key would exist only on routes that bypass the provider — which
+may be exactly the routes they cannot reach. Presenting a key is a deliberate
+choice and is honoured; ending that session hands the identity back.
+
+This is not weaker. Both come from the same configured sets, and a forged header
+carries no valid key any more than a forged assertion carries a valid signature.
+
+The way to present a key SHALL stay reachable from behind an identity provider.
 
 An audit trail that names a shared key answers "which key was used", not "who
 looked". The whole point of putting a person in front of the door is that the
@@ -51,10 +62,15 @@ that only opens behind one vendor is not sovereign software.
 - **WHEN** a reveal is performed by a verified identity
 - **THEN** the audit record names that identity as the caller
 
-#### Scenario: A verified identity is not asked for a key
+#### Scenario: A presented key wins over an injected assertion
 
-- **WHEN** a verified identity opens the console
-- **THEN** it is not shown the key form
+- **WHEN** a request carries both a valid key and a valid assertion
+- **THEN** the key's label is the caller
+
+#### Scenario: The key route stays open from behind the provider
+
+- **WHEN** someone behind an identity provider asks for the key form
+- **THEN** they get it, and logging in there takes precedence
 
 #### Scenario: Without a provider the key still works
 

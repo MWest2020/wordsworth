@@ -111,14 +111,25 @@ class ApiKeyAuthMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope, receive)
-        # The signature first: it names a person, the key names a keyring. An
-        # invalid assertion yields no identity and nothing else — it is never a
-        # reason to refuse a caller who also holds a valid key.
-        label = self.identity.caller(request) if self.identity else None
-        if label is None:
-            key = request.headers.get("x-api-key", "") or request.cookies.get(
-                CONSOLE_COOKIE, "")
-            label = self.keys.get(key)
+        # A credential the caller SENT beats one that rides along.
+        #
+        # An identity provider injects its assertion on every request through it,
+        # so without this order a person behind that provider could never be
+        # anything else — and the way back to a key would only exist on routes
+        # that bypass the provider entirely. Whoever presents a key is making a
+        # deliberate choice and gets it; logging out of the console clears the
+        # cookie and hands the identity back.
+        #
+        # Not weaker: both come from the same configured sets, and a forged
+        # header carries no valid key any more than a forged assertion carries a
+        # valid signature.
+        key = request.headers.get("x-api-key", "") or request.cookies.get(
+            CONSOLE_COOKIE, "")
+        label = self.keys.get(key)
+        if label is None and self.identity is not None:
+            # An invalid assertion yields no identity and nothing else — never a
+            # reason to refuse a caller who also holds a valid key.
+            label = self.identity.caller(request)
         if label is None:
             # A person gets a page; a program gets the API error. A 303 to an
             # HTML form is the wrong answer for a client that will try to parse

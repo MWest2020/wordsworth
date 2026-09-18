@@ -60,11 +60,19 @@ def build_router(session_factory, keys: dict[str, str],
 
     @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
     def login_form(request: Request, fout: str = ""):
-        # Already known by name? Then do not ask for a keyring. Asking twice is
-        # what makes people keep a shared key around, which is the thing the
-        # identity was meant to replace.
-        if _caller(request) not in ("onbekend", None):
-            return RedirectResponse("/console", status_code=303)
+        """The key form, always reachable.
+
+        Someone who already has an identity never arrives here: they open
+        /console and the middleware knows them, so there is nothing to skip. And
+        this page is exempt from authentication — it cannot know who you are
+        anyway, which is why an earlier attempt to skip it never fired.
+
+        Reachable ON PURPOSE. Behind an identity provider the assertion rides
+        along on every request, so without a door to the key route a person
+        behind that provider could never choose anything else. Logging in here
+        sets the cookie, and a presented credential wins; /console/logout hands
+        the identity back.
+        """
         return TEMPLATES.TemplateResponse(request, "login.html", {"fout": fout})
 
     @router.post("/login", include_in_schema=False)
