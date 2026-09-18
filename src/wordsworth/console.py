@@ -39,7 +39,7 @@ from . import combinations as _combinations
 from . import console_data
 from . import console_search
 from .auth import CONSOLE_COOKIE
-from .console_data import _Missing, label, marked, reach, types_per_document
+from .console_data import label, marked, reach, types_per_document
 from .models import AuditRecord, DeclaredCombination, Document, DocumentText
 from .pipeline import current_state
 

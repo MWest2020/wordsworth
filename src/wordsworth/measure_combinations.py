@@ -27,6 +27,7 @@ from sqlalchemy import select
 
 from . import combinations as _combinations
 from .models import DocumentPseudonym
+from .pseudonymizer import label_of
 
 
 def labels_by_document(session) -> dict:
@@ -34,7 +35,7 @@ def labels_by_document(session) -> dict:
     out: dict = defaultdict(set)
     for doc_id, token in session.execute(
             select(DocumentPseudonym.document_id, DocumentPseudonym.pseudonym)):
-        out[doc_id].add(token[1:].split(":")[0].upper())
+        out[doc_id].add(label_of(token))
     return out
 
 

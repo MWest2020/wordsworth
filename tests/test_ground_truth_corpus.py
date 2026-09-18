@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from wordsworth.detectors import find_deterministic, is_valid_bsn, is_valid_iban
-from wordsworth.eval.synthetic import Document, bsn, iban, postcode
+from wordsworth.eval.synthetic import Document, bsn, iban
 
 _spec = importlib.util.spec_from_file_location(
     "generate_ground_truth",

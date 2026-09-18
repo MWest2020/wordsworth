@@ -71,7 +71,7 @@ def test_documents_belonging_nowhere_are_counted(session):
     always — this is where a document is most easily lost."""
     d = dossiers.ensure(session, "zaak")
     a = register(session, "documents/aa")
-    b = register(session, "documents/bb")
+    register(session, "documents/bb")      # blijft dakloos; dat is het punt
     session.commit()
     dossiers.add(session, d.id, a.id)
     assert dossiers.homeless(session) == 1          # b

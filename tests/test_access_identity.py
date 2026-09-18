@@ -7,7 +7,6 @@ returns True would prove nothing about that.
 """
 import base64
 import json
-import time
 
 import pytest
 from cryptography.hazmat.primitives import hashes

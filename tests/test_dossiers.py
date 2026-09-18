@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Dossiers: the scope a search has to state (dossier-scope)."""
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from wordsworth import dossiers
-from wordsworth.anonymizer import DeterministicAnonymizer
-from wordsworth.api import create_app
 from wordsworth.models import Document, DossierDocument
 from wordsworth.pipeline import dossiers_of, ingest, register
 from wordsworth.search_index import InMemoryIndex

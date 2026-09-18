@@ -51,5 +51,6 @@ def test_key_value_not_echoed_in_401_body():
     r = _app(api_keys={"sk_secret": "alice"}).get(
         "/search", params={"q": "x"}, headers={"X-API-Key": "sk_secret"})
     # sanity: the valid path works; the 401 body must never contain a key
+    assert r.status_code == 200, "de geldige weg moet open zijn"
     r401 = _app(api_keys={"sk_secret": "alice"}).get("/search", params={"q": "x"})
     assert "sk_secret" not in r401.text

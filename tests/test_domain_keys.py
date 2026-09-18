@@ -10,7 +10,7 @@ from wordsworth.grants import InMemoryGrantStore, authorize
 from wordsworth.key_audit import JsonlKeyLifecycleAudit
 from wordsworth.keys import DEFAULT_DOMAIN, InMemoryKeyProvider, scope_for
 from wordsworth.mapping_store import InMemoryMappingStore, PostgresMappingStore
-from wordsworth.pipeline import document_domain, ingest, process
+from wordsworth.pipeline import document_domain
 from wordsworth.pseudonymizer import Pseudonymizer, ReversibleAnonymizer
 
 PII_BSN = "123456782"

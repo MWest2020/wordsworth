@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import text
 
-from wordsworth import audit, audit_export
+from wordsworth import audit
 from wordsworth.audit_export import (
     ExportError,
     InMemoryWormStore,

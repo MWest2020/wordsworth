@@ -1,5 +1,4 @@
 """Tests for per-client rate limiting: token-bucket + API middleware."""
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from wordsworth.api import create_app
