@@ -132,6 +132,29 @@ It separates **resolved** from **requested**: a token minted under a key this
 deployment no longer holds resolves to nothing, and one list would make that look
 identical to a reveal nobody asked anything of.
 
+## What the browser is allowed to do with it
+
+The console sends `Content-Security-Policy` with `frame-ancestors 'none'`, plus
+`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
+`Referrer-Policy: no-referrer`. Only on `/console` — the API has no browser and
+would get nothing from a CSP but surprises.
+
+Framing is the one that matters. Without it, someone can put
+`/console/documents/<id>` in an invisible iframe and slide the reveal button
+under a cursor. They cannot read the answer — CORS is closed — but **the reveal
+happens, and the audit trail names the victim**. An append-only trail with a
+false name in it cannot be repaired.
+
+A cross-site `POST` to `/console` is refused on its `Origin`. Logging in is what
+sets the caller label, so a page elsewhere could otherwise switch a visitor's
+label to a key the attacker knows: not a privilege gain — it is someone else's
+key — but false attribution, and `Path=/` makes it apply to the whole API.
+
+A request with no `Origin` at all is allowed. curl, the CLI and the tests send
+none, and locking them out would cost more than the hole. That is also the limit
+of this defence: it stops a browser, not a script — and a browser is exactly what
+the hole needed.
+
 ## What it deliberately cannot do
 
 It reads the corpus through the same gate as `/documents/{id}/anonymized` and
