@@ -173,3 +173,34 @@ def test_renaming_something_that_is_not_there(session_factory):
     with session_factory() as s:
         with pytest.raises(tp.TopicError):
             tp.rename(s, uuid4(), "x")
+
+
+def test_the_mapping_is_ensured_before_a_topic_is_ever_written(session_factory):
+    """`topics` is een nieuw veld en `ensure_ready` draait in productie alleen
+    bij ingest. Schrijft de eerste `set_topics` het veld terwijl de mapping het
+    niet kent, dan mapt OpenSearch het dynamisch: een lijst strings wordt `text`
+    met een `.keyword`-subveld, en het `term`-filter matcht daarna niets —
+    zonder fout, met "niets gevonden" als antwoord.
+
+    Dat is letterlijk wat er op 2026-09-18 met `dossiers` gebeurde. De volgorde
+    is de reparatie, dus die wordt hier getoetst.
+    """
+    class Volgorde(InMemoryIndex):
+        def __init__(self):
+            super().__init__()
+            self.stappen = []
+
+        def ensure_ready(self):
+            self.stappen.append("ensure_ready")
+
+        def set_topics(self, document_id, topics):
+            self.stappen.append("set_topics")
+            return super().set_topics(document_id, topics)
+
+    with session_factory() as s:
+        d = _dossier(s, "volgorde")
+        index = Volgorde()
+        _twee_groepen(index, str(d.id))
+        tp.compute(s, index, d.id)
+        assert "set_topics" in index.stappen, "er is niets geschreven"
+        assert index.stappen[0] == "ensure_ready"

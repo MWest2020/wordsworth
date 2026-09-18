@@ -161,6 +161,14 @@ def compute(session: Session, index: SearchIndex, dossier_id: UUID, *,
     twee generaties naast elkaar laten staan levert een lijst op waarvan niemand
     weet welke helft nog klopt.
     """
+    # Eerst de mapping. Het `topics`-veld is nieuw, en in productie wordt
+    # `ensure_ready` alleen bij ingest aangeroepen -- dus zonder dit schrijft de
+    # eerste `set_topics` een veld dat OpenSearch dynamisch mapt, en een lijst
+    # strings wordt dan `text` met een `.keyword`-subveld in plaats van
+    # `keyword`. Een `term`-filter op het ruwe veld matcht daarna niets, zonder
+    # fout: de zoekopdracht zegt gewoon "niets gevonden". Precies wat er op
+    # 2026-09-18 met `dossiers` gebeurde.
+    index.ensure_ready()
     key = str(dossier_id)
     docs = index.documents_in(key)
     with_vector = [d for d in docs if d.vector]
