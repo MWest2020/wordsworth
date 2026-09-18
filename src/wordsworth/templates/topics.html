@@ -60,9 +60,10 @@ indeling ván een dossier, niet iets dat eroverheen loopt.</p>
 gezien, {{ uitkomst.with_vector }} met vector, {{ uitkomst.without_topic }}
 zonder onderwerp. Een document zonder vector kan niet meedoen, en een groep
 kleiner dan {{ uitkomst.min_size }} documenten is geen onderwerp maar een
-toevalligheid — die documenten blijven gewoon vindbaar. Afkapafstand
-{{ uitkomst.distance }}: geen natuurwet maar een keuze, en hij staat erbij zodat
-deze indeling na te rekenen is.</p>
+toevalligheid — die documenten blijven gewoon vindbaar. Geknipt op afstand
+{{ '%.4g'|format(uitkomst.distance) }}, de eerste waarop geen onderwerp groter was dan
+{{ (uitkomst.max_share * 100)|round|int }}% van het dossier. Een onderwerp dat
+het dossier ís, zegt niets.</p>
 {% endif %}
 {% endif %}
 {% endblock %}

@@ -37,10 +37,22 @@ from .models import Topic
 from .pseudonymizer import without_tokens
 from .search_index import IndexedDocument, SearchIndex
 
-#: Hoe ver twee groepen uit elkaar mogen liggen voordat ze aparte onderwerpen
-#: zijn, in cosinusafstand (0 = gelijk, 1 = orthogonaal). Geen natuurwet: een
-#: keuze, en daarom een parameter die in het antwoord terugkomt.
-DEFAULT_DISTANCE = 0.45
+#: Een onderwerp dat meer dan dit deel van het dossier is, zegt niets. "Waar
+#: gaat dit dossier over" beantwoorden met "hier gaat het over" is geen antwoord.
+#:
+#: Dit vervangt een vaste afkapafstand. Die stond op 0.45 en gaf op het eerste
+#: echte corpus (Gooise Meren, 567 documenten) één groep van 443 — 78% van het
+#: dossier. Gemeten over hetzelfde corpus:
+#:
+#:     afstand 0.45 -> grootste groep 78%
+#:     afstand 0.30 -> grootste groep 62%
+#:     afstand 0.20 -> grootste groep 50%
+#:     afstand 0.15 -> grootste groep 24%
+#:
+#: Een vast getal is dus geen eigenschap van de wereld maar van dít corpus, en
+#: op het volgende corpus is het weer mis. De eigenschap die je wél wilt is
+#: direct op te schrijven: geen enkel onderwerp mag het dossier zijn.
+DEFAULT_MAX_SHARE = 0.25
 
 #: Een groep kleiner dan dit is geen onderwerp maar een toevalligheid. De leden
 #: houden geen onderwerp; ze blijven gewoon in het dossier te vinden.
@@ -48,6 +60,10 @@ DEFAULT_MIN_SIZE = 3
 
 #: Hoeveel termen een berekende naam mag hebben.
 _NAME_TERMS = 3
+
+#: Welk deel van een groep een term minstens moet dekken voordat hij de groep
+#: mag benoemen. Zie `name_for`: hieronder zit de OCR-ruis.
+_MIN_GROUP_SHARE = 0.30
 
 #: Woorden die overal in Nederlandse overheidsstukken staan en dus niets
 #: onderscheiden. Bewust kort: de TF-IDF-weging doet het meeste werk, en een
@@ -85,8 +101,9 @@ class Computed:
     #: Waaraan je kijkt: de afkapafstand en de ondergrens die deze indeling
     #: maakten. Geen natuurwetten maar keuzes, en een indeling zonder die twee
     #: is niet na te rekenen.
-    distance: float = DEFAULT_DISTANCE
+    distance: float = 0.0
     min_size: int = DEFAULT_MIN_SIZE
+    max_share: float = DEFAULT_MAX_SHARE
 
 
 def usable_name(term: str) -> bool:
@@ -119,41 +136,93 @@ def name_for(members: list[list[str]], document_frequency: Counter,
     vorm die `zeef` onder `--no-llm` gebruikt, en om dezelfde reden — een door
     een taalmodel bedachte titel is een bewering waarvan niemand de herkomst kan
     navertellen, en dit systeem verwerkt persoonsgegevens.
+
+    **Een term moet de groep vertegenwoordigen, niet één document erin.** Zonder
+    die eis kiest TF-IDF met voorliefde OCR-ruis: een scanfout als
+    "aannemersbedtif" staat in precies één document en nergens anders in het
+    dossier, en scoort daarmee maximaal onderscheidend. Het eerste echte corpus
+    gaf namen als "argument · athandeling · bouwregels" en "2anleg ·
+    aannemersbedrif · aannemersbedtif" — drie spellingen van hetzelfde woord,
+    geen van alle een onderwerp.
+
+    Dus: minstens twee documenten van de groep, en minstens `_MIN_GROUP_SHARE`
+    ervan. Een typefout haalt die drempel niet; een onderwerp wel.
     """
     in_group: Counter = Counter()
     for terms in members:
         in_group.update(set(terms))
+    drempel = max(2, math.ceil(_MIN_GROUP_SHARE * len(members)))
     scored = [
         (count * math.log(total / (1 + document_frequency[term])), term)
         for term, count in in_group.items()
+        if count >= drempel
     ]
     scored.sort(key=lambda p: (-p[0], p[1]))
     best = [term for _score, term in scored[:_NAME_TERMS]]
     return " · ".join(best) if best else "zonder onderscheidende termen"
 
 
-def _clusters(vectors: list[list[float]], distance: float) -> list[int]:
+def _clusters(vectors: list[list[float]], max_share: float = DEFAULT_MAX_SHARE
+              ) -> tuple[list[int], float]:
     """Agglomeratieve clustering (average linkage, cosinusafstand).
 
+    Geeft de indeling én de afstand waarop geknipt is. Dat tweede hoort erbij:
+    zonder is de indeling niet na te rekenen.
+
+    De boom wordt één keer gebouwd en daarna doorgesneden op de hoogtes die de
+    boom zélf heeft — de afstanden waarop groepen samenvloeien. Gezocht wordt de
+    hóógste snede waarbij geen groep nog groter is dan `max_share` van het
+    geheel: hoe hoger, hoe grover, en grof is goed zolang geen onderwerp het
+    dossier wordt.
+
+    Geen lijstje vaste afstanden om te proberen. Dat lijstje zou zelf weer een
+    aanname over corpusdichtheid zijn, en precies daaraan ging de vaste 0.45 ten
+    onder.
+
+    Groepsgrootte loopt mee met de hoogte, dus dit is een binaire zoektocht en
+    geen 566 pogingen. Onder de laagste hoogte is elk document zijn eigen groep
+    — er is dus altijd een antwoord, ook al is dat "geen enkel onderwerp", en
+    dat is voor een dossier van identieke documenten het eerlijke antwoord.
+
     scipy en niet zelfgeschreven: UPGMA met de hand is precies het soort code
-    waar een stille fout in gaat zitten die niemand ooit meet. Eén groep is een
-    geldig antwoord, en scipy kan niet clusteren op minder dan twee punten —
-    vandaar de twee uitzonderingen hierboven.
+    waar een stille fout in gaat zitten die niemand ooit meet.
     """
     if not vectors:
-        return []
+        return [], 0.0
     if len(vectors) == 1:
-        return [1]
+        return [1], 0.0
+    from collections import Counter as _Counter
+
     from scipy.cluster.hierarchy import fcluster, linkage
     from scipy.spatial.distance import pdist
 
-    condensed = pdist(vectors, metric="cosine")
-    return list(fcluster(linkage(condensed, method="average"),
-                         t=distance, criterion="distance"))
+    boom = linkage(pdist(vectors, metric="cosine"), method="average")
+    hoogtes = sorted({0.0, *(float(h) for h in boom[:, 2])})
+    grens = max_share * len(vectors)
+
+    def indeling(hoogte: float) -> list[int]:
+        return list(fcluster(boom, t=hoogte, criterion="distance"))
+
+    def past(hoogte: float) -> bool:
+        return max(_Counter(indeling(hoogte)).values()) <= grens
+
+    laag, hoog = 0, len(hoogtes) - 1
+    beste = 0
+    while laag <= hoog:
+        midden = (laag + hoog) // 2
+        if past(hoogtes[midden]):
+            beste = midden
+            laag = midden + 1
+        else:
+            hoog = midden - 1
+    # Niet afronden: op een dicht corpus liggen de hoogtes rond 1e-4, en dan
+    # maakt afronden op vier decimalen er 0.0 van — een getal dat zegt dat er
+    # niet geknipt is terwijl dat wel gebeurd is. Afronden is voor het scherm.
+    return indeling(hoogtes[beste]), hoogtes[beste]
 
 
 def compute(session: Session, index: SearchIndex, dossier_id: UUID, *,
-            distance: float = DEFAULT_DISTANCE,
+            max_share: float = DEFAULT_MAX_SHARE,
             min_size: int = DEFAULT_MIN_SIZE) -> Computed:
     """Herbereken de onderwerpen van één dossier, en zet ze op de documenten.
 
@@ -173,7 +242,7 @@ def compute(session: Session, index: SearchIndex, dossier_id: UUID, *,
     docs = index.documents_in(key)
     with_vector = [d for d in docs if d.vector]
 
-    labels = _clusters([d.vector for d in with_vector], distance)
+    labels, distance = _clusters([d.vector for d in with_vector], max_share)
     grouped: dict[int, list[IndexedDocument]] = {}
     for label, doc in zip(labels, with_vector):
         grouped.setdefault(label, []).append(doc)
@@ -211,7 +280,7 @@ def compute(session: Session, index: SearchIndex, dossier_id: UUID, *,
     _write_membership(index, docs, assigned, {str(o) for o in old})
     return Computed(topics=made, seen=len(docs), with_vector=len(with_vector),
                     without_topic=len(docs) - len(assigned),
-                    distance=distance, min_size=min_size)
+                    distance=distance, min_size=min_size, max_share=max_share)
 
 
 def _write_membership(index: SearchIndex, docs: list[IndexedDocument],

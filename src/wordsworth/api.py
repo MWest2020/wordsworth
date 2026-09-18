@@ -159,9 +159,12 @@ class TopicsResponse(BaseModel):
     seen: int | None = None
     with_vector: int | None = None
     without_topic: int | None = None
-    #: De keuzes waaronder deze indeling tot stand kwam.
+    #: De keuzes waaronder deze indeling tot stand kwam. ``distance`` is niet
+    #: gekozen maar gevónden: de boom is doorgesneden tot geen groep nog groter
+    #: was dan ``max_share`` van het dossier.
     distance: float | None = None
     min_size: int | None = None
+    max_share: float | None = None
 
 
 class RenameTopicRequest(BaseModel):
@@ -682,7 +685,8 @@ def create_app(
                         topics=[_topic_out(t) for t in result.topics],
                         seen=result.seen, with_vector=result.with_vector,
                         without_topic=result.without_topic,
-                        distance=result.distance, min_size=result.min_size)
+                        distance=result.distance, min_size=result.min_size,
+                        max_share=result.max_share)
                     session.commit()
                 return out
 

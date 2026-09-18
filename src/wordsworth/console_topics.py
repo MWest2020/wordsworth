@@ -98,4 +98,5 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
         return _page(request, dossier, uitkomst={
             "seen": uitkomst.seen, "with_vector": uitkomst.with_vector,
             "without_topic": uitkomst.without_topic,
-            "distance": uitkomst.distance, "min_size": uitkomst.min_size})
+            "distance": uitkomst.distance, "min_size": uitkomst.min_size,
+            "max_share": uitkomst.max_share})
