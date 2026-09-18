@@ -137,3 +137,45 @@ def test_reveal_is_audited(session_factory, mem_store, mem_index, fake_embedder,
         assert PII_EMAIL not in str(rec.payload)          # never clear values
         ok, bad = audit.verify_chain(s)
         assert ok is True and bad is None
+
+
+def test_authorized_is_not_the_same_as_resolved(session_factory, mem_store,
+                                                mem_index, fake_embedder,
+                                                born_digital_pii_pdf):
+    """Een toegestaan type dat niets oplevert mag niet als 'onthuld' klinken.
+
+    Het antwoord zei tot nu toe `revealed_types: [...]` en bedoelde daarmee
+    "wat de grant toestond". Het auditveld `types` bedoelde "wat er werkelijk
+    uit de mappingstore kwam". Bijna dezelfde naam, twee dingen — en wie ze
+    naast elkaar legde concludeerde dat het spoor gaten had.
+
+    Hier staat PHONE_NUMBER wel in de grant maar niet in het document. Dan
+    hoort `authorized_types` hem te noemen, `resolved_types` niet, en hoort
+    `resolved_types` letterlijk gelijk te zijn aan wat de auditregel noteerde.
+    """
+    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+                          born_digital_pii_pdf)
+    gs = InMemoryGrantStore()
+    grant = gs.issue("agent-x", ["EMAIL", "PHONE_NUMBER"], actor="mark",
+                     document_id=doc_id)
+
+    r = _client(session_factory, kp, gs).post(
+        f"/documents/{doc_id}/reveal",
+        json={"grant_id": grant.grant_id, "types": ["EMAIL", "PHONE_NUMBER"]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["authorized_types"] == ["EMAIL", "PHONE_NUMBER"]
+    assert body["resolved_types"] == ["EMAIL"]
+    assert body["withheld_types"] == []          # beide mochten, één leverde
+    assert body["revealed_types"] == body["authorized_types"], "oude naam blijft"
+
+    with session_factory() as s:
+        payload = s.execute(
+            select(AuditRecord.payload)
+            .where(AuditRecord.document_id == doc_id,
+                   AuditRecord.step == "deanonymize")
+            .order_by(AuditRecord.seq.desc()).limit(1)
+        ).scalar_one()
+    assert payload["types"] == body["resolved_types"]
+    assert payload["requested_types"] == body["authorized_types"]

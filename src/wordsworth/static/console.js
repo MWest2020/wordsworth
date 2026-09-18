@@ -152,7 +152,18 @@ if (typeof document !== "undefined") (function () {
         return;
       }
       var marked = render(res.body.revealed_text);
-      var msg = "Onthuld: " + (res.body.revealed_types.join(", ") || "niets");
+      // Toegestaan en opgelost zijn twee dingen. Een type mag toegestaan zijn
+      // en tóch niets opleveren -- het komt niet voor in dit document, of het
+      // token is gemunt onder een sleutel die deze installatie niet meer heeft.
+      // Als het scherm alleen "onthuld" zegt, leest de kijker het eerste als
+      // het tweede.
+      var toegestaan = res.body.authorized_types || res.body.revealed_types || [];
+      var opgelost = res.body.resolved_types || [];
+      var msg = "Onthuld: " + (opgelost.join(", ") || "niets");
+      var leeg = toegestaan.filter(function (t) { return opgelost.indexOf(t) < 0; });
+      if (leeg.length) {
+        msg += " · toegestaan maar niets opgeleverd: " + leeg.join(", ");
+      }
       if (res.body.withheld_types && res.body.withheld_types.length) {
         msg += " · geweigerd: " + res.body.withheld_types.join(", ");
       }

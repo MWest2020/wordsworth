@@ -117,6 +117,23 @@ Only the granted types are revealed; every other type stays pseudonymised. The
 access is audited (actor = grant recipient, plus the `grant_id`), never logging
 clear values.
 
+### Three type lists, and why they differ
+
+| veld | betekenis |
+| --- | --- |
+| `authorized_types` | wat de grant toestond voor dit verzoek |
+| `resolved_types` | wat er werkelijk uit de mappingstore kwam |
+| `withheld_types` | gevraagde types die de grant niet toestond |
+
+`resolved_types` is kleiner dan `authorized_types` wanneer een toegestaan type
+niet in dit document voorkomt, of wanneer een token gemunt is onder een sleutel
+die deze installatie niet meer heeft. Het veld wordt overgenomen uit de
+auditregel die de onthulling schreef (`types`), zodat antwoord en spoor niet
+uiteen kunnen lopen; `requested_types` daar is `authorized_types` hier.
+
+`revealed_types` is `authorized_types` onder zijn oude naam. Het blijft staan
+omdat clients het lezen — wie nieuw leest neemt een van de twee precieze namen.
+
 ### The caller must be the recipient
 
 With caller authentication enabled (`WORDSWORTH_API_KEYS` set), the endpoint

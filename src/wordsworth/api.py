@@ -95,12 +95,29 @@ class RevealRequest(BaseModel):
 
 class RevealResponse(BaseModel):
     """The document text with the authorised PII types revealed; every other
-    type stays pseudonymised. ``withheld_types`` are the requested types the
-    grant did not authorise."""
+    type stays pseudonymised.
+
+    Three type lists, and the difference between them matters when someone
+    later lays an audit record next to an answer:
+
+    - ``authorized_types`` — what the grant allowed for THIS request.
+    - ``resolved_types`` — what actually came back out of the mapping store,
+      copied from the audit record this reveal wrote. It is smaller than
+      ``authorized_types`` when an allowed type simply does not occur in the
+      document, or when a token was minted under a key this installation no
+      longer has.
+    - ``withheld_types`` — requested types the grant did not authorise.
+
+    ``revealed_types`` is ``authorized_types`` under its old name. It stays
+    because clients read it; new readers should take one of the two precise
+    names.
+    """
 
     document_id: str
     revealed_text: str
     revealed_types: list[str]
+    authorized_types: list[str]
+    resolved_types: list[str]
     withheld_types: list[str]
     grant_id: str
     # The same two sets grouped under their AVG legal basis (Art. 6/9/10):
@@ -1054,6 +1071,15 @@ def create_app(
                     allowed_types=allowed,
                     extra_audit=extra_audit,
                 )
+                # Wat er WERKELIJK uit de mappingstore kwam, overgenomen uit de
+                # auditregel die deze onthulling zojuist schreef. Niet opnieuw
+                # afgeleid: als het antwoord en het spoor uiteen kunnen lopen,
+                # gaat iemand ooit de verkeerde geloven.
+                resolved = session.execute(
+                    select(AuditRecord.payload)
+                    .where(AuditRecord.document_id == document_id)
+                    .order_by(AuditRecord.seq.desc()).limit(1)
+                ).scalar_one()["types"]
                 session.commit()
             requested_upper = {t.upper() for t in requested}
             withheld = requested_upper - allowed
@@ -1067,6 +1093,8 @@ def create_app(
                 document_id=str(document_id),
                 revealed_text=revealed_text,
                 revealed_types=sorted(allowed),
+                authorized_types=sorted(allowed),
+                resolved_types=sorted(resolved),
                 withheld_types=sorted(withheld),
                 grant_id=body.grant_id,
                 by_legal_basis=by_basis,
