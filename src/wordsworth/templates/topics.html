@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% block title %}onderwerpen — wordsworth{% endblock %}
+{% set page = 'topics' %}
+{% block who %}{{ caller }}{% endblock %}
+{% block body %}
+<p class="eyebrow">Onderwerpen</p>
+<h1>Waar gaat dit dossier over?</h1>
+<p class="lede">Groepen documenten binnen één dossier, met een naam uit de termen
+die die groep onderscheiden van de rest. Een onderwerp <b>versmalt het zoeken en
+raakt de rangschikking niet</b>: dat documenten op elkaar lijken zegt niet dat ze
+allebei antwoord geven op jouw vraag.</p>
+
+<form method="get" action="/console/topics" style="margin-top:20px; display:flex; gap:8px; flex-wrap:wrap">
+ <select name="dossier" aria-label="dossier" style="font:inherit; font-size:.95rem;
+   padding:11px 12px; border:1px solid var(--line); border-radius:10px;
+   background:var(--surface); color:var(--ink)">
+  <option value="" {% if not dossier %}selected{% endif %}>— kies een dossier —</option>
+  {% for d in dossiers %}<option value="{{ d.name }}"
+    {% if dossier == d.name %}selected{% endif %}>{{ d.name }} ({{ d.documents }})</option>{% endfor %}
+ </select>
+ <button class="btn" type="submit">Toon</button>
+</form>
+<p class="note" style="margin-top:8px">Eén dossier tegelijk: een onderwerp is een
+indeling ván een dossier, niet iets dat eroverheen loopt.</p>
+
+{% if fout %}<p class="fout" style="margin-top:18px">{{ fout }}</p>{% endif %}
+
+{% if dossier and not fout %}
+<div class="card" style="margin-top:20px">
+ <div class="panel-head"><span class="dot"></span><h3>{{ dossier }}</h3>
+  {% if berekend %}<span class="badge">berekend {{ berekend }} · over {{ gerekend_over }} document{{ '' if gerekend_over == 1 else 'en' }}</span>
+  {% else %}<span class="badge">nog niet berekend</span>{% endif %}</div>
+
+ {% if topics %}
+ <table><thead><tr><th>onderwerp</th><th>documenten</th><th>herkomst</th></tr></thead>
+ <tbody>
+ {% for t in topics %}
+ <tr>
+  <td><a href="/console/search?dossier={{ dossier|urlencode }}&amp;topic={{ t.id }}&amp;q={{ q|urlencode }}">{{ t.name }}</a></td>
+  <td><span class="state">{{ t.document_count }}</span></td>
+  <td class="note" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem">
+    {% if t.given_name %}berekend: {{ t.computed_name }}{% else %}berekend{% endif %}</td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog geen onderwerpen voor dit dossier.</p>{% endif %}
+
+ <div style="padding:14px 16px; border-top:1px solid var(--line)">
+  <form method="post" action="/console/topics" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+   <input type="hidden" name="dossier" value="{{ dossier }}">
+   <button class="btn" type="submit">{{ 'Opnieuw berekenen' if topics else 'Bereken onderwerpen' }}</button>
+   <span class="note">Op verzoek, niet bij het inlezen: één document laat geen
+   onderwerpen zien, en bij elk nieuw document het hele dossier herberekenen is
+   werk dat niemand op dat moment leest.</span>
+  </form>
+ </div>
+</div>
+
+{% if uitkomst %}
+<p class="note" style="margin-top:12px">Laatste berekening: {{ uitkomst.seen }}
+gezien, {{ uitkomst.with_vector }} met vector, {{ uitkomst.without_topic }}
+zonder onderwerp. Een document zonder vector kan niet meedoen, en een groep
+kleiner dan {{ uitkomst.min_size }} documenten is geen onderwerp maar een
+toevalligheid — die documenten blijven gewoon vindbaar. Afkapafstand
+{{ uitkomst.distance }}: geen natuurwet maar een keuze, en hij staat erbij zodat
+deze indeling na te rekenen is.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

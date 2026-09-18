@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from .config import settings
 from .rrf import fuse_ranked_ids
-from .search_index import Hit
+from .search_index import Hit, IndexedDocument
 
 
 def _mapping(dim: int) -> dict:
@@ -57,6 +57,10 @@ def _mapping(dim: int) -> dict:
                 # A document can be in several dossiers; a keyword field holds
                 # them all and filters exactly, without analysis.
                 "dossiers": {"type": "keyword"},
+                # Het onderwerp-lidmaatschap woont hier en nergens anders. Een
+                # document zit in meerdere dossiers en dus in meerdere
+                # onderwerpen; keyword filtert exact, zonder analyse.
+                "topics": {"type": "keyword"},
                 "vector": {
                     "type": "knn_vector",
                     "dimension": dim,
@@ -87,22 +91,35 @@ class MappingConflict(RuntimeError):
     """
 
 
-def _scoped(query: dict, only) -> dict:
-    """Wrap a query in a dossier filter.
+def _filters(only, topic) -> list[dict]:
+    """De versmallingen die naast de zoekvraag staan.
 
-    ``only`` None means every dossier and reaches here only from a caller that
-    said so — a missing scope is refused at the API, long before this.
+    ``only`` None betekent alle dossiers en komt hier alleen van een aanroeper
+    die dat gezegd heeft — een ontbrekende scope wordt bij de API geweigerd,
+    lang hiervoor. ``topic`` None betekent het hele dossier.
 
-    A filter and not a must: it narrows without touching the score, so a hit
-    ranks the same whether you searched one dossier or all of them.
+    Allebei een filter en geen must: ze versmallen zonder de score te raken, dus
+    een treffer staat even hoog of je nu één dossier doorzocht of alle, binnen
+    een onderwerp of erbuiten. Voor een onderwerp is dat geen implementatiekeuze
+    maar de belofte zelf — clustering is geen ranking.
     """
-    if only is None:
+    clauses: list[dict] = []
+    if only is not None:
+        clauses.append({"terms": {"dossiers": list(only)}})
+    if topic is not None:
+        clauses.append({"term": {"topics": topic}})
+    return clauses
+
+
+def _scoped(query: dict, only, topic=None) -> dict:
+    """Wrap a query in the dossier/topic filters."""
+    clauses = _filters(only, topic)
+    if not clauses:
         return query
-    return {"bool": {"must": [query],
-                     "filter": [{"terms": {"dossiers": list(only)}}]}}
+    return {"bool": {"must": [query], "filter": clauses}}
 
 
-def _scoped_knn(query_vector, recall: int, only) -> dict:
+def _scoped_knn(query_vector, recall: int, only, topic=None) -> dict:
     """De kNN-helft met het dossierfilter BINNEN de knn-clause.
 
     Voor de lexicale helft is ``_scoped`` goed: een ``bool.filter`` naast de
@@ -127,8 +144,12 @@ def _scoped_knn(query_vector, recall: int, only) -> dict:
     ondersteunt filteren tijdens het doorlopen van de graaf.
     """
     clause: dict = {"vector": query_vector, "k": recall}
-    if only is not None:
-        clause["filter"] = {"terms": {"dossiers": list(only)}}
+    clauses = _filters(only, topic)
+    if clauses:
+        # Eén filter mag kaal; meer dan één moet door een bool, anders is het
+        # geen geldige query.
+        clause["filter"] = (clauses[0] if len(clauses) == 1
+                            else {"bool": {"filter": clauses}})
     return {"knn": {"vector": clause}}
 
 
@@ -191,6 +212,12 @@ class OpenSearchIndex:
 
     def index(self, document_id, text, object_key, vector=None,
               dossiers=None) -> None:
+        """Schrijf het hele document. Let op: dit vervángt, dus het
+        onderwerp-lidmaatschap van dit document valt eraf. Dat is juist — een
+        opnieuw verwerkt document hoort niet stilzwijgend in een groep te
+        blijven die over de oude tekst is berekend — maar het betekent wel dat
+        het aantal bij een onderwerp achterloopt tot de volgende berekening.
+        Daarom staat bij elk onderwerp wannéér het berekend is."""
         body = {"text": text, "object_key": object_key,
                 "dossiers": list(dossiers or ())}
         if vector is not None:
@@ -217,10 +244,54 @@ class OpenSearchIndex:
             return False
         return True
 
-    def search(self, query: str, size: int = 10, only=None) -> list[Hit]:
+    def set_topics(self, document_id, topics) -> bool:
+        """Werk alleen het onderwerpveld bij. Zie `set_dossiers` voor waarom dit
+        een gedeeltelijke update is en geen vervanging."""
+        try:
+            self._client.update(index=self._index, id=document_id,
+                                body={"doc": {"topics": list(topics or ())}},
+                                refresh=True)
+        except Exception as exc:                 # opensearchpy NotFoundError
+            if getattr(exc, "status_code", None) != 404:
+                raise
+            return False
+        return True
+
+    def documents_in(self, dossier: str, limit: int = 10000
+                     ) -> list[IndexedDocument]:
+        """Alles in dit dossier, met vector, tekst en huidige onderwerpen.
+
+        Voor het berekenen van onderwerpen, en dus over de index en niet over de
+        database: de index is wat doorzoekbaar is, en een onderwerp is een
+        versmalling van zoeken.
+
+        `limit` is de bovengrens die OpenSearch zelf stelt aan één pagina
+        (`index.max_result_window`, standaard 10000). Een dossier dat daar
+        overheen gaat, krijgt hier stil te weinig terug — daarom zegt
+        `compute()` hoeveel documenten hij gezien heeft, zodat dat te zien is in
+        plaats van te vermoeden.
+        """
         result = self._client.search(
             index=self._index,
-            body={"query": _scoped(_bm25(query), only), "size": size},
+            body={"size": limit,
+                  "query": {"bool": {"filter": [{"terms": {"dossiers": [dossier]}}]}},
+                  "_source": ["text", "vector", "topics", "object_key"]},
+        )
+        return [
+            IndexedDocument(
+                document_id=h["_id"],
+                text=h["_source"].get("text", ""),
+                vector=h["_source"].get("vector"),
+                topics=list(h["_source"].get("topics") or ()),
+                object_key=h["_source"].get("object_key"),
+            )
+            for h in result["hits"]["hits"]
+        ]
+
+    def search(self, query: str, size: int = 10, only=None, topic=None) -> list[Hit]:
+        result = self._client.search(
+            index=self._index,
+            body={"query": _scoped(_bm25(query), only, topic), "size": size},
         )
         return [
             Hit(h["_id"], float(h["_score"]), h["_source"].get("object_key"))
@@ -232,12 +303,13 @@ class OpenSearchIndex:
         return [h["_id"] for h in result["hits"]["hits"]]
 
     def hybrid_search(self, query, query_vector, recall: int = 50,
-                      only=None) -> list[Hit]:
+                      only=None, topic=None) -> list[Hit]:
         bm25 = self._ranked_ids(
-            {"query": _scoped(_bm25(query), only), "size": recall, "_source": False}
+            {"query": _scoped(_bm25(query), only, topic),
+             "size": recall, "_source": False}
         )
         knn = self._ranked_ids(
-            {"query": _scoped_knn(query_vector, recall, only),
+            {"query": _scoped_knn(query_vector, recall, only, topic),
              "size": recall, "_source": False}
         )
         fused = fuse_ranked_ids([bm25, knn])[:recall]

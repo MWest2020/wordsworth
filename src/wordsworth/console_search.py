@@ -42,7 +42,7 @@ def scope_ids(session, dossier: str):
 def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> None:
     @router.get("/search", response_class=HTMLResponse, include_in_schema=False)
     def search(request: Request, q: str = "", size: int = 10,
-               dossier: str = ""):
+               dossier: str = "", topic: str = ""):
         """Search the pseudonymised index — the claim this project rests on.
 
         The fragment comes from the STORED pseudonymised text, so what you read
@@ -69,7 +69,8 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> N
                 fout = str(exc)
             else:
                 try:
-                    raw = search_index.search(q, size=size, only=only)
+                    raw = search_index.search(q, size=size, only=only,
+                                              topic=topic or None)
                 except Exception as exc:                 # index down, query bad
                     fout = f"De zoekindex gaf een fout: {type(exc).__name__}"
             if raw:
@@ -84,7 +85,24 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> N
                             "fragment": console_data.fragment(
                                 row.anonymized_text if row else "", q),
                         })
+        onderwerp = ""
+        if topic:
+            # De naam erbij, want een uuid in een badge zegt een lezer niets en
+            # "binnen een onderwerp" zonder wélk onderwerp is misleidender dan
+            # niets zeggen.
+            from uuid import UUID as _UUID
+
+            from .models import Topic
+            from .topics import display_name
+
+            with session_factory() as session:
+                try:
+                    gevonden = session.get(Topic, _UUID(topic))
+                except ValueError:
+                    gevonden = None
+            onderwerp = display_name(gevonden) if gevonden else "onbekend onderwerp"
         return TEMPLATES.TemplateResponse(request, "search.html", {
             "q": q, "hits": hits, "fout": fout, "dossier": dossier,
             "dossiers": keuzes, "suggested": console_data.SUGGESTED,
+            "topic": topic, "onderwerp": onderwerp,
             "searchable": search_index is not None})

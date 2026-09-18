@@ -124,6 +124,7 @@ input:focus-visible,textarea:focus-visible{outline:2px solid var(--brass); outli
   <nav>
     <a href="/console" {% if page == 'documents' %}aria-current="page"{% endif %}>documenten</a>
     <a href="/console/search" {% if page == 'search' %}aria-current="page"{% endif %}>zoeken</a>
+    <a href="/console/topics" {% if page == 'topics' %}aria-current="page"{% endif %}>onderwerpen</a>
     <a href="/console/combinations" {% if page == 'combinations' %}aria-current="page"{% endif %}>combinaties</a>
   </nav>
   <span class="who">{% block who %}{% endblock %} · <a href="/console/logout">afmelden</a></span>

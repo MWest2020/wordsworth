@@ -30,15 +30,17 @@ class FakeIndex:
 
     def __init__(self, hits=()):
         self.hits, self.asked, self.scopes = list(hits), [], []
+        self.topics = []
 
-    def search(self, q, size=10, only=None):
+    def search(self, q, size=10, only=None, topic=None):
         self.asked.append((q, size))
         self.scopes.append(only)
+        self.topics.append(topic)
         return self.hits[:size]
 
 
 class BrokenIndex:
-    def search(self, q, size=10, only=None):
+    def search(self, q, size=10, only=None, topic=None):
         raise ConnectionError("opensearch weg")
 
 

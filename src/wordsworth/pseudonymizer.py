@@ -71,6 +71,20 @@ def label_of(pseudonym: str) -> str:
 _label_of = label_of
 
 
+def without_tokens(text: str) -> str:
+    """De tekst zonder de pseudonym-tokens erin.
+
+    Voor alles dat woorden uit een document haalt en ze ergens anders neerzet —
+    een onderwerpnaam, een facet, een samenvatting. Een token dat via zo'n weg
+    op een scherm of in een URL belandt, is een lek naar plekken waar de
+    reveal-gate nooit kijkt.
+
+    Hier en niet bij de aanroeper, om dezelfde reden als `label_of`: de aanname
+    over tokenvorm hoort op één plek te staan.
+    """
+    return _PSEUDONYM_RE.sub(" ", text)
+
+
 
 def neutralise_foreign_tokens(text: str) -> tuple[str, int]:
     """Maak tokens die AL in de aangeleverde tekst staan onschadelijk.

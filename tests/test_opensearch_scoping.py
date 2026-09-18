@@ -15,7 +15,8 @@ draaiende OpenSearch nodig en vervangen die ook niet — wat ze bewaken is de
 querybody, want dat is het stuk dat fout kan zonder dat iets het zegt.
 """
 
-from wordsworth.opensearch_index import OpenSearchIndex, _scoped, _scoped_knn
+from wordsworth.opensearch_index import (OpenSearchIndex, _bm25, _scoped,
+                                         _scoped_knn)
 
 
 class Vangt:
@@ -125,3 +126,42 @@ def test_the_mapping_declares_dossiers_as_keyword():
     from wordsworth.opensearch_index import _mapping
 
     assert _mapping(64)["mappings"]["properties"]["dossiers"] == {"type": "keyword"}
+
+
+def test_a_topic_is_a_filter_and_never_a_must():
+    """De belofte van `onderwerpen`: een onderwerp versmalt en herschikt niet.
+
+    In `must` zou het onderwerp meetellen in de relevantie, en dan verschuift de
+    volgorde om een reden die niemand aan de lezer kan uitleggen: dat een
+    document op zijn buren lijkt.
+    """
+    idx = _index()
+    idx.search("vergunning", only=["d1"], topic="t7")
+    q = idx._client.bodies[0]["query"]
+    assert q["bool"]["filter"] == [{"terms": {"dossiers": ["d1"]}},
+                                   {"term": {"topics": "t7"}}]
+    assert q["bool"]["must"] == [_bm25("vergunning")]
+
+
+def test_the_topic_reaches_both_halves_of_the_hybrid_path():
+    idx = _index()
+    idx.hybrid_search("vergunning", [0.1] * 64, recall=10, only=["d1"], topic="t7")
+    lexicaal, vector = (b["query"] for b in idx._client.bodies)
+    assert {"term": {"topics": "t7"}} in lexicaal["bool"]["filter"]
+    # Binnen de knn-clause, en met twee voorwaarden dus door een bool heen.
+    binnen = vector["knn"]["vector"]["filter"]
+    assert binnen["bool"]["filter"] == [{"terms": {"dossiers": ["d1"]}},
+                                        {"term": {"topics": "t7"}}]
+
+
+def test_a_topic_without_a_dossier_scope_still_filters():
+    """'alle dossiers' plus één onderwerp is een geldige combinatie, en dan mag
+    het onderwerp niet verdwijnen omdat de dossierlijst leeg is."""
+    q = _scoped_knn([0.1], 10, None, "t7")
+    assert q["knn"]["vector"]["filter"] == {"term": {"topics": "t7"}}
+
+
+def test_the_mapping_declares_topics_as_keyword():
+    from wordsworth.opensearch_index import _mapping
+
+    assert _mapping(64)["mappings"]["properties"]["topics"] == {"type": "keyword"}

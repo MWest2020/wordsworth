@@ -38,6 +38,7 @@ from sqlalchemy import func, select
 from . import combinations as _combinations
 from . import console_data
 from . import console_search
+from . import console_topics
 from .auth import CONSOLE_COOKIE
 from .console_data import label, marked, reach, types_per_document
 from .models import AuditRecord, DeclaredCombination, Document, DocumentText
@@ -144,6 +145,8 @@ def build_router(session_factory, keys: dict[str, str],
 
     console_search.mount(router, session_factory, search_index, TEMPLATES,
                          _mag_lezen)
+    console_topics.mount(router, session_factory, search_index, TEMPLATES,
+                         _mag_lezen, _caller)
 
     @router.get("/documents/{document_id}", response_class=HTMLResponse,
                 include_in_schema=False)
