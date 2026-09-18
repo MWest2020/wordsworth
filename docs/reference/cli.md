@@ -83,6 +83,33 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-dossier-uit-herkomst` and `wordsworth-dossier-hernoem`
+
+Correcting a classification, without guessing.
+
+```bash
+wordsworth-dossier-uit-herkomst herkomst.jsonl --weg-uit "corpus-2026-09" --dry-run
+wordsworth-dossier-hernoem "corpus-2026-09" "Gooise Meren Woo-publicatie 2022"
+```
+
+`uit-herkomst` puts each document into the dossier its **recorded provenance**
+names — `scripts/eval/fetch_woo_corpus.py` writes one line per document with the
+source URL and the decision it belongs to. A document with no provenance entry is
+**not assigned** and is counted. A classification derived from a date or a text
+pattern is one nobody can retell afterwards, and that is worse than none.
+
+`--weg-uit` removes them from a dossier they were wrongly placed in, once they
+are somewhere else. If that leaves documents belonging nowhere at all, the count
+is reported — such a document is invisible to every scoped search, and the moment
+it happens is the moment someone can still act on it.
+
+`hernoem` moves no document: the identity is the dossier, not the word used for
+it.
+
+The provenance file may contain duplicate lines — the fetcher opens it with
+`append`, so running it twice duplicates every entry. Both commands key on the
+filename, so that is harmless; it is only a reason not to count lines.
+
 ## `wordsworth-access-preflight`
 
 Reports the grants that go inert once callers are identities instead of key

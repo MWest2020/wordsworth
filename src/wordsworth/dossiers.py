@@ -60,6 +60,59 @@ def add(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
     return True
 
 
+def remove(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
+    """Undo a membership. Returns whether there was one.
+
+    Removing one that is not there is not an error, for the same reason adding
+    an existing one is not: both are statements about a state, and the state is
+    what matters.
+    """
+    existing = session.get(DossierDocument, (dossier_id, document_id))
+    if existing is None:
+        return False
+    session.delete(existing)
+    session.flush()
+    return True
+
+
+def rename(session: Session, old: str, new: str) -> Dossier:
+    """Give a dossier another name. Moves no document.
+
+    The identity is the dossier, not the word used for it — which is why this is
+    safe and why a name can be corrected without touching what is in it.
+    """
+    found = session.execute(
+        select(Dossier).where(Dossier.name == old.strip())).scalars().first()
+    if found is None:
+        raise DossierError(f"unknown dossier: {old}")
+    new = (new or "").strip()
+    if not new:
+        raise DossierError("a dossier needs a name")
+    if new.lower() == ALL:
+        raise DossierError(f"{ALL!r} is the word for every dossier, not a name")
+    clash = session.execute(
+        select(Dossier).where(Dossier.name == new)).scalars().first()
+    if clash is not None and clash.id != found.id:
+        raise DossierError(f"a dossier named {new!r} already exists")
+    found.name = new
+    session.flush()
+    return found
+
+
+def homeless(session: Session) -> int:
+    """How many documents belong to no dossier at all.
+
+    Invisible to every scoped search. Allowed mid-reclassification, counted
+    always: this is the state in which a document is most easily lost, and the
+    moment it happens is the moment someone can still act on it.
+    """
+    from .models import Document
+
+    member = select(DossierDocument.document_id)
+    return len(list(session.execute(
+        select(Document.id).where(Document.id.not_in(member))).scalars()))
+
+
 def documents_in(session: Session, dossier_ids: list[UUID]) -> set[UUID]:
     """Every document in any of these dossiers."""
     if not dossier_ids:
