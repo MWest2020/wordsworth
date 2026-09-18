@@ -198,3 +198,98 @@ def test_the_client_puts_the_dossier_in_the_ingest_url(monkeypatch, tmp_path):
     client.main(["--url", "http://x", "ingest", str(tmp_path),
                  "--dossier", "zaak-a"])
     assert "dossier=zaak-a" in gezien["url"]
+
+
+# --- two faults found by running it against production ---------------------
+
+def test_a_dry_run_does_not_touch_the_index(session, monkeypatch, capsys):
+    """The database can be rolled back; the index cannot. The first dry run
+    against production wrote 770 documents, which made "dry" a lie."""
+    from wordsworth import backfill_dossier
+
+    geschreven = []
+
+    class Index:
+        def ensure_ready(self):
+            pass
+
+        def index(self, *a, **kw):
+            geschreven.append(a)
+
+    monkeypatch.setattr(
+        "wordsworth.opensearch_index.OpenSearchIndex.from_config",
+        classmethod(lambda cls: Index()))
+    register(session, "documents/aa")
+    session.commit()
+    monkeypatch.setattr(backfill_dossier, "make_engine", lambda: None)
+    monkeypatch.setattr(backfill_dossier, "make_session_factory",
+                        lambda e: (lambda: _Keep(session)))
+    backfill_dossier.main(["corpus", "--dry-run"])
+    assert geschreven == []
+    assert "NIET aangeraakt" in capsys.readouterr().err
+
+
+class _Keep:
+    """A session that survives `with`, so the CLI can use the test's session."""
+
+    def __init__(self, session):
+        self.session = session
+
+    def __enter__(self):
+        return self.session
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_a_field_missing_from_an_existing_index_is_added():
+    """`indices.create` only runs for a new index, so a field added to the
+    mapping later never reaches an existing one — and a string array then maps
+    dynamically as `text`, where a terms filter matches nothing and the search
+    returns zero hits with no error."""
+    from wordsworth.opensearch_index import OpenSearchIndex
+
+    put = {}
+
+    class Client:
+        class indices:
+            @staticmethod
+            def exists(index):
+                return True
+
+            @staticmethod
+            def get_mapping(index):
+                return {index: {"mappings": {"properties": {"text": {"type": "text"}}}}}
+
+            @staticmethod
+            def put_mapping(index, body):
+                put.update(body)
+
+    OpenSearchIndex(Client(), "ww", 64).ensure_ready()
+    assert put["properties"]["dossiers"] == {"type": "keyword"}
+    assert "text" not in put["properties"]        # only what was missing
+
+
+def test_a_field_with_the_wrong_type_is_a_hard_error():
+    """A field cannot be retyped in place. Carrying on would leave a filter that
+    silently matches nothing, and that reads as "no results"."""
+    from wordsworth.opensearch_index import MappingConflict, OpenSearchIndex
+
+    class Client:
+        class indices:
+            @staticmethod
+            def exists(index):
+                return True
+
+            @staticmethod
+            def get_mapping(index):
+                return {index: {"mappings": {"properties": {
+                    "dossiers": {"type": "text"}}}}}
+
+            @staticmethod
+            def put_mapping(index, body):
+                pass
+
+    with pytest.raises(MappingConflict) as exc:
+        OpenSearchIndex(Client(), "ww", 64).ensure_ready()
+    assert "dossiers" in str(exc.value) and "reindex" in str(exc.value)
