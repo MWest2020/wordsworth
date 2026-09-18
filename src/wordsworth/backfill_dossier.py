@@ -13,6 +13,7 @@ the honest thing to call them.
 from __future__ import annotations
 
 import argparse
+import sys
 
 from sqlalchemy import select
 
@@ -72,8 +73,15 @@ def main(argv: list[str] | None = None) -> int:
 
     index = None
     if not args.no_index:
-        from .opensearch_index import OpenSearchIndex
-        index = OpenSearchIndex.from_config()
+        if args.dry_run:
+            # A dry run must not write. The database can be rolled back; the
+            # index cannot, so touching it would make "dry" a lie — and it did:
+            # the first dry run against production wrote 770 documents.
+            print("droge run: de index wordt NIET aangeraakt", file=sys.stderr)
+        else:
+            from .opensearch_index import OpenSearchIndex
+            index = OpenSearchIndex.from_config()
+            index.ensure_ready()
     with make_session_factory(make_engine())() as session:
         stats = adopt(session, args.name, index)
         if args.dry_run:
@@ -88,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  index bijgewerkt       : {stats['reindexed']}")
         print(f"  zonder opgeslagen tekst: {stats['without_text']} "
               f"(stond nooit in de index)")
-        if args.no_index:
+        if args.no_index or args.dry_run:
             print("  LET OP: de index is niet bijgewerkt; tot een herindexering "
                   "vindt een gescopete zoekopdracht deze documenten niet")
     return 0

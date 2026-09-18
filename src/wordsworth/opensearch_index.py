@@ -79,6 +79,14 @@ def _bm25(query: str) -> dict:
     }
 
 
+class MappingConflict(RuntimeError):
+    """The index maps a field with a type the code cannot query.
+
+    A hard error on purpose: the alternative is a filter that silently matches
+    nothing, which reads as "no results" and is the worst answer available.
+    """
+
+
 def _scoped(query: dict, only) -> dict:
     """Wrap a query in a dossier filter.
 
@@ -110,6 +118,36 @@ class OpenSearchIndex:
     def ensure_ready(self) -> None:
         if not self._client.indices.exists(index=self._index):
             self._client.indices.create(index=self._index, body=_mapping(self._dim))
+            return
+        self._add_missing_fields()
+
+    def _add_missing_fields(self) -> None:
+        """Declare fields the mapping has gained since this index was created.
+
+        `indices.create` only runs for a new index, so a field added to
+        `_mapping` later never reaches an existing one. OpenSearch then maps it
+        dynamically on first write — and a string array becomes `text` with a
+        `.keyword` subfield, not `keyword`. A `terms` filter on the raw field
+        then matches nothing and the search returns zero hits with no error:
+        exactly the failure that looks like "nothing found".
+
+        Adding a field is allowed; changing one is not. An index where the field
+        already exists with the wrong type therefore needs a reindex, and this
+        says so instead of pretending the mapping is fine.
+        """
+        current = list(self._client.indices.get_mapping(
+            index=self._index).values())[0]["mappings"].get("properties", {})
+        wanted = _mapping(self._dim)["mappings"]["properties"]
+        missing = {k: v for k, v in wanted.items() if k not in current}
+        if missing:
+            self._client.indices.put_mapping(index=self._index,
+                                             body={"properties": missing})
+        wrong = [k for k, v in wanted.items()
+                 if k in current and current[k].get("type") != v.get("type")]
+        if wrong:
+            raise MappingConflict(
+                f"index {self._index!r} maps {wrong} with the wrong type; "
+                "a field cannot be retyped in place — reindex into a fresh index")
 
     def has_object_key(self, object_key: str) -> bool:
         """True if a document with this content key is already indexed. The index
