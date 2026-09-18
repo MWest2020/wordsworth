@@ -137,3 +137,77 @@ def test_without_any_keys_every_assertion_is_refused(key):
     ident = Identity(VERIFIER, fetch=fetch)
     req = _Req({"cf-access-jwt-assertion": _token(key)})
     assert ident.caller(req, NU) is None
+
+
+# --- a credential you send beats one that rides along ----------------------
+
+def test_a_presented_key_wins_over_an_injected_assertion(session_factory, key):
+    """An identity provider injects its assertion on every request through it.
+    Without this order, someone behind that provider could never be anything
+    else, and the way back to a key would exist only on routes that bypass the
+    provider — which is exactly where Mark could not reach."""
+    from fastapi.testclient import TestClient
+
+    from wordsworth.api import create_app
+    from wordsworth.search_index import InMemoryIndex
+
+    class _Ident:
+        def caller(self, request, now=None):
+            from wordsworth.access_identity import email_from, public_keys
+            tok = request.headers.get("cf-access-jwt-assertion", "")
+            if not tok:
+                return None
+            try:
+                return email_from(tok, public_keys(VERIFIER, lambda u: _jwks(key)),
+                                  VERIFIER, NU)
+            except Exception:
+                return None
+
+    index = InMemoryIndex()
+    index.index("a", "vergunning", "ka")
+    app = create_app(session_factory=session_factory, api_keys={"k": "cli"},
+                     search_index=index)
+    for m in app.user_middleware:
+        if m.cls.__name__ == "ApiKeyAuthMiddleware":
+            m.kwargs["identity"] = _Ident()
+    c = TestClient(app)
+
+    beide = {"X-API-Key": "k", "cf-access-jwt-assertion": _token(key)}
+    r = c.get("/search", params={"q": "vergunning", "dossier": "alle"},
+              headers=beide)
+    assert r.status_code == 200          # the key was accepted
+    # and with only the assertion, the identity still works
+    alleen = {"cf-access-jwt-assertion": _token(key)}
+    assert c.get("/search", params={"q": "vergunning", "dossier": "alle"},
+                 headers=alleen).status_code == 200
+    # and with neither, nothing
+    assert c.get("/search", params={"q": "vergunning", "dossier": "alle"}
+                 ).status_code == 401
+
+
+def test_the_key_form_stays_reachable_from_behind_a_provider(session_factory, key):
+    """A way back has to exist on the route people actually use.
+
+    Behind a provider the assertion rides along on every request, so without
+    this door a person there could never choose the key — and the alternative
+    routes are exactly the ones Mark could not reach."""
+    from fastapi.testclient import TestClient
+
+    from wordsworth.api import create_app
+
+    class _Ident:
+        def caller(self, request, now=None):
+            return "mark@westerweel.work" if request.headers.get(
+                "cf-access-jwt-assertion") else None
+
+    app = create_app(session_factory=session_factory, api_keys={"k": "console"})
+    for m in app.user_middleware:
+        if m.cls.__name__ == "ApiKeyAuthMiddleware":
+            m.kwargs["identity"] = _Ident()
+    c = TestClient(app, follow_redirects=False)
+    h = {"cf-access-jwt-assertion": "iets"}
+    vraag = c.get("/console/login", headers=h)
+    assert vraag.status_code == 200 and "API-sleutel" in vraag.text
+    # and logging in there takes precedence over the assertion
+    r = c.post("/console/login", data={"key": "k"}, headers=h)
+    assert r.status_code == 303 and "ww_console" in r.headers["set-cookie"]

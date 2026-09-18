@@ -77,3 +77,24 @@ helemaal niets, dan weigert de lege verzameling alles — dat is de veilige kant
       configmap komen.
 - [ ] De demo-grant staat op `console` en wordt inert; opnieuw uitgeven op een
       e-mailadres is Marks keuze, niet die van dit commando.
+
+## Nagekomen, op Marks verzoek: de sleutel moet een weg terug houden
+
+*"en apikey aub? (weet nog niet of mij deze route bevalt.)"*
+
+Terecht, en het was kapot op precies de route die hij gebruikt. Access zet zijn
+assertie op **élk** verzoek naar `/console`, dus met de identiteit eerst kon hij
+daar nooit iets anders zijn. De weg terug bestond alleen op het tailnet — en dat
+is nu juist het pad dat hij vanaf alma niet bereikt.
+
+Omgedraaid: **een credential dat je zelf meestuurt wint van een dat meelift.**
+Een sleutel presenteren is een bewuste handeling, een geïnjecteerde assertie
+niet. Niet zwakker: beide komen uit dezelfde geconfigureerde verzamelingen, en
+een vervalste header draagt net zo min een geldige sleutel als een vervalste
+assertie een geldige handtekening.
+
+En ik haalde iets weg dat nooit gewerkt had: "sla het sleutelformulier over als
+je al bekend bent" stond op `/console/login`, en die pagina is auth-vrij — de
+middleware draait er niet, dus hij weet per definitie niet wie je bent. Die code
+vuurde nooit. Het formulier is nu altijd bereikbaar, wat ook precies de deur is
+die Mark vroeg. `/console/logout` geeft de identiteit terug.
