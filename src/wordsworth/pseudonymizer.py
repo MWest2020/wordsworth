@@ -56,9 +56,19 @@ def _token(key_material: bytes, label: str, value: str) -> str:
     return hmac.new(key_material, msg, hashlib.sha256).hexdigest()[:8]
 
 
-def _label_of(pseudonym: str) -> str:
-    """The PII type carried in a ``[LABEL:hash]`` token, e.g. ``PERSON``."""
-    return pseudonym[1:pseudonym.index(":")]
+def label_of(pseudonym: str) -> str:
+    """The PII type carried in a ``[LABEL:hash]`` token, e.g. ``PERSON``.
+
+    Publiek, want drie andere modules deden dit met de hand
+    (`token[1:].split(":")[0].upper()`) naast deze functie die er al was. Vier
+    kopieën van dezelfde aanname over tokenvorm: verandert die vorm ooit, dan
+    vindt niemand ze alle vier.
+    """
+    return pseudonym[1:pseudonym.index(":")].upper()
+
+
+#: Oude naam, nog in gebruik binnen deze module.
+_label_of = label_of
 
 
 

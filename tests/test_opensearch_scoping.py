@@ -14,7 +14,6 @@ Deze tests kijken naar wat er de deur uitgaat, met een nepclient. Ze hebben geen
 draaiende OpenSearch nodig en vervangen die ook niet — wat ze bewaken is de
 querybody, want dat is het stuk dat fout kan zonder dat iets het zegt.
 """
-import pytest
 
 from wordsworth.opensearch_index import OpenSearchIndex, _scoped
 

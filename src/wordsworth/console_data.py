@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from .grants import ACTIVE
+from .pseudonymizer import label_of
 from .models import AuditRecord, DocumentPseudonym, GrantRecord
 
 #: Terms offered on the search page. Examples, not a promise: whether one matches
@@ -114,17 +115,6 @@ def grants_for(session, document_id: UUID) -> tuple[list[dict], int]:
     return active, sum(1 for g in rows if g.status != ACTIVE)
 
 
-def token_types(session, document_id: UUID) -> dict[str, int]:
-    """``{LABEL: count}`` for one document, from the registered pseudonyms."""
-    out: dict[str, int] = {}
-    for (token,) in session.execute(
-            select(DocumentPseudonym.pseudonym)
-            .where(DocumentPseudonym.document_id == document_id)):
-        label = token[1:].split(":")[0].upper()
-        out[label] = out.get(label, 0) + 1
-    return out
-
-
 def marked(text: str) -> list[dict]:
     """Split pseudonymised text into plain runs and typed tokens.
 
@@ -172,7 +162,7 @@ def types_per_document(session) -> dict:
                                   DocumentPseudonym.pseudonym))
     out: dict = {}
     for doc_id, token in rows:
-        label = token[1:].split(":")[0].upper()
+        label = label_of(token)
         out.setdefault(doc_id, {})
         out[doc_id][label] = out[doc_id].get(label, 0) + 1
     return out

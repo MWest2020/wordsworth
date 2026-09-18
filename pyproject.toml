@@ -42,6 +42,16 @@ wordsworth-measure-combinations = "wordsworth.measure_combinations:main"
 requires = ["uv_build>=0.11.15,<0.12.0"]
 build-backend = "uv_build"
 
+[tool.ruff]
+# Er stond geen linter, en dus vielen een ongebruikte import en een dode functie
+# niet op -- de codereview vond ze met de hand. Bewust smal: alleen wat
+# aantoonbaar fout is, geen stijlvoorkeuren, want een linter die over smaak
+# klaagt wordt uitgezet.
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F", "E9"]   # echte fouten en syntaxfouten, geen stijl
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

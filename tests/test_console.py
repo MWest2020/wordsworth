@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: MIT
 """The reading console (document-console)."""
-import json
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select

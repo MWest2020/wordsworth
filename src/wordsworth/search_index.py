@@ -81,10 +81,6 @@ class InMemoryIndex:
     # notice except results that are not there. That happened to 770 documents
     # on 2026-09-18. A membership change has no business touching the text or
     # the vector, so it does not get the chance.
-    #: Returns whether the document was there. A membership change updates what
-    #: exists; it does not index a document that never got through the straat —
-    #: that is a different problem and hiding it here would bury it.
-    def set_dossiers(self, document_id: str, dossiers: list[str]) -> bool: ...
     def set_dossiers(self, document_id, dossiers) -> bool:
         if document_id not in self._docs:
             return False

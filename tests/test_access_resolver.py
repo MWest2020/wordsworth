@@ -6,13 +6,12 @@ one signature and start being about a request.
 """
 import base64
 import json
-import time
 
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from wordsworth.access_identity import (AccessError, Verifier, email_from,
+from wordsworth.access_identity import (Verifier, email_from,
                                         public_keys)
 
 TEAM = "raspy-wood-e123.cloudflareaccess.com"
@@ -153,7 +152,7 @@ def test_a_presented_key_wins_over_an_injected_assertion(session_factory, key):
 
     class _Ident:
         def caller(self, request, now=None):
-            from wordsworth.access_identity import email_from, public_keys
+            from wordsworth.access_identity import public_keys
             tok = request.headers.get("cf-access-jwt-assertion", "")
             if not tok:
                 return None

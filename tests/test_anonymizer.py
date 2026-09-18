@@ -1,6 +1,5 @@
 from wordsworth.anonymizer import (
     Anonymizer,
-    AnonymizationResult,
     DeterministicAnonymizer,
 )
 

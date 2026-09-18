@@ -16,12 +16,10 @@ dus niet per se woord-begrensd in de tekst voorkomt.
 """
 from __future__ import annotations
 
-import pytest
 
 from wordsworth.keys import InMemoryKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.openanonymiser_driver import (
-    AnonymizationInvariantError,
     Entity,
 )
 from wordsworth.pseudonymizer import ReversibleAnonymizer

@@ -97,7 +97,7 @@ def test_pipeline_missing_object_errors_clearly(session, born_digital_pdf,
 # --- Integration against a live SeaweedFS (task 3.1) -----------------------
 
 def test_s3_round_trip_against_seaweedfs(monkeypatch):
-    boto3 = pytest.importorskip("boto3")
+    pytest.importorskip("boto3")
     endpoint = os.environ.get("WORDSWORTH_S3_ENDPOINT_URL", "http://localhost:8333")
     monkeypatch.setenv("WORDSWORTH_S3_ENDPOINT_URL", endpoint)
     monkeypatch.setenv("WORDSWORTH_S3_ACCESS_KEY",
