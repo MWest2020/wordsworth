@@ -16,6 +16,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .models import Dossier, DossierDocument
@@ -30,7 +31,19 @@ class DossierError(ValueError):
 
 
 def ensure(session: Session, name: str) -> Dossier:
-    """The dossier with this name, created if it does not exist yet."""
+    """The dossier with this name, created if it does not exist yet.
+
+    Lezen-dan-schrijven is hier een race, en een dure: `Dossier.name` is uniek,
+    dus twee gelijktijdige ingests op een nieuwe naam laten er één blokkeren op
+    de unieke index voor de hele duur van de ander — en in `_ingest_one` omspant
+    die de complete straat voor dat document (extract, anonimiseer, embed,
+    indexeer). Wachten tot dat klaar is levert dan alsnog een IntegrityError op,
+    en die kwam als een 500 naar buiten.
+
+    Het insert staat daarom in een savepoint. Botst hij, dan rolt alleen dat
+    savepoint terug en lezen we wat de ander net heeft geschreven — de sessie
+    eromheen blijft heel, want die draagt het halve werk van een document.
+    """
     name = (name or "").strip()
     if not name:
         raise DossierError("a dossier needs a name")
@@ -40,24 +53,41 @@ def ensure(session: Session, name: str) -> Dossier:
         select(Dossier).where(Dossier.name == name)).scalars().first()
     if found is not None:
         return found
-    created = Dossier(name=name)
-    session.add(created)
-    session.flush()
-    return created
+    try:
+        with session.begin_nested():
+            created = Dossier(name=name)
+            session.add(created)
+            session.flush()
+        return created
+    except IntegrityError:
+        # De ander was eerder. Dat is geen fout: we wilden dat het dossier
+        # bestaat, en dat is nu zo.
+        bestaand = session.execute(
+            select(Dossier).where(Dossier.name == name)).scalars().first()
+        if bestaand is None:
+            raise
+        return bestaand
 
 
 def add(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
     """Make this document a member. Returns whether it was not already one.
 
     Adding an existing membership is not an error: content that already exists
-    being delivered into another case is the normal thing, not a mistake.
+    being delivered into another case is the normal thing, not a mistake. Dat
+    geldt ook als een ander hem net tussen onze lees- en schrijfactie in heeft
+    toegevoegd — zelfde savepoint, zelfde reden als bij `ensure`.
     """
     existing = session.get(DossierDocument, (dossier_id, document_id))
     if existing is not None:
         return False
-    session.add(DossierDocument(dossier_id=dossier_id, document_id=document_id))
-    session.flush()
-    return True
+    try:
+        with session.begin_nested():
+            session.add(DossierDocument(dossier_id=dossier_id,
+                                        document_id=document_id))
+            session.flush()
+        return True
+    except IntegrityError:
+        return False
 
 
 def remove(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
