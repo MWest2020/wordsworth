@@ -37,6 +37,16 @@ class SearchIndex(Protocol):
     def hybrid_search(self, query: str, query_vector: list[float],
                       recall: int = 50,
                       only: list[str] | None = None) -> list[Hit]: ...
+    # Change ONLY the dossiers of a document. Re-indexing to move a membership
+    # replaces the whole document, and a caller who forgets `vector=` silently
+    # destroys the embedding — with no error, no audit record, and no way to
+    # notice except results that are not there. That happened to 770 documents
+    # on 2026-09-18. A membership change has no business touching the text or
+    # the vector, so it does not get the chance.
+    #: Returns whether the document was there. A membership change updates what
+    #: exists; it does not index a document that never got through the straat —
+    #: that is a different problem and hiding it here would bury it.
+    def set_dossiers(self, document_id: str, dossiers: list[str]) -> bool: ...
     def has_object_key(self, object_key: str) -> bool:
         """Is a document with this content key already in the index? Used for
         idempotent ingest — the index is the source of truth for 'searchable',
@@ -64,6 +74,22 @@ class InMemoryIndex:
               dossiers=None) -> None:
         self._docs[document_id] = (text, object_key, vector)  # idempotent upsert
         self._dossiers[document_id] = set(dossiers or ())
+
+    # Change ONLY the dossiers of a document. Re-indexing to move a membership
+    # replaces the whole document, and a caller who forgets `vector=` silently
+    # destroys the embedding — with no error, no audit record, and no way to
+    # notice except results that are not there. That happened to 770 documents
+    # on 2026-09-18. A membership change has no business touching the text or
+    # the vector, so it does not get the chance.
+    #: Returns whether the document was there. A membership change updates what
+    #: exists; it does not index a document that never got through the straat —
+    #: that is a different problem and hiding it here would bury it.
+    def set_dossiers(self, document_id: str, dossiers: list[str]) -> bool: ...
+    def set_dossiers(self, document_id, dossiers) -> bool:
+        if document_id not in self._docs:
+            return False
+        self._dossiers[document_id] = set(dossiers or ())
+        return True
 
     def has_object_key(self, object_key: str) -> bool:
         return any(key == object_key for _t, key, _v in self._docs.values())

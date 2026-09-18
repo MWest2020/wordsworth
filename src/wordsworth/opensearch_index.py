@@ -167,6 +167,26 @@ class OpenSearchIndex:
             body["vector"] = vector
         self._client.index(index=self._index, id=document_id, body=body, refresh=True)
 
+    def set_dossiers(self, document_id, dossiers) -> bool:
+        """Werk alleen het dossierveld bij.
+
+        Een gedeeltelijke update, geen vervanging: `index()` bouwt een vers
+        document en wist daarmee alles wat de aanroeper niet meegaf. Dat kostte
+        op 2026-09-18 de embeddings van 770 documenten, stil — geen fout, geen
+        auditrecord, alleen resultaten die er niet meer waren.
+        """
+        try:
+            self._client.update(index=self._index, id=document_id,
+                                body={"doc": {"dossiers": list(dossiers or ())}},
+                                refresh=True)
+        except Exception as exc:                 # opensearchpy NotFoundError
+            if getattr(exc, "status_code", None) != 404:
+                raise
+            # Not indexed at all — a different problem (it never got through
+            # the straat), and creating it here would bury that.
+            return False
+        return True
+
     def search(self, query: str, size: int = 10, only=None) -> list[Hit]:
         result = self._client.search(
             index=self._index,

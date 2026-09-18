@@ -128,6 +128,9 @@ def test_documents_from_before_dossiers_are_adopted_and_reindexed(session):
     assert {d.id for d in orphans(session)} == {oud.id, zonder_tekst.id}
 
     index = InMemoryIndex()
+    # Zoals in productie: het document stond al in de index, alleen zonder
+    # dossier. De adoptie werkt het dossierveld bij en raakt de rest niet aan.
+    index.index(str(oud.id), "een besluit", "documents/aa", [0.5])
     stats = adopt(session, "corpus-2026-09", index)
     session.commit()
     assert stats["adopted"] == 2
@@ -135,6 +138,7 @@ def test_documents_from_before_dossiers_are_adopted_and_reindexed(session):
 
     ids = {d["name"]: d["id"] for d in dossiers.listing(session)}
     assert index.search("besluit", only=[ids["corpus-2026-09"]])
+    assert index._docs[str(oud.id)][2] == [0.5]      # de vector overleefde
     # and the document that was already placed stayed where it was
     assert dossiers_of(session, al_geplaatst.id) == [ids["zaak"]]
 
