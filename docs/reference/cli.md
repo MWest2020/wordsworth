@@ -106,6 +106,10 @@ a membership the index does not know about is a document a scoped search still
 cannot reach, and then the command would not have done the one thing it exists
 for. `--no-index` skips that and says plainly that a reindex stays due.
 
+`--dry-run` does **not** touch the index. The database can be rolled back; the
+index cannot. The first dry run against production wrote 770 documents before
+this was fixed, which made "dry" a lie.
+
 Run it **after** deploying the new code, not before: in between, the existing
 documents are in no dossier while the new code already requires a scope.
 

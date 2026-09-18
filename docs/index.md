@@ -33,6 +33,8 @@ under `openspec/`.
   - [meting 02](explanation/meting-combinaties-02.md) — 654 of 751 documents
     carry PERSON + DATE_TIME + LOCATION together, and what that number does and
     does not say.
+  - [index mapping](how-to/index-mapping.md) — adding a field to the search
+    index, and why a missing one fails silently rather than loudly.
   - [detection lists](how-to/detection-lists.md) — allow/deny JSON lists,
     `lists_hash` in audit, the feedback endpoint.
   - [dataset pseudonymisation](how-to/dataset-pseudonymisation.md) — CSV
