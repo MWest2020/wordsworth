@@ -1,7 +1,22 @@
 # onderwerpen Specification
 
 ## Purpose
-TBD - created by archiving change onderwerpen. Update Purpose after archive.
+
+Laten zien waar een dossier over gaat, voordat iemand zijn eerste zoekterm
+verzint. Een onderwerp is een groep documenten binnen één dossier, met een naam
+uit de termen die die groep onderscheiden van de rest.
+
+Een onderwerp **versmalt het zoeken en raakt de rangschikking niet.** Dat twee
+documenten op elkaar lijken zegt dat ze op elkaar lijken; het zegt niet dat ze
+allebei antwoord geven op de vraag die iemand stelt. Cluster-lidmaatschap in de
+score verwerken zou de volgorde verschuiven om een reden die niemand aan de
+lezer kan uitleggen.
+
+Daarom staat hier ook wat een onderwerp níet mag zijn: het hele dossier (dan is
+het geen indeling), een naam met een pseudonym-token erin (die belandt op
+schermen, in exports en in URL's, waar de reveal-gate nooit kijkt), of een lijst
+zonder het moment en het aantal waarover gerekend is (die leest als de huidige
+stand van het dossier, ook als hij maanden oud is).
 
 ## Requirements
 
