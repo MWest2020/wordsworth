@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .anonymizer import Anonymizer
 from starlette.middleware.cors import CORSMiddleware
 
+from .console_headers import ConsoleSafety
 from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
                    authorize_grant_issue)
 from .vc import VcError, apply_vc_gate, load_public_key_pem
@@ -323,6 +324,11 @@ def create_app(
         # verbiedt.
         app.include_router(build_router(session_factory, keys, search_index,
                                         _guard_corpus_read))
+        # Wat de browser van dit scherm mag maken: geen iframe (de Onthul-knop
+        # is anders te clickjacken, met het auditspoor op naam van het
+        # slachtoffer) en geen cross-site post (die kan het callerlabel van een
+        # bezoeker wisselen). Alleen op /console; de API verandert niet.
+        app.add_middleware(ConsoleSafety)
         app.mount("/console/static",
                   StaticFiles(directory=str(STATIC_DIR)), name="console-static")
 
