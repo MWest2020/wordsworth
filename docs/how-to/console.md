@@ -134,7 +134,12 @@ identical to a reveal nobody asked anything of.
 
 ## What it deliberately cannot do
 
-It never reveals. Re-identification has exactly one door: the grant-gated,
+It reads the corpus through the same gate as `/documents/{id}/anonymized` and
+`/export`: a caller that `WORDSWORTH_CORPUS_READ_LABELS` refuses there is refused
+here. Until 2026-09-18 it was not, which made the console precisely the second
+door its own docstring forbids.
+
+It never reveals on its own authority. Re-identification has exactly one door: the grant-gated,
 audited `reveal` endpoint (see [grants](grants.md)). An inspection screen that
 may also reveal is a second door with a friendlier name, and it is the one
 nobody audits.

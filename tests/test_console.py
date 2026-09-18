@@ -16,7 +16,8 @@ KEYS = {"s3cret": "mark"}
 
 def _app(session_factory, keys=KEYS):
     return TestClient(create_app(session_factory=session_factory, api_keys=keys),
-                      follow_redirects=False)
+                      follow_redirects=False,
+                      base_url="https://testserver")
 
 
 def _seed(session, key, text):
@@ -204,7 +205,8 @@ def test_an_unknown_path_opens_the_console(session_factory):
 
 def test_without_a_console_nothing_is_redirected(session_factory):
     """Sending a browser to a route that 404s replaces the wall with a circle."""
-    c = TestClient(create_app(api_keys=KEYS), follow_redirects=False)
+    c = TestClient(create_app(api_keys=KEYS), follow_redirects=False,
+                      base_url="https://testserver")
     r = c.get("/documents", headers=HTML)
     assert r.status_code == 401 and r.json()["detail"]
 

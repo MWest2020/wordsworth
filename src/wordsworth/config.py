@@ -197,6 +197,18 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
 
+    @property
+    def rate_limit_login_rate(self) -> float:
+        """Pogingen per seconde op /console/login. Laag: elk verzoek daar is een
+        gok op de sleutelset, en een mens logt een paar keer per dag in."""
+        return float(os.environ.get("WORDSWORTH_RATE_LIMIT_LOGIN_RATE", "0.1"))
+
+    @property
+    def rate_limit_login_burst(self) -> int:
+        """Hoeveel pogingen achter elkaar mogen. Vijf: genoeg om je te
+        vertypen, te weinig om te raden."""
+        return int(os.environ.get("WORDSWORTH_RATE_LIMIT_LOGIN_BURST", "5"))
+
     # --- access-identity ---
     @property
     def access_team_domain(self) -> str:

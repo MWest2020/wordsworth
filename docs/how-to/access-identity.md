@@ -17,7 +17,14 @@ export WORDSWORTH_ACCESS_AUD=<the application's AUD tag>
 ```
 
 Both are required. One without the other yields no verifier and no identity —
-fail-closed, never a warning and an accepted header. Without either, nothing
+fail-closed, never a warning and an accepted header.
+
+**Keep at least one API key.** Not for access — the identity handles that — but
+because dropping them all used to switch off the recipient binding and the
+issuer scope, and this document actively pointed you at that configuration.
+Fixed on 2026-09-18: "is there a caller to decide about" now follows the same
+condition the middleware mounts on. The advice stands anyway: a key is the way
+back in when the provider is unreachable. Without either, nothing
 changes: the API key stays the way in, exactly as before. **A screen that only
 opens behind one vendor is not sovereign software**, so this is opt-in and stays
 that way.
@@ -62,6 +69,15 @@ valid signature.
 `/console/login` stays reachable from behind the provider, and `/console/logout`
 clears the cookie and hands the identity back. That is the switch, in both
 directions.
+
+That form is the one path that is reachable without a key **and** answers
+differently for a right and a wrong one. It is rate-limited harder than anything
+else (five attempts, then one per ten seconds): every request there is a guess.
+An earlier comment claimed it already was, and it was not — twelve attempts gave
+twelve 401s and no 429.
+
+The cookie is marked `Secure`. Its value IS the API key and `Path=/` makes it
+valid for every endpoint, so it has no business travelling over plain http.
 
 ## Before you switch: what goes quiet
 

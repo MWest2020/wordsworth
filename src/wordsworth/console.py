@@ -52,11 +52,21 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def build_router(session_factory, keys: dict[str, str],
-                 search_index=None) -> APIRouter:
+                 search_index=None, guard=None) -> APIRouter:
     router = APIRouter(prefix="/console", tags=["console"])
 
     def _caller(request: Request) -> str:
         return request.scope.get("state", {}).get("caller", "onbekend")
+
+    def _mag_lezen(request: Request) -> None:
+        """Dezelfde poort als /documents/{id}/anonymized en /export.
+
+        Zonder dit toont de console dezelfde gepseudonimiseerde tekst aan een
+        beller die op die endpoints een 403 krijgt — en dan is de console de
+        tweede deur die de docstring hierboven verbiedt.
+        """
+        if guard is not None:
+            guard(request)
 
     @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
     def login_form(request: Request, fout: str = ""):
@@ -91,8 +101,12 @@ def build_router(session_factory, keys: dict[str, str],
         # header: same key set, same label. HttpOnly keeps it away from script,
         # SameSite=strict keeps it off cross-site requests.
         r = RedirectResponse("/console", status_code=303)
+        # Secure: de waarde ÍS de api-sleutel en Path=/ maakt hem geldig voor
+        # elk endpoint. Zonder dit vlaggetje gaat hij mee over een http-verzoek
+        # naar dezelfde host. Mijn docstring noemde HttpOnly en SameSite en sloeg
+        # dit over.
         r.set_cookie(CONSOLE_COOKIE, key, httponly=True, samesite="strict",
-                     max_age=8 * 3600)
+                     secure=True, max_age=8 * 3600)
         return r
 
     @router.get("/logout", include_in_schema=False)
@@ -105,6 +119,7 @@ def build_router(session_factory, keys: dict[str, str],
 
     @router.get("", response_class=HTMLResponse, include_in_schema=False)
     def index(request: Request):
+        _mag_lezen(request)
         with session_factory() as session:
             per_doc = types_per_document(session)
             # Most recently touched first. `documents` has no timestamp — the
@@ -127,11 +142,13 @@ def build_router(session_factory, keys: dict[str, str],
         return TEMPLATES.TemplateResponse(request, "index.html", {
             "docs": docs, "total": total, "caller": _caller(request)})
 
-    console_search.mount(router, session_factory, search_index, TEMPLATES)
+    console_search.mount(router, session_factory, search_index, TEMPLATES,
+                         _mag_lezen)
 
     @router.get("/documents/{document_id}", response_class=HTMLResponse,
                 include_in_schema=False)
     def document(request: Request, document_id: UUID):
+        _mag_lezen(request)
         with session_factory() as session:
             row = session.get(DocumentText, document_id)
             doc = session.get(Document, document_id)
