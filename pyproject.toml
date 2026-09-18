@@ -19,6 +19,10 @@ dependencies = [
     "pydantic>=2",
     "python-multipart>=0.0.18",
     "pypdf>=6.14.2",
+    # Agglomeratieve clustering voor onderwerpen. Kwam tot nu toe mee via zeef;
+    # rechtstreeks gebruiken betekent zelf verklaren, anders verdwijnt hij bij
+    # de eerste keer dat zeef iets anders kiest.
+    "scipy>=1.11",
     "sqlalchemy>=2",
     "uvicorn[standard]>=0.30",
     "gunicorn>=23.0",

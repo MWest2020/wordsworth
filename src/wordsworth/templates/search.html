@@ -20,8 +20,15 @@ brondocument.</p>
  </select>
  <input type="text" name="q" value="{{ q }}" placeholder="vergunning" autofocus
         aria-label="zoekterm" style="flex:1; min-width:14rem">
+ {% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}
  <button class="btn" type="submit">Zoek</button>
 </form>
+{% if topic %}
+<p class="note" style="margin-top:8px">Je zoekt binnen het onderwerp
+<b>{{ onderwerp }}</b>. Dat versmalt waar gezocht wordt en verandert de volgorde
+niet — wat overblijft staat onderling zoals het zonder onderwerp ook zou staan.
+<a href="/console/search?q={{ q|urlencode }}&amp;dossier={{ dossier|urlencode }}">Zoek in het hele dossier</a>.</p>
+{% endif %}
 <p class="note" style="margin-top:8px">Een dossier kiezen is verplicht. "Alle
 dossiers" kan, maar dan zeg je het — een vergeten afbakening mag nooit hetzelfde
 betekenen als geen afbakening.</p>
@@ -38,7 +45,7 @@ belofte dat ze raak zijn — dat hangt af van het corpus dat toevallig geladen i
 {% if q and not fout %}
 <div class="card" style="margin-top:20px">
  <div class="panel-head"><span class="dot"></span><h3>Resultaten</h3>
-   <span class="badge">{{ hits|length }} voor "{{ q }}" in {{ 'alle dossiers' if dossier == 'alle' else dossier }}</span></div>
+   <span class="badge">{{ hits|length }} voor "{{ q }}" in {{ 'alle dossiers' if dossier == 'alle' else dossier }}{% if topic %} · {{ onderwerp }}{% endif %}</span></div>
  {% if hits %}
  <table><tbody>
  {% for h in hits %}

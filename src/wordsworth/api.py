@@ -37,7 +37,7 @@ from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from . import dossiers as dossiers_mod
-from .models import AuditRecord, Document
+from .models import AuditRecord, Document, Dossier
 from .object_store import ObjectStore
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
@@ -123,6 +123,49 @@ class RevealResponse(BaseModel):
     # The same two sets grouped under their AVG legal basis (Art. 6/9/10):
     # {"Art. 6": {"revealed": [...], "withheld": [...]}, ...}
     by_legal_basis: dict[str, dict[str, list[str]]] = {}
+
+
+class TopicResponse(BaseModel):
+    """Eén onderwerp: een groep documenten binnen één dossier.
+
+    ``name`` is wat een mens te zien krijgt, ``computed_name`` waar de groep
+    vandaan komt. Die tweede blijft staan als iemand hernoemt — anders is na één
+    hernoeming niet meer na te vertellen waarom deze documenten bij elkaar
+    staan.
+
+    ``computed_at`` en ``document_count`` horen erbij en niet apart: een
+    onderwerpenlijst zonder moment leest als de huidige stand van het dossier,
+    ook als hij vier maanden oud is.
+    """
+
+    id: str
+    dossier_id: str
+    name: str
+    computed_name: str
+    given_name: str | None
+    computed_at: datetime
+    document_count: int
+
+
+class TopicsResponse(BaseModel):
+    """De onderwerpen van een dossier, met de noemer erbij.
+
+    ``seen``/``with_vector``/``without_topic`` staan er omdat een lijst van vier
+    onderwerpen over acht documenten anders leest als een uitspraak over alle
+    twaalf."""
+
+    dossier_id: str
+    topics: list[TopicResponse]
+    seen: int | None = None
+    with_vector: int | None = None
+    without_topic: int | None = None
+    #: De keuzes waaronder deze indeling tot stand kwam.
+    distance: float | None = None
+    min_size: int | None = None
+
+
+class RenameTopicRequest(BaseModel):
+    name: str
 
 
 class AnonymizedResponse(BaseModel):
@@ -585,16 +628,94 @@ def create_app(
             return _scope_with(session_factory, dossier)
 
         @app.get("/search", summary="Lexical (BM25) search", tags=["read"])
-        def search(q: str, size: int = 10, dossier: str | None = None) -> dict:
+        def search(q: str, size: int = 10, dossier: str | None = None,
+                   topic: str | None = None) -> dict:
             """Full-text search over the anonymized corpus, within a dossier.
 
             ``dossier`` is required: a comma-separated list of names, or
             ``alle`` for every dossier. Leaving it out is a 400 and never a
             search over everything — a forgotten scope must not be able to mean
-            the widest possible answer."""
+            the widest possible answer.
+
+            ``topic`` narrows further, to one topic within that dossier. It only
+            narrows: the documents that remain stand in the same order they
+            would have without it."""
             only = _scope(dossier)
-            hits = search_index.search(q, size=size, only=only)
-            return {"query": q, "dossier": dossier, "hits": [_hit(h) for h in hits]}
+            hits = search_index.search(q, size=size, only=only, topic=topic)
+            return {"query": q, "dossier": dossier, "topic": topic,
+                    "hits": [_hit(h) for h in hits]}
+
+        if session_factory is not None:
+
+            def _topic_out(t) -> TopicResponse:
+                from .topics import display_name
+
+                return TopicResponse(
+                    id=str(t.id), dossier_id=str(t.dossier_id),
+                    name=display_name(t), computed_name=t.computed_name,
+                    given_name=t.given_name, computed_at=t.computed_at,
+                    document_count=t.document_count)
+
+            @app.post("/dossiers/{dossier_id}/topics",
+                      summary="Bereken de onderwerpen van een dossier",
+                      tags=["read"])
+            def compute_topics(dossier_id: UUID) -> TopicsResponse:
+                """Groepeer dit dossier opnieuw en zet de groepen op de
+                documenten.
+
+                Op verzoek en niet bij ingest: één document laat geen
+                onderwerpen zien, en bij elk binnengekomen document het hele
+                dossier herberekenen is werk dat kwadratisch groeit voor een
+                antwoord dat op dat moment niemand leest.
+
+                Vervangt wat er was. Twee generaties naast elkaar levert een
+                lijst op waarvan niemand weet welke helft nog klopt.
+                """
+                from .topics import compute
+
+                with session_factory() as session:
+                    if session.get(Dossier, dossier_id) is None:
+                        raise HTTPException(status_code=404, detail="unknown dossier")
+                    result = compute(session, search_index, dossier_id)
+                    out = TopicsResponse(
+                        dossier_id=str(dossier_id),
+                        topics=[_topic_out(t) for t in result.topics],
+                        seen=result.seen, with_vector=result.with_vector,
+                        without_topic=result.without_topic,
+                        distance=result.distance, min_size=result.min_size)
+                    session.commit()
+                return out
+
+            @app.get("/dossiers/{dossier_id}/topics",
+                     summary="De onderwerpen van een dossier", tags=["read"])
+            def list_topics(dossier_id: UUID) -> TopicsResponse:
+                """Wat er bij de laatste berekening uitkwam, met het moment
+                erbij. Geen onderwerpen betekent: nog niet berekend."""
+                from .topics import listing
+
+                with session_factory() as session:
+                    if session.get(Dossier, dossier_id) is None:
+                        raise HTTPException(status_code=404, detail="unknown dossier")
+                    return TopicsResponse(
+                        dossier_id=str(dossier_id),
+                        topics=[_topic_out(t) for t in listing(session, dossier_id)])
+
+            @app.patch("/topics/{topic_id}", summary="Hernoem een onderwerp",
+                       tags=["read"])
+            def rename_topic(topic_id: UUID, body: RenameTopicRequest
+                             ) -> TopicResponse:
+                """Geef een onderwerp een naam van een mens. De berekende naam
+                blijft opvraagbaar; een lege naam haalt de gegeven naam weg."""
+                from .topics import TopicError, rename
+
+                with session_factory() as session:
+                    try:
+                        topic = rename(session, topic_id, body.name)
+                    except TopicError as exc:
+                        raise HTTPException(status_code=404, detail=str(exc))
+                    out = _topic_out(topic)
+                    session.commit()
+                return out
 
         @app.get("/export/ranking.csv", summary="Export a ranking as CSV",
                  tags=["export"])
@@ -611,14 +732,16 @@ def create_app(
 
             @app.get("/hybrid", summary="Hybrid (BM25 + kNN) search",
                      tags=["read"])
-            def hybrid(q: str, size: int = 10, dossier: str | None = None) -> dict:
+            def hybrid(q: str, size: int = 10, dossier: str | None = None,
+                       topic: str | None = None) -> dict:
                 """RRF recall over BM25 + vector kNN, ranked by cosine. Takes the
-                same required ``dossier`` scope as ``/search``."""
+                same required ``dossier`` scope as ``/search``, and the same
+                optional ``topic`` narrowing within it."""
                 from .hybrid import hybrid_search
 
                 hits = hybrid_search(search_index, embedder, q, size=size,
-                                     only=_scope(dossier))
-                return {"query": q, "dossier": dossier,
+                                     only=_scope(dossier), topic=topic)
+                return {"query": q, "dossier": dossier, "topic": topic,
                         "hits": [_hit(h) for h in hits]}
 
             if generator is not None:

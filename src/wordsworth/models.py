@@ -6,7 +6,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, LargeBinary, String, text
+from sqlalchemy import (BigInteger, DateTime, ForeignKey, Index, Integer, LargeBinary,
+                        String, text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -222,3 +223,32 @@ class DossierDocument(Base):
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False,
         default=lambda: datetime.now(timezone.utc))
+
+
+class Topic(Base):
+    """Een onderwerp: een groep documenten binnen één dossier (onderwerpen).
+
+    Alleen de beschrijving staat hier. Het lidmaatschap staat in de zoekindex,
+    op het `topics`-veld van elk document — en daar alleen. Twee bronnen voor
+    hetzelfde lidmaatschap is precies hoe antwoorden uit elkaar gaan lopen, en
+    de scope die een zoekopdracht toepast kómt uit die index.
+
+    `computed_name` is wat de berekening maakte, `given_name` wat een mens
+    ervan vond. De eerste blijft staan als de tweede er is: waar een groep
+    vandaan komt, blijft navertelbaar.
+    """
+
+    __tablename__ = "topics"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dossier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dossiers.id"), nullable=False, index=True)
+    computed_name: Mapped[str] = mapped_column(String, nullable=False)
+    given_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Waarover en wanneer gerekend is. Zonder deze twee leest een overzicht van
+    # vier maanden oud als de huidige stand van het dossier.
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

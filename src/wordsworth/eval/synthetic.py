@@ -108,4 +108,11 @@ class Document:
         return self
 
     def gold(self) -> dict:
-        return {"id": self.doc_id, "text": self.text, "entities": self.entities}
+        """De waarheid over dit document, inclusief het onderwerp waarvoor het
+        gemaakt is.
+
+        Het onderwerp staat erbij omdat een berekende indeling anders nergens
+        tegen te houden is: zonder bekende indeling is "de clustering ziet er
+        goed uit" een gevoel."""
+        return {"id": self.doc_id, "text": self.text, "entities": self.entities,
+                "topic": self.topic}
