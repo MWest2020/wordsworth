@@ -257,3 +257,26 @@ def test_a_scan_error_in_one_document_does_not_name_the_group(session_factory):
         for scanfout in ("aannemersbedtif", "2anleg", "oofrom"):
             assert scanfout not in alles, f"{scanfout} benoemt een groep van vijf"
         assert "omgevingsvergunning" in alles or "dakkapel" in alles
+
+
+def test_a_term_with_digits_never_names_a_group(session_factory):
+    """Gemeten op het echte corpus: "81in · egeee2 · fdeling", "1485m · 195m ·
+    ddl4", "12112018pdf". Scanfouten en bestandsnamen, geen onderwerpen.
+
+    Hier zit het cijferwoord in élk document van de groep, dus de
+    groepsdrempel uit de vorige test houdt hem niet tegen. Alleen de eis dat een
+    naam uit woorden bestaat doet dat.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "cijfers")
+        index = InMemoryIndex()
+        for i in range(5):
+            _index_doc(index, f"v{i}",
+                       f"omgevingsvergunning dakkapel 12112018pdf 1485m {i}",
+                       [1.0, 0.0, 0.0], [str(d.id)])
+        for i in range(5):
+            _index_doc(index, f"s{i}", f"subsidie cultuur regeling {i}",
+                       [0.0, 1.0, 0.0], [str(d.id)])
+        alles = " ".join(t.computed_name for t in tp.compute(s, index, d.id).topics)
+        assert "12112018pdf" not in alles and "1485m" not in alles
+        assert "omgevingsvergunning" in alles or "dakkapel" in alles

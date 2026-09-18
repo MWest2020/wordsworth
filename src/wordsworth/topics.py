@@ -23,7 +23,6 @@ bron per vraag.
 from __future__ import annotations
 
 import math
-import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -76,11 +75,14 @@ _STOP = {
     "geen", "nog", "wel", "dan", "meer", "al", "je", "haar", "hun", "ze",
 }
 
-#: Puur cijferwerk zegt niets als naam, en een losse hex-staart is precies wat
-#: er van een token overblijft als iemand hem tokeniseert in plaats van
-#: weghaalt.
-_ONLY_DIGITS = re.compile(r"^\d+$")
-_HEXISH = re.compile(r"^[0-9a-f]{6,}$")
+#: Een term moet corpusbreed minstens zo vaak voorkomen voordat hij een groep
+#: mag benoemen — relatief, want op een dossier van tien is drie al veel en op
+#: een dossier van duizend is drie niets. Zie `name_for`.
+_MIN_CORPUS_DF = 0.01
+_MIN_CORPUS_DF_FLOOR = 3
+
+#: Hoe kort een term mag zijn om nog iets te benoemen.
+_MIN_TERM_LEN = 4
 
 
 class TopicError(ValueError):
@@ -110,12 +112,16 @@ def usable_name(term: str) -> bool:
     """Mag deze term in een onderwerpnaam staan?
 
     Tokens zijn er dan al uit (`without_tokens`, vóór het tokeniseren). Dit
-    vangt wat er ná het tokeniseren nog overblijft dat niets benoemt: stopwoorden,
-    kale getallen, en hex-staarten — dat laatste is hoe een token eruitziet als
-    iemand hem per ongeluk stukknipt in plaats van weghaalt.
+    vangt wat er ná het tokeniseren nog overblijft dat niets benoemt:
+    stopwoorden, te korte woorden, en alles waar cijfers in zitten.
+
+    Dat laatste klinkt grof en is gemeten: op het eerste echte corpus leverde
+    het namen als "81in · egeee2 · fdeling", "1485m · 195m · ddl4" en
+    "12112018pdf". Dat zijn scanfouten en bestandsnamen, geen onderwerpen. Een
+    naam is voor een mens; een term met cijfers erin benoemt niets.
     """
-    return (len(term) > 2 and term not in _STOP
-            and not _ONLY_DIGITS.match(term) and not _HEXISH.match(term))
+    return (len(term) >= _MIN_TERM_LEN and term.isalpha()
+            and term not in _STOP)
 
 
 def terms_of(text: str) -> list[str]:
@@ -146,16 +152,21 @@ def name_for(members: list[list[str]], document_frequency: Counter,
     geen van alle een onderwerp.
 
     Dus: minstens twee documenten van de groep, en minstens `_MIN_GROUP_SHARE`
-    ervan. Een typefout haalt die drempel niet; een onderwerp wel.
+    ervan. En corpusbreed minstens `_MIN_CORPUS_DF` van het dossier, want de
+    idf-helft van TF-IDF beloont zeldzaamheid en een scanfout is het zeldzaamste
+    wat er is. Met die twee drempels erbij gaf hetzelfde corpus namen als
+    "avondperiode · bedrijfsduur · berekeningswijze" en
+    "informatiebijeenkomst · nieuws · noodoproep".
     """
     in_group: Counter = Counter()
     for terms in members:
         in_group.update(set(terms))
     drempel = max(2, math.ceil(_MIN_GROUP_SHARE * len(members)))
+    zeldzaam = max(_MIN_CORPUS_DF_FLOOR, round(_MIN_CORPUS_DF * total))
     scored = [
         (count * math.log(total / (1 + document_frequency[term])), term)
         for term, count in in_group.items()
-        if count >= drempel
+        if count >= drempel and document_frequency[term] >= zeldzaam
     ]
     scored.sort(key=lambda p: (-p[0], p[1]))
     best = [term for _score, term in scored[:_NAME_TERMS]]

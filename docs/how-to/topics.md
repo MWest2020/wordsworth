@@ -103,7 +103,26 @@ Zonder die eis kiest TF-IDF met voorliefde OCR-ruis. Een scanfout staat in
 precies één document en nergens anders in het dossier, en scoort daarmee
 maximaal onderscheidend. Het eerste echte corpus gaf namen als
 `2anleg · aannemersbedrif · aannemersbedtif` — drie spellingen van hetzelfde
-woord, geen van alle een onderwerp. Dezelfde vorm die `zeef`
+woord, geen van alle een onderwerp.
+
+Twee eisen erbij, allebei gemeten op datzelfde corpus:
+
+- **een naam bestaat uit woorden**: minstens vier letters, geen cijfers. Dat
+  haalt `81in`, `egeee2`, `1485m`, `ddl4` en `12112018pdf` eruit — scanfouten en
+  bestandsnamen;
+- **en de term is niet corpuszeldzaam**: minstens 1% van het dossier (met een
+  bodem van 3 documenten). De idf-helft van TF-IDF beloont zeldzaamheid, en een
+  scanfout is het zeldzaamste wat er is.
+
+Wat er dan overblijft, op hetzelfde corpus:
+
+    avondperiode · bedrijfsduur · berekeningswijze
+    informatiebijeenkomst · nieuws · noodoproep
+    telefoonnummer · vooraf · precaire
+
+De grootste groep houdt een vlakke naam (`vastgesteld · genoemde · geval`). Dat
+is geen fout in de naamgeving maar een eigenschap van die groep: hij ís
+heterogeen bestuurlijk proza. Een naam die dat verbergt zou slechter zijn. Dezelfde vorm die `zeef`
 onder `--no-llm` gebruikt, en om dezelfde reden: een door een taalmodel bedachte
 titel is een bewering waarvan niemand de herkomst kan navertellen, en dit
 systeem verwerkt persoonsgegevens.
