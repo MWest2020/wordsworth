@@ -54,6 +54,19 @@ temporary one.
 Search is unavailable between the delete and the reindex. That window is short
 and the temporary index holds everything, but it is a window.
 
+## Wie een nieuw veld als eerste schrijft, zorgt eerst voor de mapping
+
+`ensure_ready()` draait in productie alleen langs de ingest-straat. Een nieuwe
+schrijver van een nieuw veld — `topics.compute` bijvoorbeeld, die het
+`topics`-veld zet zonder dat er een document ingelezen wordt — komt daar niet
+langs. Zonder mapping schrijft hij een veld dat OpenSearch dynamisch mapt, met
+het gevolg hierboven: `text` in plaats van `keyword`, en een `term`-filter dat
+niets matcht zonder fout.
+
+Dus: **roep `ensure_ready()` aan vóór de eerste schrijfactie op een nieuw veld**,
+niet alleen bij ingest. Bewaakt door
+`test_the_mapping_is_ensured_before_a_topic_is_ever_written`.
+
 ## Verwant: een dossierfilter hoort in de knn-clause, niet erbuiten
 
 Dezelfde familie fout, andere plek: hij geeft antwoord, het antwoord is alleen
