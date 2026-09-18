@@ -34,7 +34,10 @@ unchanged 401 with its JSON body: a program handed a 303 to an HTML form will
 try to parse the form.
 
 The cookie is a second **transport** for the key, not a second check: the same
-middleware, the same key set, the same caller label. A browser cannot set
+middleware, the same key set, the same caller label. With an identity provider in
+front (see [access identity](access-identity.md)), a presented key still wins —
+logging in here is how you choose the key route, and `/console/logout` hands the
+identity back. A browser cannot set
 `X-API-Key` on a plain navigation, and putting the key in a query string would
 leak it into logs, history and referrers.
 
