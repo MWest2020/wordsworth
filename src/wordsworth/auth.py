@@ -87,10 +87,15 @@ class ApiKeyAuthMiddleware:
 
     def __init__(self, app: ASGIApp, keys: dict[str, str], exempt: frozenset[str],
                  login_path: str | None = None,
-                 exempt_prefixes: tuple[str, ...] = ()) -> None:
+                 exempt_prefixes: tuple[str, ...] = (),
+                 identity=None) -> None:
         self.app = app
         self.keys = dict(keys)
         self.exempt = exempt
+        # An identity provider in front, or None. When present a verified
+        # assertion names a PERSON, and the audit trail can then say who looked
+        # instead of which key was used. When absent nothing changes.
+        self.identity = identity
         # Whole subtrees that carry nothing worth gating — the console's fonts.
         # They also have to be reachable from the login page, which is itself
         # exempt: a login screen rendered without its letters is a broken door.
@@ -106,9 +111,14 @@ class ApiKeyAuthMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope, receive)
-        key = request.headers.get("x-api-key", "") or request.cookies.get(
-            CONSOLE_COOKIE, "")
-        label = self.keys.get(key)
+        # The signature first: it names a person, the key names a keyring. An
+        # invalid assertion yields no identity and nothing else — it is never a
+        # reason to refuse a caller who also holds a valid key.
+        label = self.identity.caller(request) if self.identity else None
+        if label is None:
+            key = request.headers.get("x-api-key", "") or request.cookies.get(
+                CONSOLE_COOKIE, "")
+            label = self.keys.get(key)
         if label is None:
             # A person gets a page; a program gets the API error. A 303 to an
             # HTML form is the wrong answer for a client that will try to parse

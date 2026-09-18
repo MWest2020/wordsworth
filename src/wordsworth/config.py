@@ -197,6 +197,38 @@ class Settings:
         return int(os.environ.get("WORDSWORTH_EMBEDDING_DIM", "1024"))
 
 
+    # --- access-identity ---
+    @property
+    def access_team_domain(self) -> str:
+        """Cloudflare Access team domain, e.g. ``x.cloudflareaccess.com``.
+
+        Empty by default: an installation without such a provider in front must
+        keep working unchanged. A screen that only opens behind one vendor is
+        not sovereign software."""
+        return os.environ.get("WORDSWORTH_ACCESS_TEAM_DOMAIN", "").strip()
+
+    @property
+    def access_audience(self) -> str:
+        """The application's own AUD tag at that provider.
+
+        Required alongside the team domain, and checked without a default: a
+        wrong or absent audience is a silent hole — the assertion verifies fine
+        and belongs to something else."""
+        return os.environ.get("WORDSWORTH_ACCESS_AUD", "").strip()
+
+    @property
+    def access_verifier(self):
+        """The verifier, or None when identity verification is not configured.
+
+        Fail-closed: no configuration means no identity, never a warning and an
+        accepted header."""
+        from .access_identity import Verifier
+
+        if self.access_team_domain and self.access_audience:
+            return Verifier(team_domain=self.access_team_domain,
+                            audience=self.access_audience)
+        return None
+
     # --- add-domain-keys ---
     @property
     def default_domain(self) -> str:

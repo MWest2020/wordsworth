@@ -32,6 +32,7 @@ wordsworth-init = "wordsworth.bootstrap:main"
 wordsworth-backfill-pseudonyms = "wordsworth.backfill_pseudonyms:main"
 wordsworth-backfill-filenames = "wordsworth.backfill_filenames:main"
 wordsworth-backfill-dossier = "wordsworth.backfill_dossier:main"
+wordsworth-access-preflight = "wordsworth.access_preflight:main"
 wordsworth-ingest = "wordsworth.ingest_corpus:main"
 wordsworth-measure-combinations = "wordsworth.measure_combinations:main"
 

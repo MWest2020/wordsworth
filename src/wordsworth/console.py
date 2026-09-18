@@ -60,6 +60,11 @@ def build_router(session_factory, keys: dict[str, str],
 
     @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
     def login_form(request: Request, fout: str = ""):
+        # Already known by name? Then do not ask for a keyring. Asking twice is
+        # what makes people keep a shared key around, which is the thing the
+        # identity was meant to replace.
+        if _caller(request) not in ("onbekend", None):
+            return RedirectResponse("/console", status_code=303)
         return TEMPLATES.TemplateResponse(request, "login.html", {"fout": fout})
 
     @router.post("/login", include_in_schema=False)

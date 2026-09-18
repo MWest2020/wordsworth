@@ -83,6 +83,20 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-access-preflight`
+
+Reports the grants that go inert once callers are identities instead of key
+labels, and changes nothing.
+
+```bash
+wordsworth-access-preflight
+```
+
+A grant names who may reveal and the caller must be that recipient. A recipient
+that is a key label stops matching anybody the moment callers are people. Run
+this **before** switching, not after — see
+[access identity](../how-to/access-identity.md).
+
 ## `wordsworth-backfill-dossier`
 
 Places documents that predate dossiers into one named dossier, so a scoped search

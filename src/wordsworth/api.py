@@ -245,6 +245,7 @@ def create_app(
     key_audit: KeyLifecycleAudit | None = None,
     api_keys: dict[str, str] | None = None,
     cors_allow_origins: list[str] | None = None,
+    access_verifier=None,
     vc_public_key=None,
     vc_expected_issuer: str | None = None,
     vc_expected_vct: str | None = None,
@@ -278,7 +279,16 @@ def create_app(
     # an empty set leaves the API open (unchanged, non-breaking). Added last so
     # it runs first — an unauthenticated caller is rejected before rate-limiting.
     keys = api_keys if api_keys is not None else default_settings.api_keys
-    if keys:
+    # An identity provider in front, when configured. Without it nothing
+    # changes: the key stays the way in, and an installation running without
+    # such a provider keeps working exactly as before.
+    verifier = (access_verifier if access_verifier is not None
+                else default_settings.access_verifier)
+    identity = None
+    if verifier is not None:
+        from .access_identity import Identity
+        identity = Identity(verifier)
+    if keys or identity is not None:
         app.add_middleware(
             # The console's login page is exempt from AUTH only — you cannot
             # bring a key to the page that asks for one. It stays subject to
@@ -286,6 +296,7 @@ def create_app(
             ApiKeyAuthMiddleware, keys=keys,
             exempt=EXEMPT_PATHS | {"/console/login"},
             exempt_prefixes=("/console/static/",),
+            identity=identity,
             # Only when there is a console to send someone to.
             login_path="/console/login" if session_factory is not None else None,
         )
