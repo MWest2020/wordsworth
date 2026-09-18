@@ -341,8 +341,21 @@ def create_app(
 
         @app.exception_handler(404)
         def not_found(request: Request, exc):
-            """A mistyped path is not a reason to show someone a JSON body."""
-            if wants_html(request.headers.get("accept", "")):
+            """Een verkeerd getypt PAD stuurt een browser naar de console.
+
+            Alleen een pad dat nergens op uitkomt. Een 404 uit een route --
+            "unknown document", "unknown grant" -- is een antwoord over iets wat
+            je vroeg, en dat mag niet verdwijnen achter een omleiding: dan ziet
+            een mens nooit dat het document niet bestaat, en een controle op een
+            document-URL leest de 303 als gezond.
+
+            `request.scope["route"]` wordt alleen gezet als er een route matchte.
+            Dat verschil is precies de grens die de spec beschrijft ("a path that
+            matches no route") en die de eerste versie niet trok.
+            """
+            matchte_een_route = request.scope.get("route") is not None
+            if not matchte_een_route and wants_html(
+                    request.headers.get("accept", "")):
                 return RedirectResponse("/console", status_code=303)
             return JSONResponse({"detail": getattr(exc, "detail", "not found")},
                                 status_code=404)

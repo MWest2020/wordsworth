@@ -112,6 +112,13 @@ the wall with a circle.
 - **WHEN** a browser requests a path that matches no route
 - **THEN** it is redirected to the console
 
+#### Scenario: A resource that does not exist stays a refusal
+
+- **WHEN** a route matches and answers 404 — an unknown document, an unknown
+  grant — and the caller asked for HTML
+- **THEN** the 404 stands, because it is an answer about what was asked for and
+  hiding it behind a redirect makes "does not exist" invisible
+
 #### Scenario: An API client still gets an API error
 
 - **WHEN** a request without an HTML `Accept` header is refused

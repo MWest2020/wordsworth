@@ -29,6 +29,12 @@ A wrong key is refused at the form, not stored — otherwise a typo hands you a
 cookie that leads back to the same refusal, with the added confusion of having
 apparently logged in.
 
+Only a path that matches **no route** is redirected. A 404 that a route itself
+answers — an unknown document, an unknown grant — stays a 404, also for a
+browser: it is an answer about what you asked for, and hiding it behind a
+redirect makes "does not exist" invisible and lets a monitoring check read the
+303 as healthy.
+
 Only a request that asks for HTML is redirected. An API client keeps getting the
 unchanged 401 with its JSON body: a program handed a 303 to an HTML form will
 try to parse the form.
