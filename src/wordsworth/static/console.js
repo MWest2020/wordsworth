@@ -16,41 +16,59 @@
 // een kort of herhaald stuk tekst kan er net naast zitten, en dan klopt het
 // terugbouwen niet meer.
 function wwAlign(segments, revealed) {
-  var out = [], pos = 0;
-  for (var i = 0; i < segments.length; i++) {
-    var s = segments[i];
-    if (!s.token) {
-      if (revealed.substr(pos, s.text.length) !== s.text) return null;
-      out.push({ token: false, text: s.text });
-      pos += s.text.length;
-      continue;
-    }
-    // Staan er achter dit token geen tokens meer, dan ligt de staart vast en
-    // is het einde exact te berekenen -- geen zoeken, geen gok. Dat vangt het
-    // gewone geval van een token dat op een punt of een komma eindigt, waar een
-    // ankerregel op lengte onnodig zou afhaken.
-    var restIsLiteral = true, tail = 0;
-    for (var j = i + 1; j < segments.length; j++) {
-      if (segments[j].token) { restIsLiteral = false; break; }
-      tail += segments[j].text.length;
-    }
-    var end;
-    if (restIsLiteral) {
-      end = revealed.length - tail;
-      if (end < pos) return null;
-    } else {
-      var next = segments[i + 1].text;
-      // Zoeken kan er alleen naast zitten als het anker kort of herhaald is.
-      if (next.length < 3) return null;
-      end = revealed.indexOf(next, pos);
-      if (end < 0) return null;
-    }
-    var value = revealed.slice(pos, end);
-    out.push({ token: true, text: value, revealed: value !== s.text, type: s.type });
-    pos = end;
+  var gevonden = [];
+  zoek(segments, revealed, 0, 0, [], gevonden);
+  // Precies één manier om dit te lezen, of we zeggen niets. Twee uitlijningen
+  // betekent dat wij niet weten welke waarde bij welk type hoort, en een
+  // verkeerde markering is erger dan geen: de lezer moet juist beoordelen of de
+  // pseudonimisering klopt.
+  return gevonden.length === 1 ? gevonden[0] : null;
+}
+
+// Alle volledige uitlijningen, tot er twee zijn -- meer hoeven we niet te weten.
+function zoek(segments, revealed, i, pos, tot_nu, uit) {
+  if (uit.length > 1) return;
+  if (i === segments.length) {
+    if (pos === revealed.length) uit.push(tot_nu.slice());
+    return;
   }
-  if (out.map(function (o) { return o.text; }).join("") !== revealed) return null;
-  return out;
+  var s = segments[i];
+  if (!s.token) {
+    if (revealed.substr(pos, s.text.length) !== s.text) return;
+    tot_nu.push({ token: false, text: s.text });
+    zoek(segments, revealed, i + 1, pos + s.text.length, tot_nu, uit);
+    tot_nu.pop();
+    return;
+  }
+  // Staan er hierachter geen tokens meer, dan ligt de staart vast en is het
+  // einde exact te berekenen -- geen zoeken, geen gok.
+  var staart = 0, alleen_letterlijk = true;
+  for (var j = i + 1; j < segments.length; j++) {
+    if (segments[j].token) { alleen_letterlijk = false; break; }
+    staart += segments[j].text.length;
+  }
+  var kandidaten = [];
+  if (alleen_letterlijk) {
+    var eind = revealed.length - staart;
+    if (eind >= pos) kandidaten.push(eind);
+  } else {
+    // Elke plek waar het volgende letterlijke stuk staat is een mogelijkheid.
+    // De eerste pakken is precies de gok die "Piet over 123456782" als een
+    // BSN markeerde.
+    var volgend = segments[i + 1].text;
+    if (volgend === "") return;                 // twee tokens tegen elkaar
+    for (var k = revealed.indexOf(volgend, pos); k >= 0;
+         k = revealed.indexOf(volgend, k + 1)) {
+      kandidaten.push(k);
+    }
+  }
+  for (var c = 0; c < kandidaten.length && uit.length < 2; c++) {
+    var waarde = revealed.slice(pos, kandidaten[c]);
+    tot_nu.push({ token: true, text: waarde, revealed: waarde !== s.text,
+                  type: s.type });
+    zoek(segments, revealed, i + 1, kandidaten[c], tot_nu, uit);
+    tot_nu.pop();
+  }
 }
 
 if (typeof module !== "undefined" && module.exports) { module.exports = { wwAlign: wwAlign }; }

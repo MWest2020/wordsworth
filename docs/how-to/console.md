@@ -132,6 +132,17 @@ It separates **resolved** from **requested**: a token minted under a key this
 deployment no longer holds resolves to nothing, and one list would make that look
 identical to a reveal nobody asked anything of.
 
+## Marking which value was revealed
+
+After a reveal the page marks which value replaced which token. It works that
+out by anchoring on the literal text around them, which does not change.
+
+If there is **more than one way** to read the text, it marks nothing and shows
+the revealed text plain. That case is real: when a revealed value happens to
+contain the same literal that follows it, the old code took the first match and
+labelled `Piet over 123456782` as a BSN. The reader is there to judge whether the
+pseudonymisation is right, so a wrong label is worse than none.
+
 ## What the browser is allowed to do with it
 
 The console sends `Content-Security-Policy` with `frame-ancestors 'none'`, plus
