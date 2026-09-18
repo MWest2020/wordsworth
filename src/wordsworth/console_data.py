@@ -67,7 +67,11 @@ def reveal_history(session, document_id: UUID) -> list[dict]:
     for r in rows:
         p = r.payload or {}
         resolved = sorted(p.get("types") or [])
-        requested = sorted(p.get("requested_types") or [])
+        gevraagd = p.get("requested_types") or []
+        # Oude records droegen hier de string "all"; die niet als losse letters
+        # uitpakken.
+        requested = sorted(gevraagd) if isinstance(gevraagd, list) else []
+        alles = p.get("requested_all") or gevraagd == "all"
         out.append({
             "ts": r.ts,
             "caller": p.get("caller") or p.get("actor") or "—",
@@ -76,6 +80,7 @@ def reveal_history(session, document_id: UUID) -> list[dict]:
             "requested": requested,
             # Asked for and not resolved: the interesting case, and the one a
             # single list hides.
+            "alles_gevraagd": alles,
             "unresolved": [t for t in requested if t not in resolved],
             "withheld": sorted(p.get("withheld_types") or []),
             "seq": r.seq,

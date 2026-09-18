@@ -6,7 +6,7 @@ machine — a phantom "system document" would pollute it). Rotation events get
 their own append-only stream instead, behind a driver seam.
 
 The included driver reuses zeef's audit-JSONL (``zeef.audit.AuditLog``,
-EUPL-1.2): one JSON event per line, append-only, never rewritten. Events carry
+MIT): one JSON event per line, append-only, never rewritten. Events carry
 key *ids*, a re-encryption count, and the actor — never key material."""
 from __future__ import annotations
 
