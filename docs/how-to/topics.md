@@ -92,6 +92,18 @@ zélf heeft, en gezocht wordt de hóógste snede waarbij geen groep groter is da
 `max_share` (standaard 25%). Grof is goed, zolang het antwoord op "waar gaat dit
 over" niet "hier gaat het over" is.
 
+### Kleine dossiers
+
+Bij tien documenten mag een groep hoogstens 2,5 documenten hebben (25%) én moet
+hij er minstens 3 hebben (`min_size`). Die twee regels sluiten elkaar uit, en
+het antwoord werd **"geen onderwerpen"** — vijf van de tien dossiers in
+productie kregen dat, niet omdat ze geen onderwerpen hebben maar omdat de regels
+elkaar opheffen.
+
+Is het aandeel op dit dossier onhaalbaar, dan geldt het niet, en blijft de eis
+over waar het echt om gaat: **meer dan één groep.** Eén groep die alles is, is
+geen indeling; twee groepen van vijf in een dossier van tien is dat wel.
+
 ## Namen
 
 De berekende naam bestaat uit de drie meest onderscheidende termen (TF-IDF over

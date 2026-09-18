@@ -280,3 +280,46 @@ def test_a_term_with_digits_never_names_a_group(session_factory):
         alles = " ".join(t.computed_name for t in tp.compute(s, index, d.id).topics)
         assert "12112018pdf" not in alles and "1485m" not in alles
         assert "omgevingsvergunning" in alles or "dakkapel" in alles
+
+
+def test_a_small_dossier_can_still_have_topics(session_factory):
+    """Twee regels die elkaar uitsluiten leverden geen fout op maar een leeg
+    antwoord: "geen onderwerpen".
+
+    Bij tien documenten mag een groep hoogstens 2,5 documenten hebben
+    (max_share 25%) én moet hij er minstens 3 hebben (min_size). Er bestaat dan
+    geen enkele geldige groep. Vijf van de tien dossiers in productie kregen zo
+    een leeg overzicht — niet omdat ze geen onderwerpen hebben, maar omdat de
+    regels elkaar opheffen.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "klein")
+        index = InMemoryIndex()
+        # Lijkend maar niet identiek, zoals echte documenten: ze vloeien pas
+        # samen bóven hoogte nul. Met identieke vectoren zou dit geval zichzelf
+        # oplossen en bewijst de test niets.
+        for i in range(5):
+            _index_doc(index, f"v{i}", f"omgevingsvergunning dakkapel welstand {i}",
+                       [1.0, 0.01 * i, 0.0], [str(d.id)])
+        for i in range(5):
+            _index_doc(index, f"s{i}", f"subsidie sportvereniging jeugd {i}",
+                       [0.0, 1.0, 0.01 * i], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
+        assert len(uitkomst.topics) >= 2, "tien documenten, twee groepen, niets"
+        assert uitkomst.without_topic < 10
+
+
+def test_the_share_still_binds_once_the_dossier_is_big_enough(session_factory):
+    """De uitzondering hierboven mag de regel niet opeten: zodra het dossier
+    groot genoeg is dat beide regels tegelijk kunnen, geldt het aandeel weer."""
+    with session_factory() as s:
+        d = _dossier(s, "groot-genoeg")
+        index = InMemoryIndex()
+        for kern in range(4):
+            for i in range(10):
+                hoek = 0.05 * kern + 0.002 * i
+                _index_doc(index, f"k{kern}-{i}", f"besluit onderwerp{kern} {i}",
+                           [1.0, hoek, hoek * hoek], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
+        grootste = max(t.document_count for t in uitkomst.topics)
+        assert grootste <= 0.25 * uitkomst.with_vector
