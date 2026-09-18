@@ -33,6 +33,8 @@ wordsworth-backfill-pseudonyms = "wordsworth.backfill_pseudonyms:main"
 wordsworth-backfill-filenames = "wordsworth.backfill_filenames:main"
 wordsworth-backfill-dossier = "wordsworth.backfill_dossier:main"
 wordsworth-access-preflight = "wordsworth.access_preflight:main"
+wordsworth-dossier-uit-herkomst = "wordsworth.dossier_tools:main_assign"
+wordsworth-dossier-hernoem = "wordsworth.dossier_tools:main_rename"
 wordsworth-ingest = "wordsworth.ingest_corpus:main"
 wordsworth-measure-combinations = "wordsworth.measure_combinations:main"
 
