@@ -102,6 +102,36 @@ def _scoped(query: dict, only) -> dict:
                      "filter": [{"terms": {"dossiers": list(only)}}]}}
 
 
+def _scoped_knn(query_vector, recall: int, only) -> dict:
+    """De kNN-helft met het dossierfilter BINNEN de knn-clause.
+
+    Voor de lexicale helft is ``_scoped`` goed: een ``bool.filter`` naast de
+    zoekvraag versmalt zonder de score te raken. Voor kNN doet diezelfde
+    plaatsing iets anders. De knn-clause levert eerst de globale top-k en het
+    filter gooit daarna weg wat niet in het dossier zit — een ná-filter. In een
+    corpus met één groot dossier valt dat niet op; in een klein dossier houdt
+    het niets over.
+
+    Gemeten op 18-09 tegen de draaiende index, 770 documenten, zoekvector uit
+    het grootste dossier (567 documenten), scope een dossier van 2:
+
+        k=10  | filter buiten: 0 treffers | filter binnen: 2
+        k=50  | filter buiten: 0 treffers | filter binnen: 2
+        k=200 | filter buiten: 1 treffer  | filter binnen: 2
+
+    Nul. De hybride zoekopdracht gaf dus wel antwoorden — van de lexicale helft
+    — maar de vectorhelft droeg stilletjes niets bij. Geen fout, geen lege
+    uitslag, alleen minder dan je denkt.
+
+    De mapping gebruikt engine ``lucene``, en dat is waarom dit kan: die
+    ondersteunt filteren tijdens het doorlopen van de graaf.
+    """
+    clause: dict = {"vector": query_vector, "k": recall}
+    if only is not None:
+        clause["filter"] = {"terms": {"dossiers": list(only)}}
+    return {"knn": {"vector": clause}}
+
+
 class OpenSearchIndex:
     def __init__(self, client, index_name: str, dim: int):
         self._client = client
@@ -207,8 +237,7 @@ class OpenSearchIndex:
             {"query": _scoped(_bm25(query), only), "size": recall, "_source": False}
         )
         knn = self._ranked_ids(
-            {"query": _scoped(
-                {"knn": {"vector": {"vector": query_vector, "k": recall}}}, only),
+            {"query": _scoped_knn(query_vector, recall, only),
              "size": recall, "_source": False}
         )
         fused = fuse_ranked_ids([bm25, knn])[:recall]
