@@ -55,6 +55,18 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
 - **Banned dependencies:** `anonypy`; MinIO (open-source edition deprecated
   April 2026 — use Ceph RGW or SeaweedFS behind the S3 seam); CyberArk/Conjur.
 
+## Working on this
+
+`uvx ruff check src/ tests/` before opening a PR. Deliberately narrow — `F` and
+`E9`, real errors only, no style. A linter that argues about taste gets switched
+off, and then it never catches the things it is for: its first run found a
+protocol stub that had landed inside an implementation class and shadowed it,
+and a test whose comment claimed a sanity check it did not make.
+
+One token, one place that reads it: `pseudonymizer.label_of()`. The same
+`[LABEL:hash]` parse used to live in four places, and a change to the token shape
+would have found three of them.
+
 ## Reused components
 
 - [OpenAnonymiser](https://github.com/ConductionNL/openanonymiser_light)
