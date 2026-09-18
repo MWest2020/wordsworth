@@ -35,22 +35,37 @@ assert.strictEqual(tail[1].text, "Janine van Dijk");
 assert.strictEqual(
   wwAlign([L("x "), T("[A:11111111]"), L(""), T("[B:22222222]")], "x ab"), null);
 
-// 6. een anker van minder dan drie tekens wordt niet vertrouwd
-assert.strictEqual(
-  wwAlign([L("x "), T("[A:11111111]"), L(", "), T("[B:22222222]"), L(" eind")],
-          "x waarde, ander eind"), null);
+// 6. een kort anker mag, zolang er maar één manier is om het te lezen
+const kort = wwAlign([L("x "), T("[A:11111111]"), L(", "), T("[B:22222222]"), L(" eind")],
+                     "x waarde, ander eind");
+assert.deepStrictEqual(kort.filter((p) => p.token).map((p) => p.text),
+                       ["waarde", "ander"]);
 
 // 7. letterlijke tekst die niet klopt -> null, geen halve uitlijning
 assert.strictEqual(
   wwAlign([L("Aan "), T("[PERSON:aabbccdd]"), L(" te Nijmegen.")],
           "Iets heel anders"), null);
 
-// 8. de valkuil waar de sluitcontrole voor is: de onthulde waarde bevat zelf
-//    het anker. Verankeren pakt dan de eerste treffer en dat is de verkeerde;
-//    het terugbouwen klopt nog wel, dus dit geeft een FOUTE splitsing -- maar
-//    de tekst die de lezer ziet is nog steeds exact de onthulde tekst.
-const trap = wwAlign([L("a "), T("[X:11111111]"), L(" mid "), T("[Y:22222222]"), L(" z")],
-                     "a een mid stuk mid twee z");
-assert.ok(trap === null || trap.map((p) => p.text).join("") === "a een mid stuk mid twee z");
+// 8. DE VALKUIL, en tot 18-09 assertte deze test iets dat altijd waar was.
+//    De onthulde waarde bevat zelf het anker, dus er zijn twee manieren om de
+//    tekst te lezen. Vroeger pakte hij de eerste en markeerde "Piet over
+//    123456782" als een BSN -- een onjuiste uitspraak aan de lezer die juist
+//    moet beoordelen of de pseudonimisering klopt. Nu: twee lezingen betekent
+//    dat wij het niet weten, en dan zeggen we niets.
+assert.strictEqual(
+  wwAlign([L("a "), T("[X:11111111]"), L(" mid "), T("[Y:22222222]"), L(" z")],
+          "a een mid stuk mid twee z"), null);
+
+// 8b. hetzelfde met echte namen, zoals de codereview het reproduceerde
+assert.strictEqual(
+  wwAlign([L("Aan "), T("[PERSON:aaaaaaaa]"), L(" over "), T("[BSN:bbbbbbbb]"), L(".")],
+          "Aan Jan over Piet over 123456782."), null);
+
+// 8c. eenduidig blijft eenduidig: dezelfde vorm, een anker dat maar een keer past
+assert.deepStrictEqual(
+  wwAlign([L("Aan "), T("[PERSON:aaaaaaaa]"), L(", bsn "), T("[BSN:bbbbbbbb]"), L(".")],
+          "Aan Janine van Dijk, bsn 123456782.")
+    .filter((p) => p.token).map((p) => p.text),
+  ["Janine van Dijk", "123456782"]);
 
 console.log("console.js uitlijning: alle gevallen goed");
