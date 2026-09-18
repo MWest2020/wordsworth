@@ -173,8 +173,8 @@ def name_for(members: list[list[str]], document_frequency: Counter,
     return " · ".join(best) if best else "zonder onderscheidende termen"
 
 
-def _clusters(vectors: list[list[float]], max_share: float = DEFAULT_MAX_SHARE
-              ) -> tuple[list[int], float]:
+def _clusters(vectors: list[list[float]], max_share: float = DEFAULT_MAX_SHARE,
+              min_size: int = DEFAULT_MIN_SIZE) -> tuple[list[int], float]:
     """Agglomeratieve clustering (average linkage, cosinusafstand).
 
     Geeft de indeling én de afstand waarop geknipt is. Dat tweede hoort erbij:
@@ -185,6 +185,13 @@ def _clusters(vectors: list[list[float]], max_share: float = DEFAULT_MAX_SHARE
     hóógste snede waarbij geen groep nog groter is dan `max_share` van het
     geheel: hoe hoger, hoe grover, en grof is goed zolang geen onderwerp het
     dossier wordt.
+
+    Is dat aandeel op dit dossier onhaalbaar naast `min_size` — bij tien
+    documenten mag een groep hoogstens 2,5 documenten hebben en moet hij er
+    minstens 3 hebben — dan geldt het aandeel niet en blijft de eis over waar
+    het echt om gaat: meer dan één groep. Zonder die uitweg krijgt een klein
+    dossier "geen onderwerpen", en dat is een leeg antwoord op een regel die
+    zichzelf tegenspreekt, niet op de documenten.
 
     Geen lijstje vaste afstanden om te proberen. Dat lijstje zou zelf weer een
     aanname over corpusdichtheid zijn, en precies daaraan ging de vaste 0.45 ten
@@ -217,6 +224,9 @@ def _clusters(vectors: list[list[float]], max_share: float = DEFAULT_MAX_SHARE
     def past(hoogte: float) -> bool:
         return max(_Counter(indeling(hoogte)).values()) <= grens
 
+    def groepen(hoogte: float) -> int:
+        return sum(1 for n in _Counter(indeling(hoogte)).values() if n >= min_size)
+
     laag, hoog = 0, len(hoogtes) - 1
     beste = 0
     while laag <= hoog:
@@ -226,6 +236,23 @@ def _clusters(vectors: list[list[float]], max_share: float = DEFAULT_MAX_SHARE
             laag = midden + 1
         else:
             hoog = midden - 1
+
+    if groepen(hoogtes[beste]) == 0:
+        # Het aandeel is op dit dossier niet haalbaar samen met de ondergrens.
+        # Bij tien documenten mag een groep hoogstens 2,5 documenten hebben én
+        # moet hij er minstens 3 hebben: er bestaat geen geldige groep, en het
+        # antwoord werd "geen onderwerpen". Vijf van de tien dossiers in
+        # productie kregen dat, niet omdat ze geen onderwerpen hebben maar omdat
+        # de twee regels elkaar opheffen.
+        #
+        # Dan geldt het aandeel niet. Wat blijft is de eis waar het echt om
+        # gaat: meer dan één groep, want één groep die alles is, is geen
+        # indeling. De hóógste snede die er twee oplevert — grof, zoals overal
+        # hierboven.
+        for i in range(len(hoogtes) - 1, -1, -1):
+            if groepen(hoogtes[i]) >= 2:
+                beste = i
+                break
     # Niet afronden: op een dicht corpus liggen de hoogtes rond 1e-4, en dan
     # maakt afronden op vier decimalen er 0.0 van — een getal dat zegt dat er
     # niet geknipt is terwijl dat wel gebeurd is. Afronden is voor het scherm.
@@ -253,7 +280,8 @@ def compute(session: Session, index: SearchIndex, dossier_id: UUID, *,
     docs = index.documents_in(key)
     with_vector = [d for d in docs if d.vector]
 
-    labels, distance = _clusters([d.vector for d in with_vector], max_share)
+    labels, distance = _clusters([d.vector for d in with_vector], max_share,
+                                 min_size)
     grouped: dict[int, list[IndexedDocument]] = {}
     for label, doc in zip(labels, with_vector):
         grouped.setdefault(label, []).append(doc)
