@@ -42,22 +42,25 @@ def adopt(session, name: str, index=None) -> dict:
     found = orphans(session)
     if not found:
         return {"dossier": name, "adopted": 0, "already_placed": True,
-                "reindexed": 0, "without_text": 0}
+                "reindexed": 0, "without_text": 0, "niet_geindexeerd": 0}
     dossier = dossiers.ensure(session, name)
     added = [d for d in found if dossiers.add(session, dossier.id, d.id)]
-    reindexed = without_text = 0
+    reindexed = without_text = niet_geindexeerd = 0
     for doc in added if index is not None else []:
-        text = get_anonymized_text(session, doc.id)
-        if text is None:
+        if get_anonymized_text(session, doc.id) is None:
             # Never indexed in the first place (never got through the straat),
             # so there is nothing to update and nothing was lost.
             without_text += 1
             continue
-        index.index(str(doc.id), text, doc.object_key,
-                    dossiers=dossiers_of(session, doc.id))
-        reindexed += 1
+        # Only the dossiers. An earlier version wrote the whole document back
+        # and dropped every embedding in the corpus doing it.
+        if index.set_dossiers(str(doc.id), dossiers_of(session, doc.id)):
+            reindexed += 1
+        else:
+            niet_geindexeerd += 1
     return {"dossier": name, "adopted": len(added), "already_placed": False,
-            "reindexed": reindexed, "without_text": without_text}
+            "reindexed": reindexed, "without_text": without_text,
+            "niet_geindexeerd": niet_geindexeerd}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  index bijgewerkt       : {stats['reindexed']}")
         print(f"  zonder opgeslagen tekst: {stats['without_text']} "
               f"(stond nooit in de index)")
+        if stats.get("niet_geindexeerd"):
+            print(f"  wel tekst, niet in de index: {stats['niet_geindexeerd']} "
+                  f"(die zijn ook zonder dossier onvindbaar)")
         if args.no_index or args.dry_run:
             print("  LET OP: de index is niet bijgewerkt; tot een herindexering "
                   "vindt een gescopete zoekopdracht deze documenten niet")

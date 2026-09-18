@@ -98,6 +98,15 @@ source URL and the decision it belongs to. A document with no provenance entry i
 **not assigned** and is counted. A classification derived from a date or a text
 pattern is one nobody can retell afterwards, and that is worse than none.
 
+Both commands **update the search index**, because the dossiers live there per
+document: a membership the index does not know about is a document a scoped
+search cannot reach. They update *only* that field — writing the whole document
+back drops the embedding of any caller who forgets `vector=`, which is exactly
+what cost 770 documents their vectors on 2026-09-18.
+
+A document that is not in the index at all is **reported, not created**. It never
+got through the straat, and indexing it here would bury that under this.
+
 `--weg-uit` removes them from a dossier they were wrongly placed in, once they
 are somewhere else. If that leaves documents belonging nowhere at all, the count
 is reported — such a document is invisible to every scoped search, and the moment

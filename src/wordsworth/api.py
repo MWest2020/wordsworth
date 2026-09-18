@@ -632,16 +632,27 @@ def create_app(
                         Document.object_key == key)).scalars().first()
                     added = bool(doc and dossier and dossiers_mod.add(
                         session, dossiers_mod.ensure(session, dossier).id, doc.id))
+                    if doc is None:
+                        # The index knows this content but the document row is
+                        # gone. Nothing to add a membership to, and reporting
+                        # "skipped" would claim a success this request did not
+                        # have.
+                        raise HTTPException(
+                            status_code=409,
+                            detail="content is indexed but its document is gone; "
+                                   "reindex before ingesting it again")
                     if added:
-                        # The index holds the dossiers per document; a new
-                        # membership has to reach it too.
-                        text = get_anonymized_text(session, doc.id)
-                        if text is not None:
-                            search_index.index(str(doc.id), text, key,
-                                               dossiers=dossiers_of(session, doc.id))
-                    session.commit()
+                        # A membership change touches ONLY the dossiers. Writing
+                        # the whole document back would drop the embedding of
+                        # any caller who forgets `vector=` — which is exactly
+                        # what cost 770 documents their vectors on 2026-09-18.
+                        session.commit()
+                        search_index.set_dossiers(
+                            str(doc.id), dossiers_of(session, doc.id))
+                    else:
+                        session.commit()
                     return {"state": "added_to_dossier" if added else "skipped",
-                            "document_id": str(doc.id) if doc else None}
+                            "document_id": str(doc.id)}
             with session_factory() as session:
                 # Reversible mode binds a fresh session-scoped anonymizer (durable
                 # keys + mapping store) per document; default mode uses the shared

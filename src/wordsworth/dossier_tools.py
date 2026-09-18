@@ -52,8 +52,19 @@ def naam_van(herkomst: str) -> str:
     return slug.replace("-", " ").strip()
 
 
-def assign(session, mapping: dict[str, str], weg_uit: str | None = None) -> dict:
-    """Zet elk document met een herkomstregel in het dossier van die herkomst."""
+def assign(session, mapping: dict[str, str], weg_uit: str | None = None,
+           index=None) -> dict:
+    """Zet elk document met een herkomstregel in het dossier van die herkomst.
+
+    De index moet mee. Het dossier zit per document IN de index, dus een
+    lidmaatschap verplaatsen in de database alleen laat een zoekopdracht op het
+    nieuwe dossier niets vinden en op het oude nog wél — precies het scenario
+    dat de spec belooft en dat de eerste versie hiervan niet bouwde. Op
+    2026-09-18 moest dat met de hand worden rechtgezet.
+
+    Alleen het dossierveld, nooit het hele document: dat laatste wist de
+    embedding van wie `vector=` vergeet.
+    """
     bron = None
     if weg_uit:
         bron = session.execute(select(dossiers.Dossier).where(
@@ -73,10 +84,20 @@ def assign(session, mapping: dict[str, str], weg_uit: str | None = None) -> dict
         dossiers.add(session, doel.id, doc.id)
         if bron is not None:
             dossiers.remove(session, bron.id, doc.id)
+        if index is not None:
+            index.set_dossiers(str(doc.id), [str(d) for d in _dossier_ids(session, doc.id)])
         per_dossier[naam] = per_dossier.get(naam, 0) + 1
         toegewezen += 1
     return {"toegewezen": toegewezen, "zonder_herkomst": zonder_herkomst,
             "per_dossier": per_dossier, "nergens": dossiers.homeless(session)}
+
+
+def _dossier_ids(session, document_id):
+    from .models import DossierDocument
+
+    return [r[0] for r in session.execute(
+        select(DossierDocument.dossier_id).where(
+            DossierDocument.document_id == document_id))]
 
 
 def _sessie():
@@ -91,12 +112,22 @@ def main_assign(argv: list[str] | None = None) -> int:
     ap.add_argument("--veld", default="besluit", help="herkomstveld (standaard: besluit)")
     ap.add_argument("--weg-uit", help="dossier waar ze uit mogen zodra ze elders staan")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-index", action="store_true",
+                    help="sla het bijwerken van de zoekindex over")
     args = ap.parse_args(argv)
+
+    index = None
+    if args.dry_run:
+        print("droge run: de index wordt NIET aangeraakt", file=sys.stderr)
+    elif not args.no_index:
+        from .opensearch_index import OpenSearchIndex
+        index = OpenSearchIndex.from_config()
+        index.ensure_ready()
 
     mapping = by_filename(args.herkomst, args.veld)
     print(f"herkomst: {len(mapping)} unieke bestandsnaam/namen", file=sys.stderr)
     with _sessie() as session:
-        stats = assign(session, mapping, args.weg_uit)
+        stats = assign(session, mapping, args.weg_uit, index)
         session.rollback() if args.dry_run else session.commit()
     kop = "zou indelen" if args.dry_run else "ingedeeld"
     print(f"{kop}: {stats['toegewezen']} document(en) in "
@@ -104,6 +135,9 @@ def main_assign(argv: list[str] | None = None) -> int:
     for naam, n in sorted(stats["per_dossier"].items(), key=lambda kv: -kv[1]):
         print(f"  {n:>4}  {naam}")
     print(f"  zonder herkomstregel, niet aangeraakt: {stats['zonder_herkomst']}")
+    if index is None and stats["toegewezen"]:
+        print("  LET OP: de index is niet bijgewerkt; tot een herindexering "
+              "vindt een gescopete zoekopdracht deze documenten niet")
     if stats["nergens"]:
         print(f"  LET OP: {stats['nergens']} document(en) horen nu nergens bij en "
               f"zijn onvindbaar voor elke gescopete zoekopdracht")
