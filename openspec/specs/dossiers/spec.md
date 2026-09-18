@@ -1,7 +1,18 @@
 # dossiers Specification
 
 ## Purpose
-TBD - created by archiving change dossier-scope. Update Purpose after archive.
+
+The scope a search has to state.
+
+Searching everything by default means that forgetting the scope and having no
+scope are the same thing. In a system that holds personal data the widest answer
+must never be the one you get by not thinking — so a dossier is named, and
+"everything" is spelled out.
+
+A dossier is what a case is in the world: a Woo request, a delivery, a matter.
+Membership is a fact about a PAIR, because content-addressing already decides
+what a document IS — the same bytes are one document, so the same PDF delivered
+in two cases belongs to both and becomes neither a copy nor an overwrite.
 
 ## Requirements
 
