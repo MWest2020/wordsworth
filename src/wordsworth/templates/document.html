@@ -83,6 +83,7 @@ uitgeven — dat recht ligt bij de issuer-labels. Uitgeven gaat via
  <tr><td class="state">{{ h.ts.strftime('%Y-%m-%d %H:%M') }}</td>
      <td>{{ h.caller }}</td><td class="state">{{ h.grant }}…</td>
      <td>{% for t in h.resolved %}<span class="pill">{{ t }}</span>{% else %}<span class="note">niets</span>{% endfor %}
+       {% if h.alles_gevraagd %}<div class="note">alles gevraagd wat de grant toestond</div>{% endif %}
        {% if h.unresolved %}<div class="note">gevraagd maar niet opgelost:
          {{ h.unresolved|join(', ') }}</div>{% endif %}
        {% if h.withheld %}<div class="note">geweigerd: {{ h.withheld|join(', ') }}</div>{% endif %}</td></tr>

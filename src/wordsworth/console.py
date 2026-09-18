@@ -186,8 +186,13 @@ def build_router(session_factory, keys: dict[str, str],
         try:
             _combinations.parse([{"types": wanted, "reason": reason}])
         except _combinations.CombinationError as exc:
-            return RedirectResponse(f"/console/combinations?fout={exc}",
-                                    status_code=303)
+            # Coderen: een reden met een & of een # erin brak anders de
+            # querystring. Jinja escapet bij het renderen, dus dit is geen XSS
+            # maar een boodschap die halverwege ophoudt.
+            from urllib.parse import quote
+
+            return RedirectResponse(
+                f"/console/combinations?fout={quote(str(exc))}", status_code=303)
         with session_factory() as session:
             session.merge(DeclaredCombination(
                 types="+".join(wanted), reason=reason.strip(),

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Een grant noemt WIE mag onthullen — tot dat gecontroleerd wordt is het een bearer-token.
 
 `Grant.recipient` bestond, werd bij uitgifte gevraagd en verscheen in de audit,

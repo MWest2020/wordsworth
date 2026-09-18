@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """De contextregel mag niet van eerdere vervangingen afhangen.
 
 De detectoren draaien op volgorde en herschrijven de tekst voor elkaar: tegen de

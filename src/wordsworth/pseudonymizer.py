@@ -407,7 +407,13 @@ def deanonymize(
         "pseudonyms": sorted(set(revealed)),
         "types": types,
         "categories": sorted({category_of(t) for t in types}),  # c1/c2/c3, no values
-        "requested_types": sorted(allowed_types) if allowed_types else "all",
+        # Een lijst, altijd. De string "all" werd door elke lezer die hem
+        # sorteerde letter voor letter uitgepakt -- het scherm toonde
+        # "gevraagd maar niet opgelost: a, l, l". Een veld dat soms een lijst en
+        # soms een woord is, is een veld dat iedereen verkeerd leest.
+        "requested_types": sorted(allowed_types) if allowed_types else [],
+        # Apart, want "niets gevraagd" en "alles gevraagd" zijn verschillend.
+        "requested_all": not allowed_types,
         "actor": actor,
     }
     if extra_audit:

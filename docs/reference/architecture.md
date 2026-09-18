@@ -50,7 +50,7 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
 
 - **Secrets** via SOPS+age or OpenBao only — never hardcoded, never client-side,
   never a commercially licensed store.
-- **License:** EUPL-1.2. All code and dependencies must be license-compatible;
+- **License:** MIT. All code and dependencies must be license-compatible;
   AGPL is rejected where it would infect distribution.
 - **Banned dependencies:** `anonypy`; MinIO (open-source edition deprecated
   April 2026 — use Ceph RGW or SeaweedFS behind the S3 seam); CyberArk/Conjur.
@@ -59,6 +59,8 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
 
 - [OpenAnonymiser](https://github.com/ConductionNL/openanonymiser_light)
   (EUPL-1.2) — anonymization adapter (Presidio + GLiNER + deterministic regex;
-  BSN elfproef, IBAN mod-97).
-- [zeef](https://github.com/MWest2020/zeef) (EUPL-1.2) — ranking (local Ollama
+  BSN elfproef, IBAN mod-97). EUPL is fine here precisely because it is reached
+  over HTTP as a deployed service and never linked in: that is what keeps the
+  MIT invariant intact.
+- [zeef](https://github.com/MWest2020/zeef) (MIT) — ranking (local Ollama
   embeddings, cosine, UPGMA clustering, append-only audit-JSONL).

@@ -501,3 +501,27 @@ def test_an_unknown_dossier_in_the_console_says_so(session_factory):
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get("/console/search?q=x&dossier=verzonnen").text
     assert "verzonnen" in page and index.asked == []
+
+
+def test_all_requested_is_not_shown_letter_by_letter(session):
+    """`requested_types` droeg soms de string "all", en elke lezer die hem
+    sorteerde kreeg ['a','l','l'] — het scherm toonde "gevraagd maar niet
+    opgelost: a, l, l". Een veld dat soms een lijst en soms een woord is, is een
+    veld dat iedereen verkeerd leest."""
+    from wordsworth.console_data import reveal_history
+
+    d = _seed(session, "a.pdf", "x")
+    audit.append(session, document_id=d.id, from_state="x", to_state="x",
+                 step="deanonymize",
+                 payload={"caller": "mark", "grant_id": "abcd1234",
+                          "types": ["PERSON"], "requested_types": [],
+                          "requested_all": True})
+    # en een oud record, met de string erin
+    audit.append(session, document_id=d.id, from_state="x", to_state="x",
+                 step="deanonymize",
+                 payload={"caller": "mark", "grant_id": "abcd1234",
+                          "types": ["PERSON"], "requested_types": "all"})
+    session.commit()
+    for rij in reveal_history(session, d.id):
+        assert rij["alles_gevraagd"] is True
+        assert rij["unresolved"] == [], rij["unresolved"]

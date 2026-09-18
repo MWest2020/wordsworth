@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Een token van een ander document mag niet oplossen.
 
 De mapping-store is globaal: opzoeken op pseudonym, niet per document. Dat is
