@@ -27,7 +27,8 @@ def _types() -> list[dict]:
     return [{"name": t, "basis": legal_basis_of(t)} for t in known_types()]
 
 
-def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None) -> None:
+def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None,
+          audit=None) -> None:
     def _page(request, fout=""):
         with session_factory() as session:
             rollen = _rows(session)
@@ -49,7 +50,8 @@ def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None) -> 
         with session_factory() as session:
             try:
                 roles_mod.create(session, name, types,
-                                 actor=caller(request) if caller else "onbekend")
+                                 actor=caller(request) if caller else "onbekend",
+                                 audit=audit() if audit else None)
             except roles_mod.RoleError as exc:
                 return _page(request, str(exc))
             session.commit()
@@ -66,7 +68,7 @@ def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None) -> 
         with session_factory() as session:
             try:
                 fn(session, name, actor=caller(request) if caller else "onbekend",
-                   reason=reason)
+                   reason=reason, audit=audit() if audit else None)
             except roles_mod.RoleError as exc:
                 return _page(request, str(exc))
             session.commit()

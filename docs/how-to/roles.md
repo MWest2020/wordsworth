@@ -81,6 +81,15 @@ niemand later kan navertellen waarom hij overging, en dit is precies het moment
 waarop dat uitmaakt. Terugzetten (`/activate`) vraagt er ook een: terugzetten is
 net zo goed een besluit.
 
+Elke wijziging aan een rol — aanmaken, inperken, uitzetten, aanzetten — komt in
+het **sleutel-levensloopspoor** (`key_lifecycle`), waar grants en
+sleutelrotaties ook staan. Niet in de document-hashketen: die is de
+toestandsmachine van één document, en een rol raakt er duizend. De stand ná de
+wijziging staat erbij, zodat uit de stroom zelf te reconstrueren is wat een rol
+op enig moment toestond. De console schrijft hetzelfde record als de API — twee
+wegen naar dezelfde handeling met één spoor eronder is hoe een spoor gaten
+krijgt.
+
 Wat er eerder onthuld is, verandert hierdoor niet. Dat is gebeurd en staat in
 het spoor. **"Vanaf nu niet meer" is iets anders dan "is nooit gezien"** — de
 console zegt dat er met zoveel woorden bij.

@@ -24,7 +24,8 @@ KOP = {"x-api-key": "s3cret"}
 
 def _app(session_factory, kp=None, **extra):
     return create_app(session_factory=session_factory, api_keys=KEYS,
-                      grant_issuer_labels=["mark"], key_provider=kp,
+                      grant_issuer_labels=["mark"],
+                      corpus_read_labels=["mark"], key_provider=kp,
                       grant_store_factory=lambda s: PostgresGrantStore(s),
                       **extra)
 
@@ -240,3 +241,64 @@ def test_the_audit_says_under_which_role_it_was_allowed(
             .order_by(AuditRecord.seq.desc()).limit(1)).scalar_one()
     assert payload["role"] == "beheerder"
     assert payload["global_by_role"] is True
+
+
+def _stroom(tmp_path):
+    from wordsworth.key_audit import JsonlKeyLifecycleAudit
+
+    return JsonlKeyLifecycleAudit(tmp_path / "lifecycle.jsonl")
+
+
+def test_the_trail_names_who_pulled_the_emergency_stop(session_factory, tmp_path):
+    """De spec-eis: het uitzetten van een rol legt vast wie het deed en waarom.
+
+    Niet in de document-hashketen: die is de toestandsmachine van één document
+    en een rol raakt er duizend. Rollen staan waar grants en sleutelrotaties ook
+    staan — globale autorisatiefeiten zonder document, in een eigen append-only
+    stroom.
+    """
+    audit = _stroom(tmp_path)
+    c = TestClient(_app(session_factory, key_audit=audit),
+                   base_url="https://testserver")
+    c.post("/roles", headers=KOP, json={"name": "hr", "allowed_types": ["EMAIL"]})
+    c.post("/roles/hr/deactivate", headers=KOP, json={"reason": "sleutel gelekt"})
+
+    gebeurtenissen = [e for e in audit.events() if e.get("action") == "role_changed"]
+    assert [e["change"] for e in gebeurtenissen] == ["created", "deactivated"]
+    uit = gebeurtenissen[-1]
+    assert uit["role"] == "hr"
+    assert uit["actor"] == "mark", "zonder wie is het een storing zonder uitleg"
+    assert uit["reason"] == "sleutel gelekt"
+    assert uit["active"] is False
+    # De stand ná de wijziging staat erbij, zodat uit de stroom zelf te
+    # reconstrueren is wat de rol op enig moment toestond.
+    assert uit["allowed_types"] == ["EMAIL"]
+
+
+def test_narrowing_a_role_is_recorded_too(session_factory, tmp_path):
+    """Inperken verandert wat iedereen met die rol mag zien. Dat is dezelfde
+    soort gebeurtenis als uitzetten, alleen stiller."""
+    audit = _stroom(tmp_path)
+    c = TestClient(_app(session_factory, key_audit=audit),
+                   base_url="https://testserver")
+    c.post("/roles", headers=KOP,
+           json={"name": "hr", "allowed_types": ["EMAIL", "BSN"]})
+    c.put("/roles/hr/types", headers=KOP, json={"allowed_types": ["EMAIL"]})
+    laatste = [e for e in audit.events() if e.get("action") == "role_changed"][-1]
+    assert laatste["change"] == "types"
+    assert laatste["allowed_types"] == ["EMAIL"]
+
+
+def test_the_console_writes_the_same_record_as_the_api(session_factory, tmp_path):
+    """Twee wegen naar dezelfde handeling met maar één spoor eronder is hoe een
+    spoor gaten krijgt."""
+    audit = _stroom(tmp_path)
+    c = TestClient(_app(session_factory, key_audit=audit),
+                   base_url="https://testserver")
+    c.post("/console/login", data={"key": "s3cret"})
+    c.post("/console/roles", data={"name": "hr", "types": ["EMAIL"]})
+    c.post("/console/roles/switch",
+           data={"name": "hr", "aan": "0", "reason": "via het scherm"})
+    uit = [e for e in audit.events() if e.get("action") == "role_changed"][-1]
+    assert uit["change"] == "deactivated"
+    assert uit["actor"] == "mark" and uit["reason"] == "via het scherm"

@@ -20,6 +20,12 @@ STREAM = "key_lifecycle"
 ROTATION_ACTION = "key_rotation"
 GRANT_ISSUED_ACTION = "grant_issued"
 GRANT_REVOKED_ACTION = "grant_revoked"
+#: rollen: een rol aanmaken, inperken, uitzetten of weer aanzetten. Hier en niet
+#: in de document-hashketen, om dezelfde reden als een sleutelrotatie en een
+#: grant: een rol is een globaal autorisatiefeit zonder document. Eén rol raakt
+#: duizend documenten, en een record per document zou de keten volschrijven met
+#: duizend kopieën van hetzelfde feit.
+ROLE_ACTION = "role_changed"
 
 
 @runtime_checkable
@@ -50,6 +56,17 @@ class KeyLifecycleAudit(Protocol):
     ) -> None: ...
 
     def grant_revoked(self, *, grant_id: str, actor: str) -> None: ...
+
+    def role_changed(
+        self,
+        *,
+        role: str,
+        change: str,          # created | types | deactivated | activated
+        allowed_types: list[str],
+        active: bool,
+        actor: str,
+        reason: str | None = None,
+    ) -> None: ...
 
 
 class JsonlKeyLifecycleAudit:
@@ -103,6 +120,24 @@ class JsonlKeyLifecycleAudit:
 
     def grant_revoked(self, *, grant_id: str, actor: str) -> None:
         self._log.event(STREAM, GRANT_REVOKED_ACTION, grant_id=grant_id, actor=actor)
+
+    def role_changed(self, *, role, change, allowed_types, active, actor,
+                     reason=None) -> None:
+        """Wat er met een rol gebeurde, wie het deed en waarom.
+
+        De reden staat erin omdat een noodrem zonder reden een storing is die
+        niemand achteraf kan uitleggen. Over een jaar is de enige manier om te
+        beoordelen of het terecht was, weten waarvóór het was.
+
+        `allowed_types` en `active` zijn de stand ná de wijziging: zo is uit de
+        stream zelf te reconstrueren wat een rol op enig moment toestond,
+        zonder de huidige tabel te hoeven geloven.
+        """
+        self._log.event(
+            STREAM, ROLE_ACTION,
+            role=role, change=change, allowed_types=list(allowed_types),
+            active=active, actor=actor, reason=reason,
+        )
 
     def events(self) -> list[dict[str, Any]]:
         """Read the stream back (verification/audit review)."""

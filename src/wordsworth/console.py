@@ -54,7 +54,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def build_router(session_factory, keys: dict[str, str],
-                 search_index=None, guard=None, admin_guard=None) -> APIRouter:
+                 search_index=None, guard=None, admin_guard=None,
+                 audit=None) -> APIRouter:
     router = APIRouter(prefix="/console", tags=["console"])
 
     def _caller(request: Request) -> str:
@@ -162,7 +163,8 @@ def build_router(session_factory, keys: dict[str, str],
                          _mag_lezen, _caller)
     # Rollen achter dezelfde poort als de rest van de console. Wie bepaalt wat
     # een rol mag, bepaalt wat iedereen met die rol mag zien.
-    console_roles.mount(router, session_factory, TEMPLATES, _mag_beheren, _caller)
+    console_roles.mount(router, session_factory, TEMPLATES, _mag_beheren, _caller,
+                        audit)
 
     @router.get("/documents/{document_id}", response_class=HTMLResponse,
                 include_in_schema=False)
