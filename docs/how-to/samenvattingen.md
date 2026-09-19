@@ -21,10 +21,35 @@ Een samenvatting is dat niet. Hij is geschreven door een taalmodel en is dus een
 - draagt hij zijn herkomst mee: welk model, welke datum;
 - zegt het scherm er met zoveel woorden bij dat het geen citaat is.
 
+## Twee varianten
+
+| | extractief | model |
+| --- | --- | --- |
+| wat het is | de eerste regels van het document, letterlijk | een zin die een taalmodel schreef |
+| soort tekst | **citaat** — terug te vinden in de opgeslagen tekst | **bewering** |
+| kosten | nul | ~123 s per document op deze hardware |
+| hardware | geen | één core, geen GPU → 588 documenten ≈ 20 uur |
+
+Bij bestuurlijke post staat juist in de eerste regels wat je wilt weten:
+afzender, kenmerk, datum, onderwerp. Dat is precies wat een model van 3b op
+OCR-ruis het slechtst navertelt. Vergelijk ze op je eigen corpus voor je kiest:
+
+```sh
+python -m scripts.eval.vergelijk_samenvattingen --dossier <uuid> --aantal 5
+```
+
+Dat levert geen score op, en dat is opzettelijk: er is geen waarheid over "een
+goede samenvatting" in dit corpus, en een getal verzinnen is erger dan er geen
+hebben. Het levert de twee teksten naast elkaar met de tijd erbij.
+
 ## Maken
 
 ```sh
-curl -XPOST $API/dossiers/<dossier-uuid>/summaries -H "x-api-key: $KEY"
+# extractief: de eerste regels, nul modelaanroepen
+curl -XPOST "$API/dossiers/<dossier-uuid>/summaries?extractief=true" -H "x-api-key: $KEY"
+
+# met het taalmodel
+curl -XPOST "$API/dossiers/<dossier-uuid>/summaries" -H "x-api-key: $KEY"
 ```
 
 Maakt wat er nog niet is; bestaande blijven staan. Opnieuw draaien doet het werk

@@ -62,9 +62,14 @@ hier weinig — dat ligt dan aan de opstelling en niet aan het corpus.</p>
   <td><a href="/console/documents/{{ h.id }}">{{ h.key }}</a>
       {% if h.samenvatting %}
       <div style="margin-top:5px">{{ h.samenvatting.tekst }}</div>
+      {% if h.samenvatting.citaat %}
+      <div class="note" style="font-size:.72rem">de eerste regels van het
+        document, letterlijk overgenomen — een citaat</div>
+      {% else %}
       <div class="note" style="font-size:.72rem">samengevat door
         {{ h.samenvatting.model }} op {{ h.samenvatting.wanneer }} — een
         gegenereerde tekst, geen citaat</div>
+      {% endif %}
       {% else %}
       <div class="note" style="font-size:.72rem; margin-top:5px">nog geen samenvatting</div>
       {% endif %}

@@ -325,3 +325,64 @@ def test_ordinary_words_are_not_mistaken_for_an_id(session_factory):
                           [doc.id], model="test")
         assert s.get(DocumentSummary, doc.id).text == (
             "De adviseur heeft beoefend en afgedaan.")
+
+BRIEF = """[ORGANIZATION:521364bf]
+
+Industrieweg 23a
+[POSTCODE:f25614ca], [LOCATION:72c03a7e]
+
+-- 3 --
+
+Betreft: bezwaar tegen de geweigerde omgevingsvergunning voor een dakkapel
+Kenmerk: Z/26/0032
+Datum: 14 maart 2026
+
+Geachte heer/mevrouw, hierbij dient de betrokkene bezwaar in."""
+
+
+def test_the_extractive_variant_takes_the_lines_that_say_something(session_factory):
+    """Bij bestuurlijke post staat juist bovenaan wat je wilt weten: afzender,
+    kenmerk, datum, onderwerp. Nul modelaanroepen, dus nul seconden — tegenover
+    123 seconden per document op deze hardware."""
+    uit = summaries.extractive(BRIEF)
+    assert "Betreft: bezwaar tegen de geweigerde omgevingsvergunning" in uit
+    assert "Kenmerk: Z/26/0032" in uit
+    # Regels die niets benoemen -- paginastreepjes, losse leestekens -- vallen weg.
+    assert "-- 3 --" not in uit
+
+
+def test_the_extractive_variant_strips_tokens_too(session_factory):
+    """Hij belandt op hetzelfde scherm, dus dezelfde regel."""
+    uit = summaries.extractive(BRIEF)
+    assert "521364bf" not in uit and "[" not in uit
+
+
+def test_it_is_a_citation_and_says_so(session_factory):
+    """Het verschil dat deze hele functie rechtvaardigt: een extractieve
+    samenvatting is terug te vinden in de opgeslagen tekst, een
+    modelsamenvatting is een bewering."""
+    with session_factory() as s:
+        doc = _doc(s, BRIEF)
+        uit = summaries.compute(s, None, [doc.id], model="genegeerd")
+        assert uit.made == 1
+        rij = s.get(DocumentSummary, doc.id)
+        assert rij.model == summaries.EXTRACTIEF
+        assert summaries.is_citation(rij.model)
+        assert not summaries.is_citation("llama3.2:3b")
+        # En het is echt een citaat: de uitvoer is niets anders dan
+        # brongregels achter elkaar. Dit loopt hem letterlijk af -- blijft er
+        # iets over, dan staat er tekst die nergens vandaan komt.
+        bron = [summaries.clean(r) for r in BRIEF.splitlines()]
+        rest = rij.text.rstrip("…")
+        for regel in [r for r in bron if r]:
+            if rest.startswith(regel):
+                rest = rest[len(regel):].lstrip()
+        assert rest == "", f"niet uit brongregels opgebouwd, over: {rest!r}"
+
+
+def test_a_document_of_only_noise_gets_no_extractive_summary(session_factory):
+    with session_factory() as s:
+        doc = _doc(s, "-- 1 --\n\n...\n\n[PERSOON:3fa9c2d1]\n")
+        uit = summaries.compute(s, None, [doc.id], model="genegeerd")
+        assert (uit.made, uit.failed) == (0, 1)
+        assert s.get(DocumentSummary, doc.id) is None

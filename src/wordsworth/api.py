@@ -1358,8 +1358,8 @@ def create_app(
         @app.post("/dossiers/{dossier_id}/summaries",
                   summary="Maak de ontbrekende samenvattingen",
                   tags=["write"])
-        def compute_summaries(request: Request,
-                              dossier_id: UUID) -> SummariesResponse:
+        def compute_summaries(request: Request, dossier_id: UUID,
+                              extractief: bool = False) -> SummariesResponse:
             """Maakt wat er nog niet is; bestaande blijven staan.
 
             Op verzoek en niet bij ingest: anders wacht de straat op het
@@ -1373,13 +1373,19 @@ def create_app(
             from .dossiers import documents_in
             from .summaries import compute
 
-            model = default_settings.llm_model
+            # `extractief=true`: de eerste regels van het document, letterlijk.
+            # Nul modelaanroepen -- op deze hardware nul seconden tegenover 123
+            # per document -- en een citaat in plaats van een bewering.
+            from .summaries import EXTRACTIEF
+
+            model = EXTRACTIEF if extractief else default_settings.llm_model
             with session_factory() as session:
                 if session.get(Dossier, dossier_id) is None:
                     raise HTTPException(status_code=404,
                                         detail="unknown dossier")
                 ids = sorted(documents_in(session, [dossier_id]))
-                uit = compute(session, generator, ids, model=model)
+                uit = compute(session, None if extractief else generator,
+                              ids, model=model)
                 session.commit()
             return SummariesResponse(
                 dossier_id=str(dossier_id), model=model, seen=uit.seen,
