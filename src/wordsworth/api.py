@@ -35,6 +35,7 @@ from .generator import Generator
 from .grants import GrantStore
 from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
+from .roles import ADMIN as ROLES_ADMIN
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from . import dossiers as dossiers_mod
 from .models import AuditRecord, Document, Dossier
@@ -123,6 +124,38 @@ class RevealResponse(BaseModel):
     # The same two sets grouped under their AVG legal basis (Art. 6/9/10):
     # {"Art. 6": {"revealed": [...], "withheld": [...]}, ...}
     by_legal_basis: dict[str, dict[str, list[str]]] = {}
+
+
+class RoleResponse(BaseModel):
+    """Een rol: een naam plus de PII-types die eronder zichtbaar mogen zijn.
+
+    De **scope** staat hier niet in. Die kies je bij het toekennen, dus bij de
+    grant: dezelfde rol kan aan de een gegeven worden voor één document en aan
+    de ander voor alles. Zat de scope in de rol, dan waren dat twee rollen die
+    morgen uit elkaar lopen.
+    """
+
+    name: str
+    allowed_types: list[str]
+    active: bool
+    created_at: datetime
+    created_by: str
+
+
+class CreateRoleRequest(BaseModel):
+    name: str
+    allowed_types: list[str] = []
+
+
+class SetRoleTypesRequest(BaseModel):
+    allowed_types: list[str]
+
+
+class RoleSwitchRequest(BaseModel):
+    """Aan- of uitzetten vraagt een reden. Een noodrem zonder reden is een
+    schakelaar waarvan niemand later kan navertellen waarom hij overging."""
+
+    reason: str
 
 
 class TopicResponse(BaseModel):
@@ -262,17 +295,24 @@ class GrantIssueRequest(BaseModel):
     grant_id is a bearer capability; a real auth decision is pending."""
 
     recipient: str
-    allowed_types: list[str] | None = None  # explicit types, XOR ppl
+    allowed_types: list[str] | None = None  # explicit types, XOR ppl, XOR role
     ppl: int | None = None                  # Privacy Protection Level 0..3
+    # rollen: deze grant ontleent zijn types aan een rol, opgelost bij elke
+    # beslissing. Precies één van de drie vormen — twee bronnen voor één antwoord
+    # is hoe autorisatiefouten ontstaan.
+    role: str | None = None
     document_id: str | None = None      # None = any document
     expires_at: str | None = None       # ISO-8601, must be timezone-aware
     domain: str | None = None           # pseudonymisation domain; None = default
 
     @model_validator(mode="after")
-    def _types_xor_ppl(self):
-        # PPL is shorthand over allowed_types (pii_categories); exactly one form.
-        if (self.allowed_types is None) == (self.ppl is None):
-            raise ValueError("give exactly one of allowed_types or ppl")
+    def _exactly_one_source(self):
+        # PPL is shorthand over allowed_types (pii_categories); role is a
+        # reference resolved at decision time. Exactly one form.
+        vormen = sum(x is not None
+                     for x in (self.allowed_types, self.ppl, self.role))
+        if vormen != 1:
+            raise ValueError("give exactly one of allowed_types, ppl or role")
         if self.ppl is not None and not 0 <= self.ppl <= 3:
             raise ValueError("ppl must be 0..3")
         return self
@@ -365,6 +405,22 @@ def create_app(
             login_path="/console/login" if session_factory is not None else None,
         )
 
+    def _actor(request: Request) -> str:
+        """Wie deze handeling deed, voor het spoor. Onder Access is dat het
+        geverifieerde e-mailadres; zonder auth is er niemand om te noemen en
+        staat er dat ook."""
+        return getattr(request.state, "caller", None) or "onbekend"
+
+    def _guard_grant_admin(request: Request) -> None:
+        """Uitgeven/intrekken van een grant is het zwaarste recht hier: het levert
+        de sleutel tot klare PII. Met auth aan mag alleen een expliciet genoemd
+        label het; zonder auth blijft het gedrag zoals gedocumenteerd."""
+        caller = getattr(request.state, "caller", None)
+        if not authorize_grant_issue(caller, grant_issuer_labels, auth_enabled):
+            raise HTTPException(
+                status_code=403,
+                detail="caller not authorized to issue or revoke grants")
+
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
         if not authorize_corpus_read(caller, corpus_read_labels):
@@ -386,7 +442,7 @@ def create_app(
         # grens -- anders IS de console de tweede deur die zijn eigen docstring
         # verbiedt.
         app.include_router(build_router(session_factory, keys, search_index,
-                                        _guard_corpus_read))
+                                        _guard_corpus_read, _guard_grant_admin))
         # Wat de browser van dit scherm mag maken: geen iframe (de Onthul-knop
         # is anders te clickjacken, met het auditspoor op naam van het
         # slachtoffer) en geen cross-site post (die kan het callerlabel van een
@@ -508,16 +564,6 @@ def create_app(
     def _check_view(view: str) -> None:
         if view not in ("tokens", "legible"):
             raise HTTPException(status_code=400, detail="view must be tokens|legible")
-
-    def _guard_grant_admin(request: Request) -> None:
-        """Uitgeven/intrekken van een grant is het zwaarste recht hier: het levert
-        de sleutel tot klare PII. Met auth aan mag alleen een expliciet genoemd
-        label het; zonder auth blijft het gedrag zoals gedocumenteerd."""
-        caller = getattr(request.state, "caller", None)
-        if not authorize_grant_issue(caller, grant_issuer_labels, auth_enabled):
-            raise HTTPException(
-                status_code=403,
-                detail="caller not authorized to issue or revoke grants")
 
     @app.get("/health", summary="Liveness probe", tags=["ops"])
     def health() -> dict[str, str]:
@@ -1190,22 +1236,44 @@ def create_app(
                 # A grant that authorises none of its own types here is revoked,
                 # expired, scoped to another document, bound to another domain, or
                 # presented by someone other than its recipient → explicit denial.
-                if not authorize(grant, document_id, set(grant.allowed_types),
-                                 now, dom, allow_global_grants, caller, auth_enabled):
+                # rollen: de rol wordt HIER opgelost, op het moment van
+                # beslissen. Dat is wat een rol uitzetten onmiddellijk laat
+                # werken zonder dat er één grant verandert.
+                from . import roles as roles_mod
+                from .grants import permitted_types
+
+                def _resolve_role(naam: str) -> set[str]:
+                    return set(roles_mod.resolve(session, naam).types)
+
+                rol_gaten = {"resolve_role": _resolve_role,
+                             "global_roles": {roles_mod.ADMIN}}
+                if not authorize(grant, document_id,
+                                 permitted_types(grant, _resolve_role),
+                                 now, dom, allow_global_grants, caller,
+                                 auth_enabled, **rol_gaten):
                     raise HTTPException(status_code=403, detail="grant not applicable")
                 pseudo_text = get_anonymized_text(session, document_id)
                 if pseudo_text is None:
                     raise HTTPException(
                         status_code=409, detail="document not yet de-identified")
-                requested = body.types if body.types else list(grant.allowed_types)
+                requested = (body.types if body.types
+                             else sorted(permitted_types(grant, _resolve_role)))
                 allowed = authorize(grant, document_id, set(requested), now, dom,
-                                    allow_global_grants, caller, auth_enabled)
+                                    allow_global_grants, caller, auth_enabled,
+                                    **rol_gaten)
                 # De caller staat los in de audit van de recipient: met auth aan
                 # zijn ze nu gelijk, maar het spoor moet blijven zeggen wie er
                 # belde en niet alleen wie het mocht.
                 extra_audit = {"grant_id": body.grant_id}
                 if caller:
                     extra_audit["caller"] = caller
+                if grant.role:
+                    # Onder welke rol dit mocht, en of de ongescopete
+                    # uitzondering gold. Zonder dat is later niet na te vertellen
+                    # dát er een uitzondering was en voor wie.
+                    extra_audit["role"] = grant.role
+                    if grant.document_id is None:
+                        extra_audit["global_by_role"] = True
                 # EUDI-aligned VC gate (opt-in): a presented X-VC credential can
                 # only NARROW what the grant allows (intersection), never widen
                 # it. Off unless an issuer key is configured; then a valid VC is
@@ -1256,6 +1324,98 @@ def create_app(
                 by_legal_basis=by_basis,
             )
 
+    # Rollen: een naam plus de PII-types die eronder zichtbaar mogen zijn.
+    # Dezelfde poort als het uitgeven van een grant — wie bepaalt wat een rol
+    # mag, bepaalt wat iedereen met die rol mag zien, en dat is geen kleiner
+    # recht dan een grant uitgeven.
+    if session_factory is not None:
+        from . import roles as roles_mod
+
+        def _role_out(r) -> RoleResponse:
+            return RoleResponse(name=r.name, allowed_types=list(r.allowed_types),
+                                active=r.active, created_at=r.created_at,
+                                created_by=r.created_by)
+
+        @app.get("/roles", summary="De rollen en wat ze toestaan", tags=["read"])
+        def list_roles(request: Request) -> list[RoleResponse]:
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                return [_role_out(r) for r in roles_mod.listing(session)]
+
+        @app.post("/roles", summary="Maak een rol", tags=["write"])
+        def create_role(request: Request, body: CreateRoleRequest) -> RoleResponse:
+            """Een rol is een naam plus een verzameling PII-types.
+
+            De scope — dit document of alles — kies je niet hier maar bij het
+            toekennen, dus bij de grant. Dezelfde rol kan aan de een gegeven
+            worden voor één document en aan de ander voor alles.
+            """
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                try:
+                    role = roles_mod.create(session, body.name, body.allowed_types,
+                                            actor=_actor(request))
+                except roles_mod.RoleError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                out = _role_out(role)
+                session.commit()
+            return out
+
+        @app.put("/roles/{name}/types", summary="Verander wat een rol toestaat",
+                 tags=["write"])
+        def set_role_types(request: Request, name: str,
+                           body: SetRoleTypesRequest) -> RoleResponse:
+            """Werkt onmiddellijk door in elke grant die de rol noemt.
+
+            Wat er eerder onthuld is verandert niet — dat is gebeurd en staat in
+            het spoor. Een scherm dat een ingeperkte rol toont zonder dat erbij
+            te zeggen, laat "die gegevens zijn nooit gezien" lezen waar "vanaf nu
+            niet meer" staat.
+            """
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                try:
+                    role = roles_mod.set_types(session, name, body.allowed_types,
+                                               actor=_actor(request))
+                except roles_mod.RoleError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc))
+                out = _role_out(role)
+                session.commit()
+            return out
+
+        @app.post("/roles/{name}/deactivate", summary="Breakglass: zet een rol uit",
+                  tags=["write"])
+        def deactivate_role(request: Request, name: str,
+                            body: RoleSwitchRequest) -> RoleResponse:
+            """Onmiddellijk, en zonder dat er één grant verandert.
+
+            Dat laatste is het bewijs dat een rol hier een entiteit is en geen
+            sjabloon: bij een sjabloon zou uitzetten betekenen dat je elke
+            uitgegeven grant moet terugvinden, mét een tijdvenster, precies op
+            het moment dat je er geen wilt.
+            """
+            _guard_grant_admin(request)
+            return _switch(request, name, body, roles_mod.deactivate)
+
+        @app.post("/roles/{name}/activate", summary="Zet een rol weer aan",
+                  tags=["write"])
+        def activate_role(request: Request, name: str,
+                          body: RoleSwitchRequest) -> RoleResponse:
+            _guard_grant_admin(request)
+            return _switch(request, name, body, roles_mod.activate)
+
+        def _switch(request, name, body, fn) -> RoleResponse:
+            with session_factory() as session:
+                try:
+                    role = fn(session, name, actor=_actor(request),
+                              reason=body.reason)
+                except roles_mod.RoleError as exc:
+                    code = 404 if "onbekende rol" in str(exc) else 400
+                    raise HTTPException(status_code=code, detail=str(exc))
+                out = _role_out(role)
+                session.commit()
+            return out
+
     # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
     # grant store (no key provider) — mounts wherever grants are configured.
     if (session_factory is not None
@@ -1305,10 +1465,14 @@ def create_app(
                     doc_id = UUID(body.document_id)
                 except ValueError:
                     raise HTTPException(status_code=400, detail="malformed document_id")
-            elif not allow_global_grants:
+            elif not (allow_global_grants or body.role == ROLES_ADMIN):
                 # An unscoped grant reveals on EVERY document. Refuse before any
                 # write, so the default path cannot mint that capability by
                 # omission (no grant row, no audit event).
+                #
+                # De uitzondering draagt een naam: op naam van de beheerdersrol
+                # mag hij wél. De vlag omzetten zou hem voor élke ongescopete
+                # grant openen, om hem voor één rol te openen.
                 raise HTTPException(
                     status_code=400,
                     detail="document_id required (global grants are not allowed)")
@@ -1333,11 +1497,20 @@ def create_app(
                 # geen audit-event ontstaat.
                 if doc_id is not None and session.get(Document, doc_id) is None:
                     raise HTTPException(status_code=404, detail="unknown document")
+                if body.role is not None:
+                    # Een grant op een rol die niet bestaat is een grant die
+                    # niets doet, en dat hoort nu te blijken en niet bij de
+                    # eerste onthulling.
+                    from . import roles as roles_mod
+
+                    if roles_mod.by_name(session, body.role) is None:
+                        raise HTTPException(status_code=404,
+                                            detail=f"onbekende rol {body.role!r}")
                 grant = issue_grant(
                     _grant_store(session), _resolve_audit(),
                     recipient=body.recipient, allowed_types=types,
-                    actor="operator", document_id=doc_id, expires_at=expires,
-                    domain=body.domain or DEFAULT_DOMAIN,
+                    actor=_actor(request), document_id=doc_id, expires_at=expires,
+                    domain=body.domain or DEFAULT_DOMAIN, role=body.role,
                 )
                 session.commit()
                 return _grant_response(grant)

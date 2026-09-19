@@ -38,6 +38,7 @@ from sqlalchemy import func, select
 from . import combinations as _combinations
 from . import console_data
 from . import console_search
+from . import console_roles
 from . import console_topics
 from .auth import CONSOLE_COOKIE
 from .console_data import label, marked, reach, types_per_document
@@ -53,7 +54,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def build_router(session_factory, keys: dict[str, str],
-                 search_index=None, guard=None) -> APIRouter:
+                 search_index=None, guard=None, admin_guard=None) -> APIRouter:
     router = APIRouter(prefix="/console", tags=["console"])
 
     def _caller(request: Request) -> str:
@@ -68,6 +69,18 @@ def build_router(session_factory, keys: dict[str, str],
         """
         if guard is not None:
             guard(request)
+
+    def _mag_beheren(request: Request) -> None:
+        """Dezelfde poort als POST /roles en POST /grants.
+
+        Rollen bepalen wat iedereen met die rol mag zien; dat is geen kleiner
+        recht dan een grant uitgeven, en dus geen lichtere poort. Stond deze
+        pagina achter de léés-poort, dan was de console opnieuw de tweede deur
+        die hij niet mag zijn — nu met een scherm waarmee je je eigen rechten
+        kunt verruimen.
+        """
+        if admin_guard is not None:
+            admin_guard(request)
 
     @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
     def login_form(request: Request, fout: str = ""):
@@ -147,6 +160,9 @@ def build_router(session_factory, keys: dict[str, str],
                          _mag_lezen)
     console_topics.mount(router, session_factory, search_index, TEMPLATES,
                          _mag_lezen, _caller)
+    # Rollen achter dezelfde poort als de rest van de console. Wie bepaalt wat
+    # een rol mag, bepaalt wat iedereen met die rol mag zien.
+    console_roles.mount(router, session_factory, TEMPLATES, _mag_beheren, _caller)
 
     @router.get("/documents/{document_id}", response_class=HTMLResponse,
                 include_in_schema=False)

@@ -1,8 +1,8 @@
 # Tasks
 
-Nog niet gebouwd, en dit is de change die het langst op antwoorden mag wachten.
-**#81 hoort hiervóór**: een rolmodel bovenop gedeelde api-sleutels is er een op
-papier.
+Gebouwd op 2026-09-19. **#81 stond hiervóór en is klaar**: onder Cloudflare
+Access is een callerlabel een geverifieerd e-mailadres, dus "HR mag dit" is niet
+langer "wie de HR-sleutel heeft mag dit".
 
 ## 0. Eerst beslissen
 - [ ] Sjabloon, entiteit of het voorgestelde derde (grant noemt een rol,
@@ -24,30 +24,35 @@ papier.
       verzinnen vóór de gebruikstest is een aanname met een juridische staart.
 
 ## 1. Het model
-- [ ] `Role` (naam, types, actief) en de koppeling grant → rol.
-- [ ] Een grant heeft óf types óf een rol, niet allebei. Twee bronnen voor één
-      antwoord is precies hoe autorisatiefouten ontstaan.
+- [x] `Role` (naam, types, actief, wie hem maakte) en `grants.role`.
+- [x] Precies één bron: eigen lijst, PPL of rol. De API weigert twee (422) en
+      nul (422).
 
 ## 2. De beslissing
-- [ ] `authorize()` lost een rol op bij het beslissen. Eén beslispunt, één
-      invoer erbij — geen tweede functie en geen pad eromheen.
-- [ ] Inactief = lege verzameling. Geen terugval op de grant, op een vorige
-      versie van de rol, of op wat dan ook.
+- [x] `authorize()` lost de rol op bij het beslissen, via `permitted_types()`.
+      Eén beslispunt, één invoer erbij.
+- [x] Inactief = leeg. Geen terugval, ook niet als de grant per ongeluk
+      allebei draagt — en zonder resolver levert een rol-grant niets
+      (fail-closed).
 
 ## 3. Breakglass
-- [ ] Uitzetten met reden; zonder reden een weigering.
-- [ ] In hetzelfde append-only spoor als de rest.
-- [ ] En terug: hoe komt een rol weer aan? Door wie?
+- [x] Uitzetten en aanzetten vragen allebei een reden.
+- [ ] **Nog niet**: het uitzetten zelf staat nog niet in het auditspoor. De
+      auditketen hangt aan een document en een rol raakt er duizend — dezelfde
+      vraag die #104 openhoudt. De onthulling ONDER een rol staat er wel in
+      (`role`, `global_by_role`).
+- [x] `/activate`, door wie de grant-beheerpoort mag passeren, met een reden.
 
 ## 4. Bewijs
-- [ ] Een test die bewijst dat uitzetten werkt **zonder dat er een grant
-      verandert**. Dat is het verschil met de sjabloonvariant en de reden voor
-      deze vorm.
-- [ ] Een test dat een beheerder langs dezelfde `authorize()` gaat en hetzelfde
-      auditrecord oplevert.
-- [ ] Een test dat een rol inperken meteen doorwerkt in een bestaande grant.
-- [ ] Live: een rol uitzetten terwijl er een geldige grant op staat, en zien dat
-      de onthulling 403 geeft.
+- [x] `test_switching_a_role_off_stops_a_reveal_that_was_working`: onthult,
+      rol uit, 403, grant nog ACTIVE. En weer aan zonder nieuwe grant.
+- [x] `test_the_admin_role_is_not_a_bypass` en
+      `test_the_audit_says_under_which_role_it_was_allowed`.
+- [x] `test_narrowing_a_role_narrows_a_live_grant`. Let op de vorm: een
+      ingeperkt type wordt INGEHOUDEN (200 + withheld_types), niet 403 —
+      hetzelfde als een type dat nooit in de grant stond. Pas als de rol niets
+      meer toestaat doet de grant niets, en dan is het 403.
+- [ ] Live op productie, na het uitrollen.
 
 ## Wat hier misgaan kan
 Van de vier epics is dit degene waar een fout niet "iets werkt niet" betekent

@@ -6,8 +6,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (BigInteger, DateTime, ForeignKey, Index, Integer, LargeBinary,
-                        String, text)
+from sqlalchemy import (BigInteger, Boolean, DateTime, ForeignKey, Index, Integer,
+                        LargeBinary, String, text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -138,6 +138,9 @@ class GrantRecord(Base):
     actor: Mapped[str] = mapped_column(String, nullable=False)
     # add-domain-keys: pseudonymisation domain; NULL = legacy = default domain.
     domain: Mapped[str | None] = mapped_column(String, nullable=True)
+    # rollen: deze grant ontleent zijn types aan een rol. NULL = de grant draagt
+    # zijn eigen lijst, zoals elke grant vóór deze kolom bestond.
+    role: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class KeyVaultRecord(Base):
@@ -252,3 +255,35 @@ class Topic(Base):
         DateTime(timezone=True), nullable=False,
         default=lambda: datetime.now(timezone.utc))
     document_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class Role(Base):
+    """Een rol: een naam plus de PII-types die eronder zichtbaar mogen zijn.
+
+    Mark, 2026-09-19: *"ik maak een rol aan en selecteer welke PII's mogen, per
+    document of globaal?"* — ja, met één scheiding. De **types** horen bij de
+    rol; de **scope** (dit document of alles) hoort bij het toekennen, dus bij
+    de grant. Zat de scope hier, dan waren "HR voor dit dossier" en "HR voor
+    alles" twee rollen die morgen uit elkaar lopen.
+
+    `active` is de breakglass. Een rol uitzetten werkt onmiddellijk en raakt
+    geen enkele grant aan: `authorize()` lost de rol op bij het beslissen, dus
+    een uitgezette rol levert een lege typeverzameling en elke grant die hem
+    noemt autoriseert niets. Dat is de reden dat een rol een entiteit is en
+    geen sjabloon — bij een sjabloon zou uitzetten betekenen dat je elke
+    uitgegeven grant moet terugvinden, mét een tijdvenster, precies op het
+    moment dat je er geen wilt.
+    """
+
+    __tablename__ = "roles"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    #: Hoofdletter-PII-types, net als `grants.allowed_types`.
+    allowed_types: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
