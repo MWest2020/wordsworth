@@ -39,6 +39,19 @@ def scope_ids(session, dossier: str):
     return None if ids is None else [str(i) for i in ids]
 
 
+def _samenvatting(rij) -> dict | None:
+    """De samenvatting met haar herkomst, of None.
+
+    De herkomst gaat mee omdat dit de enige tekst in dit systeem is die niet
+    terug te voeren is op iets dat is opgeslagen. Wie hem leest hoort te weten
+    dat een model hem schreef, welk model, en wanneer.
+    """
+    if rij is None:
+        return None
+    return {"tekst": rij.text, "model": rij.model,
+            "wanneer": rij.created_at.strftime("%Y-%m-%d")}
+
+
 def _rank(index, embedder, q: str, size: int, only, topic):
     """De rangschikking voor deze vraag, en hoe hij tot stand kwam.
 
@@ -96,6 +109,10 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                     fout = f"De zoekindex gaf een fout: {type(exc).__name__}"
             if raw:
                 with session_factory() as session:
+                    from .summaries import by_document
+
+                    ids = [UUID(str(h.document_id)) for h in raw]
+                    samenvattingen = by_document(session, ids)
                     for h in raw:
                         doc_id = UUID(str(h.document_id))
                         row = session.get(DocumentText, doc_id)
@@ -105,6 +122,10 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                             "score": round(float(h.score), 2),
                             "fragment": console_data.fragment(
                                 row.anonymized_text if row else "", q),
+                            # Naast het fragment, nooit ervoor in de plaats: het
+                            # fragment is een citaat dat je kunt terugvinden, de
+                            # samenvatting is een bewering van een model.
+                            "samenvatting": _samenvatting(samenvattingen.get(doc_id)),
                         })
         onderwerp = ""
         if topic:

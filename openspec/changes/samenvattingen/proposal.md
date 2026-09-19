@@ -21,14 +21,32 @@ opgeslagen tekst. Een samenvatting is een bewering.
 
 Drie dingen volgen daaruit, en ze zijn geen van drieën optioneel.
 
-### 1. Over de gepseudonimiseerde tekst, en alleen daarover
+### 1. Over de gepseudonimiseerde tekst, en zónder de tokens erin
 
-Er is geen andere tekst. De samenvatting kan dus tokens bevatten
-(`[PERSOON:3fa9c2d1]`), en dat is juist goed: dat is de veilige vorm, dezelfde
-die het scherm al toont. **Maar dan hoort de samenvatting ook achter dezelfde
-poort te staan als de rest van het corpus** (`WORDSWORTH_CORPUS_READ_LABELS`) en
-niet in een export, een URL of een facet te belanden — daar geldt de redenering
-van de onderwerpnamen, en daar horen tokens níet.
+Er is geen andere tekst, dus de samenvatting wordt over de gepseudonimiseerde
+tekst gemaakt. **Maar de tokens gaan eruit.**
+
+Dit stond eerst andersom in dit voorstel: "hij kan tokens bevatten en dat is
+juist goed, want dat is de veilige vorm die het scherm al toont." Dat klopt voor
+een *citaat*. Voor gegenereerde tekst niet, en het verschil is geen detail.
+
+Een taalmodel kan een token **verzinnen**. `[PERSOON:aabbccdd]` ziet eruit als
+elk ander token, en de mappingstore is globaal: als dat token bestaat, hoort het
+bij iemand — alleen niet bij dit document. Een samenvatting die beweert dat
+`[PERSOON:aabbccdd]` hier iets deed, koppelt een vreemde persoon aan dit stuk,
+en een onthulling op die samenvatting levert de klare naam van die vreemde op,
+keurig binnen een grant die op dít document gescoped is. Dat is precies het gat
+dat `neutralise_foreign_tokens` aan de invoerkant dichtzet, nu aan de
+uitvoerkant.
+
+Een citaat kan dat niet: dat is letterlijk de opgeslagen tekst. Gegenereerde
+tekst wel. Dus: het model krijgt de instructie geen tokens over te nemen, **en
+daarna worden ze er deterministisch uitgehaald** — de instructie is een verzoek,
+de filtering is de garantie, en alleen op die tweede staat een test.
+
+De samenvatting blijft achter dezelfde poort als de rest van het corpus
+(`WORDSWORTH_CORPUS_READ_LABELS`) en gaat niet in een export, een URL of een
+facet.
 
 ### 2. Eén keer berekend, niet per vraag
 

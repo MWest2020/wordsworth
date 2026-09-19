@@ -34,6 +34,15 @@ class GenerationError(Exception):
 class Generator(Protocol):
     def generate(self, query: str, sources: list[Source]) -> Answer: ...
 
+    def summarise(self, text: str) -> str:
+        """Een korte samenvatting van één document.
+
+        Een eigen methode en geen `generate()` met "vat dit samen" als vraag:
+        die prompt vraagt om een ANTWOORD met bronvermeldingen, en dan krijg je
+        antwoord-vormige tekst over een vraag die niemand stelde.
+        """
+        ...
+
 
 def _prompt(query: str, sources: list[Source]) -> str:
     blocks = "\n\n".join(f"[{s.document_id}]\n{s.text}" for s in sources)
@@ -44,6 +53,24 @@ def _prompt(query: str, sources: list[Source]) -> str:
         "laat 'citations' leeg. Antwoord met JSON: "
         '{"answer": "<tekst>", "citations": ["<id>", ...]}.\n\n'
         f"BRONNEN:\n{blocks}\n\nVRAAG: {query}"
+    )
+
+
+#: Hoeveel tekst het model van een document te zien krijgt voor een
+#: samenvatting. Een Woo-besluit van veertig pagina's past niet in een
+#: contextvenster van een 3b-model, en de kop draagt bij dit soort stukken het
+#: onderwerp — datum, kenmerk, waar het over gaat.
+_SUMMARY_CHARS = 6000
+
+
+def _summary_prompt(text: str) -> str:
+    return (
+        "Vat het document hieronder samen in maximaal twee zinnen, in het "
+        "Nederlands. Schrijf alleen wat er staat; verzin niets. "
+        "Neem GEEN codes tussen blokhaken over (zoals [PERSOON:3fa9c2d1]); "
+        "schrijf daar 'de betrokkene', 'het adres' of iets dergelijks. "
+        'Antwoord met JSON: {"samenvatting": "<tekst>"}.\n\n'
+        f"DOCUMENT:\n{text[:_SUMMARY_CHARS]}"
     )
 
 
@@ -87,6 +114,26 @@ class OllamaGenerator:
             citations=[str(c) for c in citations],
         )
 
+    def summarise(self, text: str) -> str:
+        payload = json.dumps({
+            "model": self.model,
+            "prompt": _summary_prompt(text),
+            "stream": False,
+            "format": "json",
+            "options": {"num_predict": self.num_predict},
+        }).encode()
+        req = urllib.request.Request(
+            f"{self.url}/api/generate", data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                body = json.loads(resp.read())
+            parsed = json.loads(body["response"])
+        except Exception as exc:  # network/timeout/HTTP/bad-JSON -> hard error
+            raise GenerationError(f"ollama summarise failed: {exc}") from exc
+        return str(parsed.get("samenvatting", "")).strip()
+
 
 class DeterministicGenerator:
     """Test double: echoes a fixed answer citing every given source id. No model,
@@ -101,3 +148,6 @@ class DeterministicGenerator:
     def generate(self, query: str, sources: list[Source]) -> Answer:
         cited = [s.document_id for s in sources] + self.extra_citations
         return Answer(text=f"Antwoord op: {query}", citations=cited)
+
+    def summarise(self, text: str) -> str:
+        return f"Samenvatting van: {text[:40]}"

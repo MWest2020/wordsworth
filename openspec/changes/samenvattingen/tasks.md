@@ -1,29 +1,31 @@
 # Tasks
 
-Nog niet gebouwd. Eerst de beslissing uit `proposal.md`.
+Gebouwd op 2026-09-19, na Marks "bouwen".
 
 ## 0. Eerst beslissen
-- [ ] Een samenvatting per document, berekend op verzoek per dossier, met model
-      en moment erbij? (Het alternatief is per vraag genereren — traag, en
-      morgen een andere tekst op dezelfde vraag.)
-- [ ] Naast het fragment en niet in plaats daarvan?
+- [x] Een samenvatting per document, op verzoek per dossier, met model en
+      moment erbij.
+- [x] Naast het fragment, met "geen citaat" erbij.
 
 ## 1. Opslaan
-- [ ] `DocumentSummary` (document, tekst, model, moment).
-- [ ] Alleen wat ontbreekt berekenen; bestaande met rust laten.
+- [x] `DocumentSummary` (document, tekst, model, moment).
+- [x] Alleen wat ontbreekt; het model wordt aantoonbaar niet tweemaal aangeroepen.
 
 ## 2. Maken
-- [ ] Over de gepseudonimiseerde tekst, met de bestaande `Generator`-naad.
-- [ ] Een mislukking levert geen rij op en wordt geteld.
-- [ ] Noemer terug: gezien, gemaakt, overgeslagen, mislukt.
+- [x] Over de gepseudonimiseerde tekst, via `Generator.summarise()` — een eigen
+      methode, want de RAG-prompt vraagt om een ANTWOORD met bronvermeldingen.
+- [x] Tokens eruit ná het genereren. Gecontroleerd met het filter eruit: dan
+      falen er twee.
+- [x] Mislukt, leeg, of na filteren leeg: geen rij, wel geteld.
+- [x] Noemer terug, plus `without_text`.
 
 ## 3. Tonen
-- [ ] Op de zoekpagina boven het fragment, met herkomst.
-- [ ] Geen samenvatting? Dat zeggen, niet leeg laten.
-- [ ] Achter de corpus-leespoort, net als de opgeslagen tekst.
+- [x] Op de zoekpagina boven het fragment, met model en datum.
+- [x] "nog geen samenvatting" in plaats van een leeg vlak.
+- [x] Achter de corpus-leespoort.
 
 ## 4. Bewijzen
-- [ ] Een test dat een mislukte generatie niets achterlaat.
-- [ ] Een test dat twee keer berekenen het werk niet twee keer doet.
-- [ ] Een test dat de samenvatting achter de leespoort zit.
-- [ ] Een test dat het scherm zegt dát het gegenereerd is en door welk model.
+- [x] `test_a_failed_generation_leaves_nothing_behind`.
+- [x] `test_running_again_does_not_redo_the_work`.
+- [x] `test_the_endpoint_is_behind_the_corpus_gate`.
+- [x] `test_the_screen_says_it_was_generated_and_by_what`.

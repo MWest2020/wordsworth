@@ -1,0 +1,94 @@
+---
+status: current
+last_reviewed: 2026-09-19
+---
+
+# Samenvattingen per document
+
+Een korte samenvatting naast elk zoekresultaat, zodat je ziet wáárom een
+document bovenaan staat en niet alleen dát het er staat.
+
+## Wat een samenvatting is, en wat niet
+
+Alles wat wordsworth verder toont is terug te voeren op iets dat is opgeslagen:
+de gepseudonimiseerde tekst, de tokens, de ranking, de onderwerpnamen. Het
+fragment op de zoekpagina is een **citaat** — je kunt het letterlijk terugvinden.
+
+Een samenvatting is dat niet. Hij is geschreven door een taalmodel en is dus een
+**bewering**. Daarom:
+
+- staat hij **naast** het citaat en niet ervoor in de plaats;
+- draagt hij zijn herkomst mee: welk model, welke datum;
+- zegt het scherm er met zoveel woorden bij dat het geen citaat is.
+
+## Maken
+
+```sh
+curl -XPOST $API/dossiers/<dossier-uuid>/summaries -H "x-api-key: $KEY"
+```
+
+Maakt wat er nog niet is; bestaande blijven staan. Opnieuw draaien doet het werk
+dus niet opnieuw — bij een taalmodel is dat geen optimalisatie maar het verschil
+tussen een knop die je durft in te drukken en een die je vermijdt.
+
+Op verzoek en niet bij ingest, om dezelfde reden als bij de onderwerpen: anders
+wacht de straat op het taalmodel, voor een tekst die op dat moment niemand
+leest.
+
+Het antwoord draagt de noemer:
+
+```json
+{"dossier_id":"…","model":"llama3.2:3b",
+ "seen":30,"made":24,"skipped":3,"failed":1,"without_text":2}
+```
+
+| veld | betekenis |
+| --- | --- |
+| `seen` | documenten in het dossier |
+| `made` | nieuw gemaakt |
+| `skipped` | had er al een |
+| `failed` | het model gaf niets bruikbaars |
+| `without_text` | nooit door de straat gekomen |
+
+Zonder die vijf leest "24 gemaakt" als een uitspraak over het hele dossier.
+
+## Tokens gaan eruit — en waarom dat geen detail is
+
+De samenvatting wordt gemaakt over de gepseudonimiseerde tekst, want een andere
+is er niet. **De pseudonym-tokens worden er daarna deterministisch uitgehaald.**
+
+Dat stond eerst andersom in het voorstel: "hij mag tokens bevatten, dat is de
+veilige vorm die het scherm toch al toont." Dat klopt voor een citaat. Voor
+gegenereerde tekst niet.
+
+Een taalmodel kan een token **verzinnen**. `[PERSOON:aabbccdd]` ziet eruit als
+elk ander token, en de mappingstore is globaal: als dat token bestaat hoort het
+bij iemand — alleen niet bij dit document. Een samenvatting die beweert dat die
+persoon hier iets deed, koppelt een vreemde aan dit stuk, en een onthulling op
+die samenvatting levert diens klare naam binnen een grant die op dít document
+gescoped is. Dat is precies het gat dat `neutralise_foreign_tokens` aan de
+invoerkant dichtzet, nu aan de uitvoerkant.
+
+De prompt vraagt het model óók geen tokens over te nemen. Dat is een verzoek;
+het filteren is de garantie, en alleen op die tweede staat een test
+(`test_a_token_never_survives_into_a_summary`).
+
+Blijft er na het filteren niets over, dan is er **geen** samenvatting. Een
+placeholder die eruitziet als inhoud is erger dan een leeg veld: hij wordt
+gelezen als de samenvatting van een document dat niemand heeft samengevat.
+
+## De poort
+
+Achter `WORDSWORTH_CORPUS_READ_LABELS`, net als de opgeslagen tekst. Een
+samenvatting zegt waar een document over gaat; dat is dezelfde soort kennis.
+
+Niet in exports, niet in URL's, niet in facetten.
+
+## Wat dit niet is
+
+Geen antwoord op je vraag. Dat is `/ask` (RAG): één antwoord over meerdere
+bronnen, met een grounding-guard die verzonnen citaties laat vallen. De twee
+door elkaar halen levert een tekst op die noch een documentsamenvatting noch een
+antwoord is.
+
+Zie ook [console](console.md) en [onderwerpen](topics.md).

@@ -200,6 +200,22 @@ class TopicsResponse(BaseModel):
     max_share: float | None = None
 
 
+class SummariesResponse(BaseModel):
+    """Wat één berekening opleverde, met de noemer erbij.
+
+    Zonder `seen` leest "twaalf gemaakt" als een uitspraak over het hele
+    dossier, ook als er dertig documenten in zitten.
+    """
+
+    dossier_id: str
+    model: str
+    seen: int
+    made: int
+    skipped: int
+    failed: int
+    without_text: int
+
+
 class RenameTopicRequest(BaseModel):
     name: str
 
@@ -1336,6 +1352,39 @@ def create_app(
                 grant_id=body.grant_id,
                 by_legal_basis=by_basis,
             )
+
+    if session_factory is not None and generator is not None:
+
+        @app.post("/dossiers/{dossier_id}/summaries",
+                  summary="Maak de ontbrekende samenvattingen",
+                  tags=["write"])
+        def compute_summaries(request: Request,
+                              dossier_id: UUID) -> SummariesResponse:
+            """Maakt wat er nog niet is; bestaande blijven staan.
+
+            Op verzoek en niet bij ingest: anders wacht de straat op het
+            taalmodel, voor een tekst die op dat moment niemand leest.
+
+            Achter de corpus-leespoort. Een samenvatting zegt waar een
+            document over gaat, en dat is dezelfde soort kennis als de
+            opgeslagen tekst.
+            """
+            _guard_corpus_read(request)
+            from .dossiers import documents_in
+            from .summaries import compute
+
+            model = default_settings.llm_model
+            with session_factory() as session:
+                if session.get(Dossier, dossier_id) is None:
+                    raise HTTPException(status_code=404,
+                                        detail="unknown dossier")
+                ids = sorted(documents_in(session, [dossier_id]))
+                uit = compute(session, generator, ids, model=model)
+                session.commit()
+            return SummariesResponse(
+                dossier_id=str(dossier_id), model=model, seen=uit.seen,
+                made=uit.made, skipped=uit.skipped, failed=uit.failed,
+                without_text=uit.without_text)
 
     # Rollen: een naam plus de PII-types die eronder zichtbaar mogen zijn.
     # Dezelfde poort als het uitgeven van een grant — wie bepaalt wat een rol
