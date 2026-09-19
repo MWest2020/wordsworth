@@ -63,6 +63,7 @@ _COLUMN_MIGRATIONS_SQL = """
 ALTER TABLE pii_mappings ADD COLUMN IF NOT EXISTS norm_version VARCHAR;
 ALTER TABLE grants ADD COLUMN IF NOT EXISTS domain VARCHAR;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS filename VARCHAR;
+ALTER TABLE grants ADD COLUMN IF NOT EXISTS role VARCHAR;
 """
 
 # Reveal walks this table on every call; without the index it is a sequential

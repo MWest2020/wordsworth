@@ -1,0 +1,73 @@
+{% extends "base.html" %}{% block title %}rollen — wordsworth{% endblock %}
+{% set page = 'roles' %}
+{% block who %}{{ caller }}{% endblock %}
+{% block body %}
+<p class="eyebrow">Rollen</p>
+<h1>Wie ziet welke PII</h1>
+<p class="lede">Een rol is een naam plus de PII-types die eronder zichtbaar mogen
+zijn. De <b>scope</b> — dit document of alles — staat hier niet: die kies je bij
+het toekennen, dus bij de grant. Dezelfde rol kan aan de een gegeven worden voor
+één document en aan de ander voor alles.</p>
+
+{% if fout %}<p class="fout" style="margin-top:18px">{{ fout }}</p>{% endif %}
+
+<div class="card" style="margin-top:20px">
+ <div class="panel-head"><span class="dot"></span><h3>Rollen</h3>
+   <span class="badge">{{ rollen|length }}</span></div>
+ {% if rollen %}
+ <table><thead><tr><th>rol</th><th>mag zien</th><th>stand</th><th></th></tr></thead>
+ <tbody>
+ {% for r in rollen %}
+ <tr>
+  <td><b>{{ r.name }}</b>
+    <div class="note" style="font-size:.76rem">aangemaakt door {{ r.created_by }}</div></td>
+  <td>{% for t in r.allowed_types %}<span class="pill">{{ t }}</span>{% else %}<span class="note">niets</span>{% endfor %}</td>
+  <td><span class="state">{{ 'actief' if r.active else 'UIT' }}</span></td>
+  <td>
+   <form method="post" action="/console/roles/switch" style="display:flex; gap:6px; flex-wrap:wrap">
+    <input type="hidden" name="name" value="{{ r.name }}">
+    <input type="hidden" name="aan" value="{{ '0' if r.active else '1' }}">
+    <input type="text" name="reason" placeholder="reden" aria-label="reden"
+           style="width:11rem; padding:7px 10px">
+    <button class="btn" type="submit" style="padding:7px 14px">{{ 'Zet uit' if r.active else 'Zet aan' }}</button>
+   </form>
+  </td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog geen rollen.</p>{% endif %}
+</div>
+
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Nieuwe rol</h3></div>
+ <form method="post" action="/console/roles" style="padding:16px">
+  <div class="field">
+   <label for="rolnaam">Naam</label>
+   <input type="text" id="rolnaam" name="name" placeholder="HR" required>
+  </div>
+  <label>Mag zien</label>
+  <div style="display:flex; flex-wrap:wrap; gap:6px 14px; margin-bottom:14px">
+   {% for t in types %}
+   <label style="display:flex; align-items:center; gap:6px; text-transform:none;
+     font-weight:400; letter-spacing:0; color:var(--ink); margin:0">
+    <input type="checkbox" name="types" value="{{ t.name }}">
+    <span>{{ t.name }}</span>
+    <span class="pill" title="{{ t.basis }}">{{ t.basis }}</span>
+   </label>
+   {% endfor %}
+  </div>
+  <button class="btn" type="submit">Maak rol</button>
+ </form>
+</div>
+
+<div class="sovereign">
+ <p>Een rol uitzetten werkt <b>onmiddellijk</b> en raakt geen enkele grant aan:
+ elke grant die de rol noemt autoriseert vanaf dat moment niets. Dat is de reden
+ dat een rol hier een ding is en geen sjabloon — bij een sjabloon zou uitzetten
+ betekenen dat je elke uitgegeven grant moet terugvinden, mét een tijdvenster,
+ precies op het moment dat je er geen wilt.</p>
+ <p class="note" style="margin-top:10px">Wat er eerder onthuld is, verandert
+ hierdoor niet. Dat is gebeurd en staat in het auditspoor. "Vanaf nu niet meer"
+ is iets anders dan "is nooit gezien".</p>
+</div>
+{% endblock %}

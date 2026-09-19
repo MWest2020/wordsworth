@@ -106,6 +106,29 @@ kan laten zien dát er een uitzondering gold en voor wie.
   laten en er niet omheen groeien: waar een rol vandaan komt, is straks niet
   meer hier.
 
+## Beantwoord door Mark, 2026-09-19
+
+*"De rollen moeten configureerbaar zijn. Als in, ik maak een rol aan en selecteer
+welke PII's mogen, per document of globaal?"*
+
+Ja — met één scheiding erin, want anders heb je twee rollen nodig voor hetzelfde
+werk:
+
+- **Een rol is een naam plus een verzameling PII-types.** "HR mag PERSON en
+  EMAIL." Verder niets.
+- **De scope — dit document of alles — kies je bij het tóékennen.** Dezelfde rol
+  kan aan de een gegeven worden voor één document en aan de ander globaal. Zat
+  de scope in de rol, dan zou "HR voor dit dossier" en "HR voor alles" twee
+  aparte rollen zijn die morgen uit elkaar lopen.
+
+Dat is precies de vorm die hierboven al stond: de grant draagt wie, welke scope
+en tot wanneer; de rol levert de types. Er komt geen beslispunt bij, alleen een
+invoer op het punt dat er al is.
+
+En het verandert niets aan de ongescopete grant: die blijft geweigerd tenzij hij
+een rol noemt die hem mag hebben. De uitzondering draagt een naam in plaats van
+te schuilen achter een boolean.
+
 ## Open vragen die deze change moet beantwoorden
 
 1. ~~Mag een beheerder zichzelf de beheerdersrol geven? Wie geeft de eerste?~~
