@@ -89,6 +89,18 @@ def compute(session: Session, generator: Generator, document_ids,
     Opnieuw laten draaien doet het werk dus niet opnieuw — bij een taalmodel is
     dat geen optimalisatie maar het verschil tussen een knop die je durft in te
     drukken en een die je vermijdt.
+
+    **Commit per document.** Deze functie breekt daarmee de huisregel dat de
+    aanroeper de transactie bezit, en dat is hier de juiste keuze. Twee redenen,
+    allebei vandaag gemeten:
+
+    - Tien documenten kostten meer dan een kwartier. Eén transactie over zo'n
+      run houdt uren een leeslock vast, en een `ALTER TABLE` uit de init-job
+      loopt daar met een lock_timeout van 5 seconden op stuk — dat hield op
+      2026-09-18 de uitrol tegen.
+    - Diezelfde run werd afgekapt, en met één commit aan het eind was ál het
+      werk weg. Bij werk dat per stuk minuten kost, hoort elk stuk dat af is
+      ook af te zijn.
     """
     ids = list(document_ids)
     bestaand = {
@@ -107,6 +119,7 @@ def compute(session: Session, generator: Generator, document_ids,
             failed += 1
         else:
             made += 1
+            session.commit()
     return Made(seen=len(ids), made=made, skipped=len(bestaand), failed=failed,
                 without_text=zonder)
 

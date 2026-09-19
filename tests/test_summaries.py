@@ -206,3 +206,38 @@ def test_the_endpoint_is_behind_the_corpus_gate(session_factory):
     r = c.post(f"/dossiers/{uuid4()}/summaries",
                headers={"x-api-key": "s3cret", "Accept": "application/json"})
     assert r.status_code == 403
+
+
+def test_an_interrupted_run_keeps_what_it_already_made(session_factory):
+    """Tien documenten kostten op productie meer dan een kwartier, en de run
+    werd afgekapt. Met één commit aan het eind was al dat werk weg.
+
+    Bij werk dat per stuk minuten kost hoort elk stuk dat af is, ook af te zijn
+    — en houdt geen enkele transactie uren een leeslock vast, want daar liep de
+    uitrol van 18-09 op stuk.
+    """
+    class ValtUit:
+        def __init__(self):
+            self.n = 0
+
+        def generate(self, query, sources):     # pragma: no cover
+            raise AssertionError
+
+        def summarise(self, text: str) -> str:
+            self.n += 1
+            if self.n > 2:
+                raise KeyboardInterrupt("afgekapt")
+            return f"Samenvatting {self.n}."
+
+    with session_factory() as s:
+        ids = [_doc(s, f"Document nummer {i}.").id for i in range(5)]
+        s.commit()
+        try:
+            summaries.compute(s, ValtUit(), ids, model="test")
+        except KeyboardInterrupt:
+            pass
+        s.rollback()
+
+    with session_factory() as tweede:
+        bewaard = summaries.by_document(tweede, ids)
+        assert len(bewaard) == 2, "het werk dat af was is weg"
