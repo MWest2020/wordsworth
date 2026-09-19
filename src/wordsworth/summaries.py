@@ -74,6 +74,55 @@ class Made:
     without_text: int  # nooit door de straat gekomen
 
 
+#: De "maker" van een extractieve samenvatting. Staat in hetzelfde veld als de
+#: modelnaam, want dat veld beantwoordt één vraag: wat heeft deze tekst
+#: gemaakt. Het scherm leest hem om te weten of het een citaat toont of een
+#: bewering, en dat onderscheid is de hele reden dat dit veld er is.
+EXTRACTIEF = "extractief"
+
+#: Hoeveel tekens een extractieve samenvatting hoogstens meeneemt.
+_EXTRACT_TEKENS = 300
+
+#: Een regel die alleen uit weglatingstekens, leestekens, cijfers of losse
+#: letters bestaat, benoemt niets. In gescande brieven staan die bovenaan bij
+#: bosjes: paginanummers, kenmerkstreepjes, de resten van een briefhoofd.
+_ZEGT_NIETS = re.compile(r"^[\W\d_…]*$")
+
+
+def is_citation(model: str) -> bool:
+    """Is deze samenvatting een citaat (extractief) of een bewering (model)?"""
+    return model == EXTRACTIEF
+
+
+def extractive(text: str) -> str:
+    """De eerste regels die iets zeggen, letterlijk overgenomen.
+
+    Nul modelaanroepen, en daarmee nul seconden — tegenover 123 seconden per
+    document voor het model op deze hardware (één core, geen GPU).
+
+    Maar de reden is niet alleen de tijd. Dit is een **citaat**: je kunt het
+    terugvinden in de opgeslagen tekst. Een modelsamenvatting is een bewering.
+    Bij bestuurlijke post staat bovendien juist in de eerste regels wat je wilt
+    weten — afzender, datum, kenmerk, onderwerp — en dat is precies wat een
+    taalmodel van 3b op OCR-ruis het slechtst navertelt.
+
+    De tokens gaan er net zo goed uit als bij een modelsamenvatting: ze horen
+    niet in een veld dat op een scherm belandt.
+    """
+    regels = []
+    lengte = 0
+    for regel in (text or "").splitlines():
+        kaal = clean(regel)
+        if not kaal or _ZEGT_NIETS.match(kaal):
+            continue
+        regels.append(kaal)
+        lengte += len(kaal)
+        if lengte >= _EXTRACT_TEKENS:
+            break
+    uit = " ".join(regels)[:_EXTRACT_TEKENS].strip()
+    return uit + "…" if len(" ".join(regels)) > _EXTRACT_TEKENS else uit
+
+
 def clean(generated: str) -> str:
     """De tekst zoals hij opgeslagen wordt: zonder tokens, zonder dubbele witruimte.
 
@@ -93,12 +142,22 @@ def clean(generated: str) -> str:
     return "" if not tekst.strip("… ,.;:-") else tekst
 
 
-def for_document(session: Session, generator: Generator, document_id: UUID,
+def for_document(session: Session, generator: Generator | None, document_id: UUID,
                  model: str) -> DocumentSummary | None:
-    """Maak en bewaar één samenvatting, of geef None als dat niet lukt."""
+    """Maak en bewaar één samenvatting, of geef None als dat niet lukt.
+
+    `generator=None` betekent: extractief, de eerste regels die iets zeggen.
+    Geen vlag erbij, want er ís geen derde geval — zonder model kan er geen
+    modelsamenvatting zijn.
+    """
     tekst = get_anonymized_text(session, document_id)
     if not tekst:
         return None
+    if generator is None:
+        samenvatting, model = extractive(tekst), EXTRACTIEF
+        if not samenvatting:
+            return None
+        return _bewaar(session, document_id, samenvatting, model)
     try:
         rauw = generator.summarise(tekst)
     except GenerationError:
@@ -138,7 +197,7 @@ def _bewaar(session: Session, document_id: UUID, tekst: str,
     return session.get(DocumentSummary, document_id)
 
 
-def compute(session: Session, generator: Generator, document_ids,
+def compute(session: Session, generator: Generator | None, document_ids,
             model: str) -> Made:
     """Maak wat er nog niet is. Bestaande samenvattingen blijven staan.
 

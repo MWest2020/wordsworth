@@ -48,7 +48,10 @@ def _samenvatting(rij) -> dict | None:
     """
     if rij is None:
         return None
+    from .summaries import is_citation
+
     return {"tekst": rij.text, "model": rij.model,
+            "citaat": is_citation(rij.model),
             "wanneer": rij.created_at.strftime("%Y-%m-%d")}
 
 
