@@ -421,6 +421,15 @@ def create_app(
                 status_code=403,
                 detail="caller not authorized to issue or revoke grants")
 
+    def _resolve_audit() -> KeyLifecycleAudit:
+        from pathlib import Path
+
+        if key_audit is not None:
+            return key_audit
+        from .key_audit import JsonlKeyLifecycleAudit
+        return JsonlKeyLifecycleAudit(
+            Path(default_settings.key_lifecycle_audit_path))
+
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
         if not authorize_corpus_read(caller, corpus_read_labels):
@@ -441,8 +450,12 @@ def create_app(
         # /documents/{id}/anonymized en /export. Dezelfde gegevens, dezelfde
         # grens -- anders IS de console de tweede deur die zijn eigen docstring
         # verbiedt.
+        # Het spoor gaat mee: een rol uitzetten via de console hoort hetzelfde
+        # record op te leveren als via de API. Twee wegen naar dezelfde
+        # handeling met maar één spoor eronder is hoe een spoor gaten krijgt.
         app.include_router(build_router(session_factory, keys, search_index,
-                                        _guard_corpus_read, _guard_grant_admin))
+                                        _guard_corpus_read, _guard_grant_admin,
+                                        _resolve_audit))
         # Wat de browser van dit scherm mag maken: geen iframe (de Onthul-knop
         # is anders te clickjacken, met het auditspoor op naam van het
         # slachtoffer) en geen cross-site post (die kan het callerlabel van een
@@ -1329,6 +1342,7 @@ def create_app(
     # mag, bepaalt wat iedereen met die rol mag zien, en dat is geen kleiner
     # recht dan een grant uitgeven.
     if session_factory is not None:
+
         from . import roles as roles_mod
 
         def _role_out(r) -> RoleResponse:
@@ -1354,7 +1368,8 @@ def create_app(
             with session_factory() as session:
                 try:
                     role = roles_mod.create(session, body.name, body.allowed_types,
-                                            actor=_actor(request))
+                                            actor=_actor(request),
+                                            audit=_resolve_audit())
                 except roles_mod.RoleError as exc:
                     raise HTTPException(status_code=400, detail=str(exc))
                 out = _role_out(role)
@@ -1376,7 +1391,8 @@ def create_app(
             with session_factory() as session:
                 try:
                     role = roles_mod.set_types(session, name, body.allowed_types,
-                                               actor=_actor(request))
+                                               actor=_actor(request),
+                                               audit=_resolve_audit())
                 except roles_mod.RoleError as exc:
                     raise HTTPException(status_code=404, detail=str(exc))
                 out = _role_out(role)
@@ -1408,7 +1424,7 @@ def create_app(
             with session_factory() as session:
                 try:
                     role = fn(session, name, actor=_actor(request),
-                              reason=body.reason)
+                              reason=body.reason, audit=_resolve_audit())
                 except roles_mod.RoleError as exc:
                     code = 404 if "onbekende rol" in str(exc) else 400
                     raise HTTPException(status_code=code, detail=str(exc))
@@ -1420,16 +1436,8 @@ def create_app(
     # grant store (no key provider) — mounts wherever grants are configured.
     if (session_factory is not None
             and (grant_store is not None or grant_store_factory is not None)):
-        from pathlib import Path
 
         from .grants import issue_grant, revoke_grant
-
-        def _resolve_audit() -> KeyLifecycleAudit:
-            if key_audit is not None:
-                return key_audit
-            from .key_audit import JsonlKeyLifecycleAudit
-            return JsonlKeyLifecycleAudit(
-                Path(default_settings.key_lifecycle_audit_path))
 
         def _grant_response(g) -> GrantResponse:
             return GrantResponse(

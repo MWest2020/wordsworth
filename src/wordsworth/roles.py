@@ -59,7 +59,8 @@ class Resolved:
     reason: str
 
 
-def create(session: Session, name: str, allowed_types, actor: str) -> Role:
+def create(session: Session, name: str, allowed_types, actor: str,
+           audit=None) -> Role:
     """Maak een rol aan met de types die eronder zichtbaar mogen zijn."""
     name = (name or "").strip()
     if not name:
@@ -71,6 +72,7 @@ def create(session: Session, name: str, allowed_types, actor: str) -> Role:
                         created_by=actor)
             session.add(role)
             session.flush()
+        _noteer(audit, role, "created", actor, None)
         return role
     except IntegrityError:
         raise RoleError(f"rol {name!r} bestaat al")
@@ -94,7 +96,8 @@ def listing(session: Session) -> list[Role]:
     return list(session.execute(select(Role).order_by(Role.name)).scalars())
 
 
-def set_types(session: Session, name: str, allowed_types, actor: str) -> Role:
+def set_types(session: Session, name: str, allowed_types, actor: str,
+              audit=None) -> Role:
     """Verander wat deze rol toestaat.
 
     Werkt onmiddellijk door in elke grant die de rol noemt — dat is het punt.
@@ -105,10 +108,12 @@ def set_types(session: Session, name: str, allowed_types, actor: str) -> Role:
     role = _must(session, name)
     role.allowed_types = sorted(normalise(allowed_types))
     session.flush()
+    _noteer(audit, role, "types", actor, None)
     return role
 
 
-def deactivate(session: Session, name: str, actor: str, reason: str) -> Role:
+def deactivate(session: Session, name: str, actor: str, reason: str,
+               audit=None) -> Role:
     """Breakglass: zet een rol uit.
 
     Een reden is verplicht. Een noodrem zonder reden is een schakelaar waarvan
@@ -124,16 +129,19 @@ def deactivate(session: Session, name: str, actor: str, reason: str) -> Role:
     role = _must(session, name)
     role.active = False
     session.flush()
+    _noteer(audit, role, "deactivated", actor, reason)
     return role
 
 
-def activate(session: Session, name: str, actor: str, reason: str) -> Role:
+def activate(session: Session, name: str, actor: str, reason: str,
+             audit=None) -> Role:
     """En weer aan. Ook met een reden: terugzetten is net zo goed een besluit."""
     if not (reason or "").strip():
         raise RoleError("aanzetten vraagt een reden")
     role = _must(session, name)
     role.active = True
     session.flush()
+    _noteer(audit, role, "activated", actor, reason)
     return role
 
 
@@ -153,6 +161,26 @@ def resolve(session: Session, name: str | None) -> Resolved:
     if not role.active:
         return Resolved(frozenset(), "rol staat uit")
     return Resolved(frozenset(role.allowed_types or ()), "rol actief")
+
+
+def _noteer(audit, role: Role, change: str, actor: str, reason: str | None) -> None:
+    """Schrijf de wijziging naar het sleutel-levensloopspoor.
+
+    Niet in de document-hashketen: die is de toestandsmachine van één document,
+    en een rol raakt er duizend. Een record per document zou de keten
+    volschrijven met duizend kopieën van hetzelfde feit; één record zonder
+    document past er niet in. Rollen staan daarom waar grants en
+    sleutelrotaties ook staan — globale autorisatiefeiten zonder document, in
+    een eigen append-only stroom.
+
+    `audit=None` betekent: geen spoor. Dat is geen stille uitzondering maar de
+    testmodus; elke aanroeper uit de API geeft er een mee.
+    """
+    if audit is None:
+        return
+    audit.role_changed(role=role.name, change=change,
+                       allowed_types=list(role.allowed_types),
+                       active=role.active, actor=actor, reason=reason)
 
 
 def _must(session: Session, name: str) -> Role:

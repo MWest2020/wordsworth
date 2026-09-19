@@ -37,10 +37,14 @@ langer "wie de HR-sleutel heeft mag dit".
 
 ## 3. Breakglass
 - [x] Uitzetten en aanzetten vragen allebei een reden.
-- [ ] **Nog niet**: het uitzetten zelf staat nog niet in het auditspoor. De
-      auditketen hangt aan een document en een rol raakt er duizend — dezelfde
-      vraag die #104 openhoudt. De onthulling ONDER een rol staat er wel in
-      (`role`, `global_by_role`).
+- [x] In het **sleutel-levensloopspoor**, waar grants en sleutelrotaties ook
+      staan. Niet in de document-hashketen: die is de toestandsmachine van één
+      document en een rol raakt er duizend — duizend kopieën van hetzelfde feit,
+      of één record zonder document dat er niet in past. Dit is dezelfde
+      afweging die `key_audit.py` al voor rotaties maakte.
+      Aanmaken, inperken, uitzetten en aanzetten staan er allemaal in, met de
+      stand ná de wijziging erbij. De console schrijft hetzelfde record als de
+      API.
 - [x] `/activate`, door wie de grant-beheerpoort mag passeren, met een reden.
 
 ## 4. Bewijs
@@ -52,7 +56,9 @@ langer "wie de HR-sleutel heeft mag dit".
       ingeperkt type wordt INGEHOUDEN (200 + withheld_types), niet 403 —
       hetzelfde als een type dat nooit in de grant stond. Pas als de rol niets
       meer toestaat doet de grant niets, en dan is het 403.
-- [ ] Live op productie, na het uitrollen.
+- [x] Live op productie (2026-09-19, sha fbe612f): rol actief -> {EMAIL}, rol
+      uit -> set(), grant nog ACTIVE, rol weer aan -> {EMAIL}. De typelijst van
+      de grant bleef leeg: hij kopieert niet.
 
 ## Wat hier misgaan kan
 Van de vier epics is dit degene waar een fout niet "iets werkt niet" betekent
