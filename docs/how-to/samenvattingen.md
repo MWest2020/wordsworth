@@ -35,6 +35,13 @@ Op verzoek en niet bij ingest, om dezelfde reden als bij de onderwerpen: anders
 wacht de straat op het taalmodel, voor een tekst die op dat moment niemand
 leest.
 
+**Reken op minuten per document.** Tien documenten uit een Woo-dossier kostten
+op productie meer dan een kwartier met `llama3.2:3b`. Voor een groot dossier is
+dit werk voor een Job, niet voor een HTTP-verzoek — en de berekening **commit
+per document**, zodat een afgekapte run houdt wat af is en geen uren een
+leeslock vasthoudt. Dat laatste is geen theorie: een lange leestransactie hield
+op 2026-09-18 een `ALTER TABLE` uit de init-job tegen en daarmee de hele uitrol.
+
 Het antwoord draagt de noemer:
 
 ```json
