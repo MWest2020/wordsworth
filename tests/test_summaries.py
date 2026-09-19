@@ -241,3 +241,57 @@ def test_an_interrupted_run_keeps_what_it_already_made(session_factory):
     with session_factory() as tweede:
         bewaard = summaries.by_document(tweede, ids)
         assert len(bewaard) == 2, "het werk dat af was is weg"
+
+
+def test_another_writer_does_not_knock_the_run_over(session_factory):
+    """Gemeten op 2026-09-19: een handmatige run en een Job liepen elkaar in de
+    weg en de Job viel om op `duplicate key` — ná dertien minuten werk.
+
+    `compute()` kijkt aan het begin één keer wat er al is, en tussen dat moment
+    en het schrijven zit bij een taalmodel een kwartier. Lezen-dan-schrijven is
+    daar geen controle maar een gok.
+    """
+    with session_factory() as s:
+        doc = _doc(s, "Een besluit over een dakkapel.")
+        doc_id = doc.id
+        s.commit()
+
+    with session_factory() as eerste:
+        # `compute` heeft net vastgesteld dat er nog niets is...
+        bestaand = summaries.by_document(eerste, [doc_id])
+        assert bestaand == {}
+
+        # ...en ondertussen schrijft een ander er wel een.
+        with session_factory() as ander:
+            summaries.for_document(ander, Model("Van de ander."), doc_id, "ander")
+            ander.commit()
+
+        # Dit mag geen IntegrityError geven maar gewoon de nieuwste schrijven.
+        rij = summaries.for_document(eerste, Model("Van mij."), doc_id, "mij")
+        eerste.commit()
+        assert rij.text == "Van mij."
+
+    with session_factory() as derde:
+        opnieuw = summaries.by_document(derde, [doc_id])[doc_id]
+        assert opnieuw.text == "Van mij." and opnieuw.model == "mij"
+
+
+def test_a_removed_token_leaves_a_visible_mark(session_factory):
+    """De eerste productierun gaf "de effecten van de aanzanding op het  en geeft
+    aanbevelingen": het gat leest als een taalfout in plaats van als een
+    weglating, en dan twijfelt de lezer aan het model."""
+    with session_factory() as s:
+        doc = _doc(s, "Een rapport.")
+        summaries.compute(s, Model("De melding van [PERSOON:3fa9c2d1] is ontvangen."),
+                          [doc.id], model="test")
+        tekst = s.get(DocumentSummary, doc.id).text
+        assert tekst == "De melding van … is ontvangen."
+
+
+def test_two_removals_side_by_side_read_as_one(session_factory):
+    with session_factory() as s:
+        doc = _doc(s, "Een rapport.")
+        summaries.compute(
+            s, Model("Betreft [PERSOON:3fa9c2d1] [ADRES:11223344] en de regeling."),
+            [doc.id], model="test")
+        assert s.get(DocumentSummary, doc.id).text == "Betreft … en de regeling."

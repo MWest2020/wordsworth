@@ -35,6 +35,12 @@ Op verzoek en niet bij ingest, om dezelfde reden als bij de onderwerpen: anders
 wacht de straat op het taalmodel, voor een tekst die op dat moment niemand
 leest.
 
+Het wegschrijven is een **upsert**, geen lezen-dan-schrijven. `compute()` kijkt
+aan het begin één keer wat er al is, en bij een taalmodel zit daar een kwartier
+tussen dat moment en het schrijven. Op 2026-09-19 liepen een handmatige run en
+een Job elkaar zo in de weg: de Job viel om op `duplicate key` ná dertien
+minuten werk.
+
 **Reken op minuten per document.** Tien documenten uit een Woo-dossier kostten
 op productie meer dan een kwartier met `llama3.2:3b`. Voor een groot dossier is
 dit werk voor een Job, niet voor een HTTP-verzoek — en de berekening **commit
@@ -79,6 +85,12 @@ invoerkant dichtzet, nu aan de uitvoerkant.
 De prompt vraagt het model óók geen tokens over te nemen. Dat is een verzoek;
 het filteren is de garantie, en alleen op die tweede staat een test
 (`test_a_token_never_survives_into_a_summary`).
+
+Waar een token stond komt een **zichtbaar weglatingsteken** (`…`), geen lege
+plek. De eerste productierun gaf zinnen als *"de effecten van de aanzanding op
+het  en geeft aanbevelingen"*: dat leest als een taalfout in plaats van als een
+weglating, en dan gaat de lezer twijfelen aan het model terwijl er gewoon iets
+is weggehaald.
 
 Blijft er na het filteren niets over, dan is er **geen** samenvatting. Een
 placeholder die eruitziet als inhoud is erger dan een leeg veld: hij wordt
