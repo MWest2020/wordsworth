@@ -39,7 +39,28 @@ def scope_ids(session, dossier: str):
     return None if ids is None else [str(i) for i in ids]
 
 
-def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> None:
+def _rank(index, embedder, q: str, size: int, only, topic):
+    """De rangschikking voor deze vraag, en hoe hij tot stand kwam.
+
+    Met een embedder wordt de vraag zélf geëmbed en doet `hybrid_search` het
+    werk: lexicale treffers en vectorburen door RRF gefuseerd, daarna op cosinus
+    geordend. Dat is wat "stel een vraag" van "typ een trefwoord" onderscheidt —
+    een vraag bevat zelden de woorden die in het antwoord staan.
+
+    Zonder embedder blijft het BM25, en dat staat er dan ook bij. Stil
+    terugvallen op iets zwakkers is erger dan het niet hebben: dan wijt iemand
+    de magere uitslag aan het corpus.
+    """
+    if embedder is None:
+        return index.search(q, size=size, only=only, topic=topic), "lexicaal"
+    from .hybrid import hybrid_search
+
+    return (hybrid_search(index, embedder, q, size=size, only=only, topic=topic),
+            "semantisch + lexicaal")
+
+
+def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
+          embedder=None) -> None:
     @router.get("/search", response_class=HTMLResponse, include_in_schema=False)
     def search(request: Request, q: str = "", size: int = 10,
                dossier: str = "", topic: str = ""):
@@ -51,7 +72,7 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> N
         """
         if mag_lezen is not None:
             mag_lezen(request)
-        hits, fout, keuzes = [], "", []
+        hits, fout, keuzes, manier = [], "", [], ""
         with session_factory() as session:
             keuzes = dossier_choices(session)
         if q and search_index is None:
@@ -69,8 +90,8 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> N
                 fout = str(exc)
             else:
                 try:
-                    raw = search_index.search(q, size=size, only=only,
-                                              topic=topic or None)
+                    raw, manier = _rank(search_index, embedder, q, size, only,
+                                        topic or None)
                 except Exception as exc:                 # index down, query bad
                     fout = f"De zoekindex gaf een fout: {type(exc).__name__}"
             if raw:
@@ -103,6 +124,7 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None) -> N
             onderwerp = display_name(gevonden) if gevonden else "onbekend onderwerp"
         return TEMPLATES.TemplateResponse(request, "search.html", {
             "q": q, "hits": hits, "fout": fout, "dossier": dossier,
+            "manier": manier,
             "dossiers": keuzes, "suggested": console_data.SUGGESTED,
             "topic": topic, "onderwerp": onderwerp,
             "searchable": search_index is not None})

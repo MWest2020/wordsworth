@@ -455,7 +455,7 @@ def create_app(
         # handeling met maar één spoor eronder is hoe een spoor gaten krijgt.
         app.include_router(build_router(session_factory, keys, search_index,
                                         _guard_corpus_read, _guard_grant_admin,
-                                        _resolve_audit))
+                                        _resolve_audit, embedder))
         # Wat de browser van dit scherm mag maken: geen iframe (de Onthul-knop
         # is anders te clickjacken, met het auditspoor op naam van het
         # slachtoffer) en geen cross-site post (die kan het callerlabel van een
