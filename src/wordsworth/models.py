@@ -287,3 +287,27 @@ class Role(Base):
         DateTime(timezone=True), nullable=False,
         default=lambda: datetime.now(timezone.utc))
     created_by: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class DocumentSummary(Base):
+    """Een korte samenvatting van één document (samenvattingen).
+
+    Hoort bij het document en niet bij de vraag: hem per zoekopdracht maken is
+    traag én levert morgen een andere tekst op dezelfde vraag.
+
+    `model` en `created_at` staan erbij omdat een samenvatting van llama3.2:3b
+    een ander ding is dan een van een groter model, en een lezer moet kunnen
+    zien welke er voor hem staat. Dat is geen administratie maar herkomst: dit
+    is de enige tekst in dit systeem die niet terug te voeren is op iets dat is
+    opgeslagen.
+    """
+
+    __tablename__ = "document_summaries"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), primary_key=True)
+    text: Mapped[str] = mapped_column(String, nullable=False)
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))

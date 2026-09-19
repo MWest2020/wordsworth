@@ -60,6 +60,14 @@ hier weinig — dat ligt dan aan de opstelling en niet aan het corpus.</p>
  <tr>
   <td style="width:4rem"><span class="state">{{ h.score }}</span></td>
   <td><a href="/console/documents/{{ h.id }}">{{ h.key }}</a>
+      {% if h.samenvatting %}
+      <div style="margin-top:5px">{{ h.samenvatting.tekst }}</div>
+      <div class="note" style="font-size:.72rem">samengevat door
+        {{ h.samenvatting.model }} op {{ h.samenvatting.wanneer }} — een
+        gegenereerde tekst, geen citaat</div>
+      {% else %}
+      <div class="note" style="font-size:.72rem; margin-top:5px">nog geen samenvatting</div>
+      {% endif %}
       <div class="note" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem; margin-top:3px">{{ h.fragment }}</div></td>
  </tr>
  {% endfor %}

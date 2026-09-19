@@ -58,14 +58,30 @@ as a summary of a document that nobody summarised.
 - **WHEN** the model fails for a document
 - **THEN** no summary is stored for it and the run reports how many failed
 
+### Requirement: Een samenvatting draagt geen pseudonym-token
+
+A stored summary SHALL contain no pseudonym token, and the removal SHALL happen
+after generation rather than being left to the model's instruction.
+
+A quotation cannot invent a token; generated text can. Tokens resolve through a
+global mapping store, so an invented `[PERSOON:aabbccdd]` is not nonsense — it
+is somebody, just not somebody in this document. A summary carrying it ties a
+stranger to this document, and a reveal on that summary hands out that
+stranger's clear name inside a grant scoped to this document. That is the hole
+`neutralise_foreign_tokens` closes on the way in, here on the way out.
+
+#### Scenario: A model that emits a token does not get to keep it
+
+- **WHEN** the generated text contains a pseudonym token
+- **THEN** the stored summary does not contain it
+
 ### Requirement: Een samenvatting staat achter dezelfde poort als het corpus
 
 A summary SHALL be readable only by callers permitted to read the corpus, and
 SHALL NOT appear in exports, URLs or facets.
 
-It is derived from pseudonymised text and can therefore carry pseudonym tokens.
-That is the safe form on a screen that is already behind the corpus gate; it is
-not the safe form somewhere the reveal gate never looks.
+It is derived from the corpus and says what a document is about. That is the
+same kind of knowledge as the stored text, and it belongs behind the same gate.
 
 #### Scenario: The corpus gate applies
 
