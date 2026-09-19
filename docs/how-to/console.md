@@ -191,6 +191,21 @@ It reads the corpus through the same gate as `/documents/{id}/anonymized` and
 here. Until 2026-09-18 it was not, which made the console precisely the second
 door its own docstring forbids.
 
+### Een vraag stellen, niet een trefwoord typen
+
+De zoekpagina embedt de **vraag zelf** en legt hem naast de lexicale treffers
+(`hybrid_search`: RRF voor de kandidaten, cosinus voor de volgorde). Dat is wat
+"stel een vraag" van "typ een trefwoord" onderscheidt — een vraag bevat zelden
+de woorden die in het antwoord staan. *"Redenen tot afkeuring?"* vindt een stuk
+waarin "afgewezen" staat; BM25 vindt daar niets.
+
+Draait een instantie zonder embedder, dan blijft het BM25 **en zegt het scherm
+dat**. Stil terugvallen op iets zwakkers is erger dan het niet hebben: dan wijt
+een lezer de magere uitslag aan het corpus in plaats van aan de opstelling.
+
+De dossiergrens en het onderwerp-filter gelden onverkort: een vraag stellen is
+geen andere zoekopdracht, alleen een andere manier om er een te formuleren.
+
 ### Die lijst gaat over namen, en namen veranderen met de deur
 
 `WORDSWORTH_CORPUS_READ_LABELS` bevat **callerlabels**, en wat een callerlabel

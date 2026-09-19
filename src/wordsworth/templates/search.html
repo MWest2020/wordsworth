@@ -2,12 +2,13 @@
 {% set page = 'search' %}
 {% block body %}
 <p class="eyebrow">Zoeken &amp; rangschikken</p>
-<h1>Zoek door het corpus</h1>
-<p class="lede">Binnen één dossier, want dat is wat je doet: je hebt een zaak
-laten verwerken en je zoekt daarin. De rangschikking draait volledig over de
-gepseudonimiseerde index, en het fragment hieronder komt uit de ópgeslagen tekst
-— wat je leest is een citaat van wat de index werkelijk bevat, niet van een
-brondocument.</p>
+<h1>Stel een vraag aan het corpus</h1>
+<p class="lede">Een hele vraag mag, geen trefwoord nodig: de vraag wordt zelf
+geëmbed en naast de lexicale treffers gelegd. Binnen één dossier, want dat is
+wat je doet — je hebt een zaak laten verwerken en je zoekt daarin. De
+rangschikking draait volledig over de gepseudonimiseerde index, en het fragment
+hieronder komt uit de ópgeslagen tekst: wat je leest is een citaat van wat de
+index werkelijk bevat, niet van een brondocument.</p>
 
 <form method="get" action="/console/search" style="margin-top:20px; display:flex; gap:8px; flex-wrap:wrap">
  <select name="dossier" aria-label="dossier" style="font:inherit; font-size:.95rem;
@@ -18,8 +19,9 @@ brondocument.</p>
   {% for d in dossiers %}<option value="{{ d.name }}"
     {% if dossier == d.name %}selected{% endif %}>{{ d.name }} ({{ d.documents }})</option>{% endfor %}
  </select>
- <input type="text" name="q" value="{{ q }}" placeholder="vergunning" autofocus
-        aria-label="zoekterm" style="flex:1; min-width:14rem">
+ <input type="text" name="q" value="{{ q }}"
+        placeholder="Waarom is de vergunning voor de dakkapel geweigerd?" autofocus
+        aria-label="vraag" style="flex:1; min-width:18rem">
  {% if topic %}<input type="hidden" name="topic" value="{{ topic }}">{% endif %}
  <button class="btn" type="submit">Zoek</button>
 </form>
@@ -39,13 +41,19 @@ betekenen als geen afbakening.</p>
 </div>
 <p class="note" style="margin-top:8px">Voorbeelden om mee te beginnen, geen
 belofte dat ze raak zijn — dat hangt af van het corpus dat toevallig geladen is.</p>
+{% if q and manier == 'lexicaal' %}
+<p class="note" style="margin-top:8px">Deze instantie draait zonder embedder, dus
+dit is een <b>lexicale</b> rangschikking: er is op wóórden gezocht, niet op
+betekenis. Een vraag die de termen uit het document niet letterlijk bevat, vindt
+hier weinig — dat ligt dan aan de opstelling en niet aan het corpus.</p>
+{% endif %}
 
 {% if fout %}<p class="fout" style="margin-top:18px">{{ fout }}</p>{% endif %}
 
 {% if q and not fout %}
 <div class="card" style="margin-top:20px">
  <div class="panel-head"><span class="dot"></span><h3>Resultaten</h3>
-   <span class="badge">{{ hits|length }} voor "{{ q }}" in {{ 'alle dossiers' if dossier == 'alle' else dossier }}{% if topic %} · {{ onderwerp }}{% endif %}</span></div>
+   <span class="badge">{{ hits|length }} voor "{{ q }}" in {{ 'alle dossiers' if dossier == 'alle' else dossier }}{% if topic %} · {{ onderwerp }}{% endif %}{% if manier %} · {{ manier }}{% endif %}</span></div>
  {% if hits %}
  <table><tbody>
  {% for h in hits %}

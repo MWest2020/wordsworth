@@ -55,7 +55,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 def build_router(session_factory, keys: dict[str, str],
                  search_index=None, guard=None, admin_guard=None,
-                 audit=None) -> APIRouter:
+                 audit=None, embedder=None) -> APIRouter:
     router = APIRouter(prefix="/console", tags=["console"])
 
     def _caller(request: Request) -> str:
@@ -158,7 +158,7 @@ def build_router(session_factory, keys: dict[str, str],
             "docs": docs, "total": total, "caller": _caller(request)})
 
     console_search.mount(router, session_factory, search_index, TEMPLATES,
-                         _mag_lezen)
+                         _mag_lezen, embedder)
     console_topics.mount(router, session_factory, search_index, TEMPLATES,
                          _mag_lezen, _caller)
     # Rollen achter dezelfde poort als de rest van de console. Wie bepaalt wat
