@@ -86,6 +86,13 @@ De prompt vraagt het model óók geen tokens over te nemen. Dat is een verzoek;
 het filteren is de garantie, en alleen op die tweede staat een test
 (`test_a_token_never_survives_into_a_summary`).
 
+Ook een **kale** pseudonym-id gaat eruit. Gemeten op 2026-09-19 schreef het
+model *"op locatie 9e9d0346, met hulp van organisatie a4e276dd"*: het had de
+tokens geparafraseerd en de haken laten vallen, en het filter zocht de volledige
+vorm. Die acht tekens zíjn de sleutel — stabiel over documenten heen, dus ze
+koppelen "dit stuk en dat stuk gaan over dezelfde persoon" zonder dat er ooit
+iets onthuld wordt, en tussen haken teruggezet accepteert de reveal ze.
+
 Waar een token stond komt een **zichtbaar weglatingsteken** (`…`), geen lege
 plek. De eerste productierun gaf zinnen als *"de effecten van de aanzanding op
 het  en geeft aanbevelingen"*: dat leest als een taalfout in plaats van als een

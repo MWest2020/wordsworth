@@ -295,3 +295,33 @@ def test_two_removals_side_by_side_read_as_one(session_factory):
             s, Model("Betreft [PERSOON:3fa9c2d1] [ADRES:11223344] en de regeling."),
             [doc.id], model="test")
         assert s.get(DocumentSummary, doc.id).text == "Betreft … en de regeling."
+
+
+def test_a_bare_pseudonym_id_is_removed_too(session_factory):
+    """Gemeten op 2026-09-19: het model schreef "op locatie 9e9d0346, met hulp
+    van organisatie a4e276dd" — het had de tokens geparafraseerd en de haken
+    laten vallen. Het filter zocht de volledige vorm en liet die staarten staan.
+
+    Die acht tekens ZIJN de sleutel: stabiel over documenten heen, dus ze
+    koppelen "dit stuk en dat stuk gaan over dezelfde persoon" zonder dat er
+    ooit iets onthuld wordt. En tussen haken teruggezet accepteert de reveal ze.
+    """
+    with session_factory() as s:
+        doc = _doc(s, "Een rapport.")
+        summaries.compute(
+            s, Model("Stroom op locatie 9e9d0346, met hulp van organisatie a4e276dd."),
+            [doc.id], model="test")
+        tekst = s.get(DocumentSummary, doc.id).text
+        assert "9e9d0346" not in tekst and "a4e276dd" not in tekst
+        assert "Stroom op locatie" in tekst
+
+
+def test_ordinary_words_are_not_mistaken_for_an_id(session_factory):
+    """Acht letters uit a-f zijn ook gewoon Nederlandse woorden. Een filter dat
+    "beoefend" wegpoetst is erger dan het gat dat het dicht."""
+    with session_factory() as s:
+        doc = _doc(s, "Een rapport.")
+        summaries.compute(s, Model("De adviseur heeft beoefend en afgedaan."),
+                          [doc.id], model="test")
+        assert s.get(DocumentSummary, doc.id).text == (
+            "De adviseur heeft beoefend en afgedaan.")

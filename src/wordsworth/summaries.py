@@ -41,6 +41,22 @@ _SPATIES = re.compile(r"\s+")
 #: dat er iets is weggehaald.
 WEGGELATEN = "…"
 _OPEENVOLGEND = re.compile(r"(?:…[\s,.;:]*)+…")
+#: Een KALE pseudonym-id, zonder de blokhaken eromheen.
+#:
+#: Gemeten op 2026-09-19: het model schreef "op locatie 9e9d0346, met hulp van
+#: organisatie a4e276dd" — het had `[LOCATION:9e9d0346]` geparafraseerd en de
+#: haken laten vallen. `without_tokens` zoekt de volledige vorm en liet die
+#: staarten dus staan.
+#:
+#: Dat is niet onschuldig. Die acht tekens ZIJN de sleutel: hij is stabiel over
+#: documenten heen, dus hij koppelt "dit stuk en dat stuk gaan over dezelfde
+#: persoon" zonder dat er ooit een token wordt onthuld. En wie hem terugzet
+#: tussen haken heeft een token dat de reveal wél accepteert.
+#:
+#: Woordgrenzen eromheen, en minstens één cijfer: anders sneuvelen gewone
+#: woorden als "adviseur" of "beoefend" die toevallig uit hex-letters bestaan.
+_KALE_ID = re.compile(r"(?<![0-9a-zA-Z])(?=[0-9a-f]{8}(?![0-9a-zA-Z]))"
+                      r"(?=[0-9a-f]*\d)[0-9a-f]{8}")
 
 
 @dataclass(frozen=True)
@@ -67,6 +83,9 @@ def clean(generated: str) -> str:
     heeft samengevat.
     """
     tekst = _SPATIES.sub(" ", without_tokens(generated or "", WEGGELATEN))
+    # En de losse staarten: een model dat een token parafraseert laat de haken
+    # vallen en houdt de id over.
+    tekst = _KALE_ID.sub(WEGGELATEN, tekst)
     # Twee weglatingen naast elkaar zijn één weglating voor de lezer.
     tekst = _OPEENVOLGEND.sub(WEGGELATEN, tekst)
     tekst = _SPATIES.sub(" ", tekst).strip()
