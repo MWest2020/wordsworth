@@ -191,6 +191,27 @@ It reads the corpus through the same gate as `/documents/{id}/anonymized` and
 here. Until 2026-09-18 it was not, which made the console precisely the second
 door its own docstring forbids.
 
+### Die lijst gaat over namen, en namen veranderen met de deur
+
+`WORDSWORTH_CORPUS_READ_LABELS` bevat **callerlabels**, en wat een callerlabel
+ís hangt af van hoe er ingelogd wordt:
+
+| aanmelding | callerlabel |
+| --- | --- |
+| `WORDSWORTH_API_KEYS` | het label vóór de dubbele punt (`mark:sk_live_…` → `mark`) |
+| Cloudflare Access | het **geverifieerde e-mailadres** uit het JWT |
+
+Zet je de ene aanmelding om naar de andere, dan **verandert elk label** en
+weigert de lijst iedereen. Dat gebeurde op 2026-09-19: de lijst stond nog op
+`console` uit het sleuteltijdperk, terwijl de callers sinds de Access-uitrol
+e-mailadressen waren. Gevolg: de hele console gaf 403 aan iedereen, ook aan de
+beheerder.
+
+Een 403 op een browserpad toont daarom nu een pagina die zegt ónder welke naam
+je binnenkwam. Zonder dat weet niemand — de gebruiker niet en de beheerder niet
+— welke naam er dan wél op de lijst moet. Welke namen er al op staan, zegt de
+pagina bewust niet.
+
 It never reveals on its own authority. Re-identification has exactly one door: the grant-gated,
 audited `reveal` endpoint (see [grants](grants.md)). An inspection screen that
 may also reveal is a second door with a friendlier name, and it is the one

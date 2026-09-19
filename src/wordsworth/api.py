@@ -402,6 +402,35 @@ def create_app(
                 return RedirectResponse("/console", status_code=303)
             return JSONResponse({"detail": "see /docs"})
 
+        @app.exception_handler(403)
+        def forbidden(request: Request, exc):
+            """Een browser die 403 krijgt, hoort een pagina te zien.
+
+            Dit is de 401-les op een andere as. Een 401 betekent "ik weet niet
+            wie je bent" en kan naar de inlogpagina; een 403 betekent "ik weet
+            wie je bent en het mag niet", en dáár naartoe omleiden zou een lus
+            zijn: hij is al ingelogd. Dus een pagina, en wel eentje die zegt
+            onder welke naam hij binnenkwam — anders weet niemand, hijzelf noch
+            de beheerder, welke naam er dan wél op de lijst moet.
+
+            Op 2026-09-19 kreeg Mark op `/console/topics` letterlijk
+            `{"detail":"caller not authorized for corpus read"}` op een lege
+            pagina. Correct, en doodlopend.
+
+            Welke namen er wél op de lijst staan, staat er níet bij: dat is
+            precies wat je niet hoort te weten als je er niet op staat.
+            """
+            if not wants_html(request.headers.get("accept", "")):
+                return JSONResponse({"detail": getattr(exc, "detail", "forbidden")},
+                                    status_code=403)
+            from .console import TEMPLATES
+
+            return TEMPLATES.TemplateResponse(
+                request, "geen_toegang.html",
+                {"caller": getattr(request.state, "caller", None),
+                 "pad": request.url.path},
+                status_code=403)
+
         @app.exception_handler(404)
         def not_found(request: Request, exc):
             """Een verkeerd getypt PAD stuurt een browser naar de console.
