@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -33,6 +34,13 @@ from .pipeline import get_anonymized_text
 from .pseudonymizer import without_tokens
 
 _SPATIES = re.compile(r"\s+")
+#: Wat er van een token overblijft in een samenvatting. Zichtbaar, want de
+#: eerste productierun gaf zinnen als "de effecten van de aanzanding op het  en
+#: geeft aanbevelingen" -- het gat leest als een taalfout in plaats van als een
+#: weglating, en dan gaat de lezer twijfelen aan het model in plaats van te zien
+#: dat er iets is weggehaald.
+WEGGELATEN = "…"
+_OPEENVOLGEND = re.compile(r"(?:…[\s,.;:]*)+…")
 
 
 @dataclass(frozen=True)
@@ -58,7 +66,12 @@ def clean(generated: str) -> str:
     want hij wordt gelezen als de samenvatting van een document dat niemand
     heeft samengevat.
     """
-    return _SPATIES.sub(" ", without_tokens(generated or "")).strip()
+    tekst = _SPATIES.sub(" ", without_tokens(generated or "", WEGGELATEN))
+    # Twee weglatingen naast elkaar zijn één weglating voor de lezer.
+    tekst = _OPEENVOLGEND.sub(WEGGELATEN, tekst)
+    tekst = _SPATIES.sub(" ", tekst).strip()
+    # Alleen nog weglatingstekens en leestekens: dan is er niets samengevat.
+    return "" if not tekst.strip("… ,.;:-") else tekst
 
 
 def for_document(session: Session, generator: Generator, document_id: UUID,
@@ -76,10 +89,34 @@ def for_document(session: Session, generator: Generator, document_id: UUID,
     samenvatting = clean(rauw)
     if not samenvatting:
         return None
-    rij = DocumentSummary(document_id=document_id, text=samenvatting, model=model)
-    session.merge(rij)
+    return _bewaar(session, document_id, samenvatting, model)
+
+
+def _bewaar(session: Session, document_id: UUID, tekst: str,
+            model: str) -> DocumentSummary:
+    """Schrijf de samenvatting weg, ook als een ander hem net schreef.
+
+    Een upsert en geen lezen-dan-schrijven. `compute()` kijkt aan het begin één
+    keer welke documenten al een samenvatting hebben, en tussen dat moment en de
+    insert kan er minuten zitten — bij een taalmodel zelfs kwartieren. Op
+    2026-09-19 gebeurde dat: een handmatige run en een Job liepen elkaar in de
+    weg en de Job viel om op een `duplicate key`, nadat hij al dertien minuten
+    had gewerkt.
+
+    Wie het laatst schrijft wint, en dat is hier goed: het is dezelfde
+    samenvatting over dezelfde tekst, hoogstens door een ander model. Het model
+    en het moment gaan mee, dus wat er staat blijft navertelbaar.
+    """
+    from sqlalchemy.dialects.postgresql import insert
+
+    now = datetime.now(timezone.utc)
+    stmt = insert(DocumentSummary).values(
+        document_id=document_id, text=tekst, model=model, created_at=now)
+    session.execute(stmt.on_conflict_do_update(
+        index_elements=[DocumentSummary.document_id],
+        set_={"text": tekst, "model": model, "created_at": now}))
     session.flush()
-    return rij
+    return session.get(DocumentSummary, document_id)
 
 
 def compute(session: Session, generator: Generator, document_ids,

@@ -71,7 +71,7 @@ def label_of(pseudonym: str) -> str:
 _label_of = label_of
 
 
-def without_tokens(text: str) -> str:
+def without_tokens(text: str, replacement: str = " ") -> str:
     """De tekst zonder de pseudonym-tokens erin.
 
     Voor alles dat woorden uit een document haalt en ze ergens anders neerzet —
@@ -81,8 +81,13 @@ def without_tokens(text: str) -> str:
 
     Hier en niet bij de aanroeper, om dezelfde reden als `label_of`: de aanname
     over tokenvorm hoort op één plek te staan.
+
+    `replacement` is standaard een spatie, want de meeste aanroepers knippen de
+    tekst daarna toch in woorden. Wie de tekst laat lézen geeft beter een
+    zichtbaar teken mee: een weggehaald token laat anders een gat achter dat als
+    een taalfout leest in plaats van als een weglating.
     """
-    return _PSEUDONYM_RE.sub(" ", text)
+    return _PSEUDONYM_RE.sub(replacement, text)
 
 
 
