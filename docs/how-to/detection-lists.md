@@ -31,6 +31,20 @@ counted per type in the audit aggregates under `suppressed_by_list`.
 
 ## Feedback
 
+**Vanaf het scherm.** Op de documentpagina is elk token aanklikbaar: klik erop
+en je meldt dat het geen PII van dat type is. Eronder staat een keuzelijst voor
+het omgekeerde — "hier is een ADRES gemist". Dat is de weg die een mens neemt;
+de curl hieronder is dezelfde melding voor wie een script schrijft.
+
+Er gaat **nooit een waarde** mee, en het formulier heeft daarom geen vrij
+tekstveld. Dat is geen vergetelheid maar de reden dat deze meldingen veilig in
+de append-only keten passen. Het eindpunt weigert bovendien een `token` dat geen
+`[TYPE:hash8]` is — anders was de regel te omzeilen door een naam in dat veld te
+zetten.
+
+Wat je meldt verandert de lijsten **niet** vanzelf. Dat blijft een git-wijziging
+die iemand nakijkt; de melding is de aanleiding, niet de beslissing.
+
 A reader who spots a false positive or a miss records it against the document:
 ```
 curl -XPOST $API/documents/<doc>/feedback -H 'content-type: application/json' \

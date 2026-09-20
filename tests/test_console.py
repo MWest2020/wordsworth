@@ -72,7 +72,12 @@ def test_a_document_page_shows_the_artefact_and_marks_its_tokens(session_factory
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}")
     assert page.status_code == 200
-    assert '<span class="tok" title="PERSON">[PERSON:aabbccdd]</span>' in page.text
+    # Wát er staat, niet hoe het er precies uitziet: het token is gemarkeerd en
+    # draagt zijn type. Sinds 2026-09-20 draagt het ook de haakjes waarmee je
+    # het kunt aanklikken om te melden dat het geen PII is, en een assertie op
+    # de letterlijke opmaak brak daarop zonder dat er iets mis was.
+    assert '[PERSON:aabbccdd]</span>' in page.text
+    assert 'class="tok"' in page.text and 'PERSON' in page.text
     # and it says, on the page, that the original is not here
     assert "reveal" in page.text
 

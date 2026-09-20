@@ -183,8 +183,14 @@ def build_router(session_factory, keys: dict[str, str],
                        if {t.upper() for t in d["types"]} <= present]
             grants, revoked = console_data.grants_for(session, document_id)
             history = console_data.reveal_history(session, document_id)
+        from .pii_categories import known_types
+
         return TEMPLATES.TemplateResponse(request, "document.html", {
             "id": str(document_id), "key": label(doc),
+            # De keuzelijst komt uit het typeregister, niet uit een lijstje
+            # hier: anders kan iemand straks iets melden dat het systeem niet
+            # kent, of andersom.
+            "types": known_types(),
             "state": state.value if state else "—",
             "parts": marked(row.anonymized_text if row else ""),
             "missing": row is None, "counts": sorted(counts.items()),
