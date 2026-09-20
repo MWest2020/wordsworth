@@ -97,6 +97,30 @@ hij toont ze allemaal tegelijk.
 Wat je meldt verandert de lijsten **niet** vanzelf. Dat blijft een git-wijziging
 die iemand nakijkt; de melding is de aanleiding, niet de beslissing.
 
+## Het bestaande corpus bijwerken
+
+Een lijstwijziging geldt alleen voor wat er daarna binnenkomt. Wat er al in
+staat, volgt met:
+
+```sh
+curl -XPOST $API/reprocess -H 'content-type: application/json' \
+  -d '{"only_outdated": true}'
+```
+
+`only_outdated` slaat over wat al onder de **huidige** lijsten is verwerkt. Dat
+is geen tijdstempel die je moet onthouden: de lijst-hash staat in elk
+de-identificatie-auditrecord, dus verandert de lijst, dan is elk document dat
+nog de oude hash draagt vanzelf achterstallig.
+
+**Reken op uren.** Reprocess haalt de brontekst opnieuw op, laat hem langs de
+detector, embedt opnieuw en schrijft de index bij. Op 2026-09-20 kostte dat
+ongeveer 6 ms per teken — voor 770 documenten (8,6 miljoen tekens) veertien
+uur, op één core zonder GPU. Draai het als Job, niet als HTTP-verzoek, en niet
+in de pod die het verkeer bedient: een meting daar legde die pod om (OOM).
+
+Die run moest halverwege onderbroken worden. Zónder `only_outdated` had de
+vervolgrun de 200 afgeronde documenten overgedaan — dáárom bestaat de vlag.
+
 A reader who spots a false positive or a miss records it against the document:
 ```
 curl -XPOST $API/documents/<doc>/feedback -H 'content-type: application/json' \

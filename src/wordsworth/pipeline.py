@@ -283,6 +283,27 @@ def process(
     return state
 
 
+def lists_hash_of(session: Session, document_id: UUID) -> str | None:
+    """De lijst-hash waaronder dit document het laatst is ge-de-identificeerd.
+
+    Staat al in elk `anonymize`- en `reanonymize`-record. Daarmee is "dit
+    document is al bijgewerkt" een **feit uit het spoor** in plaats van een
+    tijdstempel die iemand moet onthouden: veranderen de lijsten, dan verandert
+    de hash, en elk document dat nog de oude draagt is achterstallig.
+
+    None = nooit onder een lijst verwerkt (of van vóór deze kolom). Dat telt als
+    achterstallig zodra er lijsten zijn: liever een keer te veel werk dan een
+    document dat stil de oude regels blijft dragen.
+    """
+    rij = session.execute(
+        select(AuditRecord.payload)
+        .where(AuditRecord.document_id == document_id,
+               AuditRecord.step.in_(("anonymize", "reanonymize")))
+        .order_by(AuditRecord.seq.desc()).limit(1)
+    ).scalar_one_or_none()
+    return (rij or {}).get("lists_hash")
+
+
 def reanonymize(
     session: Session,
     document_id: UUID,
