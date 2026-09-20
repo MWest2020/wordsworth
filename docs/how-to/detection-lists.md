@@ -14,15 +14,56 @@ WORDSWORTH_DETECTION_LISTS=/etc/wordsworth/lists   # directory with the two file
 ```
 
 `allow.json` — typed patterns whose **full match** is *not* PII of that type. A
-detection is dropped only when its type matches the key (never across types):
+detection is dropped only when its type matches the key (never across types).
+**Elke regel draagt een reden**, en het laden weigert een regel zonder:
+
 ```json
-{"PERSON": ["^Jansen BV$", "^Gemeente Haarlem$"]}
+{"LOCATION": [
+  {"patroon": "(?i)^locatie$",
+   "reden": "Zelfstandig naamwoord, geen plaats. 41 van 198 documenten."}
+]}
 ```
+
+Dit is de enige plek in dit systeem waar een wijziging stilletjes tot **minder**
+pseudonimisering leidt. Een kale lijst woorden is een lijst die niemand kan
+nakijken: een lezer ziet het verschil niet tussen `^gemeente$` en een regel die
+ongemerkt een achternaam vrijstelt. Geweigerd en niet overgeslagen, want half
+een lijst toepassen is erger dan geen — dan denkt iedereen dat de regel geldt.
+
+Een sleutel die met `_` begint is commentaar en wordt overgeslagen. JSON kent
+geen commentaar, en een lijst die kan uitleggen waarom hij bestaat is meer waard
+dan een lijst die dat niet kan.
+
+**Getypeerd betekent echt getypeerd.** `gemeente Gooise Meren` wordt door de
+detector soms als `LOCATION` en soms als `ORGANIZATION` gemeld; een regel onder
+één van beide werkt dan maar de helft van de tijd. Gemeten op 2026-09-20: de
+regel stond alleen onder ORGANIZATION en 159 voorkomens als LOCATION bleven
+staan.
 `deny.json` — typed patterns that *are* PII; each match becomes a detection
 (layer `list`, score 1.0) on top of what the detectors found:
 ```json
 {"KENTEKEN": ["\\b[A-Z]{2}-\\d{3}-[A-Z]\\b"]}
 ```
+
+## Waar de lijsten leven
+
+In de repo (`lists/`), mee in het image, **niet** in een ConfigMap. De
+content-hash staat in elk de-identificatie-auditrecord zodat een document terug
+te voeren is op de regels die het maakten; een hash die wijst naar iets dat
+iedereen ter plekke kan wijzigen, is een getal zonder herkomst.
+
+## De rem
+
+`tests/test_allow_list_veiligheid.py` toetst elke allow-regel tegen het
+evalcorpus, waar bekend is wat er aan PII in zit. Een regel die een ingezaaide
+waarde onderdrukt, faalt. Dat geldt ook voor de **losse woorden** van zo'n
+waarde: het corpus zaait volledige namen ("Hendrik de Vries"), maar de detector
+levert in de praktijk ook losse achternamen — en een regel `^vries$` is precies
+het gevaarlijke geval. De eerste versie van die toets keek alleen naar de
+volledige waarde en liet dat passeren.
+
+Dat is de reden dat een allow-lijst hier mag bestaan. Zonder een corpus waarvan
+de antwoorden bekend zijn, is elke regel een kwestie van vertrouwen.
 
 Where it applies: the reversible driver applies both lists after detection; the
 irreversible OpenAnonymiser driver applies the **deny** list only (the service

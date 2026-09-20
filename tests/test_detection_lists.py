@@ -17,7 +17,17 @@ PII_BSN = "123456782"
 
 
 def _lists(tmp_path, allow=None, deny=None):
-    (tmp_path / "allow.json").write_text(json.dumps(allow or {}))
+    """Schrijft de twee bestanden en laadt ze.
+
+    Een allow-regel krijgt hier automatisch een reden mee: die is sinds
+    2026-09-20 verplicht (een allow-regel haalt bescherming weg, en een kale
+    lijst woorden is niet na te kijken). Deze tests gaan over het mechanisme,
+    niet over die eis -- die heeft een eigen test in
+    `test_allow_list_veiligheid.py`.
+    """
+    met_reden = {t: [{"patroon": p, "reden": "test"} for p in pats]
+                 for t, pats in (allow or {}).items()}
+    (tmp_path / "allow.json").write_text(json.dumps(met_reden))
     (tmp_path / "deny.json").write_text(json.dumps(deny or {}))
     return DetectionLists.load(tmp_path)
 

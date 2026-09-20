@@ -1,33 +1,32 @@
 # Tasks
 
-Nog niet gebouwd. Eerst de vraag uit `proposal.md` die ik niet zelf kan
-beantwoorden.
+Gebouwd op 2026-09-20, nadat Mark de openstaande vraag beantwoordde.
 
 ## 0. Eerst beslissen
-- [ ] **Telt een overheidsorgaan als persoonsgegeven?** `gemeente Gooise Meren`,
-      `college`, `coa`, `ofgv` — organisaties, geen personen, en in een
-      Woo-publicatie bij wet genoemd. Maar `ORGANIZATION` is ook waar een
-      eenmanszaak zich verstopt.
-- [ ] De lijst in de repo en mee in het image (mijn voorstel), of in een
-      ConfigMap (los te wijzigen, maar dan is de auditsleutel zonder herkomst)?
+- [x] **Nee.** Mark, 2026-09-20: *"bestuursorganen zijn natuurlijk niet PII -
+      het zijn geen (natuurlijke) personen."* Daarom staan ze per NAAM op de
+      lijst en niet als regel: zijn eigen redenering (natuurlijke personen) is
+      precies waarom een eenmanszaak er níet onder valt.
+- [x] In de repo (`lists/`), mee in het image.
 
 ## 1. De lijst
-- [ ] `allow.json` met een reden per regel; het laden weigert een regel zonder.
-- [ ] Kandidaten uit de meting: de vaakst vervangen waarden met een kleine
-      letter. Generator, geen beslisser — een mens loopt de lijst langs.
-- [ ] `WORDSWORTH_DETECTION_LISTS` aanzetten in de configmap.
+- [x] `allow.json` met een reden per regel; het laden weigert een regel zonder.
+      62 regels, elk met de reden en het aantal voorkomens erbij.
+- [x] Kandidaten uit de meting, de keuze per regel met de hand.
+- [ ] `WORDSWORTH_DETECTION_LISTS` aanzetten in de configmap (na het uitrollen
+      van het image dat de lijst bevat).
 
 ## 2. De rem
-- [ ] Toets in CI: geen allow-regel mag een waarde onderdrukken die het
-      evalcorpus als PII heeft ingezaaid.
-- [ ] Meet de recall op het evalcorpus mét en zónder lijsten; hij mag niet
-      dalen.
+- [x] `tests/test_allow_list_veiligheid.py`, inclusief de LOSSE WOORDEN van een
+      ingezaaide waarde — mijn eerste versie keek alleen naar de volledige
+      waarde en liet `^vries$` passeren.
+- [ ] De recall-meting mét en zónder lijsten draait pas als de lijst aanstaat.
 
 ## 3. Meten
-- [ ] Vóór: 39% van de entiteit-tokens begint met een kleine letter (gemeten
-      2026-09-20, 198 documenten).
-- [ ] Ná: hetzelfde getal, met de recall ernaast.
-- [ ] Allebei met datum in `docs/explanation/`.
+- [x] Vóór: 39% van de entiteit-tokens begint met een kleine letter.
+- [x] Effect: 10% van de VOORKOMENS in de tekst verdwijnt (3511 van 34895),
+      tegen 1% van de unieke tokens. `docs/explanation/meting-overdetectie-04.md`.
+- [ ] Ná het aanzetten opnieuw meten, met de recall ernaast.
 
 ## 4. Daarna pas
 - [ ] Het bestaande corpus herverwerken (`POST /reprocess`) is een APARTE
