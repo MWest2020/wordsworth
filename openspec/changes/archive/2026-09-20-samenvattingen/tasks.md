@@ -24,8 +24,23 @@ Gebouwd op 2026-09-19, na Marks "bouwen".
 - [x] "nog geen samenvatting" in plaats van een leeg vlak.
 - [x] Achter de corpus-leespoort.
 
+## 3b. De extractieve variant (Mark, 2026-09-19: "extractieve variant erbij bouwen en vergelijken")
+- [x] De eerste regels die iets zeggen, letterlijk overgenomen. Nul
+      modelaanroepen tegenover ~315s per document op deze hardware.
+- [x] Beginnen bij de onderwerpregel; mailkoppen en scannerruis overslaan. Alle
+      drie uit de vergelijking van 19-09 en niet verzonnen.
+- [x] Een kaal `Subject:` op een eigen regel: beginnen op de regel erna.
+- [x] Het scherm zegt welk van de twee het toont.
+- [x] `scripts/eval/vergelijk_samenvattingen.py` zet ze naast elkaar. Geen
+      score: er is geen waarheid over "een goede samenvatting" in dit corpus.
+
 ## 4. Bewijzen
 - [x] `test_a_failed_generation_leaves_nothing_behind`.
 - [x] `test_running_again_does_not_redo_the_work`.
 - [x] `test_the_endpoint_is_behind_the_corpus_gate`.
 - [x] `test_the_screen_says_it_was_generated_and_by_what`.
+- [x] Een test die de extractieve uitvoer letterlijk langs de bronregels
+      afloopt: overslaan mag, verzinnen niet.
+- [x] Twee van mijn eerste filtertests bewaakten niets (ze gebruikten een
+      document MET onderwerpregel, en dan begint het extract daar toch al).
+      Herschreven zonder onderwerpregel; dan falen ze wel zonder de filters.
