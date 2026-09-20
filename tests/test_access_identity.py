@@ -141,7 +141,74 @@ def test_oidc_discovery_resolves_the_jwks_url_from_the_issuer():
                       fetch=lambda url: {"jwks_uri": jwks_uri})
     assert v.issuer == issuer
     assert v.audience == "wordsworth"
-    assert v.jwks_url == jwks_uri
+    assert v.resolved_jwks_url() == jwks_uri
+
+
+def test_building_the_verifier_touches_no_network():
+    """De reden dat dit lui is: op 2026-09-20 haalde het opstarten het
+    discovery-document op, kreeg 403 van Cloudflare, en de worker faalde te
+    booten. Een hikkende identiteitsprovider nam daarmee de hele
+    documentpijplijn mee — ook de routes die niets met inloggen te maken hebben.
+    """
+    geraakt = []
+
+    def fetch(url):
+        geraakt.append(url)
+        return {"jwks_uri": "https://ergens/certs"}
+
+    v = Verifier.oidc("https://iam.westerweel.work/realms/westerweel-lui",
+                      "wordsworth", fetch=fetch)
+    assert geraakt == [], "het aanmaken raakte het netwerk"
+    assert v.resolved_jwks_url() == "https://ergens/certs"
+    assert geraakt, "en bij gebruik gebeurt het alsnog"
+
+
+def test_an_explicit_jwks_url_skips_discovery_and_keeps_the_public_issuer():
+    """De interne route. De sleutels komen van de buur in het cluster; de
+    uitgever blijft de publieke naam, want dat is wat in `iss` staat en dus wat
+    gecontroleerd wordt. Adres en identiteit zijn twee dingen."""
+    publiek = "https://iam.westerweel.work/realms/westerweel"
+    intern = "http://keycloak.keycloak.svc.cluster.local:8080/realms/westerweel/protocol/openid-connect/certs"
+
+    def fetch(url):
+        raise AssertionError("discovery had niet opgehaald mogen worden")
+
+    v = Verifier.oidc(publiek, "wordsworth", fetch=fetch, jwks_url=intern)
+    assert v.issuer == publiek, "de uitgever hoort publiek te blijven"
+    assert v.resolved_jwks_url() == intern
+
+
+def test_the_fetch_sends_a_user_agent():
+    """Gemeten vanuit de draaiende pod: dezelfde URL gaf 403 met de kale
+    urllib-agent en 200 met een browserachtige. De uitgever staat achter
+    Cloudflare, die een aanvraag zonder User-Agent als bot weigert."""
+    import urllib.request
+
+    from wordsworth import access_identity
+
+    gezien = {}
+
+    class NepResponse:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def nep_urlopen(req, timeout=None):
+        gezien["ua"] = req.get_header("User-agent")
+        return NepResponse()
+
+    oud = urllib.request.urlopen
+    urllib.request.urlopen = nep_urlopen
+    try:
+        access_identity._fetch("https://iam.westerweel.work/iets")
+    finally:
+        urllib.request.urlopen = oud
+    assert gezien["ua"] and "wordsworth" in gezien["ua"]
 
 
 def test_oidc_discovery_is_fetched_once_and_cached():

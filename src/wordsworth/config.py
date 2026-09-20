@@ -249,6 +249,23 @@ class Settings:
         return os.environ.get("WORDSWORTH_OIDC_AUDIENCE", "").strip()
 
     @property
+    def oidc_jwks_url(self) -> str:
+        """Waar de sleutels van de uitgever staan, als dat een ánder adres is
+        dan de uitgever zelf.
+
+        Gezet: het discovery-document wordt niet opgehaald en het verkeer gaat
+        rechtstreeks naar dit adres — bijvoorbeeld de interne Service van
+        Keycloak in hetzelfde cluster. De **uitgever blijft de publieke naam**,
+        want dat is wat er in `iss` staat en dus wat gecontroleerd wordt.
+
+        Een dienst die zijn buur in hetzelfde cluster via het publieke internet
+        bevraagt, hangt voor één netwerkhop af van twee extra partijen: de
+        tunnel en de bot-regels van een CDN. Op 2026-09-20 kostte dat de api
+        zijn start.
+        """
+        return os.environ.get("WORDSWORTH_OIDC_JWKS_URL", "").strip()
+
+    @property
     def access_verifier(self):
         """The verifier, or None when identity verification is not configured.
 
@@ -260,7 +277,10 @@ class Settings:
         from .access_identity import Verifier
 
         if self.oidc_issuer and self.oidc_audience:
-            return Verifier.oidc(self.oidc_issuer, self.oidc_audience)
+            # Geen netwerkverkeer hier: zonder expliciet JWKS-adres wordt dat
+            # pas opgezocht bij het eerste verzoek dat een token controleert.
+            return Verifier.oidc(self.oidc_issuer, self.oidc_audience,
+                                 jwks_url=self.oidc_jwks_url)
         if self.access_team_domain and self.access_audience:
             return Verifier.cloudflare(self.access_team_domain, self.access_audience)
         return None
