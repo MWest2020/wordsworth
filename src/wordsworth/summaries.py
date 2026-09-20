@@ -157,10 +157,17 @@ def extractive(text: str) -> str:
             continue
         gevonden = _ONDERWERP.match(kaal)
         if gevonden and begin_bij_onderwerp is None:
-            # De onderwerpregel zelf telt mee vanaf het onderwerp: "Onderwerp:
+            # De onderwerpregel telt mee vanaf het onderwerp: "Onderwerp:
             # besluit op aanvraag" is de zin, "Onderwerp:" is een label.
-            kaal = gevonden.group(2).strip() or kaal
+            inhoud = gevonden.group(2).strip()
             begin_bij_onderwerp = len(bruikbaar)
+            if not inhoud:
+                # Een kaal "Subject:" op een eigen regel — in geëxporteerde
+                # e-mail staat het onderwerp dan op de volgende regel. Het label
+                # overslaan en dáár beginnen; het label zelf als samenvatting
+                # tonen is het enige antwoord dat nog slechter is dan geen.
+                continue
+            kaal = inhoud
         bruikbaar.append(kaal)
 
     vanaf = begin_bij_onderwerp or 0

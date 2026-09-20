@@ -505,3 +505,17 @@ def test_it_is_still_a_citation_after_all_this_skipping(session_factory):
     bron = " ".join(summaries.clean(r) for r in GESCAND.splitlines())
     for stuk in uit.split(" Hierbij")[0:1]:
         assert stuk.strip() in bron
+
+
+def test_a_bare_subject_label_starts_at_the_line_after_it(session_factory):
+    """Gemeten op productie: in een geëxporteerde e-mail staat er letterlijk
+    `Subject:` op een eigen regel en het onderwerp op de volgende. Mijn eerste
+    versie viel dan terug op het label zelf, en toonde "Subject:" als
+    samenvatting — het enige antwoord dat nog slechter is dan geen.
+    """
+    uit = summaries.extractive(
+        "To: raad@gooisemeren.nl\nSubject:\n"
+        "Acute opvangsituatie en stand van zaken\n\n"
+        "Beste collega, bij deze stuur ik jullie de annotaties.")
+    assert uit.startswith("Acute opvangsituatie en stand van zaken")
+    assert "Subject:" not in uit
