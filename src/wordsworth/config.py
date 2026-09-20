@@ -228,17 +228,41 @@ class Settings:
         and belongs to something else."""
         return os.environ.get("WORDSWORTH_ACCESS_AUD", "").strip()
 
+    # --- keycloak-identity ---
+    @property
+    def oidc_issuer(self) -> str:
+        """OIDC issuer URL, e.g. Keycloak's realm issuer
+        (``https://iam.westerweel.work/realms/westerweel``).
+
+        Empty by default, for the same reason as `access_team_domain`: no
+        issuer configured means no identity provider, and an installation
+        without one keeps working unchanged."""
+        return os.environ.get("WORDSWORTH_OIDC_ISSUER", "").strip()
+
+    @property
+    def oidc_audience(self) -> str:
+        """The application's own audience (client id) at that issuer.
+
+        Required alongside the issuer, checked without a default for the same
+        reason as `access_audience`: a wrong or absent audience is a silent
+        hole, not a refusal."""
+        return os.environ.get("WORDSWORTH_OIDC_AUDIENCE", "").strip()
+
     @property
     def access_verifier(self):
         """The verifier, or None when identity verification is not configured.
 
         Fail-closed: no configuration means no identity, never a warning and an
-        accepted header."""
+        accepted header. An OIDC issuer (Keycloak, ...) takes precedence over a
+        Cloudflare Access team domain when both are set — in practice an
+        installation configures exactly one. Either is one way to build the
+        same `Verifier`; there is no separate code path per provider."""
         from .access_identity import Verifier
 
+        if self.oidc_issuer and self.oidc_audience:
+            return Verifier.oidc(self.oidc_issuer, self.oidc_audience)
         if self.access_team_domain and self.access_audience:
-            return Verifier(team_domain=self.access_team_domain,
-                            audience=self.access_audience)
+            return Verifier.cloudflare(self.access_team_domain, self.access_audience)
         return None
 
     # --- add-domain-keys ---

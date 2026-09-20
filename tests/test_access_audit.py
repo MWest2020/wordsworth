@@ -15,7 +15,7 @@ from wordsworth.access_identity import Verifier
 
 TEAM = "raspy-wood-e123.cloudflareaccess.com"
 AUD = "320841be57b2e469adbef09614573240756da5f3a188df87b6fb761d40e65d65"
-VERIFIER = Verifier(team_domain=TEAM, audience=AUD)
+VERIFIER = Verifier.cloudflare(TEAM, AUD)
 NU = 1_789_700_000.0
 
 
