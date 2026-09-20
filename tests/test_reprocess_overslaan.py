@@ -117,3 +117,51 @@ def test_reprocess_skips_what_is_already_current(session_factory, tmp_path,
     # En zonder de vlag komen ze er allebei in.
     alles = c.post("/reprocess", json={}).json()
     assert alles["total"] == 2
+
+
+def test_a_failure_leaves_a_trace_in_the_trail(session_factory, mem_store,
+                                               mem_index, fake_embedder):
+    """Dit is waarom de lus één plek heeft.
+
+    Op 2026-09-20 bouwde ik hem na in een Job en liet deze registratie weg.
+    Gevolg: een run van 250 documenten liet geen enkel spoor na van wat er
+    misging, en achteraf was niet vast te stellen wát er mis was — precies de
+    situatie waarvoor iemand in september `reprocess_failed` had toegevoegd.
+    """
+    from sqlalchemy import select
+
+    from wordsworth import reprocess as backfill
+    from wordsworth.models import AuditRecord
+
+    class Weigert:
+        def anonymize(self, text):
+            raise RuntimeError("de motor doet het niet")
+
+    with session_factory() as s:
+        doc_id = _doc(s, "oude-hash")
+        doc = s.get(Document, doc_id)
+        # Het bronbestand moet er zijn, anders faalt hij al bij het ophalen en
+        # toetst deze test iets anders dan hij beweert. (Zo kwam ik er overigens
+        # achter hoe een ontbrekend object eruitziet: ObjectStoreError <- KeyError.)
+        mem_store.put(doc.object_key, b"%PDF-1.4 nep")
+        s.commit()
+
+    counts, problems = backfill.run(
+        session_factory, [doc_id],
+        make_anonymizer=lambda ses, domain: Weigert(),
+        store=mem_store, search_index=mem_index, embedder=fake_embedder)
+
+    assert counts["failed"] + counts["retryable"] == 1
+    assert problems, "de oorzaak hoort teruggegeven te worden"
+
+    with session_factory() as s:
+        payload = s.execute(
+            select(AuditRecord.payload)
+            .where(AuditRecord.document_id == doc_id,
+                   AuditRecord.step == "reprocess_failed")
+            .order_by(AuditRecord.seq.desc()).limit(1)).scalar_one_or_none()
+    assert payload is not None, "de mislukking staat niet in het spoor"
+    assert payload["error_class"], "de oorzaakketen hoort erin te staan"
+    assert "transient" in payload
+    # En geen tekst uit het document.
+    assert "de motor doet het niet" not in str(payload)

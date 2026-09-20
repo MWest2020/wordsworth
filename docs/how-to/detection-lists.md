@@ -112,6 +112,14 @@ is geen tijdstempel die je moet onthouden: de lijst-hash staat in elk
 de-identificatie-auditrecord, dus verandert de lijst, dan is elk document dat
 nog de oude hash draagt vanzelf achterstallig.
 
+De lus zelf staat in `wordsworth/reprocess.py` en wordt door het eindpunt én
+door een Job gebruikt. Dat is geen netheid maar een geleerde les: op
+2026-09-20 bouwde ik die lus na in een Job en liet de foutregistratie weg,
+waardoor een run van 250 documenten geen enkel spoor naliet van wat er misging.
+Elke mislukking hoort een `reprocess_failed`-auditrecord op te leveren met de
+oorzaakketen (`ObjectStoreError <- KeyError`) en veilige kenmerken — nooit een
+waarde.
+
 **Reken op uren.** Reprocess haalt de brontekst opnieuw op, laat hem langs de
 detector, embedt opnieuw en schrijft de index bij. Op 2026-09-20 kostte dat
 ongeveer 6 ms per teken — voor 770 documenten (8,6 miljoen tekens) veertien

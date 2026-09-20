@@ -1029,91 +1029,6 @@ def create_app(
         # reprocessing with the irreversible driver would be pointless.
         if anonymizer_factory is not None:
 
-            def _safe_traits(exc: BaseException) -> dict:
-                """`kenmerken` van de eerste fout in de keten die ze draagt.
-
-                Alleen wat de raise-site zelf als veilig heeft aangemerkt:
-                type, lengte, aantallen. De audit-keten is exporteerbaar, dus
-                hier hoort nooit iets uit een document in te staan.
-                """
-                e, gezien = exc, set()
-                while e is not None and id(e) not in gezien:
-                    gezien.add(id(e))
-                    k = getattr(e, "kenmerken", None)
-                    if isinstance(k, dict) and k:
-                        return {"kenmerken": k}
-                    e = e.__cause__ or e.__context__
-                return {}
-
-            def _cause_chain(exc: BaseException) -> str:
-                """The exception classes from outside in, e.g.
-                ``AnonymizationEngineError <- ReadTimeout``.
-
-                The outermost class alone was not enough. On 2026-09-14 eight
-                documents all reported `AnonymizationEngineError`, which is the
-                driver's deliberate no-text wrapper: it says the engine refused,
-                never why. The cause underneath — a timeout, a 503, a contract
-                break — is the part you act on, and it was being dropped.
-
-                Class NAMES only. `str(exc)` of an engine error can quote the
-                fragment it choked on; a class name cannot.
-                """
-                namen, e, gezien = [], exc, set()
-                while e is not None and id(e) not in gezien and len(namen) < 5:
-                    gezien.add(id(e))
-                    naam = type(e).__name__
-                    # Een vaste code zegt WELKE invariant brak. Alleen een code
-                    # uit een gesloten woordenlijst — nooit `str(e)`.
-                    code = getattr(e, "code", None)
-                    if isinstance(code, str) and code:
-                        naam = f"{naam}[{code}]"
-                    namen.append(naam)
-                    e = e.__cause__ or e.__context__
-                return " <- ".join(namen)
-
-            def _note_reprocess_failure(document_id: UUID, exc: Exception) -> None:
-                """Leave a trace in the audit chain that this document was tried
-                and did not make it.
-
-                Without this the run is invisible afterwards: the nine documents
-                that failed on 2026-09-14 had no audit record from that day at
-                all, so the chain said "nobody ever touched these" while ten
-                attempts had just been made. A failure that leaves no evidence is
-                indistinguishable from a step that never ran.
-
-                Only the exception CLASS is recorded. The message may quote the
-                document, and the audit chain is exportable — clear text has no
-                business in it. The state does not change: the existing entry is
-                intact, which is what continue-on-failure means.
-                """
-                from . import audit
-
-                try:
-                    with session_factory() as session:
-                        state = current_state(session, document_id)
-                        audit.append(session, document_id=document_id,
-                                     from_state=state.value, to_state=state.value,
-                                     step="reprocess_failed",
-                                     payload={"error_class": _cause_chain(exc),
-                                              "transient": is_transient(exc),
-                                              **_safe_traits(exc)})
-                        session.commit()
-                except Exception:  # noqa: BLE001 — bookkeeping must never
-                    pass          # take down the run it is bookkeeping for
-
-            def _reprocess_one(document_id: UUID) -> str:
-                from .pipeline import reanonymize
-
-                with session_factory() as session:
-                    state = current_state(session, document_id)
-                    if state not in (State.INDEXED, State.ANONYMIZED):
-                        return "skipped"
-                    anon = _make_anonymizer(session, document_domain(session, document_id))
-                    reanonymize(session, document_id, store, anonymizer=anon,
-                                search_index=search_index, embedder=embedder)
-                    session.commit()
-                return "reanonymized"
-
             @app.post("/reprocess", response_model=ReprocessResponse,
                       tags=["write"],
                       summary="Backfill: re-de-identify documents reversibly")
@@ -1123,6 +1038,8 @@ def create_app(
                 outage leaves a document's existing entry intact and is counted
                 'retryable'; a permanent error is 'failed'. Safe to re-run
                 (idempotent) and long-running (GLiNER per document)."""
+                from . import reprocess as backfill
+
                 ids: list[UUID] | None = None
                 if body and body.document_ids:
                     try:
@@ -1132,27 +1049,17 @@ def create_app(
                                             detail="malformed document_ids")
                 with session_factory() as session:
                     if ids is None:
-                        ids = [i for i in session.execute(
-                            select(Document.id)).scalars()
-                            if current_state(session, i) == State.INDEXED]
+                        ids = backfill.indexed_ids(session)
                     if body and body.only_outdated:
                         from .detection_lists import DetectionLists
-                        from .pipeline import lists_hash_of
 
-                        nu = DetectionLists.load(
-                            default_settings.detection_lists_dir).hash
-                        ids = [i for i in ids
-                               if lists_hash_of(session, i) != nu]
-                counts = {"reanonymized": 0, "skipped": 0,
-                          "retryable": 0, "failed": 0}
-                problems: dict[str, str] = {}
-                for document_id in ids:
-                    try:
-                        counts[_reprocess_one(document_id)] += 1
-                    except Exception as exc:  # never leaks text; entry left intact
-                        counts["retryable" if is_transient(exc) else "failed"] += 1
-                        problems[str(document_id)] = _cause_chain(exc)
-                        _note_reprocess_failure(document_id, exc)
+                        ids = backfill.outdated(
+                            session, ids,
+                            DetectionLists.load(
+                                default_settings.detection_lists_dir).hash)
+                counts, problems = backfill.run(
+                    session_factory, ids, make_anonymizer=_make_anonymizer,
+                    store=store, search_index=search_index, embedder=embedder)
                 return ReprocessResponse(total=len(ids), problems=problems,
                                          **counts)
 
