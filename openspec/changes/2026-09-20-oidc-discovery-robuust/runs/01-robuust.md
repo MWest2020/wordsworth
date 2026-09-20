@@ -20,6 +20,17 @@ worker stierf daarop bij het booten.
   de app blijft draaien; User-Agent aanwezig.
 - [ ] 2.1 Deployment-documentatie + CHANGELOG.
 
+## Over de testomgeving in de kooi — lees dit eerst
+Er is hier GEEN Postgres en GEEN OpenSearch. De volledige suite loopt
+daarop stuk of blijft hangen; dat is de omgeving, niet jouw werk, en je
+hoeft het niet te repareren. Draai alleen wat bij deze change hoort:
+
+    uv run pytest -q tests/test_access_identity.py tests/test_access_resolver.py
+
+Draai NIET `uv run pytest -q` over alles, en ga niet op zoek naar een
+database. Kom je toch iets tegen dat een database nodig heeft, noteer dat
+in je run-rapport.
+
 ## Done means
-`uv run pytest -q` groen en `openspec validate
+Die twee testbestanden groen, en `openspec validate
 2026-09-20-oidc-discovery-robuust --strict` groen. Budget is $5.
