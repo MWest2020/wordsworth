@@ -32,7 +32,24 @@ Een samenvatting is dat niet. Hij is geschreven door een taalmodel en is dus een
 
 Bij bestuurlijke post staat juist in de eerste regels wat je wilt weten:
 afzender, kenmerk, datum, onderwerp. Dat is precies wat een model van 3b op
-OCR-ruis het slechtst navertelt. Vergelijk ze op je eigen corpus voor je kiest:
+OCR-ruis het slechtst navertelt.
+
+Het extract doet drie dingen voordat het knipt, alle drie gemeten op het
+Woo-corpus:
+
+1. **beginnen bij de onderwerpregel** (`Onderwerp:`, `Betreft:`, `Subject:`)
+   als die er is, en dan vanaf het onderwerp zelf — het label is geen zin. Waar
+   zo'n regel staat, is het extract meteen raak; begint het bij regel één, dan
+   lees je eerst een briefhoofd;
+2. **e-mailkoppen overslaan** (`To:`, `Cc:`, `From:`, `Sent:`, `Attachments:` …).
+   `Subject:`/`Onderwerp:` staat daar bewust niet bij: die is het doelwit;
+3. **scannerruis overslaan** — een regel die voor de helft of meer uit
+   onleesbare brokken bestaat (`LkO1 GEDEELD PGC KfbjCNOqO+k1 ZAK V`).
+   Overslaan en niet stoppen: de regel eronder is vaak wél bruikbaar. Een woord
+   telt als leesbaar wanneer het letters heeft én een klinker — zonder die
+   klinkereis is "PGC" taal.
+
+Vergelijk ze op je eigen corpus voor je kiest:
 
 ```sh
 python -m scripts.eval.vergelijk_samenvattingen --dossier <uuid> --aantal 5

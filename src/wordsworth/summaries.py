@@ -88,6 +88,44 @@ _EXTRACT_TEKENS = 300
 #: bosjes: paginanummers, kenmerkstreepjes, de resten van een briefhoofd.
 _ZEGT_NIETS = re.compile(r"^[\W\d_…]*$")
 
+#: De onderwerpregel. Bij bestuurlijke post staat hier letterlijk waar het stuk
+#: over gaat — dat is de zin die een mens zoekt, en hij staat zelden bovenaan.
+#: Gemeten op het Woo-corpus: waar zo'n regel staat, is het extract meteen raak;
+#: begint het bij regel één, dan lees je eerst een briefhoofd.
+_ONDERWERP = re.compile(r"^\s*(onderwerp|betreft|subject)\b\s*[:.\-]?\s*(.*)$",
+                        re.IGNORECASE)
+
+#: De overige e-mailkoppen. "To: Cc From: Sent: Received:" was in het corpus de
+#: hele eerste regel van menig document — ruis waar een lezer niets aan heeft.
+#: `Subject`/`Onderwerp` staat er bewust NIET bij: die is juist het doelwit.
+_MAILKOP = re.compile(
+    r"^\s*(to|cc|bcc|from|sent|received|date|reply-to|importance"
+    r"|aan|van|verzonden|datum|bijlagen?|attachments?)\s*:", re.IGNORECASE)
+
+#: Een woord dat een mens kan lezen: letters, en een klinker erin. Zonder die
+#: klinkereis telt "PGC" en "KfbjCNOqO" als taal.
+_LEESBAAR = re.compile(r"^[^\W\d_]{2,}$")
+_KLINKER = re.compile(r"[aeiouyàáâäèéêëìíîïòóôöùúûü]", re.IGNORECASE)
+
+
+def _is_rommel(regel: str) -> bool:
+    """Bestaat deze regel voor de helft of meer uit onleesbare brokken?
+
+    Gescande documenten beginnen met dingen als
+    `LkO1 GEDEELD PGC KfbjCNOqO+k1 ZAK V` — streepjescodes, stempels en
+    OCR-ruis. Die willen we niet als samenvatting, maar de regel eronder vaak
+    wél, dus overslaan en niet stoppen.
+    """
+    woorden = [w.strip(".,:;!?()[]{}\"'«»") for w in regel.split()]
+    woorden = [w for w in woorden if w]
+    if not woorden:
+        return True
+    # Leestekens eraf vóór het oordeel: zonder dat telt "Kenmerk:" als
+    # onleesbaar en verdwijnt een regel die er juist toe doet.
+    leesbaar = sum(1 for w in woorden
+                   if _LEESBAAR.match(w) and _KLINKER.search(w))
+    return leesbaar * 2 < len(woorden)
+
 
 def is_citation(model: str) -> bool:
     """Is deze samenvatting een citaat (extractief) of een bewering (model)?"""
@@ -109,12 +147,25 @@ def extractive(text: str) -> str:
     De tokens gaan er net zo goed uit als bij een modelsamenvatting: ze horen
     niet in een veld dat op een scherm belandt.
     """
-    regels = []
-    lengte = 0
+    bruikbaar = []
+    begin_bij_onderwerp = None
     for regel in (text or "").splitlines():
         kaal = clean(regel)
-        if not kaal or _ZEGT_NIETS.match(kaal):
+        if not kaal or _ZEGT_NIETS.match(kaal) or _MAILKOP.match(kaal):
             continue
+        if _is_rommel(kaal):
+            continue
+        gevonden = _ONDERWERP.match(kaal)
+        if gevonden and begin_bij_onderwerp is None:
+            # De onderwerpregel zelf telt mee vanaf het onderwerp: "Onderwerp:
+            # besluit op aanvraag" is de zin, "Onderwerp:" is een label.
+            kaal = gevonden.group(2).strip() or kaal
+            begin_bij_onderwerp = len(bruikbaar)
+        bruikbaar.append(kaal)
+
+    vanaf = begin_bij_onderwerp or 0
+    regels, lengte = [], 0
+    for kaal in bruikbaar[vanaf:]:
         regels.append(kaal)
         lengte += len(kaal)
         if lengte >= _EXTRACT_TEKENS:
