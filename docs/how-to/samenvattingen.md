@@ -40,7 +40,10 @@ Woo-corpus:
 1. **beginnen bij de onderwerpregel** (`Onderwerp:`, `Betreft:`, `Subject:`)
    als die er is, en dan vanaf het onderwerp zelf — het label is geen zin. Waar
    zo'n regel staat, is het extract meteen raak; begint het bij regel één, dan
-   lees je eerst een briefhoofd;
+   lees je eerst een briefhoofd. Staat het label **alleen** op zijn regel (in
+   geëxporteerde e-mail is dat letterlijk `Subject:`), dan begint het extract op
+   de regel erna: het label zelf tonen is het enige antwoord dat nog slechter is
+   dan geen samenvatting, want het ziet eruit als inhoud;
 2. **e-mailkoppen overslaan** (`To:`, `Cc:`, `From:`, `Sent:`, `Attachments:` …).
    `Subject:`/`Onderwerp:` staat daar bewust niet bij: die is het doelwit;
 3. **scannerruis overslaan** — een regel die voor de helft of meer uit
