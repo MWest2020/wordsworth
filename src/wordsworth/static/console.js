@@ -176,3 +176,76 @@ if (typeof document !== "undefined") (function () {
     });
   });
 })();
+
+/* Detectie corrigeren met één klik (overdetectie).
+ *
+ * De feedback-endpoint bestond al en was alleen met curl te bereiken. Wat
+ * ontbrak was de weg ernaartoe: wie een token ziet staan waar geen naam hoort,
+ * moet dat kunnen zeggen zónder te weten dat er een API is.
+ *
+ * Er gaat nooit een waarde mee. Het formulier heeft geen vrij tekstveld en de
+ * klik stuurt alleen het token — dat is de hele reden dat dit spoor veilig in
+ * de append-only keten past.
+ */
+if (typeof document !== "undefined") (function () {
+  var pre = document.getElementById("doctekst");
+  if (!pre) return;
+  var doc = pre.getAttribute("data-doc");
+  var melding = document.getElementById("fbmelding");
+
+  function zeg(tekst, fout) {
+    if (!melding) return;
+    melding.textContent = tekst;
+    melding.style.color = fout ? "var(--revoked)" : "var(--muted)";
+  }
+
+  function stuur(body, bijGoed) {
+    return fetch("/documents/" + doc + "/feedback", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.ok) {
+        // Een weigering is een antwoord, geen stilte: zonder dit denkt iemand
+        // dat zijn melding is aangekomen.
+        return r.json().catch(function () { return {}; }).then(function (b) {
+          zeg("Niet opgeslagen (" + r.status + "): " + (b.detail || "geen reden"), true);
+        });
+      }
+      bijGoed();
+    }).catch(function (e) { zeg("Verzoek mislukt: " + e, true); });
+  }
+
+  function meldToken(el) {
+    if (el.getAttribute("data-gemeld")) return;
+    var type = el.getAttribute("data-type");
+    stuur({ kind: "fp", type: type, token: el.getAttribute("data-token") },
+      function () {
+        el.setAttribute("data-gemeld", "1");
+        el.style.textDecoration = "line-through";
+        el.style.opacity = "0.55";
+        el.title = type + " — gemeld als onterecht";
+        zeg("Gemeld: dit is geen " + type + ". Staat in het auditspoor.", false);
+      });
+  }
+
+  pre.addEventListener("click", function (e) {
+    var el = e.target.closest ? e.target.closest(".tok") : null;
+    if (el) meldToken(el);
+  });
+  pre.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var el = e.target.closest ? e.target.closest(".tok") : null;
+    if (el) { e.preventDefault(); meldToken(el); }
+  });
+
+  var mis = document.getElementById("fbmis");
+  if (mis) mis.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var type = mis.querySelector("select[name=type]").value;
+    stuur({ kind: "fn", type: type }, function () {
+      zeg("Gemeld: hier is een " + type + " gemist. Staat in het auditspoor.", false);
+    });
+  });
+})();

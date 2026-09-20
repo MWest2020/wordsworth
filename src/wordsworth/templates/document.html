@@ -12,7 +12,25 @@
 <div class="card" style="margin-top:20px">
  <div class="panel-head"><span class="dot"></span><h3>Na pseudonimisering</h3>
    <span class="badge">{{ counts|sum(attribute=1) }} tokens</span></div>
- <pre class="doc">{% for p in parts %}{% if p.type %}<span class="tok" title="{{ p.type }}">{{ p.text }}</span>{% else %}{{ p.text }}{% endif %}{% endfor %}</pre>
+ <pre class="doc" id="doctekst" data-doc="{{ id }}">{% for p in parts %}{% if p.type %}<span class="tok" data-type="{{ p.type }}" data-token="{{ p.text }}" role="button" tabindex="0" title="{{ p.type }} — klik als dit geen {{ p.type }} is">{{ p.text }}</span>{% else %}{{ p.text }}{% endif %}{% endfor %}</pre>
+ <div style="padding:12px 16px; border-top:1px solid var(--line)" id="fbuitleg">
+  <p class="note">Klopt er iets niet? <b>Klik een token</b> waarvan je vindt dat
+  het geen PII is. Iets gemist? Meld het hieronder met het type.</p>
+  <form id="fbmis" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+   <select name="type" aria-label="type" style="font:inherit; font-size:.9rem;
+     padding:7px 10px; border:1px solid var(--line); border-radius:8px;
+     background:var(--surface); color:var(--ink)">
+    {% for t in types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+   </select>
+   <button class="btn" type="submit" style="padding:7px 14px">Hier is iets gemist</button>
+   <span class="note" id="fbmelding" aria-live="polite"></span>
+  </form>
+  <p class="note" style="margin-top:8px">Je melding gaat in het auditspoor met je
+  naam, het type en — bij een token — welk token. <b>Nooit een waarde</b>: er is
+  geen vrij tekstveld, want dat zou klare PII het spoor in dragen. Wat je meldt
+  verandert de lijsten niet vanzelf; dat blijft een wijziging die een mens
+  nakijkt.</p>
+ </div>
 </div>
 {% endif %}
 
