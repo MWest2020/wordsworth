@@ -18,11 +18,43 @@ export WORDSWORTH_OIDC_ISSUER=https://iam.westerweel.work/realms/westerweel
 export WORDSWORTH_OIDC_AUDIENCE=<the client id registered for wordsworth>
 ```
 
-Both are required, checked without a default. The JWKS address is not
-configured directly: it comes from the issuer's own
-`<issuer>/.well-known/openid-configuration` document (`jwks_uri`), fetched
-once and cached. An unreachable or malformed discovery document fails
-app startup with a clear error rather than a silent hole.
+Both are required, checked without a default. Het JWKS-adres komt standaard uit
+het eigen discovery-document van de uitgever
+(`<issuer>/.well-known/openid-configuration`, veld `jwks_uri`), één keer
+opgehaald en daarna gecached.
+
+**Dat ophalen gebeurt bij het eerste verzoek dat een token controleert, niet bij
+het opstarten.** Een uitgever die hapert hoort geen applicatie neer te halen —
+en zeker niet de routes die niets met inloggen te maken hebben. Lukt het
+ophalen niet, dan levert dat "geen caller" op (fail-closed: een verzoek zonder
+vastgestelde identiteit), niet een dode pod.
+
+Op 2026-09-20 was dat andersom en kostte het de api-pod zijn start:
+
+```
+DiscoveryError: discovery unreachable for issuer '…': HTTPError
+[1] [ERROR] Reason: Worker failed to boot.
+```
+
+### De sleutels intern ophalen
+
+```bash
+export WORDSWORTH_OIDC_JWKS_URL=http://keycloak.keycloak.svc.cluster.local:8080/realms/westerweel/protocol/openid-connect/certs
+```
+
+Staat dit adres gezet, dan wordt het discovery-document **niet** opgehaald en
+gaat het verkeer rechtstreeks daarheen. De **uitgever blijft de publieke naam**:
+dat is wat er in `iss` staat en dus wat gecontroleerd wordt. Adres en identiteit
+zijn twee dingen, en ze door elkaar halen betekent dat een interne URL in de
+tokencontrole belandt.
+
+Waarom dit uitmaakt: de uitgever is publiek bereikbaar, dus zonder dit adres
+gaat de pod via Cloudflare en de eigen tunnel terug het cluster in — twee extra
+partijen voor iets wat één netwerkhop verderop staat. Cloudflare weigerde die
+aanvraag bovendien met **403**, omdat `urllib` geen User-Agent stuurde. Dezelfde
+URL gaf vanaf dezelfde pod 200 zodra er wél een User-Agent bij zat; die stuurt
+wordsworth nu altijd mee, zodat ook de publieke route werkt voor wie hem toch
+gebruikt.
 
 Wordsworth itself never speaks the OIDC login dance (authorization code,
 redirects, session cookies) — a reverse proxy in front of it does that and

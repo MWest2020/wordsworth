@@ -72,7 +72,22 @@ class Verifier:
 
     issuer: str      # e.g. https://iam.westerweel.work/realms/westerweel
     audience: str    # the application's own aud/client id
-    jwks_url: str    # where the issuer's public keys live
+    #: Waar de sleutels staan. Leeg = nog niet opgezocht; `resolved_jwks_url()`
+    #: doet dat op het moment dat het nodig is.
+    jwks_url: str
+    #: Alleen voor tests: een eigen ophaler voor het discovery-document.
+    _fetch_discovery: object = None
+
+    def resolved_jwks_url(self) -> str:
+        """Het JWKS-adres, zo nodig alsnog opgezocht.
+
+        Hier en niet in `oidc()`, zodat het opstarten geen netwerk raakt. De
+        uitkomst wordt gecachet op uitgever, dus dit kost één aanroep en daarna
+        niets.
+        """
+        if self.jwks_url:
+            return self.jwks_url
+        return discover_jwks_url(self.issuer, fetch=self._fetch_discovery)
 
     @classmethod
     def cloudflare(cls, team_domain: str, audience: str) -> "Verifier":
@@ -82,15 +97,31 @@ class Verifier:
                     jwks_url=f"https://{team_domain}/cdn-cgi/access/certs")
 
     @classmethod
-    def oidc(cls, issuer: str, audience: str, fetch=None) -> "Verifier":
-        """Any OIDC issuer (Keycloak, ...); the JWKS address is discovered."""
-        return cls(issuer=issuer, audience=audience,
-                    jwks_url=discover_jwks_url(issuer, fetch=fetch))
+    def oidc(cls, issuer: str, audience: str, fetch=None,
+             jwks_url: str = "") -> "Verifier":
+        """Any OIDC issuer (Keycloak, ...).
+
+        `jwks_url` gezet: dat adres wordt gebruikt en het discovery-document
+        wordt **niet** opgehaald. Daarmee kan een dienst de sleutels bij zijn
+        buur in hetzelfde cluster ophalen terwijl de **uitgever de publieke naam
+        blijft** — want dat is wat er in `iss` staat en dus wat gecontroleerd
+        moet worden. Adres en identiteit zijn twee dingen; ze door elkaar halen
+        betekent dat een interne URL in de token-controle belandt.
+
+        Leeg gelaten: het adres wordt pas opgezocht wanneer het nodig is, niet
+        bij het aanmaken. Een uitgever die bij het opstarten hikt, hoort geen
+        applicatie neer te halen — en zeker niet de routes die niets met
+        inloggen te maken hebben.
+        """
+        if jwks_url:
+            return cls(issuer=issuer, audience=audience, jwks_url=jwks_url)
+        return cls(issuer=issuer, audience=audience, jwks_url="",
+                   _fetch_discovery=fetch)
 
 
 def public_keys(verifier: Verifier, fetch=None) -> dict:
     """``kid -> RSAPublicKey`` from the issuer's published JWKS."""
-    raw = (fetch or _fetch)(verifier.jwks_url)
+    raw = (fetch or _fetch)(verifier.resolved_jwks_url())
     keys = {}
     for k in raw.get("keys", []):
         if k.get("kty") != "RSA":
@@ -101,8 +132,19 @@ def public_keys(verifier: Verifier, fetch=None) -> dict:
     return keys
 
 
+#: Een User-Agent op elke aanroep.
+#:
+#: Gemeten op 2026-09-20 vanuit de draaiende pod: dezelfde URL gaf 403 met de
+#: kale urllib-agent en 200 met een browserachtige. De uitgever staat achter
+#: Cloudflare, en die weigert een aanvraag zonder User-Agent als bot. Dat kostte
+#: de api-pod zijn start, en van buiten was er niets aan te zien -- daar gaf
+#: dezelfde URL gewoon 200.
+USER_AGENT = "wordsworth/1.0 (+https://github.com/MWest2020/wordsworth)"
+
+
 def _fetch(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
         return json.loads(resp.read())
 
 
