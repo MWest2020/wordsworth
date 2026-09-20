@@ -110,6 +110,41 @@ Het antwoord draagt de noemer:
 
 Zonder die vijf leest "24 gemaakt" als een uitspraak over het hele dossier.
 
+## Als commando
+
+Naast het endpoint hierboven bestaat hetzelfde werk als commando, voor gebruik
+in een cluster-Job of lokaal:
+
+```sh
+# één of meer dossiers, --dossier is herhaalbaar
+python -m wordsworth.samenvatten --dossier <dossier-uuid>
+
+# alles wat nog geen samenvatting heeft, over alle dossiers heen
+python -m wordsworth.samenvatten --ontbrekend
+```
+
+Zonder argumenten legt het commando uit wat het verwacht en stopt met
+exitcode 2 — er is geen impliciete "alles" en geen stille no-op.
+
+Het gebruikt dezelfde `compute()` als het endpoint: dezelfde upsert, dezelfde
+commit per document, dezelfde idempotentie (`--dossier` twee keer draaien
+roept het model niet twee keer aan). Eén regel uitvoer aan het eind, met de
+vijf tellingen en de duur:
+
+```
+seen=30 made=24 skipped=3 failed=1 without_text=2 duur=812.4s
+```
+
+Exitcode 1 als er iets mislukte (`failed` of `without_text` groter dan nul),
+anders 0 — ook als er niets te doen was.
+
+Dit vervangt het script dat een cluster-Job tot 2026-09-20 meedroeg in zijn
+eigen `args`: met de hand aangemaakt, dertig regels, zichtbaar in geen enkele
+repo — een wijziging daaraan was onnavolgbaar en na een herinstallatie was hij
+weg. De homelab-repo krijgt een CronJob die dit commando aanroept
+(`python -m wordsworth.samenvatten --ontbrekend`) in plaats van dat script mee
+te dragen.
+
 ## Tokens gaan eruit — en waarom dat geen detail is
 
 De samenvatting wordt gemaakt over de gepseudonimiseerde tekst, want een andere

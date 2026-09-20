@@ -4,6 +4,12 @@
 
 ### Added
 
+- `python -m wordsworth.samenvatten`: samenvatten is nu een echt commando
+  (`--dossier <uuid>`, herhaalbaar, of `--ontbrekend` voor alles wat nog geen
+  samenvatting heeft), niet langer een script dat een cluster-Job meedroeg in
+  zijn eigen `args`. Idempotent zoals `compute()` dat al was, met één regel
+  uitvoer (de vijf tellingen plus de duur) en een exitcode ongelijk aan nul
+  als er iets mislukte. Zie [samenvattingen](docs/how-to/samenvattingen.md).
 - Identity from Keycloak (or any OIDC issuer), alongside Cloudflare Access.
   `access_identity.Verifier` now holds issuer, audience and JWKS address as
   plain fields; `Verifier.cloudflare(...)` and `Verifier.oidc(...)` are two
