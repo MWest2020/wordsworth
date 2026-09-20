@@ -42,6 +42,17 @@ de append-only keten passen. Het eindpunt weigert bovendien een `token` dat geen
 `[TYPE:hash8]` is — anders was de regel te omzeilen door een naam in dat veld te
 zetten.
 
+**Waar de meldingen samenkomen.** `/console/meldingen` — of liever
+`/console/feedback` — zet ze bij elkaar: hetzelfde token door meer mensen
+gemeld staat bovenaan. Het **gewicht is het aantal verschillende melders**, niet
+het aantal meldingen: één iemand die tien keer klikt is geen tien mensen, en
+zonder dat onderscheid is de lijst te vullen door één vasthoudende gebruiker.
+
+Dat scherm toont **geen waarden**. Welke naam achter een token zit, zie je langs
+de gewone weg: een grant, een rol, een geauditeerde onthulling. Een overzicht
+dat de waarde er "even" bij zet is de tweede deur met het grootste bereik --
+hij toont ze allemaal tegelijk.
+
 Wat je meldt verandert de lijsten **niet** vanzelf. Dat blijft een git-wijziging
 die iemand nakijkt; de melding is de aanleiding, niet de beslissing.
 

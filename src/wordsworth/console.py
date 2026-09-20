@@ -38,6 +38,7 @@ from sqlalchemy import func, select
 from . import combinations as _combinations
 from . import console_data
 from . import console_search
+from . import console_feedback
 from . import console_roles
 from . import console_topics
 from .auth import CONSOLE_COOKIE
@@ -165,6 +166,9 @@ def build_router(session_factory, keys: dict[str, str],
     # een rol mag, bepaalt wat iedereen met die rol mag zien.
     console_roles.mount(router, session_factory, TEMPLATES, _mag_beheren, _caller,
                         audit)
+    # Leespoort en niet de beheerpoort: welke tokens er in welke documenten
+    # staan is corpuskennis. Wie de lijsten aanpast doet dat in git, niet hier.
+    console_feedback.mount(router, session_factory, TEMPLATES, _mag_lezen, _caller)
 
     @router.get("/documents/{document_id}", response_class=HTMLResponse,
                 include_in_schema=False)
