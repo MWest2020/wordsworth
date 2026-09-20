@@ -284,6 +284,16 @@ class ReprocessRequest(BaseModel):
     every INDEXED document."""
 
     document_ids: list[str] | None = None
+    #: Alleen documenten die nog niet onder de HUIDIGE detectielijsten zijn
+    #: verwerkt. De lijst-hash staat in elk de-identificatie-auditrecord, dus
+    #: "al bijgewerkt" is een feit uit het spoor en geen tijdstempel die iemand
+    #: moet onthouden.
+    #:
+    #: Standaard uit, zodat het bestaande gedrag niet verandert. Aan zetten is
+    #: wat je wilt na een lijstwijziging: een run van 770 documenten kostte op
+    #: 2026-09-20 veertien uur, en hem afbreken betekende anders dat de
+    #: volgende run alles overdeed.
+    only_outdated: bool = False
 
 
 class ReprocessResponse(BaseModel):
@@ -1125,6 +1135,14 @@ def create_app(
                         ids = [i for i in session.execute(
                             select(Document.id)).scalars()
                             if current_state(session, i) == State.INDEXED]
+                    if body and body.only_outdated:
+                        from .detection_lists import DetectionLists
+                        from .pipeline import lists_hash_of
+
+                        nu = DetectionLists.load(
+                            default_settings.detection_lists_dir).hash
+                        ids = [i for i in ids
+                               if lists_hash_of(session, i) != nu]
                 counts = {"reanonymized": 0, "skipped": 0,
                           "retryable": 0, "failed": 0}
                 problems: dict[str, str] = {}
