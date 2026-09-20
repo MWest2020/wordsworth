@@ -1,0 +1,273 @@
+{
+  "_over_dit_bestand": [
+    "Getypeerde patronen waarvan de MATCH GEEN PII van dat type is. Een regel",
+    "hier haalt bescherming weg -- de enige plek in dit systeem waar dat",
+    "gebeurt -- dus draagt elke regel een reden en weigert het laden een regel",
+    "zonder. De patronen zijn volledig verankerd (^...$) en gelden alleen voor",
+    "hun eigen type.",
+    "",
+    "Kandidaten kwamen uit de meting van 2026-09-20 over 198 documenten (zie",
+    "docs/explanation/meting-restwaarden-03.md): 39% van de entiteit-tokens had",
+    "een waarde die met een kleine letter begint. Die meting is de generator,",
+    "niet de beslisser -- elke regel hieronder is een menselijk oordeel.",
+    "",
+    "Wat hier NIET op hoort: een naam. CI toetst elke regel tegen het",
+    "evalcorpus, waar bekend is wat er aan PII in zit.",
+    "",
+    "Wat hier BEWUST NIET op staat: 'naarden' (378 voorkomens) en 'noord-holland'. Dat zijn echte plaatsnamen die de OCR met een kleine letter afleverde. De lijst bevat woorden die GEEN naam zijn; hij bevat geen namen die toevallig grof zijn."
+  ],
+  "LOCATION": [
+    {
+      "patroon": "(?i)^locatie$",
+      "reden": "Zelfstandig naamwoord, geen plaats. Stond in 41 van 198 documenten."
+    },
+    {
+      "patroon": "(?i)^locaties$",
+      "reden": "Meervoud van hierboven."
+    },
+    {
+      "patroon": "(?i)^gemeente$",
+      "reden": "Het woord 'gemeente' zonder naam erachter benoemt geen plaats. 40 documenten. LET OP: 'gemeente Gooise Meren' matcht hier NIET -- de verankering houdt dat tegen, en dat is een aparte regel onder ORGANIZATION."
+    },
+    {
+      "patroon": "(?i)^gemeenten$",
+      "reden": "Meervoud van hierboven."
+    },
+    {
+      "patroon": "(?i)^woning$",
+      "reden": "Zelfstandig naamwoord. 22 documenten. Een woning wordt identificerend door het ADRES erbij, en dat is een eigen detectie."
+    },
+    {
+      "patroon": "(?i)^woningen$",
+      "reden": "Meervoud van hierboven."
+    },
+    {
+      "patroon": "(?i)^perceel$",
+      "reden": "Zelfstandig naamwoord. 20 documenten. Zie 'woning': het perceelNUMMER is het identificerende deel."
+    },
+    {
+      "patroon": "(?i)^omgeving$",
+      "reden": "Zelfstandig naamwoord. 21 documenten."
+    },
+    {
+      "patroon": "(?i)^adres$",
+      "reden": "Het woord zelf, niet een adres."
+    },
+    {
+      "patroon": "(?i)^straat$",
+      "reden": "Het woord zelf; een straatNAAM eindigt op -straat en matcht hier niet."
+    },
+    {
+      "patroon": "(?i)^buurt$",
+      "reden": "Zelfstandig naamwoord."
+    },
+    {
+      "patroon": "(?i)^regio$",
+      "reden": "Zelfstandig naamwoord; 'Regio Gooi en Vechtstreek' matcht hier niet."
+    },
+    {
+      "patroon": "(?i)^gemeente gooise meren$",
+      "reden": "Bestuursorgaan (geen natuurlijk persoon). Wordt door de detector als LOCATION getypeerd, niet als ORGANIZATION -- getypeerde regels moeten dus onder allebei staan. 159 voorkomens."
+    },
+    {
+      "patroon": "(?i)^de gemeente$",
+      "reden": "Zelfstandig naamwoord met lidwoord. 52 voorkomens."
+    },
+    {
+      "patroon": "(?i)^inrichting$",
+      "reden": "Vakterm uit de milieuwetgeving voor een bedrijfslocatie, geen plaatsnaam. 145 voorkomens."
+    },
+    {
+      "patroon": "(?i)^bestemmingsplan$",
+      "reden": "Naam van een planfiguur, geen plaats. 111 voorkomens."
+    },
+    {
+      "patroon": "(?i)^plangebied$",
+      "reden": "Vakterm uit de ruimtelijke ordening. 93 voorkomens."
+    },
+    {
+      "patroon": "(?i)^gebied$",
+      "reden": "Zelfstandig naamwoord. 92 voorkomens."
+    },
+    {
+      "patroon": "(?i)^water$",
+      "reden": "Zelfstandig naamwoord. 85 voorkomens."
+    },
+    {
+      "patroon": "(?i)^terrein$",
+      "reden": "Zelfstandig naamwoord. 79 voorkomens."
+    },
+    {
+      "patroon": "(?i)^ter plaatse$",
+      "reden": "Voorzetseluitdrukking, geen plaats. 79 voorkomens."
+    },
+    {
+      "patroon": "(?i)^project$",
+      "reden": "Zelfstandig naamwoord. 67 voorkomens."
+    },
+    {
+      "patroon": "(?i)^tank$",
+      "reden": "Zelfstandig naamwoord. 62 voorkomens."
+    },
+    {
+      "patroon": "(?i)^pand$",
+      "reden": "Zelfstandig naamwoord; het ADRES van een pand is de identificerende gegeven en dat is een eigen detectie. 53 voorkomens."
+    },
+    {
+      "patroon": "(?i)^bestemming$",
+      "reden": "Vakterm uit de ruimtelijke ordening. 51 voorkomens."
+    },
+    {
+      "patroon": "(?i)^bebouwde kom$",
+      "reden": "Vakterm, geen plaatsnaam. 49 voorkomens."
+    },
+    {
+      "patroon": "(?i)^bouwvlak$",
+      "reden": "Vakterm uit de ruimtelijke ordening. 45 voorkomens."
+    },
+    {
+      "patroon": "(?i)^gebouw$",
+      "reden": "Zelfstandig naamwoord. 43 voorkomens."
+    },
+    {
+      "patroon": "(?i)^landschap$",
+      "reden": "Zelfstandig naamwoord. 42 voorkomens."
+    }
+  ],
+  "PERSON": [
+    {
+      "patroon": "(?i)^wij$",
+      "reden": "Voornaamwoord. Stond als PERSON in 24 van 198 documenten -- geen mens maar de briefschrijver die zichzelf aanduidt."
+    },
+    {
+      "patroon": "(?i)^u$",
+      "reden": "Voornaamwoord."
+    },
+    {
+      "patroon": "(?i)^ik$",
+      "reden": "Voornaamwoord."
+    },
+    {
+      "patroon": "(?i)^naam$",
+      "reden": "Het woord 'naam' is geen naam. Komt uit formulierveldjes ('Naam:')."
+    },
+    {
+      "patroon": "(?i)^betrokkene$",
+      "reden": "Aanduiding van een rol, geen naam."
+    },
+    {
+      "patroon": "(?i)^aanvrager$",
+      "reden": "Aanduiding van een rol, geen naam."
+    },
+    {
+      "patroon": "(?i)^bewoners?$",
+      "reden": "Zelfstandig naamwoord. Dook op in de meting als overlevende waarde."
+    },
+    {
+      "patroon": "(?i)^geachte$",
+      "reden": "Aanhef."
+    },
+    {
+      "patroon": "(?i)^heer$",
+      "reden": "Aanhef, geen naam."
+    },
+    {
+      "patroon": "(?i)^mevrouw$",
+      "reden": "Aanhef, geen naam."
+    },
+    {
+      "patroon": "(?i)^zijn$",
+      "reden": "Voornaamwoord of werkwoord, geen naam. 52 voorkomens."
+    },
+    {
+      "patroon": "(?i)^een$",
+      "reden": "Lidwoord. 48 voorkomens."
+    }
+  ],
+  "ORGANIZATION": [
+    {
+      "patroon": "(?i)^college$",
+      "reden": "Bestuursorgaan, geen natuurlijk persoon. Mark, 2026-09-20: bestuursorganen zijn geen PII. 19 documenten."
+    },
+    {
+      "patroon": "(?i)^de raad$",
+      "reden": "Bestuursorgaan."
+    },
+    {
+      "patroon": "(?i)^gemeenteraad$",
+      "reden": "Bestuursorgaan."
+    },
+    {
+      "patroon": "(?i)^bedrijf$",
+      "reden": "Zelfstandig naamwoord, geen organisatienaam. 19 documenten."
+    },
+    {
+      "patroon": "(?i)^bedrijven$",
+      "reden": "Meervoud van hierboven."
+    },
+    {
+      "patroon": "(?i)^organisatie$",
+      "reden": "Zelfstandig naamwoord."
+    },
+    {
+      "patroon": "(?i)^asielzoekers$",
+      "reden": "Aanduiding van een groep mensen, geen organisatienaam. LET OP: dit is de enige regel hier die over mensen gaat. Hij mag omdat de aanduiding niemand identificeert -- een individuele asielzoeker wordt beschermd door PERSON, niet hierdoor."
+    },
+    {
+      "patroon": "(?i)^noodopvang asielzoekers$",
+      "reden": "Zie hierboven; een voorziening, geen organisatie."
+    },
+    {
+      "patroon": "(?i)^gemeente gooise meren$",
+      "reden": "Bestuursorgaan. Mark, 2026-09-20: 'bestuursorganen zijn natuurlijk niet PII - het zijn geen (natuurlijke) personen.' 60 documenten. Per NAAM en niet als regel: een eenmanszaak verstopt zich ook als ORGANIZATION."
+    },
+    {
+      "patroon": "(?i)^coa$",
+      "reden": "Centraal Orgaan opvang asielzoekers: zelfstandig bestuursorgaan. 43 documenten."
+    },
+    {
+      "patroon": "(?i)^ofgv$",
+      "reden": "Omgevingsdienst Flevoland & Gooi en Vechtstreek: gemeenschappelijke regeling van overheden. 20 documenten."
+    },
+    {
+      "patroon": "(?i)^regio gooi en vechtstreek$",
+      "reden": "Samenwerkingsverband van gemeenten. 29 documenten."
+    },
+    {
+      "patroon": "(?i)^regiogv$",
+      "reden": "Afkorting van hierboven. 19 documenten."
+    },
+    {
+      "patroon": "(?i)^bedrijfswoning$",
+      "reden": "Soort gebouw, geen organisatienaam. 123 voorkomens."
+    },
+    {
+      "patroon": "(?i)^burgerwoning$",
+      "reden": "Soort gebouw, geen organisatienaam. 49 voorkomens."
+    },
+    {
+      "patroon": "(?i)^paardenhouderij$",
+      "reden": "Soort bedrijf, geen naam. 'Paardenhouderij Jansen' is langer en matcht hier niet. 67 voorkomens."
+    },
+    {
+      "patroon": "(?i)^veehouderij(en)?$",
+      "reden": "Soort bedrijf, geen naam. 50+43 voorkomens."
+    },
+    {
+      "patroon": "(?i)^paardenstal$",
+      "reden": "Soort gebouw, geen naam. 44 voorkomens."
+    },
+    {
+      "patroon": "(?i)^commissie$",
+      "reden": "Aanduiding van een gremium, geen naam. 46 voorkomens."
+    },
+    {
+      "patroon": "(?i)^bevoegd gezag$",
+      "reden": "Bestuursrechtelijke aanduiding, geen natuurlijk persoon. 49 voorkomens."
+    },
+    {
+      "patroon": "(?i)^raad$",
+      "reden": "Bestuursorgaan. 42 voorkomens."
+    }
+  ]
+}

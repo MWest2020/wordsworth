@@ -3,9 +3,17 @@
 The boring alternative to a rules engine: two JSON files in a git-versioned
 directory, loaded at start, content-hashed into every de-identify audit record.
 
-``allow.json``  {"PERSON": ["^Jansen BV$", ...]}  — typed patterns whose match is
-NOT PII of that type; a detection of that type whose value fullmatches is
-dropped (never across types).
+``allow.json``  {"PERSON": [{"patroon": "^Jansen BV$", "reden": "..."}]} — typed
+patterns whose match is NOT PII of that type; a detection of that type whose
+value fullmatches is dropped (never across types). **Elke regel draagt een
+reden**: dit is de enige plek in dit systeem waar een wijziging stilletjes tot
+mínder pseudonimisering leidt, en een kale lijst woorden is een lijst die
+niemand kan nakijken. Een regel zonder reden wordt geweigerd bij het laden —
+niet overgeslagen, geweigerd, want half een lijst toepassen is erger dan geen.
+Een sleutel die met ``_`` begint is commentaar en wordt overgeslagen: JSON kent
+geen commentaar, en een lijst die kan uitleggen waarom hij bestaat is meer waard
+dan een lijst die dat niet kan.
+
 ``deny.json``   {"KENTEKEN": ["\\\\b[A-Z]{2}-\\\\d{3}-[A-Z]\\\\b", ...]} — typed
 patterns that ARE PII; every match becomes a detection (layer ``list``, score
 1.0) in addition to what the detectors found.
@@ -23,6 +31,34 @@ from pathlib import Path
 from .openanonymiser_driver import Entity
 
 LIST_LAYER = "list"
+
+
+def _patronen(path: Path, type_: str, regels) -> list[re.Pattern[str]]:
+    """De patronen van één type, en de eis dat elk een reden draagt.
+
+    Twee vormen worden gelezen: een kale string (deny — daar voegt een regel PII
+    tóé, en dat is de veilige kant op) en een object met `patroon` en `reden`.
+    Voor `allow` is de kale vorm niet genoeg; zie de moduledocstring.
+    """
+    if not isinstance(regels, list):
+        raise ValueError(f"{path}: {type_}: verwacht een lijst")
+    uit = []
+    for regel in regels:
+        if isinstance(regel, str):
+            if path.name == "allow.json":
+                raise ValueError(
+                    f"{path}: {type_}: regel {regel!r} heeft geen reden. Een "
+                    "allow-regel haalt bescherming weg; zonder reden is hij "
+                    "niet na te kijken.")
+            uit.append(re.compile(regel))
+            continue
+        if not isinstance(regel, dict) or not regel.get("patroon"):
+            raise ValueError(f"{path}: {type_}: verwacht {{patroon, reden}}")
+        if not str(regel.get("reden", "")).strip():
+            raise ValueError(
+                f"{path}: {type_}: regel {regel['patroon']!r} heeft geen reden.")
+        uit.append(re.compile(regel["patroon"]))
+    return uit
 
 
 @dataclass
@@ -47,8 +83,12 @@ class DetectionLists:
             data = json.loads(raw or b"{}")
             if not isinstance(data, dict):
                 raise ValueError(f"{path}: expected an object of TYPE -> [patterns]")
-            parsed[name] = {str(t).upper(): [re.compile(p) for p in pats]
-                            for t, pats in data.items()}
+            # Een sleutel die met "_" begint is commentaar. JSON kent dat niet,
+            # en een lijst die uitlegt waarom hij bestaat is meer waard dan een
+            # lijst die dat niet kan.
+            parsed[name] = {str(t).upper(): _patronen(path, t, pats)
+                            for t, pats in data.items()
+                            if not str(t).startswith("_")}
         return cls(parsed["allow"], parsed["deny"], digest.hexdigest())
 
     def apply(self, text: str, detections: list[Entity]

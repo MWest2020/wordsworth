@@ -55,6 +55,11 @@ WORKDIR /app
 COPY --from=builder --chown=wordsworth:wordsworth /app/.venv /app/.venv
 COPY --chown=wordsworth:wordsworth src ./src
 COPY --chown=wordsworth:wordsworth pyproject.toml README.md ./
+# De detectielijsten gaan MEE IN HET IMAGE en komen niet uit de omgeving. De
+# content-hash ervan staat in elk de-identificatie-auditrecord, en die hash
+# hoort terug te leiden naar een commit die iemand heeft bekeken. Een ConfigMap
+# is te wijzigen zonder review; dan is de hash een getal zonder herkomst.
+COPY --chown=wordsworth:wordsworth lists ./lists
 
 # venv on PATH → `uvicorn`, `wordsworth-init`, `wordsworth-ingest` resolve.
 ENV PATH="/app/.venv/bin:$PATH"
