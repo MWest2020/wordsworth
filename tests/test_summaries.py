@@ -345,10 +345,14 @@ def test_the_extractive_variant_takes_the_lines_that_say_something(session_facto
     kenmerk, datum, onderwerp. Nul modelaanroepen, dus nul seconden — tegenover
     123 seconden per document op deze hardware."""
     uit = summaries.extractive(BRIEF)
-    assert "Betreft: bezwaar tegen de geweigerde omgevingsvergunning" in uit
+    # Vanaf het ONDERWERP, niet vanaf het briefhoofd: dat is waar een mens naar
+    # zoekt. Het label zelf is geen zin.
+    assert uit.startswith("bezwaar tegen de geweigerde omgevingsvergunning")
     assert "Kenmerk: Z/26/0032" in uit
     # Regels die niets benoemen -- paginastreepjes, losse leestekens -- vallen weg.
     assert "-- 3 --" not in uit
+    # En het briefhoofd staat er niet meer voor.
+    assert "Industrieweg" not in uit
 
 
 def test_the_extractive_variant_strips_tokens_too(session_factory):
@@ -372,11 +376,27 @@ def test_it_is_a_citation_and_says_so(session_factory):
         # En het is echt een citaat: de uitvoer is niets anders dan
         # brongregels achter elkaar. Dit loopt hem letterlijk af -- blijft er
         # iets over, dan staat er tekst die nergens vandaan komt.
-        bron = [summaries.clean(r) for r in BRIEF.splitlines()]
+        # Een bronregel telt mee in zijn geheel, óf -- als het de
+        # onderwerpregel is -- vanaf het onderwerp. Verder mag er niets bij
+        # verzonnen zijn.
+        bron = []
+        for r in BRIEF.splitlines():
+            kaal = summaries.clean(r)
+            if not kaal:
+                continue
+            bron.append(kaal)
+            gevonden = summaries._ONDERWERP.match(kaal)
+            if gevonden and gevonden.group(2).strip():
+                bron.append(gevonden.group(2).strip())
         rest = rij.text.rstrip("…")
-        for regel in [r for r in bron if r]:
-            if rest.startswith(regel):
-                rest = rest[len(regel):].lstrip()
+        veranderd = True
+        while rest and veranderd:
+            veranderd = False
+            for regel in bron:
+                if rest.startswith(regel):
+                    rest = rest[len(regel):].lstrip()
+                    veranderd = True
+                    break
         assert rest == "", f"niet uit brongregels opgebouwd, over: {rest!r}"
 
 
@@ -386,3 +406,102 @@ def test_a_document_of_only_noise_gets_no_extractive_summary(session_factory):
         uit = summaries.compute(s, None, [doc.id], model="genegeerd")
         assert (uit.made, uit.failed) == (0, 1)
         assert s.get(DocumentSummary, doc.id) is None
+
+
+MAIL = """To: raad@gooisemeren.nl
+Cc:
+From: JERE <EMAIL>
+Sent: Mon 6/17/2024 7:27:08 PM
+Subject: Advies over de aanvullende bezwaarprocedure
+Attachments: 2020-02-03 advies.pdf (25 pages)
+
+Goedemorgen, dit is het advies van de commissie over de aanvraag."""
+
+GESCAND = """LkO1 GEDEELD PGC KfbjCNOqO+k1 ZAK V
+
+Z2024-003438
+
+Onderwerp: advies bestemmingsplan voor het toevoegen van een woning
+
+Hierbij wil ik advies opvragen voor het toevoegen van een woning."""
+
+
+def test_the_extract_starts_at_the_subject_line(session_factory):
+    """Bij bestuurlijke post staat op de onderwerpregel letterlijk waar het stuk
+    over gaat, en die staat zelden bovenaan. Gemeten op het Woo-corpus: waar zo
+    n regel staat is het extract meteen raak, begint het bij regel één dan lees
+    je eerst een briefhoofd."""
+    uit = summaries.extractive(GESCAND)
+    assert uit.startswith("advies bestemmingsplan voor het toevoegen van een woning")
+    # Het label zelf is geen zin.
+    assert not uit.lower().startswith("onderwerp")
+
+
+def test_mail_headers_are_skipped_but_the_subject_is_not(session_factory):
+    """"To: Cc From: Sent: Received:" was in het corpus de hele eerste regel van
+    menig document. Het onderwerp is juist het doelwit."""
+    uit = summaries.extractive(MAIL)
+    assert uit.startswith("Advies over de aanvullende bezwaarprocedure")
+    for kop in ("To:", "Cc:", "Sent:", "Attachments:"):
+        assert kop not in uit
+    assert "dit is het advies van de commissie" in uit
+
+
+ZONDER_ONDERWERP = """To: raad@gooisemeren.nl
+From: JERE <EMAIL>
+Sent: Mon 6/17/2024 7:27:08 PM
+Attachments: 2020-02-03 advies.pdf
+
+Goedemorgen, hierbij de annotaties voor de vergadering van volgende week."""
+
+
+def test_mail_headers_are_skipped_even_without_a_subject_line(session_factory):
+    """Zónder onderwerpregel is er geen startpunt dat de koppen toevallig
+    overslaat — dan moet het overslaan zelf het werk doen.
+
+    Mijn eerste versie van de test hierboven had wél een onderwerpregel en
+    slaagde dus ook mét het koppenfilter eruit: hij bewaakte niets.
+    """
+    uit = summaries.extractive(ZONDER_ONDERWERP)
+    assert uit.startswith("Goedemorgen, hierbij de annotaties")
+    for kop in ("To:", "From:", "Sent:", "Attachments:"):
+        assert kop not in uit
+
+
+def test_scanner_noise_is_skipped_not_summarised(session_factory):
+    """Streepjescodes en stempels: `LkO1 GEDEELD PGC KfbjCNOqO+k1 ZAK V`. De
+    regel eronder is vaak wél bruikbaar, dus overslaan en niet stoppen.
+
+    Zónder onderwerpregel, want met een onderwerpregel begint het extract daar
+    toch al en slaagt deze test ook met het rommelfilter eruit — dat had mijn
+    eerste versie, en die bewaakte dus niets.
+    """
+    rommelig = ("LkO1 GEDEELD PGC KfbjCNOqO+k1 ZAK V\n\n"
+                "Hierbij wil ik advies opvragen voor het toevoegen van een woning.")
+    uit = summaries.extractive(rommelig)
+    assert "KfbjCNOqO" not in uit and "LkO1" not in uit
+    assert uit.startswith("Hierbij wil ik advies opvragen")
+
+
+def test_ordinary_administrative_lines_are_not_mistaken_for_noise(session_factory):
+    """Een filter dat gewone briefhoofden wegpoetst is erger dan de ruis die het
+    weghaalt. Deze regel heeft cijfers en kenmerken en is gewoon bruikbaar."""
+    regel = "Behandeld door Datum Zaaknummer 1076024 Ons kenmerk HZ_WABQO-18-2010"
+    assert not summaries._is_rommel(regel)
+
+
+def test_without_a_subject_line_it_still_starts_at_the_top(session_factory):
+    """Niet elk document heeft een onderwerpregel. Dan blijft het gedrag zoals
+    het was: de eerste regels die iets zeggen."""
+    uit = summaries.extractive("Geachte heer,\n\nHierbij bevestigen wij de "
+                               "ontvangst van uw aanvraag.")
+    assert uit.startswith("Geachte heer,")
+
+
+def test_it_is_still_a_citation_after_all_this_skipping(session_factory):
+    """Overslaan mag; verzinnen niet. Alles wat overblijft moet nog steeds
+    letterlijk uit het document komen."""
+    uit = summaries.extractive(GESCAND).rstrip("…")
+    bron = " ".join(summaries.clean(r) for r in GESCAND.splitlines())
+    for stuk in uit.split(" Hierbij")[0:1]:
+        assert stuk.strip() in bron
