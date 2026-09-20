@@ -45,6 +45,37 @@ same way.
 - **WHEN** a document without a summary appears in a result
 - **THEN** the fragment is shown and the absence is stated, rather than left blank
 
+### Requirement: Er zijn twee soorten samenvatting, en het scherm zegt welke
+
+The system SHALL support two kinds of summary for a document: an **extractive**
+one, made of lines taken verbatim from the stored text, and a **generated** one,
+written by a language model. Which kind a stored summary is SHALL be recorded
+with it and SHALL be visible wherever it is shown.
+
+The difference is not a matter of quality but of what the text *is*. An
+extractive summary is a quotation: it can be found back in the stored document,
+exactly like the fragment beside it. A generated one is a claim. Everything else
+this system shows is traceable to something stored; presenting the two as the
+same invites a reader to trust them the same way.
+
+The choice SHALL be made per run, not per installation: the same corpus can
+warrant one kind today and the other once different hardware is available.
+
+#### Scenario: An extractive summary is presented as a quotation
+
+- **WHEN** an extractive summary is shown
+- **THEN** it is marked as taken verbatim from the document
+
+#### Scenario: A generated summary is presented as a claim
+
+- **WHEN** a generated summary is shown
+- **THEN** it is marked as generated, with the model that wrote it
+
+#### Scenario: Skipping is allowed, inventing is not
+
+- **WHEN** an extractive summary is made
+- **THEN** every part of it occurs verbatim in the stored text of that document
+
 ### Requirement: Een mislukte generatie levert geen samenvatting op
 
 A generation that fails or returns nothing SHALL leave the document without a
