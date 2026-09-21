@@ -1,0 +1,17 @@
+{
+  "_over_dit_bestand": [
+    "Deny-regels VOEGEN detecties toe. Dat is de veilige kant op: een regel te",
+    "veel pseudonimiseert iets wat geen PII was, een regel te weinig laat PII",
+    "staan. Daarom mag een deny-regel een kale string zijn en een allow-regel",
+    "niet -- zie de moduledocstring van detection_lists.py.",
+    "",
+    "Elke regel hier draagt toch een reden, want een patroon zonder uitleg is",
+    "over een half jaar niet te beoordelen."
+  ],
+  "LOCATION": [
+    {
+      "patroon": "\\b[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\\-]+(?:straat|laan|weg|plein|kade|gracht|dijk|singel|dreef|steeg|boulevard)\\s+\\d{1,4}[a-zA-Z]?\\b",
+      "reden": "Straatnaam + huisnummer is het woonadres van een natuurlijk persoon. De detector levert de straatnaam soms wel en het nummer nooit, waardoor 'Kerkstraat 12' als 'Kerkstraat' de tekst uit gaat en het huisnummer blijft staan. Achtervoegsels die ook gewone woorden eindigen (ring, baan, pad, hof, park) staan er BEWUST niet bij: 'Verandering 3' is geen adres."
+    }
+  ]
+}
