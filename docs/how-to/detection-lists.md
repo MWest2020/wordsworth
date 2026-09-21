@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-21
 ---
 
 # Runbook: detection allow/deny lists and feedback
@@ -44,6 +44,23 @@ staan.
 ```json
 {"KENTEKEN": ["\\b[A-Z]{2}-\\d{3}-[A-Z]\\b"]}
 ```
+
+Een kale string mag hier, want een deny-regel voegt bescherming tóé. In de repo
+draagt elke regel er toch een reden bij: een patroon zonder uitleg is over een
+half jaar niet te beoordelen.
+
+**Wat er nu in staat: het straatadres.** `Kerkstraat 12` kwam de pijplijn uit
+als `[LOCATION:…] 12` — de detector levert de straatnaam soms wél en het
+huisnummer nooit, dus het nummer bleef staan. De regel matcht een woord op een
+straatachtervoegsel gevolgd door een huisnummer. Achtervoegsels die óók gewone
+woorden eindigen (`ring`, `baan`, `pad`, `hof`, `park`) staan er **bewust niet**
+bij: "Verandering 3" is geen adres. Getoetst op `Artikel 5`, `bijlage 3`,
+`Postbus 1234` en een straatnaam zonder nummer.
+
+Let op wat dit kost: het evalcorpus zaait het woonadres als gewone tekst en niet
+als PII, dus op dát corpus telt deze regel als precisieverlies. Of een woonadres
+PII is, is een uitspraak over de zaak en niet iets wat uit een regex volgt — die
+vraag ligt bij de eigenaar van het corpus.
 
 ## Waar de lijsten leven
 
