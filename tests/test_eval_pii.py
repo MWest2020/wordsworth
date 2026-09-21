@@ -104,3 +104,27 @@ def test_gold_without_entities_key_is_hard_error(tmp_path):
     bad.write_text('{"id":"x","text":"abc"}\n')
     with pytest.raises(ValueError):
         load_gold(bad)
+
+
+# --- de lijsten in de meting (meting 05) ---------------------------------
+
+def test_de_lijsten_kunnen_in_de_meting_mee(tmp_path):
+    """Zonder `--lists` meet de CLI de detectie zónder lijsten, ook op een
+    installatie waar ze aanstaan. Dan is "wat kost de allow-lijst aan recall"
+    onbeantwoordbaar — en dat is precies de vraag die een lijst moet verdienen.
+    """
+    from wordsworth.eval.pii_run import with_lists
+    from wordsworth.openanonymiser_driver import Entity
+
+    (tmp_path / "allow.json").write_text(
+        '{"LOCATION": [{"patroon": "^bestemmingsplan$", "reden": "geen plaats"}]}')
+
+    def detect(text):
+        return [Entity("LOCATION", "bestemmingsplan", 0, 15, "test", 0.9),
+                Entity("LOCATION", "Haarlem", 20, 27, "test", 0.9)]
+
+    kaal = detect("x")
+    gefilterd = with_lists(detect, str(tmp_path))("x")
+    assert [e.text for e in kaal] == ["bestemmingsplan", "Haarlem"]
+    assert [e.text for e in gefilterd] == ["Haarlem"], \
+        "de allow-regel hoorde de generieke term weg te halen"
