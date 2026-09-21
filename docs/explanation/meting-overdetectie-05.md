@@ -85,6 +85,53 @@ De detector is **deterministisch**. De variatie zit tussen *versies*, niet
 tussen *runs*. Een reprocess opnieuw draaien geeft hetzelfde; een reprocess
 vergelijken met een oudere ronde vergelijkt twee instrumenten.
 
+## Wat de lijst aan recall kost
+
+Dat is de vraag die een allow-lijst moet verdienen, want hij haalt bescherming
+wég. Gemeten op het evalcorpus (500 documenten, waar bekend is wat erin zit).
+Detectie draaide **één keer** per document; de twee uitkomsten verschillen
+alleen in de lijsten erachter, dus dit is niet het instrument-probleem hierboven.
+
+| | precisie | recall | lekken |
+| --- | --- | --- | --- |
+| zonder lijsten | 0,391 | **0,999** | 0 |
+| met lijsten | 0,404 | **0,999** | 0 |
+
+**De recall beweegt niet.** Geen enkele ingezaaide waarde verdwijnt door de
+lijst, en het aantal lekken blijft nul. De ene gemiste PERSON is in beide runs
+dezelfde.
+
+Wat wél beweegt zijn de valse positieven:
+
+| type | fp zonder | fp met |
+| --- | --- | --- |
+| PERSON | 787 | **693** |
+| ORGANIZATION | 808 | **758** |
+
+144 minder verzinsels, nul minder bescherming. Dat is waar deze lijst voor
+bedoeld is.
+
+### Lees de absolute precisie hier níet als een cijfer over de detector
+
+LOCATION, ORGANIZATION, DATE_TIME en PHONE_NUMBER hebben in dit corpus **nul**
+gouden spans: alles wat de detector daar vindt telt als valse positief, ook een
+correcte vondst. De precisie van 0,40 zegt dus meer over wat het corpus labelt
+dan over wat de detector kan. Alleen het **verschil** tussen de twee rijen is
+een uitspraak, want die twee draaiden op dezelfde detecties en hetzelfde goud.
+
+Dat is ook waarom de allow-regels voor LOCATION hier niets doen (863 fp in
+beide): de generieke termen die in het echte corpus bovenaan staan
+(`bestemmingsplan`, `plangebied`) komen in deze synthetische tekst niet voor.
+
+Zelf draaien:
+
+```bash
+python -m wordsworth.eval.pii_run gold.jsonl --lists lists
+```
+
+Zonder `--lists` meet die CLI de detectie zónder lijsten, ook op een installatie
+waar ze aanstaan.
+
 ## De regel die hieruit volgt
 
 > Een voor/ná over een reprocess heen isoleert de lijst alleen als de code
