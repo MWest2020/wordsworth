@@ -6,18 +6,17 @@ one signature and start being about a request.
 """
 import base64
 import json
-import time
 
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from wordsworth.access_identity import (AccessError, Verifier, email_from,
+from wordsworth.access_identity import (Verifier, email_from,
                                         public_keys)
 
 TEAM = "raspy-wood-e123.cloudflareaccess.com"
 AUD = "320841be57b2e469adbef09614573240756da5f3a188df87b6fb761d40e65d65"
-VERIFIER = Verifier(team_domain=TEAM, audience=AUD)
+VERIFIER = Verifier.cloudflare(TEAM, AUD)
 NU = 1_789_700_000.0
 
 
@@ -81,6 +80,20 @@ def test_a_verified_assertion_names_the_person(key):
     ident = _identity(key)
     req = _Req({"cf-access-jwt-assertion": _token(key)})
     assert ident.caller(req, NU) == "mark@westerweel.work"
+
+
+def test_a_bearer_token_names_the_person_too(key):
+    """oauth2-proxy, in front of Keycloak, sends `Authorization: Bearer …`
+    rather than Cloudflare's own header."""
+    ident = _identity(key)
+    req = _Req({"authorization": f"Bearer {_token(key)}"})
+    assert ident.caller(req, NU) == "mark@westerweel.work"
+
+
+def test_without_any_token_or_key_there_is_no_caller(key):
+    """Fail-closed: no valid token and no valid key means no caller."""
+    ident = _identity(key)
+    assert ident.caller(_Req({}), NU) is None
 
 
 def test_a_forged_assertion_yields_nothing_rather_than_an_error(key):
@@ -153,7 +166,7 @@ def test_a_presented_key_wins_over_an_injected_assertion(session_factory, key):
 
     class _Ident:
         def caller(self, request, now=None):
-            from wordsworth.access_identity import email_from, public_keys
+            from wordsworth.access_identity import public_keys
             tok = request.headers.get("cf-access-jwt-assertion", "")
             if not tok:
                 return None

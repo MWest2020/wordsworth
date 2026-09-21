@@ -16,7 +16,6 @@ daarom álle paden langs.
 """
 from __future__ import annotations
 
-import pytest
 
 from wordsworth import detectors
 from wordsworth.anonymizer import DeterministicAnonymizer

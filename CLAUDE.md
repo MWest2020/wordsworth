@@ -54,6 +54,9 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
 ## Stack
 
 - Python 3.12+ managed with **`uv`** (never `pip`), FastAPI, pydantic v2.
+- `uvx ruff check src/ tests/` before a PR. Deliberately narrow (`F`, `E9`):
+  real errors only, no style — a linter that argues about taste gets switched
+  off. It is not in CI; that is Mark's file to change.
 - PostgreSQL. S3-compatible object storage (Ceph RGW target / SeaweedFS PoC).
 - OpenSearch for BM25 (phase 3) and dense+hybrid/RRF (phase 4).
 - Local inference: Ollama (bge-m3) for embeddings; GLiNER/Presidio via

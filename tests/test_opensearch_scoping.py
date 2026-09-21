@@ -14,9 +14,9 @@ Deze tests kijken naar wat er de deur uitgaat, met een nepclient. Ze hebben geen
 draaiende OpenSearch nodig en vervangen die ook niet — wat ze bewaken is de
 querybody, want dat is het stuk dat fout kan zonder dat iets het zegt.
 """
-import pytest
 
-from wordsworth.opensearch_index import OpenSearchIndex, _scoped
+from wordsworth.opensearch_index import (OpenSearchIndex, _bm25, _scoped,
+                                         _scoped_knn)
 
 
 class Vangt:
@@ -75,35 +75,48 @@ def test_an_empty_scope_list_still_filters_to_nothing():
 
 
 def test_the_hybrid_path_scopes_both_halves():
-    """De kNN-helft moet dezelfde grens krijgen als de lexicale. Anders levert
-    een gescopete hybride zoekopdracht kandidaten uit vreemde dossiers aan, en
-    die vallen dan pas weg — of niet."""
+    """Beide helften krijgen dezelfde grens, maar niet op dezelfde plek.
+
+    De lexicale helft: een `bool.filter` naast de zoekvraag. De kNN-helft: het
+    filter BINNEN de knn-clause, want daarbuiten is het een ná-filter. Zie
+    `test_the_knn_filter_belongs_inside_the_clause` voor de meting."""
     idx = _index()
     idx.hybrid_search("vergunning", [0.1] * 64, recall=10, only=["d1"])
     assert len(idx._client.bodies) == 2
-    for body in idx._client.bodies:
-        assert body["query"]["bool"]["filter"] == [
-            {"terms": {"dossiers": ["d1"]}}], body
+    lexicaal, vector = (b["query"] for b in idx._client.bodies)
+    assert lexicaal["bool"]["filter"] == [{"terms": {"dossiers": ["d1"]}}]
+    assert vector["knn"]["vector"]["filter"] == {"terms": {"dossiers": ["d1"]}}
+    assert "bool" not in vector, "buiten de clause is het een ná-filter"
 
 
-def test_the_knn_filter_placement_is_recorded_as_unverified():
-    """De codereview vroeg zich af of het filter buiten de `knn`-clause als
-    NA-filter werkt: knn levert dan de globale top-k en het filter gooit de rest
-    weg, zodat een klein dossier in een groot corpus stil te weinig
-    vectorkandidaten krijgt.
+def test_the_knn_filter_belongs_inside_the_clause():
+    """De vraag uit de codereview is op 18-09 gemeten en het antwoord is ja: het
+    filter buiten de `knn`-clause werkt als ná-filter.
 
-    Gemeten op 18-09 tegen de draaiende index: beide plaatsingen gaven hetzelfde
-    (100 treffers in een bestaand dossier, 0 in een onbestaand). Dat is GEEN
-    weerlegging — op dat moment zaten alle herstelde vectoren in één groot
-    dossier, dus het geval waar het om gaat was niet te maken.
+    Tegen de draaiende index, 770 documenten, zoekvector uit het grootste
+    dossier (567 documenten), scope een dossier van 2 documenten:
 
-    Deze test legt alleen de vorm vast die nu draait, zodat een wijziging eraan
-    opvalt. De meting zelf hoort opnieuw zodra de herberekening klaar is en er
-    vectoren in een klein dossier staan.
+        k=10  | filter buiten: 0 treffers | filter binnen: 2
+        k=50  | filter buiten: 0 treffers | filter binnen: 2
+        k=200 | filter buiten: 1 treffer  | filter binnen: 2
+
+    De eerdere meting (alle vectoren in één groot dossier) gaf twee keer
+    hetzelfde en leek een weerlegging. Dat was het niet: het geval waar het om
+    gaat was toen niet te maken.
+
+    Wat dit stil maakte: de hybride zoekopdracht gaf gewoon antwoorden, want de
+    lexicale helft werkte. Alleen de vectorhelft droeg niets bij.
     """
-    q = _scoped({"knn": {"vector": {"vector": [0.1], "k": 10}}}, ["d1"])
-    assert q["bool"]["must"][0]["knn"]["vector"]["k"] == 10
-    assert "filter" not in q["bool"]["must"][0]["knn"]["vector"]
+    q = _scoped_knn([0.1], 10, ["d1"])
+    assert q["knn"]["vector"]["filter"] == {"terms": {"dossiers": ["d1"]}}
+    assert "bool" not in q
+
+
+def test_without_a_scope_the_knn_clause_carries_no_filter():
+    """'alle dossiers' hoort geen filter te krijgen. Een `terms` met nul
+    waarden zou hier alles stil in niets veranderen."""
+    q = _scoped_knn([0.1], 10, None)
+    assert q == {"knn": {"vector": {"vector": [0.1], "k": 10}}}
 
 
 def test_the_mapping_declares_dossiers_as_keyword():
@@ -113,3 +126,42 @@ def test_the_mapping_declares_dossiers_as_keyword():
     from wordsworth.opensearch_index import _mapping
 
     assert _mapping(64)["mappings"]["properties"]["dossiers"] == {"type": "keyword"}
+
+
+def test_a_topic_is_a_filter_and_never_a_must():
+    """De belofte van `onderwerpen`: een onderwerp versmalt en herschikt niet.
+
+    In `must` zou het onderwerp meetellen in de relevantie, en dan verschuift de
+    volgorde om een reden die niemand aan de lezer kan uitleggen: dat een
+    document op zijn buren lijkt.
+    """
+    idx = _index()
+    idx.search("vergunning", only=["d1"], topic="t7")
+    q = idx._client.bodies[0]["query"]
+    assert q["bool"]["filter"] == [{"terms": {"dossiers": ["d1"]}},
+                                   {"term": {"topics": "t7"}}]
+    assert q["bool"]["must"] == [_bm25("vergunning")]
+
+
+def test_the_topic_reaches_both_halves_of_the_hybrid_path():
+    idx = _index()
+    idx.hybrid_search("vergunning", [0.1] * 64, recall=10, only=["d1"], topic="t7")
+    lexicaal, vector = (b["query"] for b in idx._client.bodies)
+    assert {"term": {"topics": "t7"}} in lexicaal["bool"]["filter"]
+    # Binnen de knn-clause, en met twee voorwaarden dus door een bool heen.
+    binnen = vector["knn"]["vector"]["filter"]
+    assert binnen["bool"]["filter"] == [{"terms": {"dossiers": ["d1"]}},
+                                        {"term": {"topics": "t7"}}]
+
+
+def test_a_topic_without_a_dossier_scope_still_filters():
+    """'alle dossiers' plus één onderwerp is een geldige combinatie, en dan mag
+    het onderwerp niet verdwijnen omdat de dossierlijst leeg is."""
+    q = _scoped_knn([0.1], 10, None, "t7")
+    assert q["knn"]["vector"]["filter"] == {"term": {"topics": "t7"}}
+
+
+def test_the_mapping_declares_topics_as_keyword():
+    from wordsworth.opensearch_index import _mapping
+
+    assert _mapping(64)["mappings"]["properties"]["topics"] == {"type": "keyword"}

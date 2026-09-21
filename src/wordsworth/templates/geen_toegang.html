@@ -1,0 +1,30 @@
+{% extends "base.html" %}{% block title %}geen toegang — wordsworth{% endblock %}
+{% block chrome %}{% endblock %}
+{% block body %}
+<p class="eyebrow">Geen toegang</p>
+<h1>Je bent binnen, maar niet op de leeslijst</h1>
+<p class="lede">De aanmelding is gelukt — je bent langs de voordeur gekomen. Deze
+installatie houdt daarnáást een lijst bij van wie het corpus mag lezen, en jouw
+naam staat er niet op.</p>
+
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Wat de server ziet</h3></div>
+ <table><tbody>
+  <tr><td style="width:12rem">aangemeld als</td>
+      <td style="font-family:'IBM Plex Mono',monospace">{{ caller or '— geen geverifieerde identiteit —' }}</td></tr>
+  <tr><td>gevraagd</td>
+      <td style="font-family:'IBM Plex Mono',monospace">{{ pad }}</td></tr>
+ </tbody></table>
+</div>
+
+<div class="sovereign">
+ <p>Dit is geen storing en geen tikfout. Het corpus-leesrecht staat apart van de
+ toegang tot de applicatie: wie binnenkomt is één vraag, wie de
+ gepseudonimiseerde documenten mag lezen is een andere. Die scheiding is
+ opzettelijk — de tweede is de vraag waar persoonsgegevens achter zitten.</p>
+ <p class="note" style="margin-top:10px">Vraag de beheerder om de naam hierboven
+ toe te voegen aan <code>WORDSWORTH_CORPUS_READ_LABELS</code>. Welke namen er nu
+ op de lijst staan, staat hier bewust niet: dat is precies wat je niet hoort te
+ weten als je er niet op staat.</p>
+</div>
+{% endblock %}

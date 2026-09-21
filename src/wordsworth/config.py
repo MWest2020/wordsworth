@@ -228,17 +228,61 @@ class Settings:
         and belongs to something else."""
         return os.environ.get("WORDSWORTH_ACCESS_AUD", "").strip()
 
+    # --- keycloak-identity ---
+    @property
+    def oidc_issuer(self) -> str:
+        """OIDC issuer URL, e.g. Keycloak's realm issuer
+        (``https://iam.westerweel.work/realms/westerweel``).
+
+        Empty by default, for the same reason as `access_team_domain`: no
+        issuer configured means no identity provider, and an installation
+        without one keeps working unchanged."""
+        return os.environ.get("WORDSWORTH_OIDC_ISSUER", "").strip()
+
+    @property
+    def oidc_audience(self) -> str:
+        """The application's own audience (client id) at that issuer.
+
+        Required alongside the issuer, checked without a default for the same
+        reason as `access_audience`: a wrong or absent audience is a silent
+        hole, not a refusal."""
+        return os.environ.get("WORDSWORTH_OIDC_AUDIENCE", "").strip()
+
+    @property
+    def oidc_jwks_url(self) -> str:
+        """Waar de sleutels van de uitgever staan, als dat een ánder adres is
+        dan de uitgever zelf.
+
+        Gezet: het discovery-document wordt niet opgehaald en het verkeer gaat
+        rechtstreeks naar dit adres — bijvoorbeeld de interne Service van
+        Keycloak in hetzelfde cluster. De **uitgever blijft de publieke naam**,
+        want dat is wat er in `iss` staat en dus wat gecontroleerd wordt.
+
+        Een dienst die zijn buur in hetzelfde cluster via het publieke internet
+        bevraagt, hangt voor één netwerkhop af van twee extra partijen: de
+        tunnel en de bot-regels van een CDN. Op 2026-09-20 kostte dat de api
+        zijn start.
+        """
+        return os.environ.get("WORDSWORTH_OIDC_JWKS_URL", "").strip()
+
     @property
     def access_verifier(self):
         """The verifier, or None when identity verification is not configured.
 
         Fail-closed: no configuration means no identity, never a warning and an
-        accepted header."""
+        accepted header. An OIDC issuer (Keycloak, ...) takes precedence over a
+        Cloudflare Access team domain when both are set — in practice an
+        installation configures exactly one. Either is one way to build the
+        same `Verifier`; there is no separate code path per provider."""
         from .access_identity import Verifier
 
+        if self.oidc_issuer and self.oidc_audience:
+            # Geen netwerkverkeer hier: zonder expliciet JWKS-adres wordt dat
+            # pas opgezocht bij het eerste verzoek dat een token controleert.
+            return Verifier.oidc(self.oidc_issuer, self.oidc_audience,
+                                 jwks_url=self.oidc_jwks_url)
         if self.access_team_domain and self.access_audience:
-            return Verifier(team_domain=self.access_team_domain,
-                            audience=self.access_audience)
+            return Verifier.cloudflare(self.access_team_domain, self.access_audience)
         return None
 
     # --- add-domain-keys ---

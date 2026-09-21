@@ -35,9 +35,10 @@ from .generator import Generator
 from .grants import GrantStore
 from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
+from .roles import ADMIN as ROLES_ADMIN
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from . import dossiers as dossiers_mod
-from .models import AuditRecord, Document
+from .models import AuditRecord, Document, Dossier
 from .object_store import ObjectStore
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
@@ -95,17 +96,128 @@ class RevealRequest(BaseModel):
 
 class RevealResponse(BaseModel):
     """The document text with the authorised PII types revealed; every other
-    type stays pseudonymised. ``withheld_types`` are the requested types the
-    grant did not authorise."""
+    type stays pseudonymised.
+
+    Three type lists, and the difference between them matters when someone
+    later lays an audit record next to an answer:
+
+    - ``authorized_types`` — what the grant allowed for THIS request.
+    - ``resolved_types`` — what actually came back out of the mapping store,
+      copied from the audit record this reveal wrote. It is smaller than
+      ``authorized_types`` when an allowed type simply does not occur in the
+      document, or when a token was minted under a key this installation no
+      longer has.
+    - ``withheld_types`` — requested types the grant did not authorise.
+
+    ``revealed_types`` is ``authorized_types`` under its old name. It stays
+    because clients read it; new readers should take one of the two precise
+    names.
+    """
 
     document_id: str
     revealed_text: str
     revealed_types: list[str]
+    authorized_types: list[str]
+    resolved_types: list[str]
     withheld_types: list[str]
     grant_id: str
     # The same two sets grouped under their AVG legal basis (Art. 6/9/10):
     # {"Art. 6": {"revealed": [...], "withheld": [...]}, ...}
     by_legal_basis: dict[str, dict[str, list[str]]] = {}
+
+
+class RoleResponse(BaseModel):
+    """Een rol: een naam plus de PII-types die eronder zichtbaar mogen zijn.
+
+    De **scope** staat hier niet in. Die kies je bij het toekennen, dus bij de
+    grant: dezelfde rol kan aan de een gegeven worden voor één document en aan
+    de ander voor alles. Zat de scope in de rol, dan waren dat twee rollen die
+    morgen uit elkaar lopen.
+    """
+
+    name: str
+    allowed_types: list[str]
+    active: bool
+    created_at: datetime
+    created_by: str
+
+
+class CreateRoleRequest(BaseModel):
+    name: str
+    allowed_types: list[str] = []
+
+
+class SetRoleTypesRequest(BaseModel):
+    allowed_types: list[str]
+
+
+class RoleSwitchRequest(BaseModel):
+    """Aan- of uitzetten vraagt een reden. Een noodrem zonder reden is een
+    schakelaar waarvan niemand later kan navertellen waarom hij overging."""
+
+    reason: str
+
+
+class TopicResponse(BaseModel):
+    """Eén onderwerp: een groep documenten binnen één dossier.
+
+    ``name`` is wat een mens te zien krijgt, ``computed_name`` waar de groep
+    vandaan komt. Die tweede blijft staan als iemand hernoemt — anders is na één
+    hernoeming niet meer na te vertellen waarom deze documenten bij elkaar
+    staan.
+
+    ``computed_at`` en ``document_count`` horen erbij en niet apart: een
+    onderwerpenlijst zonder moment leest als de huidige stand van het dossier,
+    ook als hij vier maanden oud is.
+    """
+
+    id: str
+    dossier_id: str
+    name: str
+    computed_name: str
+    given_name: str | None
+    computed_at: datetime
+    document_count: int
+
+
+class TopicsResponse(BaseModel):
+    """De onderwerpen van een dossier, met de noemer erbij.
+
+    ``seen``/``with_vector``/``without_topic`` staan er omdat een lijst van vier
+    onderwerpen over acht documenten anders leest als een uitspraak over alle
+    twaalf."""
+
+    dossier_id: str
+    topics: list[TopicResponse]
+    seen: int | None = None
+    with_vector: int | None = None
+    without_topic: int | None = None
+    #: De keuzes waaronder deze indeling tot stand kwam. ``distance`` is niet
+    #: gekozen maar gevónden: de boom is doorgesneden tot geen groep nog groter
+    #: was dan ``max_share`` van het dossier.
+    distance: float | None = None
+    min_size: int | None = None
+    max_share: float | None = None
+
+
+class SummariesResponse(BaseModel):
+    """Wat één berekening opleverde, met de noemer erbij.
+
+    Zonder `seen` leest "twaalf gemaakt" als een uitspraak over het hele
+    dossier, ook als er dertig documenten in zitten.
+    """
+
+    dossier_id: str
+    model: str
+    seen: int
+    made: int
+    skipped: int
+    failed: int
+    without_text: int
+
+
+class RenameTopicRequest(BaseModel):
+    name: str
 
 
 class AnonymizedResponse(BaseModel):
@@ -172,6 +284,16 @@ class ReprocessRequest(BaseModel):
     every INDEXED document."""
 
     document_ids: list[str] | None = None
+    #: Alleen documenten die nog niet onder de HUIDIGE detectielijsten zijn
+    #: verwerkt. De lijst-hash staat in elk de-identificatie-auditrecord, dus
+    #: "al bijgewerkt" is een feit uit het spoor en geen tijdstempel die iemand
+    #: moet onthouden.
+    #:
+    #: Standaard uit, zodat het bestaande gedrag niet verandert. Aan zetten is
+    #: wat je wilt na een lijstwijziging: een run van 770 documenten kostte op
+    #: 2026-09-20 veertien uur, en hem afbreken betekende anders dat de
+    #: volgende run alles overdeed.
+    only_outdated: bool = False
 
 
 class ReprocessResponse(BaseModel):
@@ -199,17 +321,24 @@ class GrantIssueRequest(BaseModel):
     grant_id is a bearer capability; a real auth decision is pending."""
 
     recipient: str
-    allowed_types: list[str] | None = None  # explicit types, XOR ppl
+    allowed_types: list[str] | None = None  # explicit types, XOR ppl, XOR role
     ppl: int | None = None                  # Privacy Protection Level 0..3
+    # rollen: deze grant ontleent zijn types aan een rol, opgelost bij elke
+    # beslissing. Precies één van de drie vormen — twee bronnen voor één antwoord
+    # is hoe autorisatiefouten ontstaan.
+    role: str | None = None
     document_id: str | None = None      # None = any document
     expires_at: str | None = None       # ISO-8601, must be timezone-aware
     domain: str | None = None           # pseudonymisation domain; None = default
 
     @model_validator(mode="after")
-    def _types_xor_ppl(self):
-        # PPL is shorthand over allowed_types (pii_categories); exactly one form.
-        if (self.allowed_types is None) == (self.ppl is None):
-            raise ValueError("give exactly one of allowed_types or ppl")
+    def _exactly_one_source(self):
+        # PPL is shorthand over allowed_types (pii_categories); role is a
+        # reference resolved at decision time. Exactly one form.
+        vormen = sum(x is not None
+                     for x in (self.allowed_types, self.ppl, self.role))
+        if vormen != 1:
+            raise ValueError("give exactly one of allowed_types, ppl or role")
         if self.ppl is not None and not 0 <= self.ppl <= 3:
             raise ValueError("ppl must be 0..3")
         return self
@@ -302,6 +431,31 @@ def create_app(
             login_path="/console/login" if session_factory is not None else None,
         )
 
+    def _actor(request: Request) -> str:
+        """Wie deze handeling deed, voor het spoor. Onder Access is dat het
+        geverifieerde e-mailadres; zonder auth is er niemand om te noemen en
+        staat er dat ook."""
+        return getattr(request.state, "caller", None) or "onbekend"
+
+    def _guard_grant_admin(request: Request) -> None:
+        """Uitgeven/intrekken van een grant is het zwaarste recht hier: het levert
+        de sleutel tot klare PII. Met auth aan mag alleen een expliciet genoemd
+        label het; zonder auth blijft het gedrag zoals gedocumenteerd."""
+        caller = getattr(request.state, "caller", None)
+        if not authorize_grant_issue(caller, grant_issuer_labels, auth_enabled):
+            raise HTTPException(
+                status_code=403,
+                detail="caller not authorized to issue or revoke grants")
+
+    def _resolve_audit() -> KeyLifecycleAudit:
+        from pathlib import Path
+
+        if key_audit is not None:
+            return key_audit
+        from .key_audit import JsonlKeyLifecycleAudit
+        return JsonlKeyLifecycleAudit(
+            Path(default_settings.key_lifecycle_audit_path))
+
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
         if not authorize_corpus_read(caller, corpus_read_labels):
@@ -322,8 +476,12 @@ def create_app(
         # /documents/{id}/anonymized en /export. Dezelfde gegevens, dezelfde
         # grens -- anders IS de console de tweede deur die zijn eigen docstring
         # verbiedt.
+        # Het spoor gaat mee: een rol uitzetten via de console hoort hetzelfde
+        # record op te leveren als via de API. Twee wegen naar dezelfde
+        # handeling met maar één spoor eronder is hoe een spoor gaten krijgt.
         app.include_router(build_router(session_factory, keys, search_index,
-                                        _guard_corpus_read))
+                                        _guard_corpus_read, _guard_grant_admin,
+                                        _resolve_audit, embedder))
         # Wat de browser van dit scherm mag maken: geen iframe (de Onthul-knop
         # is anders te clickjacken, met het auditspoor op naam van het
         # slachtoffer) en geen cross-site post (die kan het callerlabel van een
@@ -338,6 +496,35 @@ def create_app(
             if wants_html(request.headers.get("accept", "")):
                 return RedirectResponse("/console", status_code=303)
             return JSONResponse({"detail": "see /docs"})
+
+        @app.exception_handler(403)
+        def forbidden(request: Request, exc):
+            """Een browser die 403 krijgt, hoort een pagina te zien.
+
+            Dit is de 401-les op een andere as. Een 401 betekent "ik weet niet
+            wie je bent" en kan naar de inlogpagina; een 403 betekent "ik weet
+            wie je bent en het mag niet", en dáár naartoe omleiden zou een lus
+            zijn: hij is al ingelogd. Dus een pagina, en wel eentje die zegt
+            onder welke naam hij binnenkwam — anders weet niemand, hijzelf noch
+            de beheerder, welke naam er dan wél op de lijst moet.
+
+            Op 2026-09-19 kreeg Mark op `/console/topics` letterlijk
+            `{"detail":"caller not authorized for corpus read"}` op een lege
+            pagina. Correct, en doodlopend.
+
+            Welke namen er wél op de lijst staan, staat er níet bij: dat is
+            precies wat je niet hoort te weten als je er niet op staat.
+            """
+            if not wants_html(request.headers.get("accept", "")):
+                return JSONResponse({"detail": getattr(exc, "detail", "forbidden")},
+                                    status_code=403)
+            from .console import TEMPLATES
+
+            return TEMPLATES.TemplateResponse(
+                request, "geen_toegang.html",
+                {"caller": getattr(request.state, "caller", None),
+                 "pad": request.url.path},
+                status_code=403)
 
         @app.exception_handler(404)
         def not_found(request: Request, exc):
@@ -416,16 +603,6 @@ def create_app(
     def _check_view(view: str) -> None:
         if view not in ("tokens", "legible"):
             raise HTTPException(status_code=400, detail="view must be tokens|legible")
-
-    def _guard_grant_admin(request: Request) -> None:
-        """Uitgeven/intrekken van een grant is het zwaarste recht hier: het levert
-        de sleutel tot klare PII. Met auth aan mag alleen een expliciet genoemd
-        label het; zonder auth blijft het gedrag zoals gedocumenteerd."""
-        caller = getattr(request.state, "caller", None)
-        if not authorize_grant_issue(caller, grant_issuer_labels, auth_enabled):
-            raise HTTPException(
-                status_code=403,
-                detail="caller not authorized to issue or revoke grants")
 
     @app.get("/health", summary="Liveness probe", tags=["ops"])
     def health() -> dict[str, str]:
@@ -568,16 +745,95 @@ def create_app(
             return _scope_with(session_factory, dossier)
 
         @app.get("/search", summary="Lexical (BM25) search", tags=["read"])
-        def search(q: str, size: int = 10, dossier: str | None = None) -> dict:
+        def search(q: str, size: int = 10, dossier: str | None = None,
+                   topic: str | None = None) -> dict:
             """Full-text search over the anonymized corpus, within a dossier.
 
             ``dossier`` is required: a comma-separated list of names, or
             ``alle`` for every dossier. Leaving it out is a 400 and never a
             search over everything — a forgotten scope must not be able to mean
-            the widest possible answer."""
+            the widest possible answer.
+
+            ``topic`` narrows further, to one topic within that dossier. It only
+            narrows: the documents that remain stand in the same order they
+            would have without it."""
             only = _scope(dossier)
-            hits = search_index.search(q, size=size, only=only)
-            return {"query": q, "dossier": dossier, "hits": [_hit(h) for h in hits]}
+            hits = search_index.search(q, size=size, only=only, topic=topic)
+            return {"query": q, "dossier": dossier, "topic": topic,
+                    "hits": [_hit(h) for h in hits]}
+
+        if session_factory is not None:
+
+            def _topic_out(t) -> TopicResponse:
+                from .topics import display_name
+
+                return TopicResponse(
+                    id=str(t.id), dossier_id=str(t.dossier_id),
+                    name=display_name(t), computed_name=t.computed_name,
+                    given_name=t.given_name, computed_at=t.computed_at,
+                    document_count=t.document_count)
+
+            @app.post("/dossiers/{dossier_id}/topics",
+                      summary="Bereken de onderwerpen van een dossier",
+                      tags=["read"])
+            def compute_topics(dossier_id: UUID) -> TopicsResponse:
+                """Groepeer dit dossier opnieuw en zet de groepen op de
+                documenten.
+
+                Op verzoek en niet bij ingest: één document laat geen
+                onderwerpen zien, en bij elk binnengekomen document het hele
+                dossier herberekenen is werk dat kwadratisch groeit voor een
+                antwoord dat op dat moment niemand leest.
+
+                Vervangt wat er was. Twee generaties naast elkaar levert een
+                lijst op waarvan niemand weet welke helft nog klopt.
+                """
+                from .topics import compute
+
+                with session_factory() as session:
+                    if session.get(Dossier, dossier_id) is None:
+                        raise HTTPException(status_code=404, detail="unknown dossier")
+                    result = compute(session, search_index, dossier_id)
+                    out = TopicsResponse(
+                        dossier_id=str(dossier_id),
+                        topics=[_topic_out(t) for t in result.topics],
+                        seen=result.seen, with_vector=result.with_vector,
+                        without_topic=result.without_topic,
+                        distance=result.distance, min_size=result.min_size,
+                        max_share=result.max_share)
+                    session.commit()
+                return out
+
+            @app.get("/dossiers/{dossier_id}/topics",
+                     summary="De onderwerpen van een dossier", tags=["read"])
+            def list_topics(dossier_id: UUID) -> TopicsResponse:
+                """Wat er bij de laatste berekening uitkwam, met het moment
+                erbij. Geen onderwerpen betekent: nog niet berekend."""
+                from .topics import listing
+
+                with session_factory() as session:
+                    if session.get(Dossier, dossier_id) is None:
+                        raise HTTPException(status_code=404, detail="unknown dossier")
+                    return TopicsResponse(
+                        dossier_id=str(dossier_id),
+                        topics=[_topic_out(t) for t in listing(session, dossier_id)])
+
+            @app.patch("/topics/{topic_id}", summary="Hernoem een onderwerp",
+                       tags=["read"])
+            def rename_topic(topic_id: UUID, body: RenameTopicRequest
+                             ) -> TopicResponse:
+                """Geef een onderwerp een naam van een mens. De berekende naam
+                blijft opvraagbaar; een lege naam haalt de gegeven naam weg."""
+                from .topics import TopicError, rename
+
+                with session_factory() as session:
+                    try:
+                        topic = rename(session, topic_id, body.name)
+                    except TopicError as exc:
+                        raise HTTPException(status_code=404, detail=str(exc))
+                    out = _topic_out(topic)
+                    session.commit()
+                return out
 
         @app.get("/export/ranking.csv", summary="Export a ranking as CSV",
                  tags=["export"])
@@ -594,14 +850,16 @@ def create_app(
 
             @app.get("/hybrid", summary="Hybrid (BM25 + kNN) search",
                      tags=["read"])
-            def hybrid(q: str, size: int = 10, dossier: str | None = None) -> dict:
+            def hybrid(q: str, size: int = 10, dossier: str | None = None,
+                       topic: str | None = None) -> dict:
                 """RRF recall over BM25 + vector kNN, ranked by cosine. Takes the
-                same required ``dossier`` scope as ``/search``."""
+                same required ``dossier`` scope as ``/search``, and the same
+                optional ``topic`` narrowing within it."""
                 from .hybrid import hybrid_search
 
                 hits = hybrid_search(search_index, embedder, q, size=size,
-                                     only=_scope(dossier))
-                return {"query": q, "dossier": dossier,
+                                     only=_scope(dossier), topic=topic)
+                return {"query": q, "dossier": dossier, "topic": topic,
                         "hits": [_hit(h) for h in hits]}
 
             if generator is not None:
@@ -771,91 +1029,6 @@ def create_app(
         # reprocessing with the irreversible driver would be pointless.
         if anonymizer_factory is not None:
 
-            def _safe_traits(exc: BaseException) -> dict:
-                """`kenmerken` van de eerste fout in de keten die ze draagt.
-
-                Alleen wat de raise-site zelf als veilig heeft aangemerkt:
-                type, lengte, aantallen. De audit-keten is exporteerbaar, dus
-                hier hoort nooit iets uit een document in te staan.
-                """
-                e, gezien = exc, set()
-                while e is not None and id(e) not in gezien:
-                    gezien.add(id(e))
-                    k = getattr(e, "kenmerken", None)
-                    if isinstance(k, dict) and k:
-                        return {"kenmerken": k}
-                    e = e.__cause__ or e.__context__
-                return {}
-
-            def _cause_chain(exc: BaseException) -> str:
-                """The exception classes from outside in, e.g.
-                ``AnonymizationEngineError <- ReadTimeout``.
-
-                The outermost class alone was not enough. On 2026-09-14 eight
-                documents all reported `AnonymizationEngineError`, which is the
-                driver's deliberate no-text wrapper: it says the engine refused,
-                never why. The cause underneath — a timeout, a 503, a contract
-                break — is the part you act on, and it was being dropped.
-
-                Class NAMES only. `str(exc)` of an engine error can quote the
-                fragment it choked on; a class name cannot.
-                """
-                namen, e, gezien = [], exc, set()
-                while e is not None and id(e) not in gezien and len(namen) < 5:
-                    gezien.add(id(e))
-                    naam = type(e).__name__
-                    # Een vaste code zegt WELKE invariant brak. Alleen een code
-                    # uit een gesloten woordenlijst — nooit `str(e)`.
-                    code = getattr(e, "code", None)
-                    if isinstance(code, str) and code:
-                        naam = f"{naam}[{code}]"
-                    namen.append(naam)
-                    e = e.__cause__ or e.__context__
-                return " <- ".join(namen)
-
-            def _note_reprocess_failure(document_id: UUID, exc: Exception) -> None:
-                """Leave a trace in the audit chain that this document was tried
-                and did not make it.
-
-                Without this the run is invisible afterwards: the nine documents
-                that failed on 2026-09-14 had no audit record from that day at
-                all, so the chain said "nobody ever touched these" while ten
-                attempts had just been made. A failure that leaves no evidence is
-                indistinguishable from a step that never ran.
-
-                Only the exception CLASS is recorded. The message may quote the
-                document, and the audit chain is exportable — clear text has no
-                business in it. The state does not change: the existing entry is
-                intact, which is what continue-on-failure means.
-                """
-                from . import audit
-
-                try:
-                    with session_factory() as session:
-                        state = current_state(session, document_id)
-                        audit.append(session, document_id=document_id,
-                                     from_state=state.value, to_state=state.value,
-                                     step="reprocess_failed",
-                                     payload={"error_class": _cause_chain(exc),
-                                              "transient": is_transient(exc),
-                                              **_safe_traits(exc)})
-                        session.commit()
-                except Exception:  # noqa: BLE001 — bookkeeping must never
-                    pass          # take down the run it is bookkeeping for
-
-            def _reprocess_one(document_id: UUID) -> str:
-                from .pipeline import reanonymize
-
-                with session_factory() as session:
-                    state = current_state(session, document_id)
-                    if state not in (State.INDEXED, State.ANONYMIZED):
-                        return "skipped"
-                    anon = _make_anonymizer(session, document_domain(session, document_id))
-                    reanonymize(session, document_id, store, anonymizer=anon,
-                                search_index=search_index, embedder=embedder)
-                    session.commit()
-                return "reanonymized"
-
             @app.post("/reprocess", response_model=ReprocessResponse,
                       tags=["write"],
                       summary="Backfill: re-de-identify documents reversibly")
@@ -865,6 +1038,8 @@ def create_app(
                 outage leaves a document's existing entry intact and is counted
                 'retryable'; a permanent error is 'failed'. Safe to re-run
                 (idempotent) and long-running (GLiNER per document)."""
+                from . import reprocess as backfill
+
                 ids: list[UUID] | None = None
                 if body and body.document_ids:
                     try:
@@ -874,19 +1049,17 @@ def create_app(
                                             detail="malformed document_ids")
                 with session_factory() as session:
                     if ids is None:
-                        ids = [i for i in session.execute(
-                            select(Document.id)).scalars()
-                            if current_state(session, i) == State.INDEXED]
-                counts = {"reanonymized": 0, "skipped": 0,
-                          "retryable": 0, "failed": 0}
-                problems: dict[str, str] = {}
-                for document_id in ids:
-                    try:
-                        counts[_reprocess_one(document_id)] += 1
-                    except Exception as exc:  # never leaks text; entry left intact
-                        counts["retryable" if is_transient(exc) else "failed"] += 1
-                        problems[str(document_id)] = _cause_chain(exc)
-                        _note_reprocess_failure(document_id, exc)
+                        ids = backfill.indexed_ids(session)
+                    if body and body.only_outdated:
+                        from .detection_lists import DetectionLists
+
+                        ids = backfill.outdated(
+                            session, ids,
+                            DetectionLists.load(
+                                default_settings.detection_lists_dir).hash)
+                counts, problems = backfill.run(
+                    session_factory, ids, make_anonymizer=_make_anonymizer,
+                    store=store, search_index=search_index, embedder=embedder)
                 return ReprocessResponse(total=len(ids), problems=problems,
                                          **counts)
 
@@ -1017,22 +1190,44 @@ def create_app(
                 # A grant that authorises none of its own types here is revoked,
                 # expired, scoped to another document, bound to another domain, or
                 # presented by someone other than its recipient → explicit denial.
-                if not authorize(grant, document_id, set(grant.allowed_types),
-                                 now, dom, allow_global_grants, caller, auth_enabled):
+                # rollen: de rol wordt HIER opgelost, op het moment van
+                # beslissen. Dat is wat een rol uitzetten onmiddellijk laat
+                # werken zonder dat er één grant verandert.
+                from . import roles as roles_mod
+                from .grants import permitted_types
+
+                def _resolve_role(naam: str) -> set[str]:
+                    return set(roles_mod.resolve(session, naam).types)
+
+                rol_gaten = {"resolve_role": _resolve_role,
+                             "global_roles": {roles_mod.ADMIN}}
+                if not authorize(grant, document_id,
+                                 permitted_types(grant, _resolve_role),
+                                 now, dom, allow_global_grants, caller,
+                                 auth_enabled, **rol_gaten):
                     raise HTTPException(status_code=403, detail="grant not applicable")
                 pseudo_text = get_anonymized_text(session, document_id)
                 if pseudo_text is None:
                     raise HTTPException(
                         status_code=409, detail="document not yet de-identified")
-                requested = body.types if body.types else list(grant.allowed_types)
+                requested = (body.types if body.types
+                             else sorted(permitted_types(grant, _resolve_role)))
                 allowed = authorize(grant, document_id, set(requested), now, dom,
-                                    allow_global_grants, caller, auth_enabled)
+                                    allow_global_grants, caller, auth_enabled,
+                                    **rol_gaten)
                 # De caller staat los in de audit van de recipient: met auth aan
                 # zijn ze nu gelijk, maar het spoor moet blijven zeggen wie er
                 # belde en niet alleen wie het mocht.
                 extra_audit = {"grant_id": body.grant_id}
                 if caller:
                     extra_audit["caller"] = caller
+                if grant.role:
+                    # Onder welke rol dit mocht, en of de ongescopete
+                    # uitzondering gold. Zonder dat is later niet na te vertellen
+                    # dát er een uitzondering was en voor wie.
+                    extra_audit["role"] = grant.role
+                    if grant.document_id is None:
+                        extra_audit["global_by_role"] = True
                 # EUDI-aligned VC gate (opt-in): a presented X-VC credential can
                 # only NARROW what the grant allows (intersection), never widen
                 # it. Off unless an issuer key is configured; then a valid VC is
@@ -1054,6 +1249,15 @@ def create_app(
                     allowed_types=allowed,
                     extra_audit=extra_audit,
                 )
+                # Wat er WERKELIJK uit de mappingstore kwam, overgenomen uit de
+                # auditregel die deze onthulling zojuist schreef. Niet opnieuw
+                # afgeleid: als het antwoord en het spoor uiteen kunnen lopen,
+                # gaat iemand ooit de verkeerde geloven.
+                resolved = session.execute(
+                    select(AuditRecord.payload)
+                    .where(AuditRecord.document_id == document_id)
+                    .order_by(AuditRecord.seq.desc()).limit(1)
+                ).scalar_one()["types"]
                 session.commit()
             requested_upper = {t.upper() for t in requested}
             withheld = requested_upper - allowed
@@ -1067,25 +1271,153 @@ def create_app(
                 document_id=str(document_id),
                 revealed_text=revealed_text,
                 revealed_types=sorted(allowed),
+                authorized_types=sorted(allowed),
+                resolved_types=sorted(resolved),
                 withheld_types=sorted(withheld),
                 grant_id=body.grant_id,
                 by_legal_basis=by_basis,
             )
 
+    if session_factory is not None and generator is not None:
+
+        @app.post("/dossiers/{dossier_id}/summaries",
+                  summary="Maak de ontbrekende samenvattingen",
+                  tags=["write"])
+        def compute_summaries(request: Request, dossier_id: UUID,
+                              extractief: bool = False) -> SummariesResponse:
+            """Maakt wat er nog niet is; bestaande blijven staan.
+
+            Op verzoek en niet bij ingest: anders wacht de straat op het
+            taalmodel, voor een tekst die op dat moment niemand leest.
+
+            Achter de corpus-leespoort. Een samenvatting zegt waar een
+            document over gaat, en dat is dezelfde soort kennis als de
+            opgeslagen tekst.
+            """
+            _guard_corpus_read(request)
+            from .dossiers import documents_in
+            from .summaries import compute
+
+            # `extractief=true`: de eerste regels van het document, letterlijk.
+            # Nul modelaanroepen -- op deze hardware nul seconden tegenover 123
+            # per document -- en een citaat in plaats van een bewering.
+            from .summaries import EXTRACTIEF
+
+            model = EXTRACTIEF if extractief else default_settings.llm_model
+            with session_factory() as session:
+                if session.get(Dossier, dossier_id) is None:
+                    raise HTTPException(status_code=404,
+                                        detail="unknown dossier")
+                ids = sorted(documents_in(session, [dossier_id]))
+                uit = compute(session, None if extractief else generator,
+                              ids, model=model)
+                session.commit()
+            return SummariesResponse(
+                dossier_id=str(dossier_id), model=model, seen=uit.seen,
+                made=uit.made, skipped=uit.skipped, failed=uit.failed,
+                without_text=uit.without_text)
+
+    # Rollen: een naam plus de PII-types die eronder zichtbaar mogen zijn.
+    # Dezelfde poort als het uitgeven van een grant — wie bepaalt wat een rol
+    # mag, bepaalt wat iedereen met die rol mag zien, en dat is geen kleiner
+    # recht dan een grant uitgeven.
+    if session_factory is not None:
+
+        from . import roles as roles_mod
+
+        def _role_out(r) -> RoleResponse:
+            return RoleResponse(name=r.name, allowed_types=list(r.allowed_types),
+                                active=r.active, created_at=r.created_at,
+                                created_by=r.created_by)
+
+        @app.get("/roles", summary="De rollen en wat ze toestaan", tags=["read"])
+        def list_roles(request: Request) -> list[RoleResponse]:
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                return [_role_out(r) for r in roles_mod.listing(session)]
+
+        @app.post("/roles", summary="Maak een rol", tags=["write"])
+        def create_role(request: Request, body: CreateRoleRequest) -> RoleResponse:
+            """Een rol is een naam plus een verzameling PII-types.
+
+            De scope — dit document of alles — kies je niet hier maar bij het
+            toekennen, dus bij de grant. Dezelfde rol kan aan de een gegeven
+            worden voor één document en aan de ander voor alles.
+            """
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                try:
+                    role = roles_mod.create(session, body.name, body.allowed_types,
+                                            actor=_actor(request),
+                                            audit=_resolve_audit())
+                except roles_mod.RoleError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+                out = _role_out(role)
+                session.commit()
+            return out
+
+        @app.put("/roles/{name}/types", summary="Verander wat een rol toestaat",
+                 tags=["write"])
+        def set_role_types(request: Request, name: str,
+                           body: SetRoleTypesRequest) -> RoleResponse:
+            """Werkt onmiddellijk door in elke grant die de rol noemt.
+
+            Wat er eerder onthuld is verandert niet — dat is gebeurd en staat in
+            het spoor. Een scherm dat een ingeperkte rol toont zonder dat erbij
+            te zeggen, laat "die gegevens zijn nooit gezien" lezen waar "vanaf nu
+            niet meer" staat.
+            """
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                try:
+                    role = roles_mod.set_types(session, name, body.allowed_types,
+                                               actor=_actor(request),
+                                               audit=_resolve_audit())
+                except roles_mod.RoleError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc))
+                out = _role_out(role)
+                session.commit()
+            return out
+
+        @app.post("/roles/{name}/deactivate", summary="Breakglass: zet een rol uit",
+                  tags=["write"])
+        def deactivate_role(request: Request, name: str,
+                            body: RoleSwitchRequest) -> RoleResponse:
+            """Onmiddellijk, en zonder dat er één grant verandert.
+
+            Dat laatste is het bewijs dat een rol hier een entiteit is en geen
+            sjabloon: bij een sjabloon zou uitzetten betekenen dat je elke
+            uitgegeven grant moet terugvinden, mét een tijdvenster, precies op
+            het moment dat je er geen wilt.
+            """
+            _guard_grant_admin(request)
+            return _switch(request, name, body, roles_mod.deactivate)
+
+        @app.post("/roles/{name}/activate", summary="Zet een rol weer aan",
+                  tags=["write"])
+        def activate_role(request: Request, name: str,
+                          body: RoleSwitchRequest) -> RoleResponse:
+            _guard_grant_admin(request)
+            return _switch(request, name, body, roles_mod.activate)
+
+        def _switch(request, name, body, fn) -> RoleResponse:
+            with session_factory() as session:
+                try:
+                    role = fn(session, name, actor=_actor(request),
+                              reason=body.reason, audit=_resolve_audit())
+                except roles_mod.RoleError as exc:
+                    code = 404 if "onbekende rol" in str(exc) else 400
+                    raise HTTPException(status_code=code, detail=str(exc))
+                out = _role_out(role)
+                session.commit()
+            return out
+
     # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
     # grant store (no key provider) — mounts wherever grants are configured.
     if (session_factory is not None
             and (grant_store is not None or grant_store_factory is not None)):
-        from pathlib import Path
 
         from .grants import issue_grant, revoke_grant
-
-        def _resolve_audit() -> KeyLifecycleAudit:
-            if key_audit is not None:
-                return key_audit
-            from .key_audit import JsonlKeyLifecycleAudit
-            return JsonlKeyLifecycleAudit(
-                Path(default_settings.key_lifecycle_audit_path))
 
         def _grant_response(g) -> GrantResponse:
             return GrantResponse(
@@ -1121,10 +1453,14 @@ def create_app(
                     doc_id = UUID(body.document_id)
                 except ValueError:
                     raise HTTPException(status_code=400, detail="malformed document_id")
-            elif not allow_global_grants:
+            elif not (allow_global_grants or body.role == ROLES_ADMIN):
                 # An unscoped grant reveals on EVERY document. Refuse before any
                 # write, so the default path cannot mint that capability by
                 # omission (no grant row, no audit event).
+                #
+                # De uitzondering draagt een naam: op naam van de beheerdersrol
+                # mag hij wél. De vlag omzetten zou hem voor élke ongescopete
+                # grant openen, om hem voor één rol te openen.
                 raise HTTPException(
                     status_code=400,
                     detail="document_id required (global grants are not allowed)")
@@ -1149,11 +1485,20 @@ def create_app(
                 # geen audit-event ontstaat.
                 if doc_id is not None and session.get(Document, doc_id) is None:
                     raise HTTPException(status_code=404, detail="unknown document")
+                if body.role is not None:
+                    # Een grant op een rol die niet bestaat is een grant die
+                    # niets doet, en dat hoort nu te blijken en niet bij de
+                    # eerste onthulling.
+                    from . import roles as roles_mod
+
+                    if roles_mod.by_name(session, body.role) is None:
+                        raise HTTPException(status_code=404,
+                                            detail=f"onbekende rol {body.role!r}")
                 grant = issue_grant(
                     _grant_store(session), _resolve_audit(),
                     recipient=body.recipient, allowed_types=types,
-                    actor="operator", document_id=doc_id, expires_at=expires,
-                    domain=body.domain or DEFAULT_DOMAIN,
+                    actor=_actor(request), document_id=doc_id, expires_at=expires,
+                    domain=body.domain or DEFAULT_DOMAIN, role=body.role,
                 )
                 session.commit()
                 return _grant_response(grant)

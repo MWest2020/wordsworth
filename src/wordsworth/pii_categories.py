@@ -48,6 +48,17 @@ _TYPES: dict[str, str] = {
 _warned: set[str] = set()
 
 
+def known_types() -> list[str]:
+    """Elk PII-type dat dit register kent, gesorteerd per AVG-categorie.
+
+    Voor een scherm waarop iemand aanvinkt wat een rol mag zien. Dat scherm mag
+    niet zelf een lijst bijhouden: dan is er een tweede plek waar types
+    vandaan komen, en verschilt "wat je kunt aanvinken" op een dag stilletjes
+    van "wat het systeem kent".
+    """
+    return sorted(_TYPES, key=lambda t: (_TYPES[t], t))
+
+
 def category_of(entity_type: str) -> str:
     """``c1``/``c2``/``c3`` for a PII type; unknown → ``c1``, warned once."""
     t = entity_type.upper()

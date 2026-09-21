@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from wordsworth.keys import DEFAULT_SCOPE, DurableKeyProvider, KeyProvider
+from wordsworth.keys import DurableKeyProvider, KeyProvider
 from wordsworth.mapping_store import InMemoryMappingStore
 from wordsworth.pseudonymizer import Pseudonymizer, _reveal
 from wordsworth.transit import FakeTransit, InMemoryKeyVaultStore

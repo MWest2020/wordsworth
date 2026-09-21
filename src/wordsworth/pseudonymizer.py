@@ -56,9 +56,38 @@ def _token(key_material: bytes, label: str, value: str) -> str:
     return hmac.new(key_material, msg, hashlib.sha256).hexdigest()[:8]
 
 
-def _label_of(pseudonym: str) -> str:
-    """The PII type carried in a ``[LABEL:hash]`` token, e.g. ``PERSON``."""
-    return pseudonym[1:pseudonym.index(":")]
+def label_of(pseudonym: str) -> str:
+    """The PII type carried in a ``[LABEL:hash]`` token, e.g. ``PERSON``.
+
+    Publiek, want drie andere modules deden dit met de hand
+    (`token[1:].split(":")[0].upper()`) naast deze functie die er al was. Vier
+    kopieën van dezelfde aanname over tokenvorm: verandert die vorm ooit, dan
+    vindt niemand ze alle vier.
+    """
+    return pseudonym[1:pseudonym.index(":")].upper()
+
+
+#: Oude naam, nog in gebruik binnen deze module.
+_label_of = label_of
+
+
+def without_tokens(text: str, replacement: str = " ") -> str:
+    """De tekst zonder de pseudonym-tokens erin.
+
+    Voor alles dat woorden uit een document haalt en ze ergens anders neerzet —
+    een onderwerpnaam, een facet, een samenvatting. Een token dat via zo'n weg
+    op een scherm of in een URL belandt, is een lek naar plekken waar de
+    reveal-gate nooit kijkt.
+
+    Hier en niet bij de aanroeper, om dezelfde reden als `label_of`: de aanname
+    over tokenvorm hoort op één plek te staan.
+
+    `replacement` is standaard een spatie, want de meeste aanroepers knippen de
+    tekst daarna toch in woorden. Wie de tekst laat lézen geeft beter een
+    zichtbaar teken mee: een weggehaald token laat anders een gat achter dat als
+    een taalfout leest in plaats van als een weglating.
+    """
+    return _PSEUDONYM_RE.sub(replacement, text)
 
 
 

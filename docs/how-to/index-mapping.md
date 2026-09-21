@@ -53,3 +53,51 @@ temporary one.
 
 Search is unavailable between the delete and the reindex. That window is short
 and the temporary index holds everything, but it is a window.
+
+## Wie een nieuw veld als eerste schrijft, zorgt eerst voor de mapping
+
+`ensure_ready()` draait in productie alleen langs de ingest-straat. Een nieuwe
+schrijver van een nieuw veld — `topics.compute` bijvoorbeeld, die het
+`topics`-veld zet zonder dat er een document ingelezen wordt — komt daar niet
+langs. Zonder mapping schrijft hij een veld dat OpenSearch dynamisch mapt, met
+het gevolg hierboven: `text` in plaats van `keyword`, en een `term`-filter dat
+niets matcht zonder fout.
+
+Dus: **roep `ensure_ready()` aan vóór de eerste schrijfactie op een nieuw veld**,
+niet alleen bij ingest. Bewaakt door
+`test_the_mapping_is_ensured_before_a_topic_is_ever_written`.
+
+## Verwant: een dossierfilter hoort in de knn-clause, niet erbuiten
+
+Dezelfde familie fout, andere plek: hij geeft antwoord, het antwoord is alleen
+minder dan je denkt.
+
+De lexicale helft van een hybride zoekopdracht krijgt het dossierfilter als
+`bool.filter` naast de zoekvraag — versmallen zonder de score te raken. Zet je
+datzelfde filter buiten de `knn`-clause, dan is het een **ná-filter**: kNN
+levert eerst de globale top-k en het filter gooit daarna weg wat niet in het
+dossier zit.
+
+Gemeten op 18-09 tegen de draaiende index (770 documenten, zoekvector uit het
+grootste dossier van 567, scope een dossier van 2):
+
+| k | filter buiten de clause | filter binnen de clause |
+|---|---|---|
+| 10 | 0 treffers | 2 |
+| 50 | 0 treffers | 2 |
+| 200 | 1 treffer | 2 |
+
+Een eerdere meting, toen alle vectoren nog in één groot dossier zaten, gaf
+tweemaal hetzelfde en leek een weerlegging. Dat was het niet — het geval waar
+het om gaat viel toen niet te maken. **Een meting die het geval niet kan maken,
+weerlegt niets.**
+
+Dit was stil omdat de zoekopdracht gewoon antwoorden gaf: de lexicale helft
+werkte. Alleen de vectorhelft droeg niets bij.
+
+De mapping gebruikt engine `lucene`; die ondersteunt filteren tijdens het
+doorlopen van de graaf. Bij een andere engine (`nmslib`) bestaat die optie niet
+en is dit een ander gesprek.
+
+Zie `_scoped_knn` in `opensearch_index.py` en
+`tests/test_opensearch_scoping.py`.

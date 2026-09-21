@@ -1,20 +1,16 @@
 # SPDX-License-Identifier: MIT
 """Who is calling, when an identity provider sits in front (access-identity).
 
-Cloudflare Access puts two things on a request: a readable header naming the
-user, and a signed assertion. They arrive together and look equally convincing.
-Only one of them cannot be forged.
+A provider puts two things on a request: a readable header naming the user,
+and a signed token. **The header is never a source. The signature is.**
+Trusting the header would turn every path that skips the provider — the
+tailnet route, a direct call to the origin — into a way to claim any identity.
 
-**The header is never a source. The signature is.** That distinction is the whole
-module. Trusting the header would turn every path that does not pass the provider
-— the tailnet route, a direct call to the origin — into a way to claim any
-identity, and those paths exist. Verifying the signature makes them harmless by
-construction: no valid assertion, no identity, fall back to the API key.
-
-Verified with ``cryptography``, which is already a dependency for the key vault.
-Checking one RS256 signature is less code than adding a JWT library, and this is
-the one place in the system where a subtle "it validated" is worth reading in
-full rather than trusting to a package.
+Any OIDC issuer is checked the same way once issuer, audience and JWKS
+address are known: Cloudflare Access (fixed JWKS address) and Keycloak
+(discovered from it) both resolve to one `Verifier`, one verification path.
+Verified with ``cryptography`` (already a key-vault dependency) rather than
+adding a JWT library.
 """
 from __future__ import annotations
 
@@ -28,39 +24,104 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-#: The header Access puts the signed assertion in.
-JWT_HEADER = "cf-access-jwt-assertion"
-#: The readable one. Named here so it is obvious this module never reads it.
+JWT_HEADER = "cf-access-jwt-assertion"          # Cloudflare Access: signed assertion
+BEARER_HEADER = "authorization"                 # oauth2-proxy, e.g. Keycloak
+BEARER_PREFIX = "Bearer "
+#: The readable one — named so it is obvious this module never reads it.
 EMAIL_HEADER_NEVER_TRUSTED = "cf-access-authenticated-user-email"
 
 
 class AccessError(ValueError):
-    """An assertion that cannot be trusted. Never a reason to fall back."""
+    """A token that cannot be trusted. Never a reason to fall back."""
+
+
+class DiscoveryError(ValueError):
+    """An issuer's OIDC discovery document could not be read or used."""
 
 
 def _b64(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
 
 
+#: issuer -> jwks_uri; a running issuer's address rarely changes, so a plain
+#: dict is enough, fetched once instead of per `Verifier.oidc` call.
+_discovery_cache: dict[str, str] = {}
+
+
+def discover_jwks_url(issuer: str, fetch=None) -> str:
+    """``jwks_uri`` from ``<issuer>/.well-known/openid-configuration``; unreachable,
+    unreadable, or missing ``jwks_uri`` all raise `DiscoveryError`."""
+    if issuer in _discovery_cache:
+        return _discovery_cache[issuer]
+    url = issuer.rstrip("/") + "/.well-known/openid-configuration"
+    try:
+        doc = (fetch or _fetch)(url)
+    except Exception as exc:
+        raise DiscoveryError(f"discovery unreachable for issuer {issuer!r}: "
+                             f"{type(exc).__name__}") from exc
+    jwks_uri = doc.get("jwks_uri") if isinstance(doc, dict) else None
+    if not jwks_uri:
+        raise DiscoveryError(f"discovery document for issuer {issuer!r} names no jwks_uri")
+    _discovery_cache[issuer] = jwks_uri
+    return jwks_uri
+
+
 @dataclass(frozen=True)
 class Verifier:
-    """What it takes to check an assertion: whose keys, and for which app."""
+    """What it takes to check a token: whose keys, which issuer, which app."""
 
-    team_domain: str          # e.g. raspy-wood-e123.cloudflareaccess.com
-    audience: str             # the application's own AUD tag
+    issuer: str      # e.g. https://iam.westerweel.work/realms/westerweel
+    audience: str    # the application's own aud/client id
+    #: Waar de sleutels staan. Leeg = nog niet opgezocht; `resolved_jwks_url()`
+    #: doet dat op het moment dat het nodig is.
+    jwks_url: str
+    #: Alleen voor tests: een eigen ophaler voor het discovery-document.
+    _fetch_discovery: object = None
 
-    @property
-    def certs_url(self) -> str:
-        return f"https://{self.team_domain}/cdn-cgi/access/certs"
+    def resolved_jwks_url(self) -> str:
+        """Het JWKS-adres, zo nodig alsnog opgezocht.
 
-    @property
-    def issuer(self) -> str:
-        return f"https://{self.team_domain}"
+        Hier en niet in `oidc()`, zodat het opstarten geen netwerk raakt. De
+        uitkomst wordt gecachet op uitgever, dus dit kost één aanroep en daarna
+        niets.
+        """
+        if self.jwks_url:
+            return self.jwks_url
+        return discover_jwks_url(self.issuer, fetch=self._fetch_discovery)
+
+    @classmethod
+    def cloudflare(cls, team_domain: str, audience: str) -> "Verifier":
+        """e.g. ``team_domain="raspy-wood-e123.cloudflareaccess.com"``; the
+        JWKS address is fixed, never discovered."""
+        return cls(issuer=f"https://{team_domain}", audience=audience,
+                    jwks_url=f"https://{team_domain}/cdn-cgi/access/certs")
+
+    @classmethod
+    def oidc(cls, issuer: str, audience: str, fetch=None,
+             jwks_url: str = "") -> "Verifier":
+        """Any OIDC issuer (Keycloak, ...).
+
+        `jwks_url` gezet: dat adres wordt gebruikt en het discovery-document
+        wordt **niet** opgehaald. Daarmee kan een dienst de sleutels bij zijn
+        buur in hetzelfde cluster ophalen terwijl de **uitgever de publieke naam
+        blijft** — want dat is wat er in `iss` staat en dus wat gecontroleerd
+        moet worden. Adres en identiteit zijn twee dingen; ze door elkaar halen
+        betekent dat een interne URL in de token-controle belandt.
+
+        Leeg gelaten: het adres wordt pas opgezocht wanneer het nodig is, niet
+        bij het aanmaken. Een uitgever die bij het opstarten hikt, hoort geen
+        applicatie neer te halen — en zeker niet de routes die niets met
+        inloggen te maken hebben.
+        """
+        if jwks_url:
+            return cls(issuer=issuer, audience=audience, jwks_url=jwks_url)
+        return cls(issuer=issuer, audience=audience, jwks_url="",
+                   _fetch_discovery=fetch)
 
 
 def public_keys(verifier: Verifier, fetch=None) -> dict:
-    """``kid -> RSAPublicKey`` from the team's published JWKS."""
-    raw = (fetch or _fetch)(verifier.certs_url)
+    """``kid -> RSAPublicKey`` from the issuer's published JWKS."""
+    raw = (fetch or _fetch)(verifier.resolved_jwks_url())
     keys = {}
     for k in raw.get("keys", []):
         if k.get("kty") != "RSA":
@@ -71,32 +132,39 @@ def public_keys(verifier: Verifier, fetch=None) -> dict:
     return keys
 
 
+#: Een User-Agent op elke aanroep.
+#:
+#: Gemeten op 2026-09-20 vanuit de draaiende pod: dezelfde URL gaf 403 met de
+#: kale urllib-agent en 200 met een browserachtige. De uitgever staat achter
+#: Cloudflare, en die weigert een aanvraag zonder User-Agent als bot. Dat kostte
+#: de api-pod zijn start, en van buiten was er niets aan te zien -- daar gaf
+#: dezelfde URL gewoon 200.
+USER_AGENT = "wordsworth/1.0 (+https://github.com/MWest2020/wordsworth)"
+
+
 def _fetch(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
         return json.loads(resp.read())
 
 
 def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = None):
-    """The verified email in this assertion, or raise.
-
-    Every check here is a refusal, never a warning. An assertion that fails any
-    of them yields no identity at all — there is no partial trust.
-    """
+    """The verified email in this assertion, or raise. Every check here is a
+    refusal, never a warning — there is no partial trust."""
     now = time.time() if now is None else now
     try:
         head_raw, body_raw, sig_raw = token.split(".")
         head = json.loads(_b64(head_raw))
         body = json.loads(_b64(body_raw))
     except Exception as exc:
-        # Alles wat hier stukgaat komt van een aanvaller: de header wordt gelezen
-        # vóór enige authenticatie, op elk niet-vrijgesteld pad. Een misvormde
-        # base64 gooide binascii.Error, dat is géén AccessError, en die liep door
-        # de middleware heen naar een 500. Elke misvorming is een weigering.
+        # Everything here comes from an attacker, read before authentication.
+        # A malformed base64 used to raise binascii.Error past AccessError
+        # into a 500 — every malformation is now a refusal.
         raise AccessError(f"not a readable assertion: {type(exc).__name__}")
 
     if head.get("alg") != "RS256":
-        # Refusing anything else is what closes the "alg: none" family of
-        # attacks, where the token names its own (absent) verification.
+        # Closes the "alg: none" family, where the token names its own
+        # (absent) verification.
         raise AccessError(f"unexpected algorithm {head.get('alg')!r}")
     key = keys.get(head.get("kid"))
     if key is None:
@@ -114,8 +182,7 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
     aud = body.get("aud")
     aud = aud if isinstance(aud, list) else [aud]
     if verifier.audience not in aud:
-        # An assertion for another application of the same organisation is a
-        # valid signature and not access to this one.
+        # A valid signature for another application is not access to this one.
         raise AccessError("assertion is for another application")
     if body.get("iss") != verifier.issuer:
         raise AccessError("assertion is from another issuer")
@@ -127,22 +194,15 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         raise AccessError("assertion has expired")
     email = body.get("email")
     if not isinstance(email, str) or not email.strip():
-        # Een niet-string zou doorstromen naar het callerlabel en het
-        # auditspoor. Dat is niet bereikbaar zonder Cloudflares sleutel, maar
-        # "niet bereikbaar" is een slechtere garantie dan "afgewezen".
+        # A non-string would flow into the caller label and the audit trail.
         raise AccessError("assertion names no usable email")
     return email
 
 
 class Identity:
-    """Resolves a request to a person, or to nothing.
-
-    Holds the public keys and refreshes them on a schedule, because the provider
-    rotates them. A failed refresh keeps the keys we have: an assertion signed by
-    a key we can still verify is not less trustworthy because a fetch timed out,
-    and locking everyone out over a network hiccup is the wrong failure. A key we
-    have never seen is refused either way.
-    """
+    """Resolves a request to a person, or to nothing. Refreshes public keys on
+    a schedule; a failed refresh keeps what we have rather than locking
+    everyone out over a network hiccup. A key never seen is refused either way."""
 
     def __init__(self, verifier: Verifier, fetch=None, ttl: float = 900.0,
                  backoff: float = 30.0) -> None:
@@ -162,22 +222,18 @@ class Identity:
             self._keys = public_keys(self.verifier, self._fetch)
             self._at = now
         except Exception:
-            # Keep what we have; see the class docstring. If we have nothing,
-            # the empty dict refuses every assertion, which is the safe end.
-            #
-            # En wél het moment onthouden: zonder dat probeerde ELK verzoek het
-            # opnieuw, en met een hangend endpoint is dat een blokkerende fetch
-            # per verzoek.
+            # Keep what we have (see class docstring); remember the attempt
+            # regardless, or a hanging endpoint blocks on every request.
             self._at = now - self._ttl + self._backoff
         return self._keys
 
     def caller(self, request, now: float | None = None):
-        """The verified email on this request, or None.
-
-        Never reads the readable email header. That is the entire point: it
-        arrives on every path, including the ones that do not pass the provider.
-        """
-        token = request.headers.get(JWT_HEADER, "")
+        """The verified email on this request, or None. Never reads the
+        readable email header: it arrives on every path, including ones
+        that skip the provider."""
+        auth = request.headers.get(BEARER_HEADER, "")
+        token = (auth[len(BEARER_PREFIX):].strip() if auth.startswith(BEARER_PREFIX)
+                 else request.headers.get(JWT_HEADER, ""))
         if not token:
             return None
         try:

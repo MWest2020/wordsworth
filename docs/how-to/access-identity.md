@@ -1,15 +1,71 @@
 ---
 status: current
-last_reviewed: 2026-09-18
+last_reviewed: 2026-09-20
 ---
 
 # Logging in as a person instead of a keyring
 
-With Cloudflare Access in front of `/console`, a caller can be an **identity** —
-an email address — rather than a shared API key. The audit trail then answers
-"who looked", not "which key was used".
+With an identity provider in front of `/console`, a caller can be an
+**identity** — an email address — rather than a shared API key. The audit
+trail then answers "who looked", not "which key was used". Cloudflare Access
+and Keycloak are both OIDC issuers underneath, checked the same way; there is
+one verifier, not one per provider.
 
-## Turning it on
+## Turning it on — Keycloak (or any other OIDC issuer)
+
+```bash
+export WORDSWORTH_OIDC_ISSUER=https://iam.westerweel.work/realms/westerweel
+export WORDSWORTH_OIDC_AUDIENCE=<the client id registered for wordsworth>
+```
+
+Both are required, checked without a default. Het JWKS-adres komt standaard uit
+het eigen discovery-document van de uitgever
+(`<issuer>/.well-known/openid-configuration`, veld `jwks_uri`), één keer
+opgehaald en daarna gecached.
+
+**Dat ophalen gebeurt bij het eerste verzoek dat een token controleert, niet bij
+het opstarten.** Een uitgever die hapert hoort geen applicatie neer te halen —
+en zeker niet de routes die niets met inloggen te maken hebben. Lukt het
+ophalen niet, dan levert dat "geen caller" op (fail-closed: een verzoek zonder
+vastgestelde identiteit), niet een dode pod.
+
+Op 2026-09-20 was dat andersom en kostte het de api-pod zijn start:
+
+```
+DiscoveryError: discovery unreachable for issuer '…': HTTPError
+[1] [ERROR] Reason: Worker failed to boot.
+```
+
+### De sleutels intern ophalen
+
+```bash
+export WORDSWORTH_OIDC_JWKS_URL=http://keycloak.keycloak.svc.cluster.local:8080/realms/westerweel/protocol/openid-connect/certs
+```
+
+Staat dit adres gezet, dan wordt het discovery-document **niet** opgehaald en
+gaat het verkeer rechtstreeks daarheen. De **uitgever blijft de publieke naam**:
+dat is wat er in `iss` staat en dus wat gecontroleerd wordt. Adres en identiteit
+zijn twee dingen, en ze door elkaar halen betekent dat een interne URL in de
+tokencontrole belandt.
+
+Waarom dit uitmaakt: de uitgever is publiek bereikbaar, dus zonder dit adres
+gaat de pod via Cloudflare en de eigen tunnel terug het cluster in — twee extra
+partijen voor iets wat één netwerkhop verderop staat. Cloudflare weigerde die
+aanvraag bovendien met **403**, omdat `urllib` geen User-Agent stuurde. Dezelfde
+URL gaf vanaf dezelfde pod 200 zodra er wél een User-Agent bij zat; die stuurt
+wordsworth nu altijd mee, zodat ook de publieke route werkt voor wie hem toch
+gebruikt.
+
+Wordsworth itself never speaks the OIDC login dance (authorization code,
+redirects, session cookies) — a reverse proxy in front of it does that and
+forwards the resulting token as `Authorization: Bearer <token>`. In the
+homelab that proxy is oauth2-proxy, configured against the Keycloak realm at
+`iam.westerweel.work` (homelab-repo, `cluster-config/infra/keycloak/` for the
+realm, oauth2-proxy's own manifest for the proxy itself). That rollout is
+out of scope here — this document only covers what wordsworth-api needs once
+a token arrives.
+
+## Turning it on — Cloudflare Access
 
 ```bash
 export WORDSWORTH_ACCESS_TEAM_DOMAIN=raspy-wood-e123.cloudflareaccess.com
@@ -17,7 +73,9 @@ export WORDSWORTH_ACCESS_AUD=<the application's AUD tag>
 ```
 
 Both are required. One without the other yields no verifier and no identity —
-fail-closed, never a warning and an accepted header.
+fail-closed, never a warning and an accepted header. If both an OIDC issuer
+and a Cloudflare team domain are set, the OIDC issuer wins; in practice an
+installation configures exactly one.
 
 **Keep at least one API key.** Not for access — the identity handles that — but
 because dropping them all used to switch off the recipient binding and the
@@ -33,9 +91,11 @@ that way.
 
 > The header is never a source. The signature is.
 
-Access puts two things on a request: `Cf-Access-Authenticated-User-Email`, which
-is readable, and `Cf-Access-Jwt-Assertion`, which is signed. They arrive together
-and look equally convincing, and only one of them cannot be forged.
+Cloudflare Access puts two things on a request: `Cf-Access-Authenticated-User-Email`,
+which is readable, and `Cf-Access-Jwt-Assertion`, which is signed. oauth2-proxy (for
+Keycloak) sends its token as `Authorization: Bearer …` instead. They arrive together
+with the readable header and look equally convincing, and only the signed one cannot
+be forged.
 
 Trusting the header would turn every path that does **not** pass the provider
 into a way to claim any identity — and those paths exist here: the tailnet route

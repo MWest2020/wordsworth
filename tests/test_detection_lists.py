@@ -17,7 +17,17 @@ PII_BSN = "123456782"
 
 
 def _lists(tmp_path, allow=None, deny=None):
-    (tmp_path / "allow.json").write_text(json.dumps(allow or {}))
+    """Schrijft de twee bestanden en laadt ze.
+
+    Een allow-regel krijgt hier automatisch een reden mee: die is sinds
+    2026-09-20 verplicht (een allow-regel haalt bescherming weg, en een kale
+    lijst woorden is niet na te kijken). Deze tests gaan over het mechanisme,
+    niet over die eis -- die heeft een eigen test in
+    `test_allow_list_veiligheid.py`.
+    """
+    met_reden = {t: [{"patroon": p, "reden": "test"} for p in pats]
+                 for t, pats in (allow or {}).items()}
+    (tmp_path / "allow.json").write_text(json.dumps(met_reden))
     (tmp_path / "deny.json").write_text(json.dumps(deny or {}))
     return DetectionLists.load(tmp_path)
 
@@ -121,3 +131,43 @@ def test_deny_overlapping_detector_span_keeps_counts_and_aggregates_consistent(t
     assert "AB-123-C" not in r.text
     assert r.counts.get("kenteken", 0) == 0 and r.counts["person"] == 1
     assert "KENTEKEN" not in r.detections.get("list", {})     # loser not aggregated
+
+
+# --- het straatadres (restwaarden, taak 2) -------------------------------
+
+class TestStraatadres:
+    """Een straatnaam + huisnummer is het woonadres van een natuurlijk persoon.
+
+    De detector levert de straatnaam soms wél en het nummer nooit, waardoor
+    `Kerkstraat 12` als `Kerkstraat` verdwijnt en het huisnummer blijft staan.
+    Een deny-regel voegt het hele adres toe — de veilige kant op.
+    """
+
+    def _lijsten(self):
+        from pathlib import Path
+
+        from wordsworth.detection_lists import DetectionLists
+        return DetectionLists.load(Path(__file__).resolve().parent.parent / "lists")
+
+    @pytest.mark.parametrize("tekst,verwacht", [
+        ("Woonachtig Kerkstraat 12, 1234 AB Haarlem.", "Kerkstraat 12"),
+        ("Molenweg 118a", "Molenweg 118a"),
+        ("Stationsplein 1", "Stationsplein 1"),
+        ("Dorpsstraat 7", "Dorpsstraat 7"),
+        # Kleine letter: zo levert de OCR het geregeld aan.
+        ("adres: dorpsstraat 7", "dorpsstraat 7"),
+    ])
+    def test_een_adres_wordt_toegevoegd(self, tekst, verwacht):
+        kept, _ = self._lijsten().apply(tekst, [])
+        assert [(e.entity_type, e.text) for e in kept] == [("LOCATION", verwacht)]
+
+    @pytest.mark.parametrize("tekst", [
+        "Zie Artikel 5 en bijlage 3.",            # het genoemde valse-positief-geval
+        "Postbus 1234, 1234 AB Haarlem",          # organisatie-adres, geen woonadres
+        "Verandering 3 van de regeling",          # eindigt op 'ring', geen straat
+        "de Groenestraat",                        # straat zonder nummer is geen adres
+        "Het besluit van 12 maart",
+    ])
+    def test_wat_geen_adres_is_blijft_eraf(self, tekst):
+        kept, _ = self._lijsten().apply(tekst, [])
+        assert kept == [], f"{tekst!r} werd ten onrechte als adres gezien"

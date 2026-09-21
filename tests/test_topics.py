@@ -1,0 +1,325 @@
+# SPDX-License-Identifier: MIT
+"""Onderwerpen per dossier (onderwerpen): de berekening, de naam en de grens.
+
+DB-gebonden, want de beschrijving van een onderwerp staat in Postgres en het
+lidmaatschap in de index — deze tests toetsen juist dat die twee bij elkaar
+blijven.
+"""
+from __future__ import annotations
+
+import pytest
+
+from wordsworth import topics as tp
+from wordsworth.dossiers import ensure
+from wordsworth.models import Topic
+from wordsworth.search_index import InMemoryIndex
+
+
+def _index_doc(index, doc_id, text, vector, dossiers):
+    index.index(doc_id, text, f"documents/{doc_id}", vector=vector,
+                dossiers=dossiers)
+
+
+def _dossier(session, naam="zaak"):
+    d = ensure(session, naam)
+    session.flush()
+    return d
+
+
+def _twee_groepen(index, dossier_id, n=4):
+    """Twee duidelijk gescheiden groepen: vergunningen en subsidies."""
+    for i in range(n):
+        _index_doc(index, f"v{i}", f"vergunning kapvergunning aanvraag boom {i}",
+                   [1.0, 0.0, 0.0], [dossier_id])
+    for i in range(n):
+        _index_doc(index, f"s{i}", f"subsidie toekenning cultuur regeling {i}",
+                   [0.0, 1.0, 0.0], [dossier_id])
+
+
+def test_it_finds_the_groups_that_are_there(session_factory):
+    with session_factory() as s:
+        d = _dossier(s)
+        index = InMemoryIndex()
+        _twee_groepen(index, str(d.id))
+        uitkomst = tp.compute(s, index, d.id, min_size=3)
+        assert len(uitkomst.topics) == 2
+        assert uitkomst.seen == 8 and uitkomst.with_vector == 8
+        assert uitkomst.without_topic == 0
+        assert {t.document_count for t in uitkomst.topics} == {4}
+
+
+def test_the_name_comes_from_what_sets_the_group_apart(session_factory):
+    with session_factory() as s:
+        d = _dossier(s)
+        index = InMemoryIndex()
+        _twee_groepen(index, str(d.id))
+        namen = " | ".join(t.computed_name for t in tp.compute(s, index, d.id).topics)
+        assert "vergunning" in namen and "subsidie" in namen
+
+
+def test_a_token_never_becomes_part_of_a_name(session_factory):
+    """De spec-eis waar het om gaat. Een onderwerpnaam belandt op een scherm, in
+    een export en in een URL — plekken waar de reveal-gate nooit kijkt.
+
+    Hier is het token de sterkste term die er is: hij staat in elk document van
+    de groep en in geen enkel document daarbuiten. Een naamgeving die tokens
+    niet uitsluit, kiest hem dus gegarandeerd.
+    """
+    with session_factory() as s:
+        d = _dossier(s)
+        index = InMemoryIndex()
+        for i in range(4):
+            _index_doc(index, f"a{i}",
+                       f"brief aan [PERSOON:3fa9c2d1] over vergunning {i}",
+                       [1.0, 0.0, 0.0], [str(d.id)])
+        for i in range(4):
+            _index_doc(index, f"b{i}", f"subsidie cultuur regeling {i}",
+                       [0.0, 1.0, 0.0], [str(d.id)])
+        for topic in tp.compute(s, index, d.id).topics:
+            assert "3fa9c2d1" not in topic.computed_name
+            assert "persoon" not in topic.computed_name.lower()
+            assert "[" not in topic.computed_name
+
+
+def test_a_group_smaller_than_the_minimum_is_not_a_topic(session_factory):
+    with session_factory() as s:
+        d = _dossier(s)
+        index = InMemoryIndex()
+        for i in range(4):
+            _index_doc(index, f"v{i}", f"vergunning boom {i}", [1.0, 0.0, 0.0],
+                       [str(d.id)])
+        _index_doc(index, "los", "iets heel anders over paspoorten",
+                   [0.0, 0.0, 1.0], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id, min_size=3)
+        assert len(uitkomst.topics) == 1
+        assert uitkomst.without_topic == 1
+        assert index.documents_in(str(d.id))
+        assert [d_ for d_ in index.documents_in(str(d.id))
+                if d_.document_id == "los"][0].topics == []
+
+
+def test_documents_without_a_vector_are_counted_not_hidden(session_factory):
+    """Een document zonder vector kan niet meedoen. Dat mag, maar het hoort in
+    het antwoord te staan — anders leest een lijst van 4 onderwerpen over 8
+    documenten als een uitspraak over alle 12."""
+    with session_factory() as s:
+        d = _dossier(s)
+        index = InMemoryIndex()
+        _twee_groepen(index, str(d.id))
+        _index_doc(index, "leeg", "geen vector", None, [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id)
+        assert uitkomst.seen == 9 and uitkomst.with_vector == 8
+        assert uitkomst.without_topic == 1
+
+
+def test_recomputing_replaces_and_does_not_stack(session_factory):
+    with session_factory() as s:
+        d = _dossier(s)
+        index = InMemoryIndex()
+        _twee_groepen(index, str(d.id))
+        eerst = tp.compute(s, index, d.id)
+        s.flush()
+        opnieuw = tp.compute(s, index, d.id)
+        s.flush()
+        assert len(tp.listing(s, d.id)) == len(opnieuw.topics) == 2
+        oude = {str(t.id) for t in eerst.topics}
+        for doc in index.documents_in(str(d.id)):
+            assert not (set(doc.topics) & oude), "een oud onderwerp bleef plakken"
+
+
+def test_another_dossiers_topic_survives_a_recompute(session_factory):
+    """Een document kan in twee dossiers zitten en dus in twee onderwerpen. Het
+    ene dossier herberekenen mag het andere niet wissen — dat is hoe een
+    onderwerpenlijst stilletjes leegloopt."""
+    with session_factory() as s:
+        een = _dossier(s, "een")
+        twee = _dossier(s, "twee")
+        index = InMemoryIndex()
+        for i in range(4):
+            _index_doc(index, f"v{i}", f"vergunning kap boom {i}", [1.0, 0.0, 0.0],
+                       [str(een.id), str(twee.id)])
+        for i in range(4):
+            _index_doc(index, f"s{i}", f"subsidie cultuur regeling {i}",
+                       [0.0, 1.0, 0.0], [str(een.id), str(twee.id)])
+        van_twee = tp.compute(s, index, twee.id)
+        s.flush()
+        tp.compute(s, index, een.id)
+        s.flush()
+        blijft = {str(t.id) for t in van_twee.topics}
+        gevonden = set()
+        for doc in index.documents_in(str(een.id)):
+            gevonden |= set(doc.topics) & blijft
+        assert gevonden == blijft, "het onderwerp van het andere dossier is weg"
+
+
+def test_renaming_keeps_the_computed_name(session_factory):
+    with session_factory() as s:
+        d = _dossier(s)
+        index = InMemoryIndex()
+        _twee_groepen(index, str(d.id))
+        topic = tp.compute(s, index, d.id).topics[0]
+        berekend = topic.computed_name
+        tp.rename(s, topic.id, "Kapvergunningen 2022")
+        opnieuw = s.get(Topic, topic.id)
+        assert opnieuw.given_name == "Kapvergunningen 2022"
+        assert opnieuw.computed_name == berekend
+        assert tp.display_name(opnieuw) == "Kapvergunningen 2022"
+        tp.rename(s, topic.id, "  ")
+        assert tp.display_name(s.get(Topic, topic.id)) == berekend
+
+
+def test_renaming_something_that_is_not_there(session_factory):
+    from uuid import uuid4
+    with session_factory() as s:
+        with pytest.raises(tp.TopicError):
+            tp.rename(s, uuid4(), "x")
+
+
+def test_the_mapping_is_ensured_before_a_topic_is_ever_written(session_factory):
+    """`topics` is een nieuw veld en `ensure_ready` draait in productie alleen
+    bij ingest. Schrijft de eerste `set_topics` het veld terwijl de mapping het
+    niet kent, dan mapt OpenSearch het dynamisch: een lijst strings wordt `text`
+    met een `.keyword`-subveld, en het `term`-filter matcht daarna niets —
+    zonder fout, met "niets gevonden" als antwoord.
+
+    Dat is letterlijk wat er op 2026-09-18 met `dossiers` gebeurde. De volgorde
+    is de reparatie, dus die wordt hier getoetst.
+    """
+    class Volgorde(InMemoryIndex):
+        def __init__(self):
+            super().__init__()
+            self.stappen = []
+
+        def ensure_ready(self):
+            self.stappen.append("ensure_ready")
+
+        def set_topics(self, document_id, topics):
+            self.stappen.append("set_topics")
+            return super().set_topics(document_id, topics)
+
+    with session_factory() as s:
+        d = _dossier(s, "volgorde")
+        index = Volgorde()
+        _twee_groepen(index, str(d.id))
+        tp.compute(s, index, d.id)
+        assert "set_topics" in index.stappen, "er is niets geschreven"
+        assert index.stappen[0] == "ensure_ready"
+
+
+def test_no_topic_may_be_the_whole_dossier(session_factory):
+    """Het eerste echte corpus (Gooise Meren, 567 documenten) gaf op de vaste
+    afkapafstand van 0.45 één groep van 443 — 78% van het dossier, met de naam
+    "zoals · gebruik · waar". Dat is "waar gaat dit over?" beantwoorden met
+    "hier gaat het over".
+
+    Een vaste afstand is een eigenschap van één corpus. De eigenschap die je
+    wilt is direct op te schrijven, en dat is wat hier getoetst wordt.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "dicht-op-elkaar")
+        index = InMemoryIndex()
+        # Bijna identieke vectoren: precies het geval waarin een grove afstand
+        # alles op één hoop gooit. Vier kleine kernen, licht uit elkaar.
+        for kern in range(4):
+            for i in range(5):
+                hoek = 0.05 * kern + 0.002 * i
+                _index_doc(index, f"k{kern}-{i}",
+                           f"besluit over onderwerp{kern} nummer {i}",
+                           [1.0, hoek, hoek * hoek], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
+        assert uitkomst.topics, "er is helemaal niets gegroepeerd"
+        grootste = max(t.document_count for t in uitkomst.topics)
+        assert grootste <= 0.25 * uitkomst.with_vector, (
+            f"grootste groep {grootste} van {uitkomst.with_vector}")
+        assert 0 < uitkomst.distance <= 0.45, "de gevonden afstand hoort erbij"
+
+
+def test_a_scan_error_in_one_document_does_not_name_the_group(session_factory):
+    """TF-IDF kiest met voorliefde OCR-ruis: een scanfout staat in precies één
+    document en nergens anders in het dossier, en scoort daarmee maximaal
+    onderscheidend. Het eerste echte corpus gaf namen als
+    "2anleg · aannemersbedrif · aannemersbedtif" — drie spellingen van hetzelfde
+    woord, geen van alle een onderwerp.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "scanfouten")
+        index = InMemoryIndex()
+        for i in range(5):
+            # Eén document draagt de ruis; alle vijf dragen het echte woord.
+            ruis = " aannemersbedtif 2anleg oofrom" if i == 0 else ""
+            _index_doc(index, f"v{i}", f"omgevingsvergunning dakkapel {i}{ruis}",
+                       [1.0, 0.0, 0.0], [str(d.id)])
+        for i in range(5):
+            _index_doc(index, f"s{i}", f"subsidie cultuur regeling {i}",
+                       [0.0, 1.0, 0.0], [str(d.id)])
+        namen = [t.computed_name for t in tp.compute(s, index, d.id).topics]
+        alles = " ".join(namen)
+        for scanfout in ("aannemersbedtif", "2anleg", "oofrom"):
+            assert scanfout not in alles, f"{scanfout} benoemt een groep van vijf"
+        assert "omgevingsvergunning" in alles or "dakkapel" in alles
+
+
+def test_a_term_with_digits_never_names_a_group(session_factory):
+    """Gemeten op het echte corpus: "81in · egeee2 · fdeling", "1485m · 195m ·
+    ddl4", "12112018pdf". Scanfouten en bestandsnamen, geen onderwerpen.
+
+    Hier zit het cijferwoord in élk document van de groep, dus de
+    groepsdrempel uit de vorige test houdt hem niet tegen. Alleen de eis dat een
+    naam uit woorden bestaat doet dat.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "cijfers")
+        index = InMemoryIndex()
+        for i in range(5):
+            _index_doc(index, f"v{i}",
+                       f"omgevingsvergunning dakkapel 12112018pdf 1485m {i}",
+                       [1.0, 0.0, 0.0], [str(d.id)])
+        for i in range(5):
+            _index_doc(index, f"s{i}", f"subsidie cultuur regeling {i}",
+                       [0.0, 1.0, 0.0], [str(d.id)])
+        alles = " ".join(t.computed_name for t in tp.compute(s, index, d.id).topics)
+        assert "12112018pdf" not in alles and "1485m" not in alles
+        assert "omgevingsvergunning" in alles or "dakkapel" in alles
+
+
+def test_a_small_dossier_can_still_have_topics(session_factory):
+    """Twee regels die elkaar uitsluiten leverden geen fout op maar een leeg
+    antwoord: "geen onderwerpen".
+
+    Bij tien documenten mag een groep hoogstens 2,5 documenten hebben
+    (max_share 25%) én moet hij er minstens 3 hebben (min_size). Er bestaat dan
+    geen enkele geldige groep. Vijf van de tien dossiers in productie kregen zo
+    een leeg overzicht — niet omdat ze geen onderwerpen hebben, maar omdat de
+    regels elkaar opheffen.
+    """
+    with session_factory() as s:
+        d = _dossier(s, "klein")
+        index = InMemoryIndex()
+        # Lijkend maar niet identiek, zoals echte documenten: ze vloeien pas
+        # samen bóven hoogte nul. Met identieke vectoren zou dit geval zichzelf
+        # oplossen en bewijst de test niets.
+        for i in range(5):
+            _index_doc(index, f"v{i}", f"omgevingsvergunning dakkapel welstand {i}",
+                       [1.0, 0.01 * i, 0.0], [str(d.id)])
+        for i in range(5):
+            _index_doc(index, f"s{i}", f"subsidie sportvereniging jeugd {i}",
+                       [0.0, 1.0, 0.01 * i], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
+        assert len(uitkomst.topics) >= 2, "tien documenten, twee groepen, niets"
+        assert uitkomst.without_topic < 10
+
+
+def test_the_share_still_binds_once_the_dossier_is_big_enough(session_factory):
+    """De uitzondering hierboven mag de regel niet opeten: zodra het dossier
+    groot genoeg is dat beide regels tegelijk kunnen, geldt het aandeel weer."""
+    with session_factory() as s:
+        d = _dossier(s, "groot-genoeg")
+        index = InMemoryIndex()
+        for kern in range(4):
+            for i in range(10):
+                hoek = 0.05 * kern + 0.002 * i
+                _index_doc(index, f"k{kern}-{i}", f"besluit onderwerp{kern} {i}",
+                           [1.0, hoek, hoek * hoek], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
+        grootste = max(t.document_count for t in uitkomst.topics)
+        assert grootste <= 0.25 * uitkomst.with_vector

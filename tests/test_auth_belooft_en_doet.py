@@ -83,14 +83,14 @@ def test_a_malformed_assertion_never_crashes(rommel):
     from wordsworth.access_identity import AccessError, Verifier, email_from
 
     with pytest.raises(AccessError):
-        email_from(rommel, {}, Verifier("t.example", "aud"), 0)
+        email_from(rommel, {}, Verifier("t.example", "aud", "t.example/certs"), 0)
 
 
 def test_an_unreadable_expiry_or_email_is_refused():
     from wordsworth.access_identity import AccessError, Verifier, email_from
 
     with pytest.raises(AccessError):
-        email_from("x.y.z", {}, Verifier("t.example", "aud"), 0)
+        email_from("x.y.z", {}, Verifier("t.example", "aud", "t.example/certs"), 0)
 
 
 # --- S2: het inlogluik is nu wél gelimiteerd --------------------------------

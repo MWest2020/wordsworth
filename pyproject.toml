@@ -19,6 +19,10 @@ dependencies = [
     "pydantic>=2",
     "python-multipart>=0.0.18",
     "pypdf>=6.14.2",
+    # Agglomeratieve clustering voor onderwerpen. Kwam tot nu toe mee via zeef;
+    # rechtstreeks gebruiken betekent zelf verklaren, anders verdwijnt hij bij
+    # de eerste keer dat zeef iets anders kiest.
+    "scipy>=1.11",
     "sqlalchemy>=2",
     "uvicorn[standard]>=0.30",
     "gunicorn>=23.0",
@@ -41,6 +45,16 @@ wordsworth-measure-combinations = "wordsworth.measure_combinations:main"
 [build-system]
 requires = ["uv_build>=0.11.15,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.ruff]
+# Er stond geen linter, en dus vielen een ongebruikte import en een dode functie
+# niet op -- de codereview vond ze met de hand. Bewust smal: alleen wat
+# aantoonbaar fout is, geen stijlvoorkeuren, want een linter die over smaak
+# klaagt wordt uitgezet.
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F", "E9"]   # echte fouten en syntaxfouten, geen stijl
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

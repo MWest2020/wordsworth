@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 
+from ..detection_lists import DetectionLists
 from ..openanonymiser_driver import Entity, detect_entities
 from .pii import deterministic_entities, evaluate_pii, load_gold
 
@@ -30,6 +31,21 @@ def build_detect(layers: list[str]):
     def detect(text: str) -> list[Entity]:
         return [e for fn in fns for e in fn(text)]
     return detect
+
+
+def with_lists(detect, directory: str):
+    """`detect`, met de allow/deny-lijsten erachter — dezelfde `apply` die in de
+    pijplijn draait.
+
+    Zonder dit meet deze CLI de detectie zoals die zónder lijsten is, ook op een
+    installatie waar ze aanstaan. Een allow-regel haalt bescherming weg, dus wat
+    dat aan recall kost hoort meetbaar te zijn en niet beredeneerd."""
+    lijsten = DetectionLists.load(directory)
+
+    def detect_met_lijsten(text: str) -> list[Entity]:
+        kept, _ = lijsten.apply(text, detect(text))
+        return kept
+    return detect_met_lijsten
 
 
 def format_report(report: dict) -> str:
@@ -53,10 +69,15 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m wordsworth.eval.pii_run")
     ap.add_argument("gold", help="gold JSONL: {id, text, entities:[{start,end,type}]}")
     ap.add_argument("--layers", default="deterministic,openanonymiser")
+    ap.add_argument("--lists", default="",
+                    help="map met allow.json/deny.json; leeg = zonder lijsten meten")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     a = ap.parse_args(argv)
     docs = load_gold(Path(a.gold))
-    report = evaluate_pii(docs, build_detect([s.strip() for s in a.layers.split(",")]))
+    detect = build_detect([s.strip() for s in a.layers.split(",")])
+    if a.lists:
+        detect = with_lists(detect, a.lists)
+    report = evaluate_pii(docs, detect)
     print(json.dumps(report, indent=2) if a.json else format_report(report))
     return 0
 

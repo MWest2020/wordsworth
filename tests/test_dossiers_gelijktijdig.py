@@ -10,7 +10,6 @@ de ander erover doet.
 Getoetst tegen een echte Postgres met twee sessies. Een testdubbel bewijst hier
 niets: wat hier faalt is de database, niet de code.
 """
-import pytest
 from sqlalchemy import select
 
 from wordsworth import dossiers

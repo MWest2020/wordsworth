@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% block title %}meldingen — wordsworth{% endblock %}
+{% set page = 'feedback' %}
+{% block who %}{{ caller }}{% endblock %}
+{% block body %}
+<p class="eyebrow">Meldingen</p>
+<h1>Wat lezers over de detectie zeggen</h1>
+<p class="lede">Losse meldingen zijn geen signaal. <b>Vijf mensen die hetzelfde
+token onterecht vinden</b> zijn dat wel. Gesorteerd op het aantal verschillende
+melders — één iemand die tien keer klikt is geen tien mensen.</p>
+
+<div class="card" style="margin-top:20px">
+ <div class="panel-head"><span class="dot"></span><h3>Onterecht gemarkeerd</h3>
+   <span class="badge">{{ fp|length }}</span></div>
+ {% if fp %}
+ <table><thead><tr><th>token</th><th>type</th><th>melders</th><th>documenten</th><th>laatst</th></tr></thead>
+ <tbody>
+ {% for m in fp %}
+ <tr>
+  <td style="font-family:'IBM Plex Mono',monospace; font-size:.8rem">{{ m.token or '—' }}</td>
+  <td><span class="pill">{{ m.type }}</span></td>
+  <td><span class="state">{{ m.melders|length }}</span>
+    <span class="note">{{ m.melders|join(', ') }}</span></td>
+  <td>{% for d in m.documenten %}<a href="/console/documents/{{ d.id }}">{{ d.naam }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+  <td class="note">{{ m.laatst }}</td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog niemand heeft een token onterecht genoemd.</p>{% endif %}
+</div>
+
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Gemist</h3>
+   <span class="badge">{{ fn|length }}</span></div>
+ {% if fn %}
+ <table><thead><tr><th>type</th><th>melders</th><th>documenten</th><th>laatst</th></tr></thead>
+ <tbody>
+ {% for m in fn %}
+ <tr>
+  <td><span class="pill">{{ m.type }}</span></td>
+  <td><span class="state">{{ m.melders|length }}</span>
+    <span class="note">{{ m.melders|join(', ') }}</span></td>
+  <td>{% for d in m.documenten %}<a href="/console/documents/{{ d.id }}">{{ d.naam }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+  <td class="note">{{ m.laatst }}</td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog niemand heeft een gemiste waarde gemeld.</p>{% endif %}
+</div>
+
+<div class="sovereign">
+ <p><b>Hier staan geen waarden.</b> Welke naam achter een token zit, zie je langs
+ de gewone weg: een grant, een rol, een geauditeerde onthulling. Een
+ overzichtsscherm dat de waarde er "even" bij zet is de tweede deur die dit
+ project nergens heeft — en het zou de deur zijn met het grootste bereik, want
+ hij toont ze allemaal tegelijk.</p>
+ <p class="note" style="margin-top:10px">Wat hier staat verandert de lijsten niet
+ vanzelf. <code>lists/allow.json</code> aanpassen is een git-wijziging die iemand
+ nakijkt, met een reden per regel — en daarna pas
+ <code>POST /reprocess</code> als het bestaande corpus mee moet.</p>
+</div>
+{% endblock %}

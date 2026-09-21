@@ -12,7 +12,6 @@ reveal-pad en een onbegrensd aantal manieren waarop tekst binnenkomt.
 """
 from __future__ import annotations
 
-import uuid
 
 from wordsworth import pseudonym_registry
 from wordsworth.keys import InMemoryKeyProvider

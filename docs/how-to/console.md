@@ -191,6 +191,42 @@ It reads the corpus through the same gate as `/documents/{id}/anonymized` and
 here. Until 2026-09-18 it was not, which made the console precisely the second
 door its own docstring forbids.
 
+### Een vraag stellen, niet een trefwoord typen
+
+De zoekpagina embedt de **vraag zelf** en legt hem naast de lexicale treffers
+(`hybrid_search`: RRF voor de kandidaten, cosinus voor de volgorde). Dat is wat
+"stel een vraag" van "typ een trefwoord" onderscheidt — een vraag bevat zelden
+de woorden die in het antwoord staan. *"Redenen tot afkeuring?"* vindt een stuk
+waarin "afgewezen" staat; BM25 vindt daar niets.
+
+Draait een instantie zonder embedder, dan blijft het BM25 **en zegt het scherm
+dat**. Stil terugvallen op iets zwakkers is erger dan het niet hebben: dan wijt
+een lezer de magere uitslag aan het corpus in plaats van aan de opstelling.
+
+De dossiergrens en het onderwerp-filter gelden onverkort: een vraag stellen is
+geen andere zoekopdracht, alleen een andere manier om er een te formuleren.
+
+### Die lijst gaat over namen, en namen veranderen met de deur
+
+`WORDSWORTH_CORPUS_READ_LABELS` bevat **callerlabels**, en wat een callerlabel
+ís hangt af van hoe er ingelogd wordt:
+
+| aanmelding | callerlabel |
+| --- | --- |
+| `WORDSWORTH_API_KEYS` | het label vóór de dubbele punt (`mark:sk_live_…` → `mark`) |
+| Cloudflare Access | het **geverifieerde e-mailadres** uit het JWT |
+
+Zet je de ene aanmelding om naar de andere, dan **verandert elk label** en
+weigert de lijst iedereen. Dat gebeurde op 2026-09-19: de lijst stond nog op
+`console` uit het sleuteltijdperk, terwijl de callers sinds de Access-uitrol
+e-mailadressen waren. Gevolg: de hele console gaf 403 aan iedereen, ook aan de
+beheerder.
+
+Een 403 op een browserpad toont daarom nu een pagina die zegt ónder welke naam
+je binnenkwam. Zonder dat weet niemand — de gebruiker niet en de beheerder niet
+— welke naam er dan wél op de lijst moet. Welke namen er al op staan, zegt de
+pagina bewust niet.
+
 It never reveals on its own authority. Re-identification has exactly one door: the grant-gated,
 audited `reveal` endpoint (see [grants](grants.md)). An inspection screen that
 may also reveal is a second door with a friendlier name, and it is the one

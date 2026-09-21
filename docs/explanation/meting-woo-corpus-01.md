@@ -249,6 +249,36 @@ Opgelost met `SET LOCAL lock_timeout = '5s'` in de migratie-transactie. Snel
 falen is hier de betere helft van de afspraak: het init-Job probeert het met
 backoff opnieuw, en een poging een seconde later vindt de lock meestal vrij.
 
+### Naschrift 18-09: die laatste zin was een gok
+
+De uitrol van 18-09 liep vast op precies dit. Zes pogingen van het init-Job,
+zes keer `LockNotAvailable`, sync mislukt. De api bleef draaien op de oude
+image — geen storing, wel een uitrol die niet landde.
+
+`pg_stat_activity` wees de houder aan: de herstel-Job die de vernietigde
+embeddings herberekende, `idle in transaction` voor **637 seconden**. Die Job
+sluit zijn sessie elke 25 documenten, maar bij ~75 documenten per uur is dat
+een open transactie van twintig minuten. De zes pogingen van het init-Job
+pasten samen in de eerste van die twintig.
+
+"Een poging een seconde later vindt de lock meestal vrij" was dus een orde van
+grootte mis, en er stond niets onder dat het toetste. Het wachten staat nu in
+`init_schema` zelf, met een zichtbaar budget: `attempts=20`, `wait=30.0`, ruim
+tien minuten. Per poging blijft het `lock_timeout` van 5 seconden staan — de
+redenering hierboven over de wachtrij verandert niet, alleen het geduld
+erbuiten. Alleen SQLSTATE `55P03` wordt herhaald; een onbereikbare database
+wordt niet beter van wachten en twintig pogingen zouden die fout tien minuten
+verbergen.
+
+Bewaakt door `tests/test_init_schema_lock.py`, dat een lezer met een open
+transactie nabootst en kijkt of de kolom er ná afloop staat — niet of er "geen
+fout kwam". De eerste versie van die test deed dat laatste en slaagde ook met
+de reparatie eruit.
+
+De andere helft van dit verhaal staat niet in de code: een herstel-Job hoort
+zijn transactie niet open te houden terwijl hij op een trage embedding wacht.
+Dat is bij de volgende zo'n Job een ontwerpeis, geen detail.
+
 ## Bevinding 7 — de controle hield acht documenten tegen op twee eigen fouten
 
 De kenmerken uit bevinding 6 wezen het aan. Acht documenten, allemaal
