@@ -2,7 +2,7 @@
 # Agents (builder/reviewer/security) must never modify these; reviewer hard-fails
 # on any diff that touches them. Changes here require Mark's explicit review.
 
-/CLAUDE.md              @MWest2020
+/AGENTS.md              @MWest2020
 /.claude/agents/        @MWest2020
 /CODEOWNERS             @MWest2020
 /.github/workflows/     @MWest2020
