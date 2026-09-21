@@ -1,30 +1,27 @@
-# Wordsworth — deploy (alma)
+# Deploying wordsworth on alma
 
-Run the full Wordsworth straat on real corpora on **alma** (production). The
-homelab cluster is lab + factory (build/CI/validate); the real workload runs on
-alma. Claude is read-only on alma — every deploy step here is a human action.
+A runbook, not an introduction. What wordsworth **is** and how its parts relate
+is the [README](../README.md); this page is how to run it here.
 
-## Architecture
+## What runs where
+
+One cluster, two namespaces, human-operated.
 
 ```
-                         ┌────────────────────────────────────────────┐
-  PDF corpus ──▶ wordsworth-ingest (Job)                               │
-                    │  ingest → OCR recovery → anonymize → store → index│
-                    │                        │                          │
-                    │                        ▼                          │
-                    │        OpenAnonymiser GLiNER service (HTTP) ◀──────┘
-                    ▼                        (namespace: openanonymiser)
-   S3 (object store) · PostgreSQL (audit + state) · OpenSearch (index) · Ollama (bge-m3)
-                    ▲
-  wordsworth-api (Deployment) ── read surface: state / metrics / search / hybrid / ask
+  namespace: wordsworth                     namespace: openanonymiser
+  ┌────────────────────────────────┐        ┌──────────────────────────┐
+  │ wordsworth-init      (Job)     │        │ OpenAnonymiser (GLiNER)  │
+  │ wordsworth-ingest    (Job)  ───┼───────▶│ HTTP, entity PII         │
+  │ wordsworth-api       (Deploy)  │        └──────────────────────────┘
+  └────────────────────────────────┘
+        │        │        │        │
+        ▼        ▼        ▼        ▼
+       S3   PostgreSQL  OpenSearch  Ollama
 ```
 
-- **Anonymize (Architecture A):** Wordsworth runs its deterministic regex pass
-  (BSN/IBAN/email) in-process, then calls the **OpenAnonymiser GLiNER service**
-  over HTTP for entity PII (names). No torch/spaCy/GLiNER in Wordsworth itself.
-  Service down/unreachable ⇒ hard failure, never un-redacted pass-through.
-- One image, three entrypoints: `uvicorn wordsworth.serve:app` (API, default
-  CMD), `wordsworth-init` (schema), `wordsworth-ingest` (corpus straat).
+The homelab cluster is lab and factory (build, CI, validation); the real
+workload runs on **alma**. Claude is read-only on alma — every deploy step below
+is a human action.
 
 ## Prerequisites on alma
 

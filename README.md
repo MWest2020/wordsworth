@@ -8,6 +8,50 @@ documents into a searchable, privacy-safe corpus:
 What a consumer does with the documents afterwards is out of scope — wordsworth
 is the engine. Reference case: Woo-request handling for a Dutch municipality.
 
+## Architecture
+
+One linear pipeline, with a read surface beside it:
+
+```
+  PDF corpus
+      │
+      ▼
+  ingest ──▶ text extraction ──▶ de-identify ──▶ store ──▶ index
+                                      │
+                                      ├── deterministic, in-process:
+                                      │   BSN (11-proef), IBAN (mod-97), e-mail
+                                      └── entity PII over HTTP:
+                                          OpenAnonymiser (GLiNER) service
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ object store (S3)   audit + state (PostgreSQL)               │
+  │ search index (OpenSearch)   embeddings (Ollama, bge-m3)      │
+  └──────────────────────────────────────────────────────────────┘
+      ▲
+  HTTP API ── state · metrics · search · hybrid · ask · console
+```
+
+- **De-identification is two layers, and the second one is remote.** The
+  deterministic detectors run in-process; entity PII (names, places,
+  organisations) comes from the OpenAnonymiser service over HTTP, so no
+  torch/spaCy/GLiNER lives in wordsworth itself. Service unreachable is a **hard
+  failure** — never an un-redacted document passing through.
+- **The audit trail IS the state machine.** There is no workflow engine: every
+  step transition is an append-only, hash-chained audit record, and
+  `documents.current_state` is derived from the most recent one rather than
+  stored as a mutable column.
+- **Pseudonymisation sits before indexing.** Tokens reach the index; values
+  never do. Resolving a token back is a separate, authorised act with its own
+  audit record.
+- **Every adapter sits behind a driver seam** — object store, key/mapping store,
+  search, embeddings, anonymisation — so a backend can be swapped without
+  touching the pipeline.
+- **One image, three entrypoints:** the API (default), `wordsworth-init`
+  (schema), `wordsworth-ingest` (corpus run).
+
+Where it runs is a deployment question, not a product one; see
+[`deploy/`](deploy/README.md).
+
 ## Principles
 
 - Boring and auditable over fast or clever.
@@ -36,10 +80,10 @@ only, so it runs anywhere with Python 3, no install of the package needed).
 
 ```bash
 # put it on PATH as `wordsworth` (saves the API URL to config; env/--url override)
-scripts/install-cli.sh --url http://100.100.181.23:8000
+scripts/install-cli.sh --url http://<api-host>:8000
 
 # or set/inspect the persistent config yourself
-wordsworth config --url http://100.100.181.23:8000   # ~/.config/wordsworth/config.yaml
+wordsworth config --url http://<api-host>:8000   # ~/.config/wordsworth/config.yaml
 wordsworth config --show
 
 wordsworth health                                   # {"status": "ok"}
@@ -56,9 +100,9 @@ wordsworth meta <document-id>                        # duration, PII counts, ste
 Without the install step, point at the API per call or via the environment:
 
 ```bash
-wordsworth --url http://100.100.181.23:8000 ingest ./corpus
+wordsworth --url http://<api-host>:8000 ingest ./corpus
 # or
-export WORDSWORTH_API_URL=http://100.100.181.23:8000
+export WORDSWORTH_API_URL=http://<api-host>:8000
 wordsworth ingest ./corpus
 ```
 
