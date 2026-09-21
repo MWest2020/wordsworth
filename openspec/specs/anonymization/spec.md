@@ -133,6 +133,61 @@ detections SHALL be counted.
   ORGANIZATION
 - **THEN** the detection is kept
 
+### Requirement: Een allow-regel draagt een reden
+
+Every entry in the allow list SHALL carry a human-readable reason, stored beside
+the pattern in the same file.
+
+An allow list is the one place in this system where a change quietly results in
+*less* pseudonymisation. A bare list of words is a list nobody can review: a
+reader cannot tell `^gemeente$` (an ordinary noun) from an entry that silently
+exempts a surname. The reason is what makes review possible. A deny rule adds
+protection, so there a bare pattern is enough.
+
+#### Scenario: An entry without a reason is refused
+
+- **WHEN** the lists are loaded and an allow entry has no reason
+- **THEN** loading fails, and no list is applied
+
+### Requirement: Een allow-regel mag geen bekende PII onderdrukken
+
+The allow list SHALL be checked against the evaluation corpus, where the seeded
+PII values are known, and an entry that suppresses a seeded value SHALL fail the
+check. The check SHALL also cover the **individual words** of a seeded value.
+
+This is the guard that makes an allow list safe to have at all. Without a corpus
+whose answers are known, every entry is a matter of trust; with one, "this rule
+hides real PII" is a fact that can be established before the rule ships. The
+individual words matter because the corpus seeds full names (`Hendrik de
+Vries`) while the detector also yields bare surnames — a rule `^vries$` is
+exactly the dangerous case, and a check on the full value alone lets it through.
+
+#### Scenario: A rule that hides a seeded value is caught
+
+- **WHEN** an allow entry matches a value the evaluation corpus seeded as PII,
+  or one of that value's individual words
+- **THEN** the check fails and names the entry
+
+#### Scenario: Recall does not drop
+
+- **WHEN** the evaluation is run with and without the lists
+- **THEN** the recall on seeded PII is unchanged
+
+### Requirement: De lijst leeft in de repo, niet in de omgeving
+
+The lists SHALL be versioned in the repository and shipped with the application
+image, and SHALL NOT be supplied by an environment that can be changed without
+review.
+
+The lists' content hash is recorded in every de-identification record so that a
+document can be traced to the rules that produced it. A hash that points at
+something anyone could have edited in place is a number without provenance.
+
+#### Scenario: A document can be traced to reviewed rules
+
+- **WHEN** an auditor takes the lists hash from a document's record
+- **THEN** it identifies a reviewed commit
+
 ### Requirement: Feedback is recorded, not auto-applied
 
 `POST /documents/{id}/feedback` SHALL append an audit record describing a
