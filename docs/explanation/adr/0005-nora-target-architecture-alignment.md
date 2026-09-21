@@ -42,7 +42,7 @@ attribute, not a cryptographic one — and RSA-OAEP for bulk field encryption is
 the clever pitfall (it needs a hybrid scheme anyway). Boring and auditable wins.
 
 **D4 — Anonypy as detection layer 2.** Recommend: **decline** (already banned in
-CLAUDE.md). The "Swiss Cheese" property is met by regex + Presidio patterns +
+AGENTS.md). The "Swiss Cheese" property is met by regex + Presidio patterns +
 NER (OpenAnonymiser); name it as such in docs, measure it with
 `add-pii-detection-eval`.
 
@@ -93,7 +93,7 @@ placeholders is a separate render component behind the API, like the console.
   future stakeholder asking for RDFa-inline ciphertext or per-article ciphers
   is pointed at D1/D3 rather than re-litigating in a PR.
 - The deck remains a *reference* architecture; wordsworth's contract is
-  CLAUDE.md + the specs.
+  AGENTS.md + the specs.
 
 ## Status update
 

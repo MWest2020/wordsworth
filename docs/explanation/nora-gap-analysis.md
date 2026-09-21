@@ -53,7 +53,7 @@ deck's "Swiss Cheese", just not named that).
 | # | Deck requirement (cluster) | wordsworth today | Verdict | Where |
 |---|---|---|---|---|
 | 1 | Multi-layer PII detection, deterministic + pattern + NER | regex (BSN elfproef, IBAN, email) + OpenAnonymiser (Presidio + NER) | **have** (2–3 layers; not named) | `detectors.py`, `openanonymiser_driver.py` |
-| 2 | Anonypy as layer 2 | banned in CLAUDE.md | **decided** D4 (ADR-0005, 2026-09-03) (recommend: no; NER covers it) | ADR-0005 |
+| 2 | Anonypy as layer 2 | banned in AGENTS.md | **decided** D4 (ADR-0005, 2026-09-03) (recommend: no; NER covers it) | ADR-0005 |
 | 3 | Confidence + detection layer per PII, in audit | driver keeps `score` + layer; pipeline writes per-layer aggregates to the audit (never a value or an offset) | **have** | `openanonymiser_driver.py`, `pipeline.py:226` |
 | 4 | Configurable thresholds per layer | present; counting only — a threshold never weakens redaction (spec `audit-trail`) | **have** | `detection_confidence` in `2026-09-04-add-detection-confidence` |
 | 5 | FP/FN feedback → rule engine (Drools) | versioned allow/deny lists; feedback is recorded, never auto-applied | **have** (the boring variant, deliberately) | `detection_lists.py` |
@@ -86,7 +86,7 @@ deck's "Swiss Cheese", just not named that).
 | 32 | Thin-client: Web Crypto + detection in the plugin | keys never leave OpenBao | **decided** D10 (ADR-0005, 2026-09-03) (recommend: server-side only) | ADR-0005 |
 | 33 | DMS new version / Woo-portaal / TMLO metadata output | text-only pipeline; no docx/pdf re-render | **decided** D11 (ADR-0005, 2026-09-03) (render service is a separate component) | ADR-0005 |
 | 34 | ZGW-API / CMIS / WebDAV connectors | connector pattern exists (Nextcloud, outside core) | **out-of-core** | `connectors/` |
-| 35 | CyberArk Conjur / Azure KV | banned / cloud in critical path banned | **have** (OpenBao) | CLAUDE.md |
+| 35 | CyberArk Conjur / Azure KV | banned / cloud in critical path banned | **have** (OpenBao) | AGENTS.md |
 | 36 | EDPB 01/2025 TOM 1–5 | TOM 3 have; TOM 2/4/5 via #8, #18, PPL 0 exports | mostly **have/gap** | |
 | 37 | 1.5M mutations/hour batch, 3 h window | untested for datasets | measure after #23 | |
 

@@ -7,7 +7,7 @@ last_reviewed: 2026-08-18
 
 ## Context
 
-`CLAUDE.md` currently carries a loose note under banned dependencies:
+`AGENTS.md` currently carries a loose note under banned dependencies:
 `"NiFi is not a given."` That was a placeholder, not a decision. This ADR
 resolves it.
 
@@ -64,7 +64,7 @@ concurrency against the OpenAnonymiser/Ollama backends).
 
 ## Consequences
 
-- `CLAUDE.md`'s "NiFi is not a given" note is updated to reflect this
+- `AGENTS.md`'s "NiFi is not a given" note is updated to reflect this
   decision, and records that a NiFi-orchestrated production deployment is the
   target state.
 - Two OpenSpec changes follow from this ADR, scoped to wordsworth itself:
