@@ -50,26 +50,60 @@ recipient and grant id, and SHALL NOT record any clear PII.
 - **THEN** the `deanonymize` audit record carries the caller's label and the
   grant recipient, and contains no clear PII value
 
-### Requirement: De sleutels van de uitgever halen mag het opstarten niet blokkeren
+### Requirement: Fetching the issuer's keys must not block startup
 
-Het ophalen van het discovery-document of de JWKS SHALL niet tijdens het
-opstarten gebeuren, maar bij het eerste verzoek dat een token
-controleert, met cache. Mislukt het ophalen, dan SHALL het verzoek geen
-caller opleveren en SHALL de applicatie blijven draaien. Het JWKS-adres
-MAY los ingesteld worden; dan SHALL het discovery-document niet
-opgehaald worden en SHALL de uitgever nog steeds tegen `iss`
-gecontroleerd worden. Elke HTTP-aanroep SHALL een User-Agent meesturen.
+Fetching the discovery document or the JWKS SHALL NOT happen during startup, but
+on the first request that verifies a token, with a cache. If the fetch fails,
+that request SHALL yield no caller and the application SHALL keep running. The
+JWKS address MAY be configured separately; the discovery document SHALL then not
+be fetched, and the issuer SHALL still be checked against `iss`. Every HTTP call
+SHALL send a User-Agent.
 
-#### Scenario: Provider onbereikbaar
+#### Scenario: The provider is unreachable
 
-- **GIVEN** een ingestelde uitgever die niet antwoordt
-- **WHEN** de applicatie start en daarna een verzoek met token binnenkomt
-- **THEN** draait de applicatie, levert dat verzoek geen caller op, en
-  blijft de rest van de API gewoon werken
+- **GIVEN** a configured issuer that does not answer
+- **WHEN** the application starts and a request with a token arrives afterwards
+- **THEN** the application runs, that request yields no caller, and the rest of
+  the API keeps working
 
-#### Scenario: Intern JWKS-adres
+#### Scenario: An internal JWKS address
 
-- **GIVEN** een ingesteld JWKS-adres op een interne Service
-- **WHEN** een token gecontroleerd wordt
-- **THEN** wordt dat adres gebruikt, wordt er geen discovery-document
-  opgehaald, en wordt de uitgever nog steeds tegen `iss` gecontroleerd
+- **GIVEN** a JWKS address configured on an internal Service
+- **WHEN** a token is verified
+- **THEN** that address is used, no discovery document is fetched, and the
+  issuer is still checked against `iss`
+
+### Requirement: Identity comes from a configurable OIDC issuer
+
+The API SHALL be able to establish the caller from a signed OIDC token of a
+configured issuer, checking the signature, the issuer, the audience and the
+expiry. Cloudflare Access SHALL remain one possible filling-in of that
+configuration. The token SHALL be read from `Authorization: Bearer …` or from
+`cf-access-jwt-assertion`; an email address from a header SHALL never be
+trusted. Without a valid token and without a valid API key there SHALL be no
+caller.
+
+Issuer and audience are both required before an OIDC verifier exists at all: a
+JWKS address on its own is the *address* of the keys, not the decision to use
+them.
+
+#### Scenario: A valid Keycloak token
+
+- **GIVEN** an issuer `https://iam.westerweel.work/realms/westerweel` and
+  audience `wordsworth`
+- **WHEN** a request arrives with a valid token from that issuer
+- **THEN** the caller is the verified email address from the token
+
+#### Scenario: A token from another issuer
+
+- **GIVEN** the same configuration
+- **WHEN** the token comes from another issuer, names another audience, or has
+  expired
+- **THEN** there is no caller, and the request may not issue a grant or read
+  full text
+
+#### Scenario: Only an email header
+
+- **WHEN** a request sends only an email address in a header, without a signed
+  token
+- **THEN** there is no caller
