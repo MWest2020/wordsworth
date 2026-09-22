@@ -50,8 +50,8 @@ def test_adding_an_existing_membership_reports_that_it_was_there(session):
     d = dossiers.ensure(session, "zaak")
     doc = register(session, "documents/aa")
     session.commit()
-    assert dossiers.add(session, d.id, doc.id) is True
-    assert dossiers.add(session, d.id, doc.id) is False
+    assert dossiers.add(session, d.id, doc.id, actor="test") is True
+    assert dossiers.add(session, d.id, doc.id, actor="test") is False
 
 
 def test_a_dossier_needs_a_name(session):

@@ -26,6 +26,11 @@ GRANT_REVOKED_ACTION = "grant_revoked"
 #: duizend documenten, en een record per document zou de keten volschrijven met
 #: duizend kopieën van hetzelfde feit.
 ROLE_ACTION = "role_changed"
+#: dossiers: hernoemen. Een hernoeming verplaatst geen document en verandert geen
+#: lidmaatschap -- hij verandert een etiket dat duizend documenten delen. Daarom
+#: hier en niet in de document-hashketen, om exact dezelfde reden als een rol.
+#: Lidmaatschappen zelf horen wel op het document: zie `dossier_events.py`.
+DOSSIER_RENAMED_ACTION = "dossier_renamed"
 
 
 @runtime_checkable
@@ -56,6 +61,18 @@ class KeyLifecycleAudit(Protocol):
     ) -> None: ...
 
     def grant_revoked(self, *, grant_id: str, actor: str) -> None: ...
+
+    def dossier_renamed(
+        self,
+        *,
+        dossier_id: str,
+        old: str,
+        new: str,
+        #: hoeveel documenten het dossier op dat moment hield -- hoe ver de
+        #: wijziging reikte, zonder het per document weg te schrijven.
+        documents: int,
+        actor: str,
+    ) -> None: ...
 
     def role_changed(
         self,
@@ -137,6 +154,23 @@ class JsonlKeyLifecycleAudit:
             STREAM, ROLE_ACTION,
             role=role, change=change, allowed_types=list(allowed_types),
             active=active, actor=actor, reason=reason,
+        )
+
+    def dossier_renamed(self, *, dossier_id, old, new, documents, actor) -> None:
+        """Hoe een dossier ging heten, en hoe ver dat reikte.
+
+        `documents` is de reden dat dit record bestaat: het zegt hoeveel
+        documenten deze ene handeling raakte, zonder duizend keer hetzelfde feit
+        in de document-keten te schrijven.
+
+        Oud EN nieuw staan erin, want een naam is waar een mens een dossier aan
+        herkent. Alleen de nieuwe naam bewaren maakt een verwijzing in een oud
+        rapport onvindbaar.
+        """
+        self._log.event(
+            STREAM, DOSSIER_RENAMED_ACTION,
+            dossier_id=dossier_id, old=old, new=new,
+            documents=documents, actor=actor,
         )
 
     def events(self) -> list[dict[str, Any]]:

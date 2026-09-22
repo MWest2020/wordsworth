@@ -13,7 +13,7 @@ import pytest
 from wordsworth import samenvatten
 from wordsworth.dossiers import add, ensure
 from wordsworth.generator import GenerationError
-from wordsworth.models import Document, DocumentText
+from wordsworth.pipeline import register, DocumentText
 
 
 class _Keep:
@@ -43,9 +43,7 @@ class Model:
 
 
 def _doc(session, tekst="De aanvraag voor een dakkapel is afgewezen."):
-    doc = Document(object_key=f"documents/{id(tekst)}-{len(tekst or '')}")
-    session.add(doc)
-    session.flush()
+    doc = register(session, f"documents/{id(tekst)}-{len(tekst or '')}")
     if tekst is not None:
         session.merge(DocumentText(document_id=doc.id, anonymized_text=tekst))
     session.flush()
@@ -74,7 +72,7 @@ def test_it_reports_one_line_with_the_five_counts_and_the_duration(
     d = ensure(session, "zaak-samenvatten")
     session.flush()
     doc = _doc(session)
-    add(session, d.id, doc.id)
+    add(session, d.id, doc.id, actor="test")
     session.commit()
     model = Model()
     _wire(monkeypatch, session, model)
@@ -96,7 +94,7 @@ def test_running_again_does_not_call_the_generator_again(
     d = ensure(session, "zaak-nogmaals")
     session.flush()
     doc = _doc(session)
-    add(session, d.id, doc.id)
+    add(session, d.id, doc.id, actor="test")
     session.commit()
     model = Model()
     _wire(monkeypatch, session, model)
@@ -120,7 +118,7 @@ def test_a_failed_document_gives_a_nonzero_exit_code(session, monkeypatch, capsy
     d = ensure(session, "zaak-mislukt")
     session.flush()
     doc = _doc(session)
-    add(session, d.id, doc.id)
+    add(session, d.id, doc.id, actor="test")
     session.commit()
     _wire(monkeypatch, session, Kapot())
 
@@ -138,8 +136,8 @@ def test_a_document_without_text_gives_a_nonzero_exit_code_too(
     session.flush()
     met_tekst = _doc(session)
     zonder_tekst = _doc(session, None)
-    add(session, d.id, met_tekst.id)
-    add(session, d.id, zonder_tekst.id)
+    add(session, d.id, met_tekst.id, actor="test")
+    add(session, d.id, zonder_tekst.id, actor="test")
     session.commit()
     model = Model()
     _wire(monkeypatch, session, model)
@@ -158,7 +156,7 @@ def test_ontbrekend_finds_every_document_without_a_summary(
     d = ensure(session, "zaak-ontbrekend")
     session.flush()
     heeft_nog_niets = _doc(session, "Een besluit over een hek.")
-    add(session, d.id, heeft_nog_niets.id)
+    add(session, d.id, heeft_nog_niets.id, actor="test")
     session.commit()
     model = Model("Het gaat over een hek.")
     _wire(monkeypatch, session, model)

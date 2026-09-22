@@ -920,8 +920,12 @@ def create_app(
                 with session_factory() as session:
                     doc = session.execute(select(Document).where(
                         Document.object_key == key)).scalars().first()
+                    # Actor "ingest": nobody moved this, it arrived. There is no
+                    # endpoint that changes a membership by hand, so a caller
+                    # identity would be borrowed from a different act.
                     added = bool(doc and dossier and dossiers_mod.add(
-                        session, dossiers_mod.ensure(session, dossier).id, doc.id))
+                        session, dossiers_mod.ensure(session, dossier).id, doc.id,
+                        actor="ingest"))
                     if doc is None:
                         # The index knows this content but the document row is
                         # gone. Nothing to add a membership to, and reporting

@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 from wordsworth.api import create_app
 from wordsworth.dossiers import add, ensure
-from wordsworth.models import Document, DocumentText
+from wordsworth.models import DocumentText
+from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
 
 
@@ -22,11 +23,11 @@ def _corpus(session_factory, index, naam="gooise-meren-woo-2022"):
         for kant, woord, vec in (("v", "vergunning kap boom", [1.0, 0.0]),
                                  ("s", "subsidie cultuur regeling", [0.0, 1.0])):
             for i in range(4):
-                doc = Document(object_key=f"documents/{kant}{i}",
-                               filename=f"{kant}{i}.pdf")
-                s.add(doc)
-                s.flush()
-                add(s, d.id, doc.id)
+                # Via register: een document zonder auditrecord bestaat in
+                # productie niet, en sinds dossier-audit hangt er een
+                # lidmaatschapsrecord aan diezelfde keten.
+                doc = register(s, f"documents/{kant}{i}", filename=f"{kant}{i}.pdf")
+                add(s, d.id, doc.id, actor="test")
                 tekst = f"gemeente {woord} {i}"
                 s.merge(DocumentText(document_id=doc.id, anonymized_text=tekst))
                 index.index(str(doc.id), tekst, f"documents/{kant}{i}",

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from wordsworth.api import create_app
 from wordsworth.dossiers import add, ensure
-from wordsworth.models import Document
+from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
 
 
@@ -19,10 +19,8 @@ def _corpus(session_factory, index):
         for kant, woord, vec in (("v", "vergunning kap boom", [1.0, 0.0, 0.0]),
                                  ("s", "subsidie cultuur regeling", [0.0, 1.0, 0.0])):
             for i in range(4):
-                doc = Document(object_key=f"documents/{kant}{i}")
-                s.add(doc)
-                s.flush()
-                add(s, d.id, doc.id)
+                doc = register(s, f"documents/{kant}{i}")
+                add(s, d.id, doc.id, actor="test")
                 index.index(str(doc.id), f"gemeente {woord} {i}",
                             f"documents/{kant}{i}", vector=vec,
                             dossiers=[str(d.id)])
@@ -114,10 +112,8 @@ def test_a_topic_does_not_change_the_order(session_factory):
         s.flush()
         # Aflopend aantal treffers op 'gemeente' -> aflopende score.
         for i in range(6):
-            doc = Document(object_key=f"documents/d{i}")
-            s.add(doc)
-            s.flush()
-            add(s, d.id, doc.id)
+            doc = register(s, f"documents/d{i}")
+            add(s, d.id, doc.id, actor="test")
             index.index(str(doc.id), ("gemeente " * (6 - i)) + f"vergunning {i}",
                         f"documents/d{i}",
                         vector=[1.0, 0.0] if i % 2 else [0.0, 1.0],

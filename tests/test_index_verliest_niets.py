@@ -93,7 +93,7 @@ def test_assign_updates_the_index_so_the_move_is_real(session):
     oud = dossiers.ensure(session, "verkeerd")
     doc = register(session, "documents/a", filename="a.pdf")
     session.commit()
-    dossiers.add(session, oud.id, doc.id)
+    dossiers.add(session, oud.id, doc.id, actor="test")
     index.index(str(doc.id), "een besluit", "documents/a", [0.5], [str(oud.id)])
 
     besluit = "https://open.gelderland.nl/woo-documenten/woo-besluit-over-iets"

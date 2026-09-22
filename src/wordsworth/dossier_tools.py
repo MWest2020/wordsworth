@@ -12,6 +12,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import select
 
@@ -53,6 +54,7 @@ def naam_van(herkomst: str) -> str:
 
 
 def assign(session, mapping: dict[str, str], weg_uit: str | None = None,
+           *, actor: str = "dossier-uit-herkomst",
            index=None) -> dict:
     """Zet elk document met een herkomstregel in het dossier van die herkomst.
 
@@ -72,6 +74,9 @@ def assign(session, mapping: dict[str, str], weg_uit: str | None = None,
         if bron is None:
             raise dossiers.DossierError(f"unknown dossier: {weg_uit}")
 
+    # One command, one batch: the records stay per document (each really did
+    # move) but a reader can see they were a single act.
+    batch = uuid4().hex[:12]
     per_dossier: dict[str, int] = {}
     toegewezen = zonder_herkomst = 0
     for doc in session.execute(select(Document)).scalars():
@@ -81,9 +86,13 @@ def assign(session, mapping: dict[str, str], weg_uit: str | None = None,
             continue
         naam = naam_van(herkomst)
         doel = dossiers.ensure(session, naam)
-        dossiers.add(session, doel.id, doc.id)
+        dossiers.add(session, doel.id, doc.id, actor=actor, batch=batch)
         if bron is not None:
-            dossiers.remove(session, bron.id, doc.id)
+            # The reason is the command itself: this document was assigned to
+            # another dossier by its origin, so leaving the old one is not a
+            # separate decision but the other half of the same one.
+            dossiers.remove(session, bron.id, doc.id, actor=actor, batch=batch,
+                            reason=f"moved to {naam} by origin")
         if index is not None:
             index.set_dossiers(str(doc.id), [str(d) for d in _dossier_ids(session, doc.id)])
         per_dossier[naam] = per_dossier.get(naam, 0) + 1

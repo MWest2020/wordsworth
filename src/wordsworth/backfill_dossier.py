@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from uuid import uuid4
 
 from sqlalchemy import select
 
@@ -30,7 +31,7 @@ def orphans(session) -> list[Document]:
         select(Document).where(Document.id.not_in(member))).scalars())
 
 
-def adopt(session, name: str, index=None) -> dict:
+def adopt(session, name: str, index=None, *, actor: str = "backfill") -> dict:
     """Put every dossier-less document into the named dossier, and tell the index.
 
     The index has to learn it here. It holds the dossiers per document, so a
@@ -44,7 +45,13 @@ def adopt(session, name: str, index=None) -> dict:
         return {"dossier": name, "adopted": 0, "already_placed": True,
                 "reindexed": 0, "without_text": 0, "niet_geindexeerd": 0}
     dossier = dossiers.ensure(session, name)
-    added = [d for d in found if dossiers.add(session, dossier.id, d.id)]
+    # One batch id for the whole run. The records are honest per document --
+    # every one really did get a membership -- but without something tying them
+    # together a day of history reads as hundreds of unrelated decisions instead
+    # of the single command it was.
+    batch = uuid4().hex[:12]
+    added = [d for d in found
+             if dossiers.add(session, dossier.id, d.id, actor=actor, batch=batch)]
     reindexed = without_text = niet_geindexeerd = 0
     for doc in added if index is not None else []:
         if get_anonymized_text(session, doc.id) is None:
