@@ -18,8 +18,8 @@ def test_a_membership_can_be_undone(session):
     d = dossiers.ensure(session, "zaak")
     doc = register(session, "documents/aa")
     session.commit()
-    dossiers.add(session, d.id, doc.id)
-    assert dossiers.remove(session, d.id, doc.id) is True
+    dossiers.add(session, d.id, doc.id, actor="test")
+    assert dossiers.remove(session, d.id, doc.id, actor="test", reason="fout dossier") is True
     assert dossiers_of(session, doc.id) == []
 
 
@@ -29,14 +29,14 @@ def test_removing_one_that_is_not_there_is_not_an_error(session):
     d = dossiers.ensure(session, "zaak")
     doc = register(session, "documents/aa")
     session.commit()
-    assert dossiers.remove(session, d.id, doc.id) is False
+    assert dossiers.remove(session, d.id, doc.id, actor="test", reason="stond er niet") is False
 
 
 def test_renaming_moves_no_document(session):
     d = dossiers.ensure(session, "corpus-2026-09")
     doc = register(session, "documents/aa")
     session.commit()
-    dossiers.add(session, d.id, doc.id)
+    dossiers.add(session, d.id, doc.id, actor="test")
     hernoemd = dossiers.rename(session, "corpus-2026-09", "Gooise Meren Woo-publicatie 2022")
     session.commit()
     assert hernoemd.id == d.id
@@ -73,9 +73,9 @@ def test_documents_belonging_nowhere_are_counted(session):
     a = register(session, "documents/aa")
     register(session, "documents/bb")      # blijft dakloos; dat is het punt
     session.commit()
-    dossiers.add(session, d.id, a.id)
+    dossiers.add(session, d.id, a.id, actor="test")
     assert dossiers.homeless(session) == 1          # b
-    dossiers.remove(session, d.id, a.id)
+    dossiers.remove(session, d.id, a.id, actor="test", reason="test")
     assert dossiers.homeless(session) == 2
 
 
@@ -125,8 +125,8 @@ def test_assigning_moves_documents_out_of_the_old_dossier(session):
     doc = register(session, "documents/a", filename="a.pdf")
     blijft = register(session, "documents/b", filename="b.pdf")
     session.commit()
-    dossiers.add(session, oud.id, doc.id)
-    dossiers.add(session, oud.id, blijft.id)
+    dossiers.add(session, oud.id, doc.id, actor="test")
+    dossiers.add(session, oud.id, blijft.id, actor="test")
     stats = assign(session, {"a.pdf": BESLUIT}, weg_uit="corpus-2026-09")
     session.commit()
     assert dossiers_of(session, doc.id) == [

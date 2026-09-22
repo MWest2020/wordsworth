@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from . import dossier_events
 from .models import Dossier, DossierDocument
 
 #: What a caller passes to say "every dossier". A word and not an empty value,
@@ -69,13 +70,17 @@ def ensure(session: Session, name: str) -> Dossier:
         return bestaand
 
 
-def add(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
+def add(session: Session, dossier_id: UUID, document_id: UUID, *,
+        actor: str, batch: str | None = None) -> bool:
     """Make this document a member. Returns whether it was not already one.
 
-    Adding an existing membership is not an error: content that already exists
-    being delivered into another case is the normal thing, not a mistake. Dat
-    geldt ook als een ander hem net tussen onze lees- en schrijfactie in heeft
-    toegevoegd — zelfde savepoint, zelfde reden als bij `ensure`.
+    Adding an existing membership is not an error: content already ingested
+    being delivered into another case is normal. Same for a concurrent add —
+    same savepoint, same reason as in `ensure`.
+
+    `actor` has no default on purpose: a default would make the anonymous case
+    the easy one, and arriving through ingest is an actor too. Why no reason is
+    asked for: see `remove`, and `dossier_events` for both homes.
     """
     existing = session.get(DossierDocument, (dossier_id, document_id))
     if existing is not None:
@@ -85,27 +90,45 @@ def add(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
             session.add(DossierDocument(dossier_id=dossier_id,
                                         document_id=document_id))
             session.flush()
-        return True
     except IntegrityError:
         return False
-
-
-def remove(session: Session, dossier_id: UUID, document_id: UUID) -> bool:
-    """Undo a membership. Returns whether there was one.
-
-    Removing one that is not there is not an error, for the same reason adding
-    an existing one is not: both are statements about a state, and the state is
-    what matters.
-    """
-    existing = session.get(DossierDocument, (dossier_id, document_id))
-    if existing is None:
-        return False
-    session.delete(existing)
-    session.flush()
+    # Only after the membership exists: a record for a lost race would claim an
+    # act that did not happen.
+    dossier_events.membership_changed(
+        session, document_id=document_id, dossier_id=dossier_id,
+        dossier=dossier_events.name_of(session, dossier_id),
+        step=dossier_events.ADDED,
+        actor=actor, batch=batch)
     return True
 
 
-def rename(session: Session, old: str, new: str) -> Dossier:
+def remove(session: Session, dossier_id: UUID, document_id: UUID, *,
+           actor: str, reason: str, batch: str | None = None) -> bool:
+    """Undo a membership. Returns whether there was one.
+
+    Removing one that is not there is not an error, for the same reason adding
+    an existing one is not: both are statements about a state.
+
+    `reason` is required here while `add` asks for none, and that asymmetry is
+    the point: an addition is visible in the result, a removal leaves nothing
+    behind except what someone wrote down at the time.
+    """
+    if not (reason or "").strip():
+        raise DossierError("removing a document from a dossier needs a reason")
+    existing = session.get(DossierDocument, (dossier_id, document_id))
+    if existing is None:
+        return False
+    naam = dossier_events.name_of(session, dossier_id)
+    session.delete(existing)
+    session.flush()
+    dossier_events.membership_changed(
+        session, document_id=document_id, dossier_id=dossier_id, dossier=naam,
+        step=dossier_events.REMOVED, actor=actor, reason=reason, batch=batch)
+    return True
+
+
+def rename(session: Session, old: str, new: str, *, actor: str = "",
+           lifecycle=None) -> Dossier:
     """Give a dossier another name. Moves no document.
 
     The identity is the dossier, not the word used for it — which is why this is
@@ -124,8 +147,11 @@ def rename(session: Session, old: str, new: str) -> Dossier:
         select(Dossier).where(Dossier.name == new)).scalars().first()
     if clash is not None and clash.id != found.id:
         raise DossierError(f"a dossier named {new!r} already exists")
+    oud = old.strip()
     found.name = new
     session.flush()
+    # The dossier's own stream, not the documents': this moved none of them.
+    dossier_events.renamed(session, lifecycle, dossier=found, old=oud, actor=actor)
     return found
 
 

@@ -131,7 +131,9 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
         select(Document).where(Document.object_key == key)).scalars().first()
     doc = existing if existing is not None else register(session, key, domain, filename)
     if dossier:
-        dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id)
+        # Arriving in a case is an act too; "ingest" is who did it.
+        dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
+                     actor="ingest")
     return doc
 
 

@@ -72,7 +72,7 @@ def test_a_losing_writer_keeps_its_own_work(session_factory):
         dossiers.ensure(a, "zaak")
         a.commit()
         gedeeld = dossiers.ensure(b, "zaak")                  # B verliest de race
-        dossiers.add(b, gedeeld.id, doc.id)
+        dossiers.add(b, gedeeld.id, doc.id, actor="test")
         b.commit()
         with session_factory() as s:
             assert s.get(Dossier, gedeeld.id) is not None
@@ -88,9 +88,9 @@ def test_adding_the_same_membership_from_two_sessions_is_not_an_error(session_fa
         d = dossiers.ensure(a, "zaak")
         doc = register(a, "documents/aa")
         a.commit()
-        assert dossiers.add(a, d.id, doc.id) is True
+        assert dossiers.add(a, d.id, doc.id, actor="test") is True
         a.commit()
-        assert dossiers.add(b, d.id, doc.id) is False
+        assert dossiers.add(b, d.id, doc.id, actor="test") is False
         b.commit()
     finally:
         a.close(); b.close()

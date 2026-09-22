@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 
 from wordsworth.api import create_app
 from wordsworth.dossiers import add, ensure
-from wordsworth.models import Document, DocumentText
+from wordsworth.models import DocumentText
+from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
 
 KEYS = {"s3cret": "mark"}
@@ -42,10 +43,8 @@ def _corpus(session_factory, index):
             "iets": "Een notulen over parkeren en fietsenstallingen.",
         }
         for naam, tekst in stukken.items():
-            doc = Document(object_key=f"documents/{naam}", filename=f"{naam}.pdf")
-            s.add(doc)
-            s.flush()
-            add(s, d.id, doc.id)
+            doc = register(s, f"documents/{naam}", filename=f"{naam}.pdf")
+            add(s, d.id, doc.id, actor="test")
             s.merge(DocumentText(document_id=doc.id, anonymized_text=tekst))
             index.index(str(doc.id), tekst, f"documents/{naam}",
                         vector=Embedder().embed([tekst])[0], dossiers=[str(d.id)])

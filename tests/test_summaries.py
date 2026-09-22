@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from wordsworth import summaries
 from wordsworth.generator import GenerationError
-from wordsworth.models import Document, DocumentSummary, DocumentText
+from wordsworth.models import DocumentSummary, DocumentText
+from wordsworth.pipeline import register
 
 
 class Model:
@@ -32,9 +33,7 @@ class Kapot:
 
 
 def _doc(session, tekst="De aanvraag voor een dakkapel is afgewezen."):
-    doc = Document(object_key=f"documents/{id(tekst)}")
-    session.add(doc)
-    session.flush()
+    doc = register(session, f"documents/{id(tekst)}")
     if tekst is not None:
         session.merge(DocumentText(document_id=doc.id, anonymized_text=tekst))
     session.flush()
@@ -143,7 +142,7 @@ def test_the_screen_says_it_was_generated_and_by_what(session_factory):
         d = ensure(s, "zaak")
         s.flush()
         doc = _doc(s, "De aanvraag voor een dakkapel is afgewezen.")
-        add(s, d.id, doc.id)
+        add(s, d.id, doc.id, actor="test")
         index.index(str(doc.id), "De aanvraag voor een dakkapel is afgewezen.",
                     doc.object_key, dossiers=[str(d.id)])
         summaries.compute(s, Model("Het gaat over een geweigerde dakkapel."),
@@ -175,7 +174,7 @@ def test_a_document_without_one_says_so_instead_of_being_blank(session_factory):
         d = ensure(s, "zaak2")
         s.flush()
         doc = _doc(s, "Een notulen over parkeren.")
-        add(s, d.id, doc.id)
+        add(s, d.id, doc.id, actor="test")
         index.index(str(doc.id), "Een notulen over parkeren.", doc.object_key,
                     dossiers=[str(d.id)])
         s.commit()

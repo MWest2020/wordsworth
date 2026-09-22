@@ -122,7 +122,8 @@ def test_documents_from_before_dossiers_are_adopted_and_reindexed(session):
     session.merge(DocumentText(document_id=oud.id, anonymized_text="een besluit"))
     zonder_tekst = register(session, "documents/bb")
     al_geplaatst = register(session, "documents/cc")
-    dossiers.add(session, dossiers.ensure(session, "zaak").id, al_geplaatst.id)
+    dossiers.add(session, dossiers.ensure(session, "zaak").id, al_geplaatst.id,
+                 actor="test")
     session.commit()
 
     assert {d.id for d in orphans(session)} == {oud.id, zonder_tekst.id}
