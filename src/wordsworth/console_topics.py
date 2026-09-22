@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse
 
 from . import topics as topics_mod
 from .dossiers import DossierError
+from .search_index import SearchUnavailable
 from .models import Dossier
 
 
@@ -93,7 +94,17 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                 gevonden = _named(session, dossier)
             except DossierError as exc:
                 return _page(request, dossier, str(exc))
-            uitkomst = topics_mod.compute(session, search_index, gevonden.id)
+            try:
+                uitkomst = topics_mod.compute(session, search_index, gevonden.id)
+            except SearchUnavailable:
+                # Berekenen leest het hele dossier uit de index; zonder index
+                # kan dat niet. De REEDS berekende onderwerpen staan in de
+                # database en blijven op deze pagina staan -- dat is het
+                # verschil dat hier verteld moet worden.
+                return _page(request, dossier,
+                             "Onderwerpen berekenen kan nu niet: de zoekindex "
+                             "is onbereikbaar. Wat eerder berekend is, staat er "
+                             "nog en blijft bruikbaar.")
             session.commit()
         return _page(request, dossier, uitkomst={
             "seen": uitkomst.seen, "with_vector": uitkomst.with_vector,

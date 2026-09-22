@@ -5,9 +5,11 @@ plain and auditable — returning the recall set with vectors for the final
 (zeef cosine) ranking done upstream."""
 from __future__ import annotations
 
+import functools
+
 from .config import settings
 from .rrf import fuse_ranked_ids
-from .search_index import Hit, IndexedDocument
+from .search_index import Hit, IndexedDocument, SearchUnavailable
 
 
 def _mapping(dim: int) -> dict:
@@ -153,6 +155,43 @@ def _scoped_knn(query_vector, recall: int, only, topic=None) -> dict:
     return {"knn": {"vector": clause}}
 
 
+def _unreachable(exc: Exception) -> bool:
+    """Is this a transport failure rather than a rejected query?
+
+    Matched against the client's own exception tree, imported lazily so that
+    importing this module never requires the client to be installed. Without
+    that fallback a test double raising a plain ConnectionError would be
+    classified as a bad query, which is the opposite of the truth.
+    """
+    try:
+        from opensearchpy.exceptions import ConnectionError as _Conn
+        from opensearchpy.exceptions import ConnectionTimeout
+        driver = (_Conn, ConnectionTimeout)
+    except ImportError:                     # client not installed (tests)
+        driver = ()
+    return isinstance(exc, (*driver, ConnectionError, TimeoutError, OSError))
+
+
+def _reads(fn):
+    """A read path: a transport failure becomes `SearchUnavailable`.
+
+    Only the read paths. A write that cannot reach the index must keep failing
+    hard the way it does — the pipeline's rule is that a document never reaches
+    an indexed state without actually being indexed, and softening that here
+    would turn a hard error into a shrug.
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            if _unreachable(exc):
+                raise SearchUnavailable(
+                    f"search index unreachable: {type(exc).__name__}") from exc
+            raise
+    return wrapper
+
+
 class OpenSearchIndex:
     def __init__(self, client, index_name: str, dim: int):
         self._client = client
@@ -257,6 +296,7 @@ class OpenSearchIndex:
             return False
         return True
 
+    @_reads
     def documents_in(self, dossier: str, limit: int = 10000
                      ) -> list[IndexedDocument]:
         """Alles in dit dossier, met vector, tekst en huidige onderwerpen.
@@ -288,6 +328,7 @@ class OpenSearchIndex:
             for h in result["hits"]["hits"]
         ]
 
+    @_reads
     def search(self, query: str, size: int = 10, only=None, topic=None) -> list[Hit]:
         result = self._client.search(
             index=self._index,
@@ -302,6 +343,7 @@ class OpenSearchIndex:
         result = self._client.search(index=self._index, body=body)
         return [h["_id"] for h in result["hits"]["hits"]]
 
+    @_reads
     def hybrid_search(self, query, query_vector, recall: int = 50,
                       only=None, topic=None) -> list[Hit]:
         bm25 = self._ranked_ids(
