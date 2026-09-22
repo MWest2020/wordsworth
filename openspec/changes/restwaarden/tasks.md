@@ -33,11 +33,15 @@ nog staat is wat de meting overliet.
       staan er bewust NIET bij: "Verandering 3" is geen adres.
 - [x] Test dat `Artikel 5` en `bijlage 3` er niet in lopen — plus `Postbus 1234`
       en een straatnaam zonder nummer.
-- [ ] **Voor Mark.** Het evalcorpus zaait het woonadres als gewone tekst en niet
-      als PII (`generate_ground_truth.py`, `.lit(f"{straat} {nummer}, ")`). Zolang
-      dat zo is, telt deze regel daar als precisieverlies en is de winst er niet
-      te meten. Dat is een uitspraak over wat PII IS, en die hoort niet uit een
-      regex te volgen.
+- [x] **Voor Mark.** Het evalcorpus zaaide het woonadres als gewone tekst en niet
+      als PII. **Beslist, Mark 2026-09-22:** *"street addresses should be PII
+      unless specified"*. Het corpus zaait een woonadres nu als gouden LOCATION
+      (straat + huisnummer als ÉÉN span — de straat alleen is een plaats, het
+      nummer alleen is niets). De tegencase blijft: een `Postbus`-adres is het
+      contactadres van een organisatie en hoort NIET gevonden te worden; zonder
+      die tegencase zou het corpus een detector belonen die elk adres redigeert.
+      Gecontroleerd: 207 van 207 gouden adressen exact geraakt, nul treffers op
+      de Postbus-regel.
 
 ## 3. De restwaarden — VERVALLEN
 Zie het naschrift. Wat hiervoor in de plaats komt is een eigen change over

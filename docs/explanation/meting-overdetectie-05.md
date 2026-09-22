@@ -143,6 +143,46 @@ van de run zelf. Dat getal is per constructie onder één versie gemeten. Wie to
 twee rondes wil vergelijken, moet eerst met de nieuwe code en de óúde lijsten
 draaien — twee runs, één verschil.
 
+## Naschrift 2: het adres als PII, en wat dat aan de meting verandert
+
+Tot 2026-09-22 zaaide het evalcorpus een woonadres met `.lit()` — gewone tekst.
+Een detector die het adres vond, kreeg dat als **valse positief** aangerekend.
+De deny-regel kon daar dus per definitie alleen verliezen.
+
+Mark, 2026-09-22: *"street addresses should be PII unless specified"*. Het
+corpus zaait een woonadres nu als gouden LOCATION (straat + huisnummer als één
+span), met de `Postbus`-regel als tegencase: het contactadres van een
+organisatie hoort NIET gevonden te worden.
+
+Dezelfde meting, hetzelfde corpus, alleen de lijsten verschillen:
+
+| | precisie | recall | **lekken** |
+| --- | --- | --- | --- |
+| zonder lijsten | 0,391 | 0,891 | **207** |
+| met lijsten | 0,432 | 0,999 | **0** |
+
+`lekken` is hier niet een bijzaak maar het getal waar de invariant over gaat:
+een gouden entiteit **zonder enige overlappende voorspelling, van welk type dan
+ook**. 207 woonadressen die ongeredigeerd de index in zouden gaan, worden er
+nul. LOCATION gaat van `tp=0, fn=207` naar `tp=207, fn=0`.
+
+En de precisie gaat óók omhoog (0,391 → 0,432), want de allow-lijst blijft in
+dezelfde run valse positieven weghalen. Er is hier dus geen ruil tussen
+bescherming en precisie; beide bewegen de goede kant op.
+
+### Eén nuance die niet weggelaten mag worden
+
+Op dit corpus lekte het adres **volledig**: zonder de regel was er geen enkele
+overlappende voorspelling. In productie zag het er anders uit — daar staat
+`[LOCATION:…] 12` in de tekst, dus daar vindt de detector de straatnaam wél en
+blijft alleen het huisnummer staan.
+
+Dat verschil zit in het corpus: het zaait vijf vaste straatnamen
+(`Dorpsstraat`, `Kerkstraat`, `Molenweg`, `Stationsplein`, `Groenestraat`) en
+die herkent de detector kennelijk niet als plaats. De regel doet in productie
+dus vooral *de span afmaken*, en op dit corpus *het hele adres vinden*. Allebei
+echt; het zijn niet dezelfde winst.
+
 ## Naschrift: de deny-regel, en nog een verkeerde meter
 
 Op 2026-09-22 draaide het corpus opnieuw, nu met de deny-regel voor het
