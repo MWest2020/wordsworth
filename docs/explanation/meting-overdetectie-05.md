@@ -143,6 +143,30 @@ van de run zelf. Dat getal is per constructie onder één versie gemeten. Wie to
 twee rondes wil vergelijken, moet eerst met de nieuwe code en de óúde lijsten
 draaien — twee runs, één verschil.
 
+## Naschrift: de deny-regel, en nog een verkeerde meter
+
+Op 2026-09-22 draaide het corpus opnieuw, nu met de deny-regel voor het
+straatadres erbij: 770 documenten, 15,4 uur, nul achterstallig daarna. De regel
+voegde **3.231 straatadressen** toe, in **403 van de 770** documenten.
+
+Dat getal komt uit de `list`-laag van het detectie-spoor van die run. Een
+deny-regel schrijft zijn eigen toevoeging daar weg, dus het is per constructie
+gemeten onder één versie — dezelfde discipline als `suppressed_by_list`
+hierboven.
+
+Mijn eerste poging was iets anders, en fout. Ik telde in de opgeslagen tekst het
+patroon `[LOCATION:…] <getal>` — een token met een kaal getal erachter — omdat
+dát het geval is dat de regel moest opheffen. Uitkomst: 100 van 400 teksten.
+Dat leest als "een kwart lekt nog steeds een huisnummer", en dat is niet wat er
+gemeten werd. `[LOCATION:…] 2019` is een plaatsnaam met een jaartal;
+`[LOCATION:…] 3` kan een tabelregel of een artikelnummer zijn. Het patroon is
+het geval niet.
+
+Precies de valkuil die dit document beschrijft, twee secties verderop, op
+dezelfde dag opnieuw ingelopen. Het onderscheid dat helpt: meet aan de
+**handeling** (wat deed de laag die de wijziging is), niet aan een **vorm** in
+het resultaat die ook zonder die handeling kan ontstaan.
+
 ## Nog een valkuil, uit deze meting zelf
 
 De eerste versie van de vergelijking meldde: tweede ronde **0 tokens**, over de
