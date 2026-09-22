@@ -17,6 +17,7 @@ from fastapi import Request
 from . import console_data
 from .console_data import _Missing, label
 from .dossiers import DossierError
+from .search_index import SearchUnavailable
 from .models import Document, DocumentText
 
 
@@ -108,8 +109,17 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                 try:
                     raw, manier = _rank(search_index, embedder, q, size, only,
                                         topic or None)
-                except Exception as exc:                 # index down, query bad
-                    fout = f"De zoekindex gaf een fout: {type(exc).__name__}"
+                except SearchUnavailable:
+                    # Niets wat de lezer kan oplossen, en niets mis met zijn
+                    # vraag. Zeg dat, en zeg wat er nog wél werkt -- anders
+                    # leest een storing als een fout van de zoeker.
+                    fout = ("Zoeken kan nu niet: de zoekindex is onbereikbaar. "
+                            "Dit ligt niet aan je zoekopdracht. Documenten, "
+                            "eerder berekende onderwerpen en samenvattingen "
+                            "blijven gewoon te openen; probeer het zoeken later "
+                            "opnieuw.")
+                except Exception as exc:                 # een afgewezen vraag
+                    fout = f"De zoekopdracht werd afgewezen: {type(exc).__name__}"
             if raw:
                 with session_factory() as session:
                     from .summaries import by_document

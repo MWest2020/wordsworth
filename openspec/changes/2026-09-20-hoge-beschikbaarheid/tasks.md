@@ -17,8 +17,14 @@ Volgorde is dwingend: elke stap is zinloos zonder de vorige.
   nalopen).
 
 ## 3. De afhankelijkheden
-- [ ] 3.1 OpenSearch met meer dan één node, of expliciet vastleggen dat
-  zoeken tijdelijk wegvalt en wat de console dan toont.
+- [ ] 3.1a OpenSearch met meer dan één node. Wacht op stap 1.
+- [x] 3.1b Vastgelegd dát zoeken tijdelijk wegvalt en wat de console dan
+  toont: `docs/how-to/zoeken-valt-weg.md`. Het onderscheid tussen "de index
+  is onbereikbaar" en "je vraag is afgewezen" bestond niet — beide gaven de
+  klassenaam van een uitzondering — en zit nu in de naad
+  (`search_index.SearchUnavailable`), niet in de console. Alleen de leespaden
+  worden zachter; ingest faalt hard en houdt het document tegen, want
+  `indexed` zonder index is een leugen.
 - [ ] 3.2 Ollama: gedeeld volume of een tweede instantie.
 
 ## 4. Bewijs

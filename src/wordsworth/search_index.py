@@ -14,6 +14,20 @@ from zeef.similarity import cosine
 from .rrf import fuse_ranked_ids
 
 
+class SearchUnavailable(RuntimeError):
+    """The index could not be reached — a transport failure, not a bad query.
+
+    Part of the seam on purpose: a caller should be able to tell "search is
+    down" from "your query was rejected" without knowing which driver is
+    underneath. Those two need different words on screen. One is nothing the
+    reader can act on and leaves the rest of the console working; the other is
+    theirs to fix.
+
+    Before this existed both arrived as a bare exception and the console showed
+    the class name, so an outage read as a mistake by whoever was searching.
+    """
+
+
 @dataclass
 class Hit:
     document_id: str
