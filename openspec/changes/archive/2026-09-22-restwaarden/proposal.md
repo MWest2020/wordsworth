@@ -127,3 +127,24 @@ rest.
 **Voorstel voor het vervolg:** dit voorstel intrekken op de invariant na het
 straatadres, en de over-detectie als eigen change oppakken — met `allow.json`,
 dat daar precies voor bestaat en in productie nog niet eens is aangezet.
+
+
+## Ingetrokken bij het archiveren (2026-09-22)
+
+De eis **"een gepseudonimiseerde waarde staat nergens anders meer letterlijk in
+het document"** is uit de delta gehaald en gaat NIET naar `openspec/specs/`.
+
+Reden: de meting die dit voorstel zelf voorschreef weerlegde de aanname. De acht
+waarden die "overleefden" waren gewone woorden (`locatie`, `bewoners`,
+`week 23`) die ten onrechte als PII waren gezien, en het geval uit issue #124
+bestond niet zoals beschreven — er stond `Teaz` en `EAZ`, niet `eazwind`. Die
+eis afdwingen zou documenten weigeren of de tekst mangelen om een probleem op te
+lossen dat er niet is.
+
+Het staat hier en niet alleen in de git-historie omdat een ingetrokken eis die
+spoorloos verdwijnt over een half jaar opnieuw wordt voorgesteld — met dezelfde
+redenering en dezelfde prijs.
+
+Wat wél naar `specs/anonymization` is gegaan: *een straat met huisnummer is een
+adres* (met de Postbus-tegencase) en *een detectiewijziging wordt gemeten
+voordat hij gerepareerd heet*.

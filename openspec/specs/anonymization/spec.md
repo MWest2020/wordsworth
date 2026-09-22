@@ -188,6 +188,61 @@ something anyone could have edited in place is a number without provenance.
 - **WHEN** an auditor takes the lists hash from a document's record
 - **THEN** it identifies a reviewed commit
 
+### Requirement: A street with a house number is an address
+
+Detection SHALL treat a Dutch street name followed by a house number as an
+address, also when no postcode accompanies it.
+
+In a Woo file about a building permit the building *is* the case: from an
+address to an owner is one land-registry lookup. The earlier pattern found the
+postcode and the place name and left `Industrieweg 23a` standing — which is the
+half that identifies. A home address is personal data unless something marks it
+otherwise (Mark, 2026-09-22); an organisation's `Postbus` contact address is
+that exception and SHALL NOT be detected as one.
+
+The pattern SHALL be anchored on street-like endings and SHALL NOT be a general
+"capitalised word followed by a number", which would swallow `Artikel 5` and
+`bijlage 3`. Street and house number SHALL form ONE span: what identifies a
+person is the pair, a street alone is a place and a number alone is nothing.
+
+#### Scenario: A street with a number is detected without a postcode
+
+- **WHEN** a document contains `Amsterdamsestraatweg 65a` and no postcode nearby
+- **THEN** it is detected as an address
+
+#### Scenario: A legal reference is not an address
+
+- **WHEN** a document contains `Artikel 5` or `bijlage 3`
+- **THEN** neither is detected as an address
+
+#### Scenario: A post-office box is not a home address
+
+- **WHEN** a document contains `Postbus 1234, 1234 AB Haarlem`
+- **THEN** it is not detected as an address
+
+### Requirement: A detection change is measured before it is called fixed
+
+The effect of a change to detection SHALL be measured on the evaluation corpus,
+where the seeded values are known, and the number SHALL be recorded with its
+date alongside the existing measurements.
+
+Without a number, "detection improved" is a feeling, and this is the part of the
+system where a feeling is the least useful thing to have. The measurement SHALL
+be taken against the **action** — what the layer that constitutes the change did
+— and not against a shape in the result that can arise without that action.
+
+#### Scenario: The measurement is repeatable
+
+- **WHEN** the evaluation corpus is generated and processed
+- **THEN** the count of seeded values that survive into the stored text is
+  reported
+
+#### Scenario: What the corpus labels decides what can be measured
+
+- **WHEN** a value is not seeded as PII in the evaluation corpus
+- **THEN** a detector that finds it scores as a false positive, so changing what
+  counts as PII is a change to the corpus first and to the detector second
+
 ### Requirement: Feedback is recorded, not auto-applied
 
 `POST /documents/{id}/feedback` SHALL append an audit record describing a
