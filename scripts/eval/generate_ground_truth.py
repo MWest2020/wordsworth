@@ -84,13 +84,23 @@ def build(doc_id: str, topic: str, rng: random.Random) -> Document:
     if heeft_combinatie:
         d.lit("Betrokkene is ").unlabelled(rng.choice(GESLACHT), "GENDER")
         d.lit(", geboren in ").unlabelled(str(rng.randrange(1940, 2006)), "DATE")
-        d.lit(", woonachtig ").lit(f"{rng.choice(STRATEN)} {rng.randrange(1, 200)}, ")
-        d.pii(postcode(rng), "POSTCODE").lit(".\n")
+        # A RESIDENTIAL address is PII, and gold. Mark's decision 2026-09-22:
+        # "street addresses should be PII unless specified". Until then this was
+        # seeded with .lit() -- ordinary text -- so a detector that found it was
+        # charged with a false positive for being right. Street and house number
+        # are ONE span, because that is what identifies a person: the street on
+        # its own is a place, the number on its own is nothing.
+        d.lit(", woonachtig ")
+        d.pii(f"{rng.choice(STRATEN)} {rng.randrange(1, 200)}", "LOCATION")
+        d.lit(", ").pii(postcode(rng), "POSTCODE").lit(".\n")
 
     # The hard cases measurement 01 actually met — seeded, not invented.
     if rng.random() < 0.25:
-        # A postcode behind "Postbus" is an organisation's contact address and
-        # must NOT be found. It is in the text and deliberately not in the gold.
+        # "Unless specified": an organisation's contact address is not a person's
+        # home. A postcode behind "Postbus" must NOT be found, and neither must
+        # the box number -- it is in the text and deliberately not in the gold.
+        # This is the counter-case to the residential address above; without it
+        # the corpus would reward a detector that redacts every address it sees.
         d.lit(f"Postbus {rng.randrange(100, 9999)}, {postcode(rng)} "
               f"{rng.choice(STEDEN)}\n")
     if rng.random() < 0.15:

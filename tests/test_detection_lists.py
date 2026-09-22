@@ -171,3 +171,22 @@ class TestStraatadres:
     def test_wat_geen_adres_is_blijft_eraf(self, tekst):
         kept, _ = self._lijsten().apply(tekst, [])
         assert kept == [], f"{tekst!r} werd ten onrechte als adres gezien"
+
+    def test_a_post_office_box_is_not_a_home_address(self):
+        """"Unless specified" has a counter-case, and it is in the corpus.
+
+        A `Postbus` line is an organisation's contact address, not where a
+        person lives. Without this the rule would reward redacting every
+        address-shaped thing, and the evalcorpus seeds it deliberately as
+        non-gold.
+        """
+        kept, _ = self._lijsten().apply("Postbus 1234, 1234 AB Haarlem", [])
+        assert kept == [], "een postbus is geen woonadres"
+
+    def test_street_and_number_are_one_span(self):
+        """What identifies a person is the pair. A street on its own is a
+        place; a house number on its own is nothing. So the rule yields one
+        entity, not two."""
+        kept, _ = self._lijsten().apply("woonachtig Kerkstraat 12, 1234 AB", [])
+        assert len(kept) == 1
+        assert kept[0].text == "Kerkstraat 12"
