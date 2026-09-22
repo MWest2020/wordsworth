@@ -46,5 +46,17 @@ letter begint, met `gemeente`, `college`, `perceel` en `naam` ertussen.
 `allow.json` bestaat daar precies voor en staat in productie nog niet eens aan.
 
 ## 4. Daarna pas
-- [ ] Het bestaande corpus herverwerken is een APARTE beslissing met een eigen
-      prijs. Pas nemen als bekend is hoe groot het gat is.
+- [x] Het bestaande corpus herverwerken is een APARTE beslissing met een eigen
+      prijs. Mark, 2026-09-21: *"draai die reprocess maar"*. Gedraaid onder
+      lijst-hash `64b00c66`: 770 documenten, 15,4 uur, en daarna nul
+      achterstallig (uit het spoor gecontroleerd, niet uitgerekend).
+      Twee documenten vielen onderweg om op `ObjectStoreError ←
+      EndpointConnectionError`: de SeaweedFS-pod herstartte midden in de run.
+      Dat is de bedoelde faalweg — hard falen per document in plaats van
+      onversleuteld doorlaten, de oorzaakketen in het spoor, en die twee blijven
+      "verouderd" tot een herhaling ze oppakt. Dat deed de herhaling ook: precies
+      die twee, 399 seconden, nul mislukkingen.
+- [x] **Wat de regel opleverde: 3.231 straatadressen in 403 van de 770
+      documenten.** Gemeten aan de `list`-laag in het detectie-spoor van die run
+      zelf — een deny-regel schrijft zijn eigen toevoeging daar weg, dus dat
+      getal is per constructie wat de regel deed, onder één versie.
