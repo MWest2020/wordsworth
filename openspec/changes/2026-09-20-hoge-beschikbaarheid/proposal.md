@@ -1,64 +1,82 @@
-# Proposal: wordsworth overleeft het wegvallen van één node
+# Proposal: wordsworth survives the loss of one node
 
 ## Why
 
-Mark, 2026-09-20: *"is wordsworth btw High Availability?"* Nee. En dat
-bleek dezelfde middag, toen de cluster-VM's één voor één opnieuw
-opgestart moesten worden: bij node-03 is wordsworth een paar minuten
-onbereikbaar, en daar is met de huidige opzet niets aan te doen.
+Mark, 2026-09-20: *"is wordsworth btw High Availability?"* No. That same
+afternoon the cluster VMs had to be restarted one by one, and when node-03
+went, wordsworth was unreachable for minutes.
 
-Drie dingen maken het kwetsbaar, en ze hangen samen:
+The first version of this proposal (2026-09-20) blamed a node-bound corpus
+volume and made everything wait for movable storage. Measured again on
+2026-09-23, the picture is different:
 
-1. **De API draait op één replica** (`wordsworth-api`, `replicas: 1`).
-2. **Het corpusvolume ligt op één node.** De opslagklasse is
-   `local-path`; `wordsworth-corpus` staat vast op node-03, OpenSearch
-   op node-02, Ollama op node-03. Een pod met zo'n volume kan alleen
-   dáár draaien.
-3. Daardoor is een tweede replica **schijnveiligheid**: hij zou het
-   volume niet kunnen aankoppelen. Meer replica's zonder gedeelde
-   opslag lossen niets op; ze maken het beeld alleen geruststellender
-   dan de werkelijkheid.
+- **The api holds no state of its own.** It mounts only an `emptyDir` on
+  `/tmp`; since key-audit-in-postgres even the key-lifecycle stream is in
+  Postgres. Documents live in S3 (SeaweedFS), everything else in Postgres.
+- **`wordsworth-corpus` is mounted by nothing.** A 5Gi `local-path` volume
+  pinned to node-03, left over from before the object store.
+- **Postgres already survives a node**: three CNPG instances with failover.
+- **Every other component is one pod on one node's disk**, and `local-path`
+  is the only storage class in the cluster:
 
-Wat wél overleeft: Postgres draait met drie CNPG-instances verspreid
-over de nodes, met failover. Dat deel is goed, en het laat zien hoe de
-rest eruit zou moeten zien.
+| Component | Replicas | Node | Losing that node means |
+|---|---|---|---|
+| wordsworth-api | 1 | node-03 | no api, no console |
+| wordsworth-auth (oauth2-proxy) | 1 | node-01 | nobody can log in |
+| SeaweedFS (S3) | 1 | node-01 | stored documents unreachable |
+| OpenSearch | 1 | node-02 | search degrades (handled since 3.1b) |
+| Ollama | 1 | node-03 | no embeddings, no `/ask` |
+
+So the api does not need to wait for storage. The object store does, and it is
+the one piece whose loss takes documents with it.
 
 ## What Changes
 
-Deze change beschrijft de doeltoestand en de volgorde. Uitvoeren kan
-pas als de opslaglaag er is — daarom is dit een spec die we opleveren
-als het kan, en niet een run die we vandaag starten.
+**Step 1 — object storage that survives a node.** The decision is Mark's and
+is homelab work. It covers two needs at once: the documents (S3 today, on
+single-node SeaweedFS) and the WORM exports of both audit chains, which need
+Object Lock. A candidate only counts once it has been shown to support Object
+Lock; nobody has checked that for SeaweedFS yet. Both exports wait for this
+decision.
 
-**Stap 1 — gedeelde opslag.** Een opslagklasse die niet aan een node
-vastzit (`ReadWriteMany`, of ten minste een `ReadWriteOnce` die kan
-verhuizen). SeaweedFS draait al in dit cluster; die is de eerste
-kandidaat, met NFS of Ceph als alternatief. Zonder deze stap heeft de
-rest geen zin.
+**Step 2 — the api and auth survive one node.** Doable now, because neither
+mounts a node-bound volume:
 
-**Stap 2 — de API op twee replica's**, met anti-affinity per node, en
-een PodDisruptionBudget die zegt dat er altijd één overeind blijft. Dan
-haalt `kubectl drain` niet per ongeluk de laatste weg.
+- api on two replicas with required anti-affinity per node, and a
+  PodDisruptionBudget of `minAvailable: 1`, so a `kubectl drain` never takes
+  the last one;
+- the same for `wordsworth-auth`, whose sessions live in a cookie signed with a
+  shared secret, so either replica can serve any user;
+- whatever assumed one process now works across two: the rate-limit buckets
+  move into Postgres (per-process buckets would give every client one bucket per
+  replica, doubling every limit including the one on `/console/login`), and the
+  mapping-store insert becomes one statement, so two requests pseudonymising the
+  same value no longer fail one ingest.
 
-**Stap 3 — de afhankelijkheden.** OpenSearch met meer dan één node, en
-Ollama als gedeelde dienst of met een volume dat mee kan verhuizen.
-Beide zijn zwaarder dan de API zelf; daarom komen ze na de API.
+**Step 3 — the dependencies.** OpenSearch with more than one node, Ollama as a
+second instance or on storage that can move. Heavier than the api; after it.
 
-**Stap 4 — meten wat we beloven.** Eén test die één node uitschakelt en
-controleert dat de console blijft antwoorden. Zonder die test is
-"hoogbeschikbaar" een woord in een document.
+**Step 4 — prove what we promise.** One test that takes a node out and checks
+that the console keeps answering. Without it "highly available" is a word in a
+document.
+
+**Cleanup.** `wordsworth-corpus` is deleted once its contents have been
+inspected and found to be unneeded.
 
 ## Scope / Not in scope
 
-**In:** de doeltoestand van wordsworth zelf: replica's, verstoringsbudget,
-plaatsing, en de eis dat een opslagklasse niet aan een node vastzit.
+**In:** wordsworth's own shape — replicas, disruption budgets, placement,
+state that has to be shared between replicas, and the requirement that the api
+mounts no node-bound volume.
 
-**Out:** de opslaglaag inrichten (dat is homelab-werk, geen
-wordsworth-code), en hoogbeschikbaarheid van Postgres — dat is er al.
+**Out:** building the storage layer (homelab), and Postgres HA, which exists.
 
-## Wat dit eerlijk houdt
+## What keeps this honest
 
-Een tweede replica bovenop node-gebonden opslag is erger dan één
-replica: het ziet eruit als redundantie en is het niet. De spec eist
-daarom dat de opslagklasse eerst aantoonbaar kan verhuizen, en dat de
-uitschakel-test draait voordat we het woord "hoogbeschikbaar" ergens
-opschrijven.
+A second replica of the api is real redundancy only because the api mounts
+nothing that is tied to a node, and the spec now says so as a requirement
+instead of assuming it. A second replica still does not make wordsworth highly
+available: with SeaweedFS, OpenSearch and Ollama each on one node, losing any
+node still takes something down. Step 2 fixes the api's own node, which is what
+broke on 2026-09-20; it is not the whole promise, and the documentation will
+not claim more until step 4 has run.

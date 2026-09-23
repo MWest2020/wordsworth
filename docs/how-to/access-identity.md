@@ -136,6 +136,11 @@ else (five attempts, then one per ten seconds): every request there is a guess.
 An earlier comment claimed it already was, and it was not — twelve attempts gave
 twelve 401s and no 429.
 
+Since 2026-09-23 that bucket lives in Postgres (`rate_limit_pg.py`), shared by
+every api replica. With per-process buckets two replicas would have allowed ten
+attempts instead of five, and the limit would have doubled again with every
+replica added.
+
 The cookie is marked `Secure`. Its value IS the API key and `Path=/` makes it
 valid for every endpoint, so it has no business travelling over plain http.
 

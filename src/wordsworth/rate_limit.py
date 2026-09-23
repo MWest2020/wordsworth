@@ -5,9 +5,10 @@ to `burst` capacity; each request costs one token; an empty bucket is rejected
 with the whole seconds until the next token frees (the Retry-After hint). The
 monotonic clock is injectable so refill is testable without sleeping.
 
-The per-key state lives behind `RateLimitStore` (in-memory default) so a shared
-backend (e.g. Redis) can replace it for multi-instance deployments later, behind
-the same interface. No silent fallback: a bad config is a hard error at build."""
+The per-key state lives behind `RateLimitStore` (in-memory default). With more
+than one replica that state has to be shared: `rate_limit_pg.PostgresTokenBucket`
+keeps it in Postgres, and production wires that one (`serve.py`). No silent
+fallback: a bad config is a hard error at build."""
 from __future__ import annotations
 
 import math
@@ -139,25 +140,34 @@ def limiters_from_settings(
     settings,
     store_factory: Callable[[], RateLimitStore] = InMemoryStore,
     clock: Callable[[], float] = time.monotonic,
+    session_factory=None,
 ) -> dict[str, TokenBucket]:
     """Build the per-endpoint limiters from settings (one store per endpoint).
 
     Returns an empty mapping when disabled, so the middleware is simply omitted.
-    The CPU-heavy `/ask` gets its own tighter bucket."""
+    The CPU-heavy `/ask` gets its own tighter bucket. With a `session_factory`
+    the buckets live in Postgres and are shared by every replica
+    (`rate_limit_pg.py`); production passes one, tests mostly do not."""
     if not settings.rate_limit_enabled:
         return {}
+
+    def bucket(path: str, rate: float, burst: float):
+        if session_factory is not None:
+            from .rate_limit_pg import PostgresTokenBucket
+            return PostgresTokenBucket(path, rate, burst, session_factory)
+        return TokenBucket(rate, burst, store_factory(), clock)
+
     rate, burst = settings.rate_limit_rate, settings.rate_limit_burst
     ask_rate, ask_burst = settings.rate_limit_ask_rate, settings.rate_limit_ask_burst
     return {
-        "/search": TokenBucket(rate, burst, store_factory(), clock),
-        "/hybrid": TokenBucket(rate, burst, store_factory(), clock),
-        "/ask": TokenBucket(ask_rate, ask_burst, store_factory(), clock),
+        "/search": bucket("/search", rate, burst),
+        "/hybrid": bucket("/hybrid", rate, burst),
+        "/ask": bucket("/ask", ask_rate, ask_burst),
         # Het enige pad dat auth-vrij is EN een schoon orakel geeft op de
         # sleutelset: 401 bij fout, 303 met cookie bij goed. `api.py` beweerde
         # dat dit gelimiteerd was en dat was onwaar -- twaalf pogingen op rij
         # gaven twaalf keer 401 en geen enkele 429. Strakker dan de rest, want
         # hier is elk verzoek een gok.
-        "/console/login": TokenBucket(settings.rate_limit_login_rate,
-                                      settings.rate_limit_login_burst,
-                                      store_factory(), clock),
+        "/console/login": bucket("/console/login", settings.rate_limit_login_rate,
+                                 settings.rate_limit_login_burst),
     }
