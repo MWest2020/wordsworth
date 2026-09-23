@@ -269,5 +269,23 @@
       "patroon": "(?i)^raad$",
       "reden": "Bestuursorgaan. 42 voorkomens."
     }
+  ],
+  "URL": [
+    {
+      "patroon": "(?i)(?:https?://)?(?:[\\w-]+\\.)*(?:gooisemeren\\.nl|goocisemeren\\.nl|qooisemeren\\.nl)(?:[/?#]\\S*)?",
+      "reden": "De gemeente zelf. Mark, 2026-09-20: bestuursorganen zijn geen PII. Met de twee OCR-verminkingen die in het corpus voorkomen. Gemeten 2026-09-23: gooisemeren.nl in 54 documenten, goocisemeren.nl in 12, qooisemeren.nl in 6."
+    },
+    {
+      "patroon": "(?i)(?:https?://)?(?:[\\w-]+\\.)*(?:ofgv\\.nl|ofgv\\.sharefile\\.eu|gelderland\\.nl|gad\\.nl)(?:[/?#]\\S*)?",
+      "reden": "Regionale overheid: de omgevingsdienst (ofgv, ook zijn bestandsdeling), de provincie, en de GAD (gemeenschappelijke regeling voor afval). Bestuursorganen, geen PII. Gemeten 2026-09-23: ofgv.nl 34 documenten, gelderland.nl 11 (plus open.gelderland.nl 6), ofgv.sharefile.eu 3, gad.nl 2."
+    },
+    {
+      "patroon": "(?i)(?:https?://)?(?:[\\w-]+\\.)*(?:overheid\\.nl|rijksoverheid\\.nl|officielebekendmakingen\\.nl|wetten\\.nl|tweedekamer\\.nl|rechtspraak\\.nl|raadvanstate\\.nl|rvo\\.nl|cbs\\.nl|infomil\\.nl|bodemplus\\.nl|volkshuisvestingnederland\\.nl|coa\\.nl)(?:[/?#]\\S*)?",
+      "reden": "Rijksoverheid, wetgeving, rechtspraak en uitvoeringsorganisaties: verwijzingen in een besluit, geen partij in de zaak. overheid.nl dekt ook wetten.overheid.nl. Gemeten 2026-09-23, per host het aantal documenten: infomil 22, rijksoverheid 15, coa 11, officielebekendmakingen 6, bodemplus 5, tweedekamer 4, rechtspraak 4, raadvanstate 3, rvo 3, volkshuisvestingnederland 3, cbs 2, wetten.nl 2."
+    },
+    {
+      "patroon": "(?i)(?:https?://)?(?:[\\w-]+\\.)*(?:antenneregister\\.nl|antennereqister\\.nl|dewatertoets\\.nl|ndff\\.nl|synbiosis\\.alterra\\.nl)(?:[/?#]\\S*)?",
+      "reden": "Openbare registers en onderzoeksbronnen (antenneregister van de overheid, met zijn OCR-verminking; de watertoets; de nationale databank flora en fauna; Wageningen). Bronvermeldingen, geen partij. Gemeten 2026-09-23: antenneregister 6 + 3, dewatertoets 6, ndff 3, synbiosis.alterra 3."
+    }
   ]
 }

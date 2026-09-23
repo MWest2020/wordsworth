@@ -4,6 +4,20 @@
 
 ### Added
 
+- **Web addresses are detected** (`urls-are-detected`, issue #124). A
+  `deny.json` rule turns every `http(s)://` or `www.` address into a `URL`
+  token, and `allow.json` lists the public hosts it leaves alone, each with a
+  reason: the municipality (and the OCR-garbled spellings of its own domain),
+  regional and national government, public registers. Before this, nothing in
+  the chain detected a URL, and `www.eazwind.nl` survived two lines below
+  `info@eazwind.nl`, which did not. Measured on the evaluation corpus: URL
+  recall 0 → 1.0 (145 of 145), zero false positives on 123 government
+  addresses. See [meting 06](docs/explanation/meting-webadressen-06.md).
+  **Behaviour change in the lists:** an allow rule now also removes what a
+  deny rule of the same type added. Before, deny appended after the allow
+  filter, so no exception could be written for a deny rule. Allow still never
+  crosses types; on the evaluation corpus none of the 207 street-address
+  matches is affected.
 - `python -m wordsworth.samenvatten`: samenvatten is nu een echt commando
   (`--dossier <uuid>`, herhaalbaar, of `--ontbrekend` voor alles wat nog geen
   samenvatting heeft), niet langer een script dat een cluster-Job meedroeg in

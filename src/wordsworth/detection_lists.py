@@ -93,19 +93,27 @@ class DetectionLists:
 
     def apply(self, text: str, detections: list[Entity]
               ) -> tuple[list[Entity], dict[str, int]]:
-        """(refined detections, suppressed count per type). Allow removes a
-        same-type detection whose value fullmatches; deny adds matches as
-        ``list``-layer detections. Pure."""
+        """(refined detections, suppressed count per type). Deny adds matches as
+        ``list``-layer detections; allow then removes a same-type detection whose
+        value fullmatches -- whichever layer found it. Pure.
+
+        Allow runs LAST, over deny's matches too (urls-are-detected, 2026-09-23).
+        Before, deny appended after the allow filter, so no exception could be
+        written for a deny rule: a web-address rule would have taken the
+        municipality's own site with it in every document. Allow still never
+        crosses types."""
+        candidates = list(detections)
+        for t, pats in self.deny.items():
+            for p in pats:
+                for m in p.finditer(text):
+                    candidates.append(
+                        Entity(t, m.group(0), m.start(), m.end(), LIST_LAYER, 1.0))
         kept: list[Entity] = []
         suppressed: dict[str, int] = {}
-        for e in detections:
+        for e in candidates:
             t = e.entity_type.upper()
             if any(p.fullmatch(e.text) for p in self.allow.get(t, ())):
                 suppressed[t] = suppressed.get(t, 0) + 1
                 continue
             kept.append(e)
-        for t, pats in self.deny.items():
-            for p in pats:
-                for m in p.finditer(text):
-                    kept.append(Entity(t, m.group(0), m.start(), m.end(), LIST_LAYER, 1.0))
         return kept, suppressed

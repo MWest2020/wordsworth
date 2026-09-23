@@ -13,5 +13,11 @@
       "patroon": "\\b[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'\\-]+(?:straat|laan|weg|plein|kade|gracht|dijk|singel|dreef|steeg|boulevard)\\s+\\d{1,4}[a-zA-Z]?\\b",
       "reden": "Straatnaam + huisnummer is het woonadres van een natuurlijk persoon. De detector levert de straatnaam soms wel en het nummer nooit, waardoor 'Kerkstraat 12' als 'Kerkstraat' de tekst uit gaat en het huisnummer blijft staan. Achtervoegsels die ook gewone woorden eindigen (ring, baan, pad, hof, park) staan er BEWUST niet bij: 'Verandering 3' is geen adres."
     }
+  ],
+  "URL": [
+    {
+      "patroon": "(?i:https?://|www\\.)[^\\s<>\\\"'()\\[\\]]*[^\\s<>\\\"'()\\[\\].,;:!?]",
+      "reden": "Een webadres van een partij identificeert die partij net zo goed als haar naam: in een Woo-dossier IS www.jansen-bv.nl het bedrijf. Geen enkele detector leverde URL op (de service kent het label niet, de deterministische laag ook niet), en een naam in een adres werd alleen bij toeval via de context gevonden. Issue #124: info@eazwind.nl werd vervangen, www.eazwind.nl twee regels lager niet. Gemeten 2026-09-23: 249 van de 770 documenten bevatten een webadres. Leestekens aan het eind horen er niet bij. Publieke hosts staan als uitzondering in allow.json, onder URL."
+    }
   ]
 }

@@ -64,6 +64,41 @@ def test_deny_adds_list_layer_detections_in_both_drivers(tmp_path):
     assert irr.lists_hash == lists.hash
 
 
+_URL = r"(?:https?://|www\.)[^\s<>\"'()\[\]]*[^\s<>\"'()\[\].,;:!?]"
+
+
+def test_allow_wins_over_deny_for_the_same_type(tmp_path):
+    """urls-are-detected: a deny rule catches every web address; an allow rule
+    of the SAME type exempts a public host. Before this change allow only saw
+    what the detectors found, and deny appended its matches afterwards -- so no
+    exception could ever be written next to the rule it is an exception to.
+
+    Through ReversibleAnonymizer, the path production runs, not through
+    `apply` alone: a rule that only holds in a helper is how the Postbus
+    exception once ran nowhere."""
+    lists = _lists(
+        tmp_path,
+        allow={"URL": [r"(?:https?://)?(?:www\.)?wetten\.overheid\.nl(?:/\S*)?"]},
+        deny={"URL": [_URL]})
+    text = "Zie https://wetten.overheid.nl/BWBR0045754 en www.eazwind.nl."
+    r = ReversibleAnonymizer(InMemoryKeyProvider(), InMemoryMappingStore(),
+                             detect=lambda t: [], lists=lists).anonymize(text)
+    assert "https://wetten.overheid.nl/BWBR0045754" in r.text    # public: kept
+    assert "www.eazwind.nl" not in r.text and "[URL:" in r.text   # party: replaced
+    assert r.text.endswith("].")                                 # full stop outside
+    assert r.detections["suppressed_by_list"]["URL"]["count"] == 1
+
+
+def test_allow_over_deny_still_never_crosses_types(tmp_path):
+    lists = _lists(tmp_path,
+                   allow={"LOCATION": [r"www\.eazwind\.nl"]},
+                   deny={"URL": [_URL]})
+    r = ReversibleAnonymizer(InMemoryKeyProvider(), InMemoryMappingStore(),
+                             detect=lambda t: [], lists=lists).anonymize(
+                                 "Zie www.eazwind.nl.")
+    assert "www.eazwind.nl" not in r.text
+
+
 def test_no_lists_is_a_noop_with_no_hash():
     lists = DetectionLists.load("")
     assert lists.hash is None
@@ -190,3 +225,51 @@ class TestStraatadres:
         kept, _ = self._lijsten().apply("woonachtig Kerkstraat 12, 1234 AB", [])
         assert len(kept) == 1
         assert kept[0].text == "Kerkstraat 12"
+
+
+class TestWebadres:
+    """urls-are-detected: een webadres van een partij is een persoonsgegeven,
+    een publieke host niet. Tegen de ECHTE lijsten in `lists/`, door de
+    ReversibleAnonymizer -- de route die productie loopt."""
+
+    def _anon(self, tekst):
+        from pathlib import Path
+        lijsten = DetectionLists.load(Path(__file__).resolve().parent.parent / "lists")
+        return ReversibleAnonymizer(InMemoryKeyProvider(), InMemoryMappingStore(),
+                                    detect=lambda t: [], lists=lijsten).anonymize(tekst)
+
+    @pytest.mark.parametrize("tekst,weg", [
+        ("www.eazwind.nl", "www.eazwind.nl"),                       # #124, los
+        ("Meer informatie op www.eazwind.nl.", "www.eazwind.nl"),    # in een zin
+        ("Zie https://www.jansen-bv.nl/contact.", "https://www.jansen-bv.nl/contact"),
+        ("WWW.EAZWIND.NL", "WWW.EAZWIND.NL"),                       # OCR in kapitalen
+    ])
+    def test_een_partij_wordt_vervangen(self, tekst, weg):
+        r = self._anon(tekst)
+        assert weg not in r.text and "[URL:" in r.text
+
+    def test_de_punt_blijft_buiten_het_token(self):
+        assert self._anon("Zie www.eazwind.nl.").text.endswith("].")
+
+    @pytest.mark.parametrize("tekst", [
+        "https://wetten.overheid.nl/BWBR0045754",
+        "www.rijksoverheid.nl",
+        "https://www.gooisemeren.nl/bestuur",
+        "www.goocisemeren.nl",                  # OCR van de gemeente zelf
+        "www.ofgv.nl",
+        "https://open.gelderland.nl/besluiten",
+    ])
+    def test_een_publieke_host_blijft_staan(self, tekst):
+        r = self._anon(f"Zie {tekst} voor het besluit.")
+        assert tekst in r.text and "[URL:" not in r.text
+
+    @pytest.mark.parametrize("tekst", [
+        "www.eviloverheid.nl",                  # geen subdomein, andere host
+        "https://gooisemeren.nl.evil.example",  # publieke naam als voorvoegsel
+    ])
+    def test_een_publieke_naam_als_deel_van_een_andere_host_telt_niet(self, tekst):
+        assert "[URL:" in self._anon(f"Zie {tekst} nu.").text
+
+    def test_een_emailadres_is_niet_ook_een_webadres(self):
+        r = self._anon("Mail info@eazwind.nl.")
+        assert "[EMAIL:" in r.text and "[URL:" not in r.text

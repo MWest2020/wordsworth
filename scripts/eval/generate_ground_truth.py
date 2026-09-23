@@ -61,6 +61,11 @@ TOPICS = {
 }
 GESLACHT = ["man", "vrouw"]
 
+# A party's own website (urls-are-detected). Invented names, deliberately not
+# a public body: a public host is the counter-case below and must NOT be found.
+BEDRIJVEN = ["bakkerijvisser", "windpark-oost", "installatiebedrijf-jansen",
+             "tuinhuis-meijer", "adviesbureau-dekker", "autobedrijf-bos"]
+
 
 def build(doc_id: str, topic: str, rng: random.Random) -> Document:
     """One document, its PII spans and the types it carries in the clear."""
@@ -77,6 +82,27 @@ def build(doc_id: str, topic: str, rng: random.Random) -> Document:
         d.pii(f"{naam.split()[0].lower()}@example.nl", "EMAIL").lit(".\n")
     if rng.random() < 0.45:
         d.lit("Een eventuele nabetaling gaat naar ").pii(iban(rng), "IBAN").lit(".\n")
+
+    # Web addresses (urls-are-detected, 2026-09-23). Drawn from their OWN
+    # generator, seeded by the document id, so that adding them leaves every
+    # value the shared stream produced -- every BSN, name and address -- exactly
+    # as it was. Otherwise this change would silently alter the whole corpus and
+    # no earlier measurement could be held next to the next one.
+    urng = random.Random(f"{doc_id}-url")
+    if urng.random() < 0.30:
+        site = f"www.{urng.choice(BEDRIJVEN)}.nl"
+        vorm = urng.randrange(3)
+        if vorm == 0:          # in a sentence, full stop outside the value
+            d.lit("Meer informatie: ").pii(site, "URL").lit(".\n")
+        elif vorm == 1:        # with scheme and path
+            d.lit("Zie ").pii(f"https://{site}/contact", "URL").lit(" voor de gegevens.\n")
+        else:                  # a letterhead line on its own -- the #124 case
+            d.pii(site, "URL").lit("\n")
+    if urng.random() < 0.25:
+        # The counter-case: a government reference is not personal data, and a
+        # detector that replaces it makes the decision unreadable without
+        # protecting anyone. In the text, NOT in the gold.
+        d.lit("De wettekst staat op https://wetten.overheid.nl/BWBR0045754.\n")
 
     # The quasi-identifier, seeded deliberately: gender + year of birth + postcode.
     # Only the postcode has a detector; the other two are carried but not gold.
