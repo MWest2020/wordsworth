@@ -55,7 +55,27 @@ The order matters: the table first, then the writers, then proof.
       — that was true before this change too, and is not this change's scope.
 
 ## 5. Proof
-- [ ] 5.1 Restart test, in the cluster, not in pytest: issue a grant, restart
+- [x] 5.1 Restart test, in the cluster, not in pytest: issue a grant, restart
       the api pod, the event is still there and `verify_chain` holds.
-- [ ] 5.2 Write down what was lost before this change landed, with the date of
+
+      Done 2026-09-23 on image `2274a9dd…` (main `95461d0`). Through the real
+      API in pod `wordsworth-api-ddbcb56d4-p7wqz`: grant `281a4d7c…` issued
+      (10:54:47.137Z, actor `console`) and revoked straight away (10:54:47.174Z,
+      actor `operator`) so nothing stays live. The table held 2 events,
+      `verify_chain` = `(True, None)`. The pod was deleted; its replacement
+      `…-kkxq6` (started 10:54:57Z) read the same 2 events, `verify_chain` =
+      `(True, None)`, and `/tmp/wordsworth-key-lifecycle.jsonl` no longer
+      exists. `key_lifecycle_no_mutation` is present on the production table.
+
+- [x] 5.2 Write down what was lost before this change landed, with the date of
       the last restart that erased it.
+
+      All key-lifecycle history before 2026-09-23 10:54Z is gone, with no copy.
+      The last restart that erased it was 2026-09-23 08:57:03Z, the rollout of
+      digest `92acf8d5…` (`urls-are-detected`). Checked the same morning, the
+      file held one event, and it was already gone before this change deployed.
+      That includes the revoke of grant `df24139e` (label `console`) done
+      earlier the same morning. What survives is state, not history: the grant
+      row carries `revoked_at`, the roles and dossiers tables carry their
+      current values. No dossier rename was ever recorded, because the CLI
+      passed no stream until this change.
