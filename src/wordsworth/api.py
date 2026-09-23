@@ -447,14 +447,19 @@ def create_app(
                 status_code=403,
                 detail="caller not authorized to issue or revoke grants")
 
-    def _resolve_audit() -> KeyLifecycleAudit:
-        from pathlib import Path
+    def _resolve_audit(session) -> KeyLifecycleAudit:
+        """The key-lifecycle stream, bound to the caller's session.
 
+        Same session on purpose: the event commits with the change it records,
+        or neither commits. Until 2026-09-23 this returned a JSONL file in /tmp
+        -- an emptyDir -- so every grant and role change was lost at the next
+        restart (key-audit-in-postgres). An injected `key_audit` still wins, for
+        tests.
+        """
         if key_audit is not None:
             return key_audit
-        from .key_audit import JsonlKeyLifecycleAudit
-        return JsonlKeyLifecycleAudit(
-            Path(default_settings.key_lifecycle_audit_path))
+        from .key_audit_pg import PostgresKeyLifecycleAudit
+        return PostgresKeyLifecycleAudit(session)
 
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
@@ -1353,7 +1358,7 @@ def create_app(
                 try:
                     role = roles_mod.create(session, body.name, body.allowed_types,
                                             actor=_actor(request),
-                                            audit=_resolve_audit())
+                                            audit=_resolve_audit(session))
                 except roles_mod.RoleError as exc:
                     raise HTTPException(status_code=400, detail=str(exc))
                 out = _role_out(role)
@@ -1376,7 +1381,7 @@ def create_app(
                 try:
                     role = roles_mod.set_types(session, name, body.allowed_types,
                                                actor=_actor(request),
-                                               audit=_resolve_audit())
+                                               audit=_resolve_audit(session))
                 except roles_mod.RoleError as exc:
                     raise HTTPException(status_code=404, detail=str(exc))
                 out = _role_out(role)
@@ -1408,7 +1413,7 @@ def create_app(
             with session_factory() as session:
                 try:
                     role = fn(session, name, actor=_actor(request),
-                              reason=body.reason, audit=_resolve_audit())
+                              reason=body.reason, audit=_resolve_audit(session))
                 except roles_mod.RoleError as exc:
                     code = 404 if "onbekende rol" in str(exc) else 400
                     raise HTTPException(status_code=code, detail=str(exc))
@@ -1499,7 +1504,7 @@ def create_app(
                         raise HTTPException(status_code=404,
                                             detail=f"onbekende rol {body.role!r}")
                 grant = issue_grant(
-                    _grant_store(session), _resolve_audit(),
+                    _grant_store(session), _resolve_audit(session),
                     recipient=body.recipient, allowed_types=types,
                     actor=_actor(request), document_id=doc_id, expires_at=expires,
                     domain=body.domain or DEFAULT_DOMAIN, role=body.role,
@@ -1526,7 +1531,7 @@ def create_app(
                 gs = _grant_store(session)
                 if gs.get(grant_id) is None:
                     raise HTTPException(status_code=404, detail="unknown grant")
-                revoke_grant(gs, _resolve_audit(), grant_id, actor="operator")
+                revoke_grant(gs, _resolve_audit(session), grant_id, actor="operator")
                 session.commit()
                 grant = gs.get(grant_id)
             return _grant_response(grant)

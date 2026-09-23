@@ -191,6 +191,8 @@ oracle.
   store is configured). In the irreversible default they are absent.
 - An unscoped ("global") grant needs `WORDSWORTH_ALLOW_GLOBAL_GRANTS=true`; see
   above. Default is denied, at issue and at authorize.
-- The key-lifecycle audit JSONL path is `WORDSWORTH_KEY_LIFECYCLE_AUDIT_PATH`
-  (default under `/tmp`); mount a durable path for retention. (This stream is not
-  yet WORM-exported like the document hash-chain.)
+- Every issue and revoke lands in the `key_lifecycle_events` table, in the same
+  transaction as the grant change: append-only by trigger, hash-chained
+  (`key_audit_pg.verify_chain`). Until 2026-09-23 it was a JSONL file on an
+  emptyDir and did not survive a restart; `WORDSWORTH_KEY_LIFECYCLE_AUDIT_PATH`
+  no longer exists.

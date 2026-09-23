@@ -17,6 +17,7 @@ terugzetten op "alles", en dat is het tegenovergestelde van een breakglass.
 from __future__ import annotations
 
 from . import roles
+from .key_audit_pg import PostgresKeyLifecycleAudit
 from .db import init_schema, make_engine, make_session_factory
 from .pii_categories import known_types
 
@@ -28,7 +29,10 @@ def ensure_admin_role(session) -> str:
         return (f"rol {roles.ADMIN!r} bestaat al "
                 f"({len(bestaand.allowed_types)} types, "
                 f"{'actief' if bestaand.active else 'UIT'}) — ongemoeid gelaten")
-    roles.create(session, roles.ADMIN, known_types(), actor="installatie")
+    # Recorded like any other role change. It was the one creation that left
+    # no event at all, and it creates the most powerful role there is.
+    roles.create(session, roles.ADMIN, known_types(), actor="installatie",
+                 audit=PostgresKeyLifecycleAudit(session))
     return f"rol {roles.ADMIN!r} aangemaakt met alle {len(known_types())} types"
 
 

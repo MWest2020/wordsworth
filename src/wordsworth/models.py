@@ -52,6 +52,29 @@ class AuditRecord(Base):
     hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
 
 
+class KeyLifecycleEvent(Base):
+    """An authorisation fact with no document of its own (key-audit-in-postgres).
+
+    Grants issued and revoked, roles changed, dossiers renamed, keys rotated.
+    Until 2026-09-23 these went to a JSONL file in the api pod's /tmp -- an
+    emptyDir, wiped on every restart -- so the trail was append-only and gone.
+
+    Its own table and its own hash chain, not `audit_records`: that table's
+    `document_id` is a NOT NULL foreign key and must stay one, and these events
+    have no document by definition. Append-only by the same trigger.
+    """
+
+    __tablename__ = "key_lifecycle_events"
+
+    seq: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    actor: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    prev_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+
 class DocumentText(Base):
     """Derived working data: the ANONYMIZED text only. Never clear PII, so it is
     mutable (not the append-only audit table) and holds nothing sensitive."""

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import pytest
 
 from wordsworth import roles
+from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit as _Stroom
 from wordsworth.grants import InMemoryGrantStore, authorize
 from wordsworth.models import Role
 
@@ -32,7 +33,7 @@ def _grant_met_rol(gs, rol, doc_id=None):
 
 def test_a_role_supplies_the_types(session_factory):
     with session_factory() as s:
-        roles.create(s, "hr", ["person", "email"], actor="mark")
+        roles.create(s, "hr", ["person", "email"], actor="mark", audit=_Stroom(s))
         s.flush()
         gs = InMemoryGrantStore()
         g = _grant_met_rol(gs, "hr", doc_id=None)
@@ -44,7 +45,7 @@ def test_switching_a_role_off_closes_every_grant_that_names_it(session_factory):
     """Het hele punt van deze vorm. Eén regel om, en geen enkele grant is
     aangeraakt."""
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         gs = InMemoryGrantStore()
         g = _grant_met_rol(gs, "hr")
@@ -52,7 +53,7 @@ def test_switching_a_role_off_closes_every_grant_that_names_it(session_factory):
         assert authorize(g, None, ["PERSON"], NU, allow_global=True,
                          resolve_role=_resolver(s)) == {"PERSON"}
 
-        roles.deactivate(s, "hr", actor="mark", reason="lek gemeld")
+        roles.deactivate(s, "hr", actor="mark", reason="lek gemeld", audit=_Stroom(s))
         s.flush()
         assert authorize(g, None, ["PERSON"], NU, allow_global=True,
                          resolve_role=_resolver(s)) == set()
@@ -62,13 +63,13 @@ def test_switching_a_role_off_closes_every_grant_that_names_it(session_factory):
 
 def test_narrowing_a_role_narrows_its_grants_at_once(session_factory):
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON", "EMAIL"], actor="mark")
+        roles.create(s, "hr", ["PERSON", "EMAIL"], actor="mark", audit=_Stroom(s))
         s.flush()
         gs = InMemoryGrantStore()
         g = _grant_met_rol(gs, "hr")
         assert authorize(g, None, ["EMAIL"], NU, allow_global=True,
                          resolve_role=_resolver(s)) == {"EMAIL"}
-        roles.set_types(s, "hr", ["PERSON"], actor="mark")
+        roles.set_types(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         assert authorize(g, None, ["EMAIL"], NU, allow_global=True,
                          resolve_role=_resolver(s)) == set()
@@ -104,8 +105,8 @@ def test_a_role_never_falls_back_to_the_grants_own_list(session_factory):
     """Zelfs als de grant per ongeluk allebei draagt, wint de rol. Anders is er
     een pad waarlangs een uitgezette rol tóch types oplevert."""
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
-        roles.deactivate(s, "hr", actor="mark", reason="test")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
+        roles.deactivate(s, "hr", actor="mark", reason="test", audit=_Stroom(s))
         s.flush()
         gs = InMemoryGrantStore()
         g = gs.issue("iemand", ["BSN", "EMAIL"], actor="mark", role="hr")
@@ -117,19 +118,19 @@ def test_switching_off_needs_a_reason(session_factory):
     """Een noodrem zonder reden is een schakelaar waarvan niemand later kan
     navertellen waarom hij overging."""
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         with pytest.raises(roles.RoleError):
-            roles.deactivate(s, "hr", actor="mark", reason="  ")
+            roles.deactivate(s, "hr", actor="mark", reason="  ", audit=_Stroom(s))
         assert roles.by_name(s, "hr").active is True
 
 
 def test_a_role_comes_back_on(session_factory):
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
-        roles.deactivate(s, "hr", actor="mark", reason="lek")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
+        roles.deactivate(s, "hr", actor="mark", reason="lek", audit=_Stroom(s))
         s.flush()
-        roles.activate(s, "hr", actor="mark", reason="lek gedicht")
+        roles.activate(s, "hr", actor="mark", reason="lek gedicht", audit=_Stroom(s))
         s.flush()
         assert roles.resolve(s, "hr").types == {"PERSON"}
 
@@ -138,10 +139,10 @@ def test_the_empty_set_says_why(session_factory):
     """Een lege verzameling betekent twee heel verschillende dingen, en het
     spoor moet die uit elkaar kunnen houden."""
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         assert roles.resolve(s, "weg").reason == "onbekende rol"
-        roles.deactivate(s, "hr", actor="mark", reason="x")
+        roles.deactivate(s, "hr", actor="mark", reason="x", audit=_Stroom(s))
         s.flush()
         assert roles.resolve(s, "hr").reason == "rol staat uit"
         assert roles.resolve(s, None).reason == "geen rol"
@@ -151,17 +152,17 @@ def test_types_are_stored_upper_case(session_factory):
     """Een rol die `person` bewaart naast een grant die `PERSON` vergelijkt is
     een autorisatiefout die eruitziet als een typefout."""
     with session_factory() as s:
-        r = roles.create(s, "hr", [" person ", "Email", ""], actor="mark")
+        r = roles.create(s, "hr", [" person ", "Email", ""], actor="mark", audit=_Stroom(s))
         s.flush()
         assert r.allowed_types == ["EMAIL", "PERSON"]
 
 
 def test_a_duplicate_role_is_refused(session_factory):
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         with pytest.raises(roles.RoleError):
-            roles.create(s, "hr", ["BSN"], actor="mark")
+            roles.create(s, "hr", ["BSN"], actor="mark", audit=_Stroom(s))
         s.flush()
         assert len([r for r in roles.listing(s) if r.name == "hr"]) == 1
 
@@ -171,8 +172,8 @@ def test_an_unscoped_grant_is_allowed_on_the_name_of_a_role(session_factory):
     vlag omzetten (en dan mag élke ongescopete grant weer alles, voor iedereen)
     of per document een grant (791 stuks). De uitzondering draagt nu een naam."""
     with session_factory() as s:
-        roles.create(s, roles.ADMIN, ["PERSON", "BSN"], actor="installatie")
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, roles.ADMIN, ["PERSON", "BSN"], actor="installatie", audit=_Stroom(s))
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         gs = InMemoryGrantStore()
         van_beheerder = _grant_met_rol(gs, roles.ADMIN)
@@ -189,11 +190,11 @@ def test_the_admin_role_is_not_a_bypass(session_factory):
     hem — anders is de beheerdersrol de tweede deur die dit project nergens
     heeft, en het is de deur die het meest gebruikt wordt en het minst bekeken."""
     with session_factory() as s:
-        roles.create(s, roles.ADMIN, ["PERSON"], actor="installatie")
+        roles.create(s, roles.ADMIN, ["PERSON"], actor="installatie", audit=_Stroom(s))
         s.flush()
         gs = InMemoryGrantStore()
         g = _grant_met_rol(gs, roles.ADMIN)
-        roles.deactivate(s, roles.ADMIN, actor="mark", reason="breakglass")
+        roles.deactivate(s, roles.ADMIN, actor="mark", reason="breakglass", audit=_Stroom(s))
         s.flush()
         assert authorize(g, None, ["PERSON"], NU, allow_global=False,
                          resolve_role=_resolver(s),
@@ -206,7 +207,7 @@ def test_a_role_grant_still_obeys_its_document_scope(session_factory):
     from uuid import uuid4
 
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         dit, dat = uuid4(), uuid4()
         gs = InMemoryGrantStore()
@@ -222,7 +223,7 @@ def test_a_role_survives_a_round_trip_through_postgres(session_factory):
     from wordsworth.grants import PostgresGrantStore
 
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         gs = PostgresGrantStore(s)
         uitgegeven = gs.issue("iemand", [], actor="mark", role="hr")
         s.commit()
@@ -235,7 +236,7 @@ def test_a_role_survives_a_round_trip_through_postgres(session_factory):
 def test_a_role_is_a_row_not_a_copy(session_factory):
     """Bewijs dat de types niet bij uitgifte zijn overgeschreven."""
     with session_factory() as s:
-        roles.create(s, "hr", ["PERSON"], actor="mark")
+        roles.create(s, "hr", ["PERSON"], actor="mark", audit=_Stroom(s))
         s.flush()
         gs = InMemoryGrantStore()
         g = _grant_met_rol(gs, "hr")

@@ -9,6 +9,7 @@ destijds heeft opgeschreven; al het andere is gevolgtrekking in dezelfde jas.
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from . import dossiers
+from .key_audit_pg import PostgresKeyLifecycleAudit
 from .db import make_engine, make_session_factory
 from .models import Document
 
@@ -159,9 +161,15 @@ def main_rename(argv: list[str] | None = None) -> int:
         description="Geef een dossier een andere naam; verplaatst geen document")
     ap.add_argument("oud")
     ap.add_argument("nieuw")
+    # Who did it. Until 2026-09-23 this path recorded nothing at all -- not even
+    # an anonymous event -- so "who renamed this" had no answer.
+    ap.add_argument("--actor", default=f"cli:{getpass.getuser()}",
+                    help="wie de hernoeming uitvoert (default: cli:<gebruiker>)")
     args = ap.parse_args(argv)
     with _sessie() as session:
-        d = dossiers.rename(session, args.oud, args.nieuw)
+        # The stream in THIS session: the rename and its record commit together.
+        d = dossiers.rename(session, args.oud, args.nieuw, actor=args.actor,
+                            lifecycle=PostgresKeyLifecycleAudit(session))
         aantal = len(dossiers.documents_in(session, [d.id]))
         session.commit()
     print(f"hernoemd: {args.oud!r} -> {args.nieuw!r} ({aantal} document(en) "

@@ -369,8 +369,7 @@
       "title": "Zeef als library (geen service)",
       "items": [
         "cosine-eindranker over de RRF-recallset (hybrid)",
-        "tokenizer in de embedder",
-        "key-lifecycle audit als append-only JSONL"
+        "tokenizer in de embedder"
       ]
     },
     {
