@@ -14,9 +14,9 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   stream). Parked until 1.1 by Mark, 2026-09-23.
 
 ## 2. The api and auth survive one node
-- [ ] 2.1 api: `replicas: 2`, required pod anti-affinity on
+- [x] 2.1 api: `replicas: 2`, required pod anti-affinity on
   `kubernetes.io/hostname`.
-- [ ] 2.2 api: PodDisruptionBudget `minAvailable: 1`.
+- [x] 2.2 api: PodDisruptionBudget `minAvailable: 1`.
 - [x] 2.3 Rate-limit buckets shared by every replica: `rate_limit_pg`, in
   Postgres, wired in `serve.py`. Tests: two buckets over one database share
   the limit; 20 concurrent checks against a burst of 5 let exactly 5 through
@@ -40,12 +40,30 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   | Grants | random ids | safe |
   | Rate-limit buckets | were per process | **fixed** in 2.3 |
   | Document registration | read-then-insert on `object_key`, no unique constraint | **open**: the same bytes uploaded twice at once become two documents. Production already holds 791 documents over 618 distinct `object_key`s, so a unique index cannot simply be added. Needs its own change. |
-- [ ] 2.5 auth (oauth2-proxy): `replicas: 2`, anti-affinity, PDB. Sessions
+- [x] 2.5 auth (oauth2-proxy): `replicas: 2`, anti-affinity, PDB. Sessions
   are the default cookie store signed with `OAUTH2_PROXY_COOKIE_SECRET` from
   one Secret, so either replica serves any user.
-- [ ] 2.6 Proof in the cluster: delete one api pod while a probe hits the
+- [x] 2.6 Proof in the cluster: delete one api pod while a probe hits the
   console continuously; no failed request. And an eviction of the last api
   pod is refused by the PDB.
+
+  Done 2026-09-23 on image `cbfa7a3d…` (main `4495e46`, homelab `9a338a0`).
+  api on node-01 and node-02, auth on node-02 and node-03. Two probes hit
+  `/health` five times a second for 100 s: the public route (tunnel → auth →
+  api) and the tailnet route (straight to the api). Meanwhile, at 17:33:47Z,
+  one api pod was evicted (201), a second eviction of the other api pod
+  straight after was refused (`TooManyRequests: Cannot evict pod as it would
+  violate the pod's disruption budget`), and one auth pod was evicted (201).
+  Result: 302/302 public and 395/395 tailnet requests answered 200; the
+  replacements came up on other nodes.
+
+  Shared limit, live: three wrong keys to `/console/login` from inside each api
+  pod to itself gave `[401, 401, 401]` on one and `[401, 401, 429]` on the
+  other: five attempts in total, the configured burst, across two processes.
+
+  Not proven by this: a node going away. Evicting a pod is gentler than losing
+  its node, and SeaweedFS, OpenSearch and Ollama still each live on one node.
+  That is step 4.
 
 ## 3. The dependencies
 - [ ] 3.1a OpenSearch with more than one node.
