@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from .crypto import decrypt, encrypt
@@ -38,19 +39,16 @@ class PostgresMappingStore:
 
     def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
             norm_version: str | None = None) -> None:
-        if self._session.get(PiiMapping, pseudonym) is not None:
-            return
-        self._session.add(
-            PiiMapping(
-                pseudonym=pseudonym,
-                ciphertext=ciphertext,
-                nonce=nonce,
-                key_id=key_id,
-                norm_version=norm_version,
-                created_at=datetime.now(timezone.utc),
-            )
-        )
-        self._session.flush()
+        # One statement, not read-then-insert. Two requests pseudonymising the
+        # same value at once -- two threads in one pod, or two replicas -- both
+        # saw "absent", and the second insert failed its whole ingest on the
+        # primary key. Both rows encrypt the same value, so the first one wins.
+        self._session.execute(
+            pg_insert(PiiMapping)
+            .values(pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
+                    key_id=key_id, norm_version=norm_version,
+                    created_at=datetime.now(timezone.utc))
+            .on_conflict_do_nothing(index_elements=["pseudonym"]))
 
     def get(self, pseudonym: str) -> Mapping | None:
         row = self._session.get(PiiMapping, pseudonym)

@@ -27,3 +27,16 @@ def test_module_level_app_is_built():
     from wordsworth import serve
 
     assert "/ask" in _paths(serve.app)  # import-time build succeeded, no I/O
+
+
+def test_production_rate_limits_are_shared_by_every_replica():
+    """hoge-beschikbaarheid step 2: with two replicas, per-process buckets give
+    every client two buckets. The composition root must wire the Postgres ones."""
+    from wordsworth.rate_limit import RateLimitMiddleware
+    from wordsworth.rate_limit_pg import PostgresTokenBucket
+
+    mw = [m for m in build_app().user_middleware if m.cls is RateLimitMiddleware]
+    assert len(mw) == 1
+    limiters = mw[0].kwargs["limiters"]
+    assert "/console/login" in limiters
+    assert all(isinstance(b, PostgresTokenBucket) for b in limiters.values())

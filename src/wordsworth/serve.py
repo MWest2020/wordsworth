@@ -58,8 +58,13 @@ def build_app() -> FastAPI:
         anonymizer = OpenAnonymiserAnonymizer(
             lists=DetectionLists.load(settings.detection_lists_dir))
 
+    # Rate-limit buckets in Postgres: with more than one replica, per-process
+    # buckets would hand every client one bucket per replica (hoge-beschikbaarheid).
+    from .rate_limit import limiters_from_settings
+
     return create_app(
         session_factory=session_factory,
+        rate_limiters=limiters_from_settings(settings, session_factory=session_factory),
         search_index=OpenSearchIndex.from_config(),
         embedder=OllamaEmbedder.from_config(),
         generator=OllamaGenerator.from_config(),

@@ -6,8 +6,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import (BigInteger, Boolean, DateTime, ForeignKey, Index, Integer,
-                        LargeBinary, String, text)
+from sqlalchemy import (BigInteger, Boolean, DateTime, Float, ForeignKey, Index,
+                        Integer, LargeBinary, String, text)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -50,6 +50,19 @@ class AuditRecord(Base):
     # the same predecessor, so a fork fails at insert time.
     prev_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+
+
+class RateLimitBucket(Base):
+    """One client's token bucket per limited endpoint, shared by every replica
+    (`rate_limit_pg.py`). `client` is a SHA-256, never the API key itself."""
+
+    __tablename__ = "rate_limit_buckets"
+
+    bucket: Mapped[str] = mapped_column(String, primary_key=True)
+    client: Mapped[str] = mapped_column(String, primary_key=True)
+    tokens: Mapped[float] = mapped_column(Float, nullable=False)
+    allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class KeyLifecycleEvent(Base):
