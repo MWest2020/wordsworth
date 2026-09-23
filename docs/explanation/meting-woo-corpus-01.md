@@ -279,6 +279,30 @@ De andere helft van dit verhaal staat niet in de code: een herstel-Job hoort
 zijn transactie niet open te houden terwijl hij op een trage embedding wacht.
 Dat is bij de volgende zo'n Job een ontwerpeis, geen detail.
 
+### Postscript 23-09: the lock was never needed
+
+The key-audit-in-postgres rollout ran into the same wall: the URL backfill
+(`wordsworth-reprocess-urls`) held per-document transactions open for minutes,
+and the init-Job failed four times, twice on `LockNotAvailable` and twice on a
+deadlock, before a fifth attempt got through. Deadlocks were not retried at
+all; each one cost a whole pod.
+
+Both postscripts above treated the lock as a cost to budget for. It was not a
+cost that deploy had to pay. The only schema change was a new table, and
+`create_all` creates that without touching any other. Yet
+`ADD COLUMN IF NOT EXISTS` and `DROP TRIGGER` ask for ACCESS EXCLUSIVE *before*
+they find out there is nothing to do, so every deploy locked `documents`,
+`pii_mappings`, `grants` and `audit_records` regardless.
+
+Now `init_schema` asks the catalog first (`information_schema.columns`,
+`to_regclass`, `pg_trigger`, none of which lock a table) and issues DDL only
+for what is missing. A deploy that adds nothing to a table no longer touches
+it. The retry budget stays for the deploys that really do alter a busy table,
+and SQLSTATE `40P01` (deadlock victim) is now retried alongside `55P03`,
+because Postgres has already rolled that transaction back. Guarded by
+`test_a_deploy_with_nothing_to_add_takes_no_table_lock`, which holds a reader
+on every table and fails once the old always-ALTER behaviour is restored.
+
 ## Bevinding 7 — de controle hield acht documenten tegen op twee eigen fouten
 
 De kenmerken uit bevinding 6 wezen het aan. Acht documenten, allemaal
