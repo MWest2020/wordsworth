@@ -61,6 +61,17 @@ canonical form is the rows in `seq` order serialised one way, and that is what
 `audit_export.export_jsonl` already does for the document chain. Same function
 shape, so there is one definition of what an export looks like.
 
+## Decision 6 — the driver is bound to the caller's session
+
+The stream could have had its own session and its own commit. Then a revoke
+could commit while its event failed, or the other way round, and the stream
+would again say something other than what happened. So
+`PostgresKeyLifecycleAudit(session)` writes into the session that makes the
+change, `flush`es, and leaves the commit to the caller: the change and its
+record commit together or not at all. The cost is that every production entry
+point has to construct the driver with its session, which is what
+`_resolve_audit(session)` is for.
+
 ## What is lost, said once
 
 Everything written to the stream before this change lands and before the

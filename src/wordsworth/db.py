@@ -31,13 +31,19 @@ def _is_lock_timeout(exc: OperationalError) -> bool:
 _APPEND_ONLY_SQL = """
 CREATE OR REPLACE FUNCTION wordsworth_forbid_mutation() RETURNS trigger AS $$
 BEGIN
-    RAISE EXCEPTION 'audit_records is append-only';
+    RAISE EXCEPTION '% is append-only', TG_TABLE_NAME;
 END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS audit_no_mutation ON audit_records;
 CREATE TRIGGER audit_no_mutation
     BEFORE UPDATE OR DELETE ON audit_records
+    FOR EACH ROW EXECUTE FUNCTION wordsworth_forbid_mutation();
+
+-- The authorisation trail (key-audit-in-postgres). Same function, same rule.
+DROP TRIGGER IF EXISTS key_lifecycle_no_mutation ON key_lifecycle_events;
+CREATE TRIGGER key_lifecycle_no_mutation
+    BEFORE UPDATE OR DELETE ON key_lifecycle_events
     FOR EACH ROW EXECUTE FUNCTION wordsworth_forbid_mutation();
 """
 

@@ -51,7 +51,7 @@ def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None,
             try:
                 roles_mod.create(session, name, types,
                                  actor=caller(request) if caller else "onbekend",
-                                 audit=audit() if audit else None)
+                                 audit=audit(session) if audit else None)
             except roles_mod.RoleError as exc:
                 return _page(request, str(exc))
             session.commit()
@@ -68,7 +68,7 @@ def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None,
         with session_factory() as session:
             try:
                 fn(session, name, actor=caller(request) if caller else "onbekend",
-                   reason=reason, audit=audit() if audit else None)
+                   reason=reason, audit=audit(session) if audit else None)
             except roles_mod.RoleError as exc:
                 return _page(request, str(exc))
             session.commit()

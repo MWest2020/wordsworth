@@ -1,86 +1,70 @@
 """WORM export of the key-lifecycle stream.
 
-Gap 28 in the NORA analysis, and the last real one. ``audit_export.export_worm``
-exports the *document* chain; the key-lifecycle stream (``key_audit.py``) stayed
-append-only JSONL on disk and never reached Object Lock. That is the stream that
-answers "who rotated which key, and when" — the question that arrives *after* an
-incident, when the host holding that file is itself suspect.
+Gap 28 in the NORA analysis. ``audit_export.export_worm`` exports the *document*
+chain; this exports the key-lifecycle stream (``key_audit_pg.py``), the one that
+answers "who issued, revoked or rotated what, and when" — the question that
+arrives *after* an incident, when the host that holds the stream is itself
+suspect.
 
 Own module because ``audit_export.py`` sits at the 200-line limit; the retention
 semantics and the store protocol are imported from there so there is one
 definition of what WORM means here.
 
-**One layer of tamper-evidence, not two, and that is worth saying out loud.**
-The document chain is hash-chained *and* Object-Locked: alteration is detectable
-in the database and impossible in the store. The key-lifecycle stream is
-append-only but not chained, so a host compromised *before* an export could
-rewrite the JSONL and this function would faithfully export the rewritten
-version. Object Lock protects what was exported, not what was written. Chaining
-this stream is a separate change (``harden-key-audit-chain``) and deliberately
-not smuggled in here.
+**Two layers of tamper-evidence since key-audit-in-postgres (2026-09-23).**
+Before that change the stream was an unchained JSONL file, and this function
+exported whatever the file said: Object Lock protected what was exported, not
+what was written. The stream is now a hash-chained table, so the export does
+what the document export does: verify the chain in the database, export in
+``seq`` order, and check the stored bytes against the database before reporting
+success.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Protocol, runtime_checkable
 
+from sqlalchemy.orm import Session
+
+from . import key_audit_pg
 from .audit_export import ExportError, ExportResult, WormObjectStore
 
 
-@runtime_checkable
-class KeyLifecycleStream(Protocol):
-    """What this export needs: the file the stream is written to.
-
-    Bytes, not parsed events. An export that re-serialises would produce a file
-    that *means* the same and *is* different, and then "does the export match
-    the source" stops being a question you can answer with a comparison.
-    """
-
-    path: Path
-
-
-def _lines(path: Path) -> list[str]:
-    if not path.exists():
-        return []
-    with path.open(encoding="utf-8") as fh:
-        return [ln for ln in fh.read().splitlines() if ln.strip()]
-
-
 def export_key_lifecycle_worm(
-    stream: KeyLifecycleStream,
+    session: Session,
     store: WormObjectStore,
     *,
     retention_days: int,
-    after_line: int = 0,
+    after_seq: int = 0,
     now: datetime | None = None,
     key_prefix: str = "key-lifecycle",
 ) -> ExportResult:
-    """Export events after ``after_line`` to a retention-locked object.
+    """Export events after ``after_seq`` to a retention-locked object.
 
-    Incremental like the document export: ``after_line`` is the count already
-    exported, so a scheduled run ships only what is new. Nothing to export is
-    not an error — it is a stream that stood still.
+    Incremental like the document export: pass the previous result's
+    ``last_seq`` and a scheduled run ships only what is new. Nothing to export
+    is not an error — it is a stream that stood still.
 
-    Verifies the bytes read back from the store against what was sent; a
-    mismatch raises ``ExportError`` rather than reporting a partial success.
+    ``seq`` has gaps: an event rolled back with its change still consumed a
+    number. So first, last and count come from the exported rows, never from
+    subtracting sequence numbers.
     """
-    regels = _lines(Path(stream.path))
-    if len(regels) <= after_line:
-        return ExportResult(None, None, after_line, 0, None)
+    ok, bad = key_audit_pg.verify_chain(session)
+    if not ok:
+        raise ExportError(f"key-lifecycle chain does not verify at seq {bad}")
+    jsonl = key_audit_pg.export_jsonl(session, after_seq=after_seq)
+    if not jsonl:
+        return ExportResult(None, None, after_seq, 0, None)
 
-    plak = regels[after_line:]
-    jsonl = "\n".join(plak) + "\n"
-    eerste, laatste = after_line + 1, len(regels)
-    key = f"{key_prefix}/line-{eerste:012d}-{laatste:012d}.jsonl"
+    seqs = [json.loads(line)["seq"] for line in jsonl.splitlines()]
+    first, last = seqs[0], seqs[-1]
+    key = f"{key_prefix}/seq-{first:012d}-{last:012d}.jsonl"
     now = now or datetime.now(timezone.utc)
     retain_until = now + timedelta(days=retention_days)
 
     store.put_object_locked(key, jsonl.encode("utf-8"), retain_until)
-    opgeslagen = store.get(key).decode("utf-8")
-    if opgeslagen != jsonl:
-        raise ExportError(
-            f"stored object {key} does not match the exported slice "
-            f"({len(opgeslagen)} vs {len(jsonl)} bytes)")
+    stored = store.get(key).decode("utf-8")
+    prev = key_audit_pg.hash_before(session, after_seq)
+    if stored != jsonl or not key_audit_pg.verify_jsonl(stored, prev_hash=prev)[0]:
+        raise ExportError(f"stored object {key} does not match the database")
 
-    return ExportResult(key, eerste, laatste, len(plak), retain_until)
+    return ExportResult(key, first, last, len(seqs), retain_until)

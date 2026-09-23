@@ -8,6 +8,7 @@ zoals een root-account niet door een gebruikersbeheerder wordt aangemaakt.
 from __future__ import annotations
 
 from wordsworth import roles
+from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit as _Stroom
 from wordsworth.bootstrap import ensure_admin_role
 from wordsworth.pii_categories import known_types
 
@@ -29,8 +30,8 @@ def test_running_it_again_leaves_the_role_alone(session_factory):
     tegenovergestelde van een breakglass."""
     with session_factory() as s:
         ensure_admin_role(s)
-        roles.set_types(s, roles.ADMIN, ["PERSON"], actor="mark")
-        roles.deactivate(s, roles.ADMIN, actor="mark", reason="lek")
+        roles.set_types(s, roles.ADMIN, ["PERSON"], actor="mark", audit=_Stroom(s))
+        roles.deactivate(s, roles.ADMIN, actor="mark", reason="lek", audit=_Stroom(s))
         s.commit()
 
         melding = ensure_admin_role(s)

@@ -16,6 +16,8 @@ from sqlalchemy import select
 import pytest
 
 from wordsworth import dossier_events, dossiers
+from wordsworth.dossier_events import MissingAuditStream
+from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit
 from wordsworth.models import AuditRecord
 from wordsworth.pipeline import register
 
@@ -112,7 +114,8 @@ class TestHernoemen:
         voor = len(list(session.execute(
             select(AuditRecord).where(AuditRecord.document_id == doc.id)).scalars()))
 
-        dossiers.rename(session, "oude-naam", "nieuwe-naam", actor="mark")
+        dossiers.rename(session, "oude-naam", "nieuwe-naam", actor="mark",
+                        lifecycle=PostgresKeyLifecycleAudit(session))
 
         na = len(list(session.execute(
             select(AuditRecord).where(AuditRecord.document_id == doc.id)).scalars()))
@@ -138,9 +141,16 @@ class TestHernoemen:
         # Hoe ver de wijziging reikte -- het getal waarvoor dit record bestaat.
         assert gezien["documents"] == 2
 
-    def test_zonder_stroom_hernoemt_hij_gewoon(self, session):
-        """`lifecycle=None` is de testmodus en de bestaande conventie van de
-        audit-naad; het mag geen hernoeming tegenhouden."""
+    def test_zonder_stroom_is_een_fout_en_blijft_de_naam_staan(self, session):
+        """Omgekeerd ten opzichte van 2026-09-22. Deze toets heette toen
+        `test_zonder_stroom_hernoemt_hij_gewoon` en pinde precies het gedrag
+        vast dat geen enkele hernoeming ooit liet vastleggen: de enige echte
+        aanroeper (de CLI) gaf geen stroom mee, en dan ging de hernoeming stil
+        door. Een ontbrekende registratie is nu een fout, en de hernoeming
+        committeert niet (key-audit-in-postgres)."""
         dossiers.ensure(session, "a")
         session.commit()
-        assert dossiers.rename(session, "a", "b", actor="test").name == "b"
+        with pytest.raises(MissingAuditStream):
+            dossiers.rename(session, "a", "b", actor="test")
+        session.rollback()
+        assert [d["name"] for d in dossiers.listing(session)] == ["a"]

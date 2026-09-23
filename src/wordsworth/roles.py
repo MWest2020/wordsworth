@@ -173,11 +173,14 @@ def _noteer(audit, role: Role, change: str, actor: str, reason: str | None) -> N
     sleutelrotaties ook staan — globale autorisatiefeiten zonder document, in
     een eigen append-only stroom.
 
-    `audit=None` betekent: geen spoor. Dat is geen stille uitzondering maar de
-    testmodus; elke aanroeper uit de API geeft er een mee.
+    Zonder stroom is een fout, geen stille terugkeer. Dit gaf vroeger niets
+    terug op `audit=None` ("de testmodus"); dat een productiepad er dan ook stil
+    doorheen kon, bleek bij de dossier-hernoeming (key-audit-in-postgres). Tests
+    geven een dubbel mee.
     """
     if audit is None:
-        return
+        from .dossier_events import MissingAuditStream
+        raise MissingAuditStream("a role change needs the key-lifecycle stream")
     audit.role_changed(role=role.name, change=change,
                        allowed_types=list(role.allowed_types),
                        active=role.active, actor=actor, reason=reason)

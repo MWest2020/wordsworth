@@ -39,6 +39,10 @@ ADDED = "dossier_added"
 REMOVED = "dossier_removed"
 
 
+class MissingAuditStream(RuntimeError):
+    """A write that must be recorded was given nowhere to record it."""
+
+
 def name_of(session: Session, dossier_id: UUID) -> str:
     """The dossier's name, for the trail. Read BEFORE a delete: afterwards the
     row may be gone, and a record that cannot name the dossier is half a record.
@@ -84,12 +88,15 @@ def renamed(session: Session, lifecycle, *, dossier, old: str, actor: str) -> No
     the reason this record exists: it says how far one rename reached, without
     writing the same fact once per document.
 
-    `lifecycle=None` means no stream configured — the convention the rest of this
-    codebase uses for the audit seam. Not a silent exception: a caller from the
-    API always passes one.
+    No stream is an error. This used to return quietly on `lifecycle=None`,
+    with a docstring promising that "a caller from the API always passes one".
+    There was no API rename path; the only caller -- the CLI -- passed nothing,
+    so no rename was ever recorded and the sentence made that look deliberate
+    (found 2026-09-23, key-audit-in-postgres). A missing record should be an
+    error someone sees, not a default someone chose.
     """
     if lifecycle is None:
-        return
+        raise MissingAuditStream("a dossier rename needs the key-lifecycle stream")
     documents = session.execute(
         select(func.count()).select_from(DossierDocument)
         .where(DossierDocument.dossier_id == dossier.id)).scalar_one()

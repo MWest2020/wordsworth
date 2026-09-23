@@ -5,6 +5,7 @@ import json
 import pytest
 
 from wordsworth import dossiers
+from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit
 from wordsworth.dossier_tools import assign, by_filename, naam_van
 from wordsworth.pipeline import dossiers_of, register
 
@@ -37,7 +38,8 @@ def test_renaming_moves_no_document(session):
     doc = register(session, "documents/aa")
     session.commit()
     dossiers.add(session, d.id, doc.id, actor="test")
-    hernoemd = dossiers.rename(session, "corpus-2026-09", "Gooise Meren Woo-publicatie 2022")
+    hernoemd = dossiers.rename(session, "corpus-2026-09", "Gooise Meren Woo-publicatie 2022",
+                               lifecycle=PostgresKeyLifecycleAudit(session))
     session.commit()
     assert hernoemd.id == d.id
     assert dossiers_of(session, doc.id) == [str(d.id)]
