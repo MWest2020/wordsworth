@@ -99,3 +99,60 @@ def test_an_error_that_is_not_a_lock_is_not_retried(database_url):
     with pytest.raises(Exception):
         init_schema(kapot, attempts=20, wait=5.0)
     assert time.monotonic() - begin < 5, "er is gewacht op iets dat geen slot is"
+
+
+def _lock_everything(engine, held: threading.Event, release: threading.Event):
+    """A long reader on every table the old init altered: what the URL backfill
+    did on 2026-09-23 while four init attempts failed against it."""
+    with engine.connect() as conn:
+        for t in ("documents", "pii_mappings", "grants", "audit_records",
+                  "document_pseudonyms", "dossier_documents", "key_lifecycle_events"):
+            conn.execute(text(f"LOCK TABLE {t} IN ACCESS SHARE MODE"))
+        held.set()
+        release.wait(10)
+        conn.rollback()
+
+
+def test_a_deploy_with_nothing_to_add_takes_no_table_lock(session_factory, database_url):
+    """Nothing missing, readers on every table, one attempt with a short timeout:
+    it has to succeed, because there is nothing it needs a lock for."""
+    engine = make_engine(database_url)
+    held, release = threading.Event(), threading.Event()
+    t = threading.Thread(target=_lock_everything, args=(engine, held, release))
+    t.start()
+    try:
+        assert held.wait(5)
+        init_schema(engine, attempts=1, lock_timeout="200ms")
+    finally:
+        release.set()
+        t.join()
+
+
+def test_a_missing_trigger_and_index_come_back(session_factory, database_url):
+    """Skipping what exists must not become skipping what is missing."""
+    engine = make_engine(database_url)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TRIGGER key_lifecycle_no_mutation ON key_lifecycle_events"))
+        conn.execute(text("DROP INDEX idx_dossier_documents_doc"))
+    init_schema(engine, attempts=1)
+    with engine.connect() as conn:
+        assert conn.execute(text(
+            "SELECT 1 FROM pg_trigger WHERE tgname = 'key_lifecycle_no_mutation'")).scalar()
+        assert conn.execute(text("SELECT to_regclass('idx_dossier_documents_doc')")).scalar()
+
+
+def test_a_deadlock_is_retried_like_a_lock_timeout():
+    """On 2026-09-23 two of four failed init pods died on a deadlock, which was not
+    retried at all. Postgres has rolled the victim back; trying again is safe."""
+    from wordsworth.db import _is_lock_conflict
+
+    class Orig:
+        def __init__(self, code):
+            self.sqlstate = code
+
+    def exc(code):
+        return OperationalError("stmt", {}, Orig(code))
+
+    assert _is_lock_conflict(exc("40P01"))
+    assert _is_lock_conflict(exc("55P03"))
+    assert not _is_lock_conflict(exc("28P01"))   # wrong password: waiting won't help

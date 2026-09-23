@@ -19,33 +19,32 @@ from .models import Base
 log = logging.getLogger(__name__)
 
 
-def _is_lock_timeout(exc: OperationalError) -> bool:
-    """Postgres meldt een verlopen ``lock_timeout`` als SQLSTATE 55P03.
+#: 55P03 = ``lock_timeout`` expired; 40P01 = chosen as a deadlock victim. Both
+#: mean Postgres rolled our transaction back over a lock, so a retry is safe.
+#: Matching on the text would work until someone sets another language; the
+#: code is the one thing that does not move.
+_LOCK_CONFLICTS = {"55P03", "40P01"}
 
-    Op de tekst matchen zou ook werken tot iemand een andere taal instelt; de
-    code is de enige die niet verschuift.
-    """
-    return getattr(getattr(exc, "orig", None), "sqlstate", None) == "55P03"
 
-# Trigger that makes audit_records append-only at the schema level.
-_APPEND_ONLY_SQL = """
+def _is_lock_conflict(exc: OperationalError) -> bool:
+    return getattr(getattr(exc, "orig", None), "sqlstate", None) in _LOCK_CONFLICTS
+
+# The function behind the append-only triggers. Replacing a function takes no
+# lock on any table, so this one runs every time and a changed body lands.
+_FORBID_FUNCTION_SQL = """
 CREATE OR REPLACE FUNCTION wordsworth_forbid_mutation() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION '% is append-only', TG_TABLE_NAME;
 END;
 $$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS audit_no_mutation ON audit_records;
-CREATE TRIGGER audit_no_mutation
-    BEFORE UPDATE OR DELETE ON audit_records
-    FOR EACH ROW EXECUTE FUNCTION wordsworth_forbid_mutation();
-
--- The authorisation trail (key-audit-in-postgres). Same function, same rule.
-DROP TRIGGER IF EXISTS key_lifecycle_no_mutation ON key_lifecycle_events;
-CREATE TRIGGER key_lifecycle_no_mutation
-    BEFORE UPDATE OR DELETE ON key_lifecycle_events
-    FOR EACH ROW EXECUTE FUNCTION wordsworth_forbid_mutation();
 """
+
+# Tables that are append-only at the schema level: (trigger, table).
+# key_lifecycle_events is the authorisation trail (key-audit-in-postgres).
+_APPEND_ONLY = [
+    ("audit_no_mutation", "audit_records"),
+    ("key_lifecycle_no_mutation", "key_lifecycle_events"),
+]
 
 
 def make_engine(url: str | None = None) -> Engine:
@@ -63,26 +62,51 @@ def make_engine(url: str | None = None) -> Engine:
     )
 
 
-# Additive, idempotent column migrations for databases created before the
-# column existed (create_all never alters existing tables). Boring on purpose.
-_COLUMN_MIGRATIONS_SQL = """
-ALTER TABLE pii_mappings ADD COLUMN IF NOT EXISTS norm_version VARCHAR;
-ALTER TABLE grants ADD COLUMN IF NOT EXISTS domain VARCHAR;
-ALTER TABLE documents ADD COLUMN IF NOT EXISTS filename VARCHAR;
-ALTER TABLE grants ADD COLUMN IF NOT EXISTS role VARCHAR;
-"""
+# Additive column migrations for databases created before the column existed
+# (create_all never alters existing tables): (table, column). All VARCHAR.
+_COLUMNS = [
+    ("pii_mappings", "norm_version"),
+    ("grants", "domain"),
+    ("documents", "filename"),
+    ("grants", "role"),
+]
 
-# Reveal walks this table on every call; without the index it is a sequential
-# scan over every pseudonym in the corpus.
-_INDEX_SQL = """
-CREATE INDEX IF NOT EXISTS idx_document_pseudonyms_doc
-  ON document_pseudonyms (document_id);
--- Every scoped search walks this the other way round: from a dossier to its
--- documents. The primary key covers (dossier, document); this covers the
--- reverse question, "which dossiers is this document in".
-CREATE INDEX IF NOT EXISTS idx_dossier_documents_doc
-  ON dossier_documents (document_id);
-"""
+# name -> (table, column). Reveal walks document_pseudonyms on every call;
+# without its index that is a sequential scan over every pseudonym in the
+# corpus. Every scoped search walks dossier_documents the other way round, from
+# a dossier to its documents; the primary key covers (dossier, document), this
+# covers "which dossiers is this document in".
+_INDEXES = {
+    "idx_document_pseudonyms_doc": ("document_pseudonyms", "document_id"),
+    "idx_dossier_documents_doc": ("dossier_documents", "document_id"),
+}
+
+
+def _missing_ddl(conn) -> list[str]:
+    """The DDL still to do, and nothing else.
+
+    ``ADD COLUMN IF NOT EXISTS`` and ``DROP TRIGGER`` ask for ACCESS EXCLUSIVE
+    *before* they find out there is nothing to do. On 2026-09-14, 09-18 and
+    09-23 a deploy that changed nothing on ``documents``, ``pii_mappings`` or
+    ``audit_records`` still had to wait out every long reader on them, and on
+    09-23 lost to one four times running. Asking the catalog first takes no table
+    lock; a deploy that adds nothing to a table now never touches it.
+    """
+    cols = {tuple(r) for r in conn.execute(text(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema = current_schema()"))}
+    trigs = {tuple(r) for r in conn.execute(text(
+        "SELECT tgname, tgrelid::regclass::text FROM pg_trigger "
+        "WHERE NOT tgisinternal"))}
+    ddl = [f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS {c} VARCHAR"
+           for t, c in _COLUMNS if (t, c) not in cols]
+    ddl += [f"CREATE INDEX IF NOT EXISTS {name} ON {t} ({c})"
+            for name, (t, c) in _INDEXES.items()
+            if conn.execute(text("SELECT to_regclass(:n)"), {"n": name}).scalar() is None]
+    ddl += [f"CREATE TRIGGER {trig} BEFORE UPDATE OR DELETE ON {t} "
+            "FOR EACH ROW EXECUTE FUNCTION wordsworth_forbid_mutation()"
+            for trig, t in _APPEND_ONLY if (trig, t) not in trigs]
+    return ddl
 
 
 def init_schema(engine: Engine, *, attempts: int = 20, lock_timeout: str = "5s",
@@ -119,15 +143,15 @@ def init_schema(engine: Engine, *, attempts: int = 20, lock_timeout: str = "5s",
             with engine.begin() as conn:
                 # SET LOCAL: scoped to this transaction, gone on commit.
                 conn.execute(text(f"SET LOCAL lock_timeout = '{lock_timeout}'"))
-                conn.execute(text(_COLUMN_MIGRATIONS_SQL))
-                conn.execute(text(_INDEX_SQL))
-                conn.execute(text(_APPEND_ONLY_SQL))
+                conn.execute(text(_FORBID_FUNCTION_SQL))
+                for stmt in _missing_ddl(conn):
+                    conn.execute(text(stmt))
             return
         except OperationalError as exc:
             # Alleen het slot is het wachten waard. Een verkeerd wachtwoord of
             # een weggevallen database wordt door wachten niet beter, en twintig
             # pogingen verbergen dan de echte fout.
-            if not _is_lock_timeout(exc) or poging == attempts - 1:
+            if not _is_lock_conflict(exc) or poging == attempts - 1:
                 raise
             log.warning("init_schema: slot bezet, poging %d van %d over %.0fs",
                         poging + 1, attempts, wait)
