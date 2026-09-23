@@ -27,14 +27,27 @@
       OIDC-verifier bestaat (`config.py`). Een JWKS-adres alleen is het ADRES van
       de sleutels, niet het besluit ze te gebruiken.
 
-## 4. Niet gedaan, en met opzet: aanzetten
-- [ ] **Voor Mark.** In de configmap staat alleen `WORDSWORTH_OIDC_JWKS_URL`;
-      `WORDSWORTH_OIDC_ISSUER` en `WORDSWORTH_OIDC_AUDIENCE` niet. De
-      identiteit draait dus nog op Cloudflare Access en deze change is gebouwd
-      maar slapend.
-      Aanzetten is geen config-tweak: op het moment dat callers identiteiten
-      worden, autoriseert elke grant die aan een sleutel-label (`console`,
-      `cli`) is uitgegeven niemand meer. `wordsworth-access-preflight` rapporteert
-      welke dat zijn en verandert niets. Die grants worden niet gevaarlijk, ze
-      worden inert — en een inerte grant die als "actief" in de tabel staat is
-      een leugen.
+## 4. Correctie (2026-09-23): dit draait al sinds 2026-09-20
+
+Bij het archiveren schreef ik hier dat deze change "gebouwd maar slapend" was:
+uitgever en publiek zouden niet gezet zijn, dus de identiteit liep nog via
+Cloudflare Access. **Dat was fout.**
+
+Uitgever en publiek staan in de `env:` van de Deployment zelf
+(`homelab: cluster-config/infra/wordsworth/api.yaml`, sinds `43ff7fb` op
+2026-09-20), niet in de configmap. Ik controleerde alleen de configmap, zag daar
+alleen het JWKS-adres, en trok de conclusie zonder de tweede plek te bekijken
+waar een waarde vandaan kan komen. Gecontroleerd in de draaiende pod: de
+verifier die in gebruik is, heeft als uitgever de Keycloak-realm. Met beide
+ingesteld wint OIDC van Cloudflare Access.
+
+Het archief laat de oorspronkelijke tekst niet stil verdwijnen: dit is een
+feitelijke fout die ik er zelf in schreef, geen stand van toen die sindsdien
+veranderde.
+
+Wat van de toenmalige waarschuwing overeind blijft: een grant op een
+sleutellabel is inert voor wie via Keycloak binnenkomt. Die was er nog één
+(`console`, `df24139e`, één document, eenmaal gebruikt op 2026-09-17); op
+2026-09-23 ingetrokken via `POST /grants/{id}/revoke`, en
+`wordsworth-access-preflight` meldt daarna: geen actieve grants op een
+sleutellabel.
