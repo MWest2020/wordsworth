@@ -64,6 +64,37 @@ een briefhoofd: de oude lijsten geven `www.[ORGANIZATION:c47ab01c].nl`, de
 nieuwe `[URL:8021618e]`. Bij het herverwerken ziet de regel het adres dus
 heel, vóór de vervanging.
 
+## Na het herverwerken (2026-09-23)
+
+De 151 documenten waarin de simulatie iets zag veranderen, zijn herverwerkt
+(150 in de eerste Job; één verloor een deadlock tegen een init-Job van een
+andere uitrol en is daarna los gedaan). Geteld over alle 770 documenten, binnen
+één run en met dezelfde lijsten als de dienst:
+
+- **0** hele, leesbare webadressen buiten `allow.json`. Dat is de eigenschap
+  waar #124 om ging: een partijnaam in een adres blijft niet meer staan.
+- **262** `[URL:…]`-tokens, in **119** documenten.
+- **258** adressen blijven leesbaar via een uitzondering, precies het getal
+  uit de simulatie.
+
+De simulatie zat op één punt ernaast. Bij het herverwerken wint de URL-regel
+niet altijd: 76 treffers in de 151 documenten eindigen nog op
+`https://www.[PERSON:…]` of `[LOCATION:…]`, `[ORGANIZATION:…]`, `[EMAIL:…]`.
+Dat gebeurt als het adres zelf op de uitzonderingslijst staat en er dus geen
+URL-detectie is. De naam die elders in het document gevonden is, wordt dan óók
+binnen het adres vervangen, want vervangen gaat op waarde en niet op positie.
+Nagemeten op een briefhoofd met de draaiende service: een toegestaan adres
+blijft heel staan en een ander adres wordt `[URL:…]`. De half vervangen vorm
+ontstaat dus alleen waar een naam uit de rest van de tekst ook in een
+toegestaan adres staat.
+
+De naam is in die gevallen altijd een token. Wat erachter staat, is niet
+altijd leeg: over het hele corpus komt `www.[TOKEN]` 189 keer voor, in 102
+documenten. 174 keer volgt er alleen een topleveldomein of niets. 15 keer
+volgt er een leesbaar pad (alleen de vorm bekeken, zoals `.nl/a/a/a-a`), soms
+met nog een token erin. Dat is de rest die overblijft: klein, en niet de
+vorm uit #124, maar ook niet nul.
+
 ## Wat het kost
 
 Het echte probleem uit meting 04 en 05 is te véél vervangen. Deze wijziging

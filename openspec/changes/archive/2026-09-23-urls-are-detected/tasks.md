@@ -24,6 +24,9 @@
       stay readable, and whether every single-document host is caught.
 
 ## 4. Out
-- [ ] 4.1 Release, deploy, reprocess the stored corpus.
-- [ ] 4.2 Recount on the stored corpus after reprocessing.
-- [ ] 4.3 Close #124 with the numbers.
+- [x] 4.1 Release, deploy, reprocess the stored corpus. (151 documents; 150
+      in the first Job, the deadlock victim afterwards on its own.)
+- [x] 4.2 Recount on the stored corpus after reprocessing. (770 documents: 0
+      whole readable URLs outside allow.json, 262 URL tokens in 119 documents,
+      258 readable by exception; see meting-webadressen-06.md.)
+- [x] 4.3 Close #124 with the numbers.
