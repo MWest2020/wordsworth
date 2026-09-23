@@ -57,6 +57,13 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
 - `uvx ruff check src/ tests/` before a PR. Deliberately narrow (`F`, `E9`):
   real errors only, no style — a linter that argues about taste gets switched
   off. It is not in CI; that is Mark's file to change.
+- **Database tests without Docker.** `tests/conftest.py` starts a Postgres
+  container, or skips when Docker cannot run containers (as on an LXC host).
+  Point `WORDSWORTH_TEST_DATABASE_URL` at a reachable Postgres to run them
+  anyway. The `postgresql+psycopg://` scheme is required — plain
+  `postgresql://` makes SQLAlchemy look for psycopg2 and fail with
+  `ModuleNotFoundError`. A pytest run with skips is not "every integration test
+  ran": check which ones skipped.
 - PostgreSQL. S3-compatible object storage (Ceph RGW target / SeaweedFS PoC).
 - OpenSearch for BM25 (phase 3) and dense+hybrid/RRF (phase 4).
 - Local inference: Ollama (bge-m3) for embeddings; GLiNER/Presidio via
