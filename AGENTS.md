@@ -64,6 +64,12 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
   `postgresql://` makes SQLAlchemy look for psycopg2 and fail with
   `ModuleNotFoundError`. A pytest run with skips is not "every integration test
   ran": check which ones skipped.
+- **One test database per session.** Two suites running against the same
+  database deadlock on each other's `drop_all` (both hang, or tests you did not
+  touch fail). Create a private database (as the `wordsworth` role, e.g.
+  `CREATE DATABASE wordsworth_test_<suffix>`) and point
+  `WORDSWORTH_TEST_DATABASE_URL` at it; check `ps -eo args | grep [p]ytest`
+  before blaming your code.
 - PostgreSQL. S3-compatible object storage (Ceph RGW target / SeaweedFS PoC).
 - OpenSearch for BM25 (phase 3) and dense+hybrid/RRF (phase 4).
 - Local inference: Ollama (bge-m3) for embeddings; GLiNER/Presidio via
