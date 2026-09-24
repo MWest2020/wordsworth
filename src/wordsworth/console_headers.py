@@ -23,6 +23,8 @@ bij `same_origin`.
 """
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -41,6 +43,9 @@ HEADERS = {
 }
 
 
+_DEFAULT_PORT = {"http": 80, "https": 443}
+
+
 def same_origin(origin: str, host: str) -> bool:
     """Komt dit verzoek van onze eigen pagina?
 
@@ -49,10 +54,26 @@ def same_origin(origin: str, host: str) -> bool:
     deze verdediging — ze houdt een browser tegen, geen script. Voor dit geval is
     dat genoeg: het gat is dat een BROWSER van een andere pagina een cookie kan
     laten zetten.
+
+    Otherwise hostname and port must match the Host header exactly. Until
+    2026-09-24 this was `origin.endswith(host-without-port)`: an Origin with a
+    port (`http://localhost:8000`) never matched, and with no boundary before
+    the suffix any hostname ending in ours did. A Host without a port is taken
+    to be on the default port of the scheme the browser used, because that is
+    how a browser writes an Origin.
     """
     if not origin:
         return True
-    return origin.rstrip("/").endswith(host.split(":")[0])
+    o = urlsplit(origin.strip())
+    if o.scheme not in _DEFAULT_PORT or not o.hostname:
+        return False            # "null", a file: page, anything opaque
+    try:
+        h = urlsplit("//" + host.strip())
+        o_port = o.port or _DEFAULT_PORT[o.scheme]
+        h_port = h.port or _DEFAULT_PORT[o.scheme]
+    except ValueError:          # a port that is not a number
+        return False
+    return o.hostname == h.hostname and o_port == h_port
 
 
 class ConsoleSafety:

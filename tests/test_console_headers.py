@@ -61,3 +61,33 @@ def test_the_origin_check_is_explicit_about_its_limits():
     assert same_origin("https://evil.example", "wordsworth.westerweel.work") is False
     assert same_origin("https://wordsworth.westerweel.work",
                        "wordsworth.westerweel.work:443") is True
+
+
+def test_an_origin_matches_only_its_own_host_and_port():
+    """Exact since 2026-09-24. The suffix check it replaces let any hostname
+    ending in ours through, and refused every Origin that carried a port."""
+    # Production, both routes: public name, and the tailnet name.
+    assert same_origin("https://wordsworth.westerweel.work", "wordsworth.westerweel.work")
+    assert same_origin("https://wordsworth-api.tail8f7877.ts.net",
+                       "wordsworth-api.tail8f7877.ts.net")
+    # Local development: the Origin carries the port, and now matches.
+    assert same_origin("http://localhost:8000", "localhost:8000")
+    assert same_origin("http://127.0.0.1:8000", "127.0.0.1:8000")
+    # Case is not identity.
+    assert same_origin("https://Wordsworth.Westerweel.Work", "wordsworth.westerweel.work")
+
+
+def test_a_lookalike_origin_is_refused():
+    host = "wordsworth.westerweel.work"
+    assert not same_origin("https://evilwordsworth.westerweel.work", host)
+    assert not same_origin("https://x.evil.example/wordsworth.westerweel.work", host)
+    assert not same_origin("https://wordsworth.westerweel.work.evil.example", host)
+
+
+def test_another_port_or_an_opaque_origin_is_refused():
+    assert not same_origin("http://localhost:9999", "localhost:8000")
+    assert not same_origin("http://wordsworth.westerweel.work",
+                           "wordsworth.westerweel.work:443")
+    assert not same_origin("null", "wordsworth.westerweel.work")
+    assert not same_origin("file://", "wordsworth.westerweel.work")
+    assert not same_origin("https://wordsworth.westerweel.work", "wordsworth.westerweel.work:abc")

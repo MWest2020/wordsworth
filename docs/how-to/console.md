@@ -167,6 +167,12 @@ sets the caller label, so a page elsewhere could otherwise switch a visitor's
 label to a key the attacker knows: not a privilege gain — it is someone else's
 key — but false attribution, and `Path=/` makes it apply to the whole API.
 
+"Our own" means the `Origin`'s hostname and port equal the `Host` header's, with
+a `Host` without a port taken to be on the default port of the `Origin`'s
+scheme. Until 2026-09-24 it was a suffix match: a hostname that merely ended in
+ours passed, and an `Origin` with a port — local development on
+`localhost:8000` — was always refused.
+
 A request with no `Origin` at all is allowed. curl, the CLI and the tests send
 none, and locking them out would cost more than the hole. That is also the limit
 of this defence: it stops a browser, not a script — and a browser is exactly what
