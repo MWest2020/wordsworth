@@ -7,6 +7,8 @@ verzonnen `[PERSOON:aabbccdd]` is iemand, alleen niet iemand uit dit document.
 """
 from __future__ import annotations
 
+from uuid import uuid4
+
 from wordsworth import summaries
 from wordsworth.generator import GenerationError
 from wordsworth.models import DocumentSummary, DocumentText
@@ -33,7 +35,7 @@ class Kapot:
 
 
 def _doc(session, tekst="De aanvraag voor een dakkapel is afgewezen."):
-    doc = register(session, f"documents/{id(tekst)}")
+    doc = register(session, f"documents/{uuid4().hex}")   # one live document per key
     if tekst is not None:
         session.merge(DocumentText(document_id=doc.id, anonymized_text=tekst))
     session.flush()
@@ -191,7 +193,6 @@ def test_a_document_without_one_says_so_instead_of_being_blank(session_factory):
 def test_the_endpoint_is_behind_the_corpus_gate(session_factory):
     """Een samenvatting zegt waar een document over gaat. Dat is dezelfde soort
     kennis als de opgeslagen tekst, en hoort achter dezelfde poort."""
-    from uuid import uuid4
 
     from fastapi.testclient import TestClient
 

@@ -40,7 +40,7 @@ def _members(s, doc_id):
                          .where(DossierDocument.document_id == doc_id)).scalars())
 
 
-def test_a_copy_is_retired_with_its_history_and_its_dossiers_passed_on(session):
+def test_a_copy_is_retired_with_its_history_and_its_dossiers_passed_on(legacy_copies, session):
     survivor, copy, a, b = _pair(session)
     index = InMemoryIndex()
     index.index(str(survivor), "tekst", KEY)
@@ -62,14 +62,14 @@ def test_a_copy_is_retired_with_its_history_and_its_dossiers_passed_on(session):
     assert steps.count("dossier_removed") == 2              # each removal recorded
 
 
-def test_superseding_twice_is_a_no_op(session):
+def test_superseding_twice_is_a_no_op(legacy_copies, session):
     survivor, copy, _, _ = _pair(session)
     supersede(session, copy, survivor, actor="dedupe")
     session.commit()
     assert supersede(session, copy, survivor, actor="dedupe")["superseded"] is False
 
 
-def test_what_is_not_a_copy_is_refused(session):
+def test_what_is_not_a_copy_is_refused(legacy_copies, session):
     survivor, copy, _, _ = _pair(session)
     other = register(session, "documents/" + "cd" * 32)
     session.flush()
@@ -82,7 +82,7 @@ def test_what_is_not_a_copy_is_refused(session):
         supersede(session, survivor, copy, actor="dedupe")
 
 
-def test_the_pointer_is_set_once(session):
+def test_the_pointer_is_set_once(legacy_copies, session):
     survivor, copy, _, _ = _pair(session)
     supersede(session, copy, survivor, actor="dedupe")
     session.commit()
@@ -92,7 +92,7 @@ def test_the_pointer_is_set_once(session):
     session.rollback()
 
 
-def test_a_retired_copy_cannot_join_a_dossier(session):
+def test_a_retired_copy_cannot_join_a_dossier(legacy_copies, session):
     survivor, copy, a, _ = _pair(session)
     supersede(session, copy, survivor, actor="dedupe")
     session.commit()
@@ -100,14 +100,14 @@ def test_a_retired_copy_cannot_join_a_dossier(session):
         dossiers.add(session, a, copy, actor="t")
 
 
-def test_a_retired_copy_is_not_an_orphan(session):
+def test_a_retired_copy_is_not_an_orphan(legacy_copies, session):
     survivor, copy, _, _ = _pair(session)
     supersede(session, copy, survivor, actor="dedupe")
     session.commit()
     assert copy not in {d.id for d in orphans(session)}
 
 
-def test_the_same_bytes_arriving_again_find_the_survivor(session, mem_store,
+def test_the_same_bytes_arriving_again_find_the_survivor(legacy_copies, session, mem_store,
                                                          born_digital_pii_pdf):
     """The retired copy is the OLDER row here on purpose: "the first row with
     this key" would find it, and only "the live one" finds the survivor."""
@@ -127,7 +127,7 @@ def test_the_same_bytes_arriving_again_find_the_survivor(session, mem_store,
     assert live_document_for(session, older.object_key).id == survivor.id
 
 
-def test_a_retired_copy_answers_for_itself(session_factory):
+def test_a_retired_copy_answers_for_itself(legacy_copies, session_factory):
     with session_factory() as s:
         survivor, copy, _, _ = _pair(s)
         supersede(s, copy, survivor, actor="dedupe")
@@ -139,7 +139,7 @@ def test_a_retired_copy_answers_for_itself(session_factory):
     assert "superseded_by" not in c.get(f"/documents/{survivor}/state").json()
 
 
-def test_the_console_lists_live_documents_only(session_factory):
+def test_the_console_lists_live_documents_only(legacy_copies, session_factory):
     with session_factory() as s:
         survivor = register(s, KEY, filename="levend.pdf")
         copy = register(s, KEY, filename="kopie.pdf")

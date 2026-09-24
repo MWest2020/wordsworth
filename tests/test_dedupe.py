@@ -33,7 +33,7 @@ def _corpus(session_factory, index):
     return ids
 
 
-def test_the_oldest_copy_survives(session_factory):
+def test_the_oldest_copy_survives(legacy_copies, session_factory):
     ids = _corpus(session_factory, InMemoryIndex())
     with session_factory() as s:
         groups = {key[-1]: (survivor, copies) for key, survivor, copies in plan(s)}
@@ -42,7 +42,7 @@ def test_the_oldest_copy_survives(session_factory):
     assert groups["y"] == (ids["y"][0], ids["y"][1:])
 
 
-def test_a_dry_run_changes_nothing(session_factory):
+def test_a_dry_run_changes_nothing(legacy_copies, session_factory):
     index = InMemoryIndex()
     ids = _corpus(session_factory, index)
     report = run(session_factory, index, apply=False, expect={})
@@ -53,7 +53,7 @@ def test_a_dry_run_changes_nothing(session_factory):
     assert len(index.search("tekst")) == 6
 
 
-def test_unexpected_numbers_stop_it_before_anything_changes(session_factory):
+def test_unexpected_numbers_stop_it_before_anything_changes(legacy_copies, session_factory):
     index = InMemoryIndex()
     ids = _corpus(session_factory, index)
     report = run(session_factory, index, apply=True,
@@ -64,7 +64,7 @@ def test_unexpected_numbers_stop_it_before_anything_changes(session_factory):
         assert current_state(s, ids["x"][1]) == State.REGISTERED
 
 
-def test_apply_retires_every_copy_and_a_rerun_finds_none(session_factory):
+def test_apply_retires_every_copy_and_a_rerun_finds_none(legacy_copies, session_factory):
     index = InMemoryIndex()
     ids = _corpus(session_factory, index)
     report = run(session_factory, index, apply=True,
@@ -83,7 +83,7 @@ def test_apply_retires_every_copy_and_a_rerun_finds_none(session_factory):
     assert again["found"]["copies"] == 0 and again["done"]["superseded"] == 0
 
 
-def test_a_different_index_count_is_reported(session_factory):
+def test_a_different_index_count_is_reported(legacy_copies, session_factory):
     index = InMemoryIndex()
     ids = _corpus(session_factory, index)
     index.delete(str(ids["x"][2]))                  # one copy was never indexed

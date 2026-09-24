@@ -18,6 +18,14 @@ class Base(DeclarativeBase):
 
 class Document(Base):
     __tablename__ = "documents"
+    # One live document per stored object (one-document-per-object, release 2).
+    # Partial: a superseded copy keeps its key, and its history, but not the
+    # claim to be the document for those bytes. `db.py` adds it to a database
+    # that predates it.
+    __table_args__ = (
+        Index("uq_documents_live_object_key", "object_key", unique=True,
+              postgresql_where=text("superseded_by IS NULL")),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

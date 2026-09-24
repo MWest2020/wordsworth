@@ -300,8 +300,7 @@ def test_a_field_with_the_wrong_type_is_a_hard_error():
     assert "dossiers" in str(exc.value) and "reindex" in str(exc.value)
 
 
-def test_known_bytes_join_the_live_document_not_a_retired_copy(
-        session_factory, mem_store, fake_embedder, born_digital_pii_pdf):
+def test_known_bytes_join_the_live_document_not_a_retired_copy(legacy_copies, session_factory, mem_store, fake_embedder, born_digital_pii_pdf):
     """one-document-per-object: the skip path looked up "the first document
     with this key". With a retired copy as the older row, that is the copy --
     and a membership on it would be refused. It has to be the live one."""

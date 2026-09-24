@@ -181,8 +181,7 @@ def test_authorized_is_not_the_same_as_resolved(session_factory, mem_store,
     assert payload["requested_types"] == body["authorized_types"]
 
 
-def test_reveal_on_a_retired_copy_is_refused_and_names_the_survivor(
-        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+def test_reveal_on_a_retired_copy_is_refused_and_names_the_survivor(legacy_copies, session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
     """one-document-per-object: a copy is not a second door to the same
     pseudonyms. The survivor still reveals; the copy says where to go."""
     from wordsworth.pipeline import register

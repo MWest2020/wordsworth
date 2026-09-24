@@ -45,7 +45,7 @@ from .pii_categories import (
 )
 from .pipeline import (
     current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
-    live_document_for, process,
+    live_document_for, process, register_live,
 )
 from .rate_limit import (
     EXEMPT_PATHS,
@@ -972,12 +972,19 @@ def create_app(
                 session.commit()
                 if state == State.UNPROCESSABLE_OCR:
                     # Scanned page: OCR to a text layer, then resume the straat.
-                    recover(session, document_id, store)
+                    state = recover(session, document_id, store)
                     session.commit()
-                    state = process(session, document_id, store,
-                                    anonymizer=anon,
-                                    search_index=search_index, embedder=embedder)
-                    session.commit()
+                    if state == State.SUPERSEDED:
+                        # Its OCR'd PDF is already a document; that one holds
+                        # the dossiers now, and the index has to know.
+                        owner = session.get(Document, document_id).superseded_by
+                        search_index.set_dossiers(str(owner),
+                                                  dossiers_of(session, owner))
+                    else:
+                        state = process(session, document_id, store,
+                                        anonymizer=anon,
+                                        search_index=search_index, embedder=embedder)
+                        session.commit()
                 meta = _document_meta(session, document_id)
             return meta or {"document_id": str(document_id), "state": state.value}
 
@@ -1104,7 +1111,6 @@ def create_app(
             from .datasets import (DatasetRun, Profile, load_profile,
                                    validate_unselected)
             from .mapping_store import PostgresMappingStore
-            from .pipeline import register
             from .pseudonymizer import Pseudonymizer
 
             if (profile is None) == (profile_name is None):
@@ -1148,9 +1154,7 @@ def create_app(
                             for c in prof.unbroken_combinations()]
                 # The dataset is an artefact with identity (content hash); its run
                 # is an access event on it — aggregates only, never a cell value.
-                doc = live_document_for(session, key)
-                if doc is None:
-                    doc = register(session, key, prof.domain)
+                doc = register_live(session, key, prof.domain)
                 state = current_state(session, doc.id)
                 stats = run.stats()
                 rec = audit.append(session, document_id=doc.id,

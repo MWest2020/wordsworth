@@ -24,9 +24,10 @@ from .config import settings
 from .models import Document
 from .object_store import ObjectStore
 from .ocr import OcrEngine
-from .pipeline import current_state, transition
+from .pipeline import current_state, live_document_for, transition
 from .profiling import profile_pdf
 from .states import State
+from .supersession import supersede
 
 
 def _default_ocr_engine() -> OcrEngine:
@@ -75,6 +76,15 @@ def recover(
         return State.UNPROCESSABLE_OCR
     new_key = "documents/" + hashlib.sha256(ocr_bytes).hexdigest()
     store.put(new_key, ocr_bytes)  # own content-addressed object; scan is kept
+    owner = live_document_for(session, new_key)
+    if owner is not None and owner.id != doc.id:
+        # The OCR'd PDF is an object another document already is: this scan
+        # turned out to be a copy of it (one-document-per-object, Decision 7).
+        # Moving the key would break the one-live-document rule; retiring this
+        # one is the outcome both would have had as the same bytes. The caller
+        # updates the owner's index entry: it may have gained a dossier.
+        supersede(session, doc.id, owner.id, actor="ocr", as_object=new_key)
+        return State.SUPERSEDED
     old_key = doc.object_key
     doc.object_key = new_key  # documents-table column, not an audit record
     session.flush()

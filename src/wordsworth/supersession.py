@@ -37,15 +37,22 @@ class SupersessionError(ValueError):
 
 
 def supersede(session: Session, copy_id: UUID, survivor_id: UUID, *, actor: str,
-              batch: str | None = None, index=None) -> dict:
-    """Retire `copy_id` in favour of `survivor_id`. Idempotent per pair."""
+              batch: str | None = None, index=None,
+              as_object: str | None = None) -> dict:
+    """Retire `copy_id` in favour of `survivor_id`. Idempotent per pair.
+
+    `as_object`: the copy is a copy of that object rather than of its own key.
+    OCR recovery is the one case: a scan whose OCR'd PDF turns out to be an
+    object another document already holds. The copy keeps its own key -- the
+    scan is what it is -- and the record says which object made it a copy.
+    """
     copy = session.get(Document, copy_id)
     survivor = session.get(Document, survivor_id)
     if copy is None or survivor is None:
         raise SupersessionError("both documents have to exist")
     if copy.id == survivor.id:
         raise SupersessionError("a document cannot supersede itself")
-    if copy.object_key != survivor.object_key:
+    if (as_object or copy.object_key) != survivor.object_key:
         raise SupersessionError("not a copy: the object keys differ")
     if survivor.superseded_by is not None:
         raise SupersessionError("the survivor is itself superseded")
@@ -65,9 +72,10 @@ def supersede(session: Session, copy_id: UUID, survivor_id: UUID, *, actor: str,
         removed += dossiers.remove(session, dossier_id, copy.id, actor=actor,
                                    reason=reason, batch=batch)
 
-    transition(session, copy.id, State.SUPERSEDED, step="supersede",
-               payload={"superseded_by": str(survivor.id), "actor": actor,
-                        "batch": batch})
+    payload = {"superseded_by": str(survivor.id), "actor": actor, "batch": batch}
+    if as_object:
+        payload["as_object"] = as_object
+    transition(session, copy.id, State.SUPERSEDED, step="supersede", payload=payload)
     copy.superseded_by = survivor.id
     session.flush()
     return {"superseded": True, "moved": moved, "removed": removed,
