@@ -112,8 +112,23 @@ class DetectionLists:
         suppressed: dict[str, int] = {}
         for e in candidates:
             t = e.entity_type.upper()
-            if any(p.fullmatch(e.text) for p in self.allow.get(t, ())):
+            if self._allowed(t, e.text):
                 suppressed[t] = suppressed.get(t, 0) + 1
                 continue
             kept.append(e)
         return kept, suppressed
+
+    def allowed_spans(self, text: str, type_: str) -> list[tuple[int, int]]:
+        """Spans of the deny matches of ``type_`` that an allow rule of the same
+        type exempts -- exactly the list-layer matches `apply` suppresses.
+
+        allowed-host-stays-whole: the replacement step needs to know WHERE an
+        exempted address stands, not just that one was exempted, so it can
+        leave its host alone. Same test as `apply` (`_allowed`), so the two
+        cannot drift apart."""
+        t = type_.upper()
+        return [m.span() for p in self.deny.get(t, ()) for m in p.finditer(text)
+                if self._allowed(t, m.group(0))]
+
+    def _allowed(self, type_: str, value: str) -> bool:
+        return any(p.fullmatch(value) for p in self.allow.get(type_, ()))

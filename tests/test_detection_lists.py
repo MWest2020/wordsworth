@@ -273,3 +273,50 @@ class TestWebadres:
     def test_een_emailadres_is_niet_ook_een_webadres(self):
         r = self._anon("Mail info@eazwind.nl.")
         assert "[EMAIL:" in r.text and "[URL:" not in r.text
+
+
+# allowed-host-stays-whole (#157): de host van een toegestaan adres blijft heel.
+_GM = r"(?i)(?:https?://)?(?:[\w-]+\.)*gooisemeren\.nl(?:[/?#]\S*)?"
+
+
+def _gm(tmp_path, text, ents):
+    lists = _lists(tmp_path, allow={"URL": [_GM]}, deny={"URL": [_URL]})
+    return ReversibleAnonymizer(InMemoryKeyProvider(), InMemoryMappingStore(),
+                                detect=lambda t: ents, lists=lists).anonymize(text)
+
+
+def test_a_name_found_elsewhere_is_not_replaced_inside_an_allowed_host(tmp_path):
+    """Na het herverwerken van 2026-09-23 stond 133 keer
+    `https://www.[LOCATION:…].nl`: vervangen gaat op waarde, dus een naam die
+    elders gevonden was, verdween ook in het adres dat allow.json leesbaar wil
+    houden. En het document mag er niet op afgekeurd worden."""
+    text = "De website van gooisemeren staat op https://www.gooisemeren.nl vermeld."
+    r = _gm(tmp_path, text, [Entity("LOCATION", "gooisemeren", 15, 26, "openanonymiser", 0.7)])
+    assert "https://www.gooisemeren.nl vermeld." in r.text
+    assert r.text.startswith("De website van [LOCATION:")
+
+
+def test_a_name_in_the_path_of_an_allowed_address_is_still_replaced(tmp_path):
+    """Alleen de host is beschermd. De allow-regel neemt het pad mee, maar een
+    naam in een pad is gewoon PII."""
+    text = "Jansen schreef https://www.gooisemeren.nl/raad/Jansen aan."
+    r = _gm(tmp_path, text, [Entity("PERSON", "Jansen", 0, 6, "openanonymiser", 0.9)])
+    assert "https://www.gooisemeren.nl/raad/[PERSON:" in r.text
+    assert "Jansen" not in r.text
+
+
+def test_an_address_that_is_not_allowed_still_becomes_a_url_token(tmp_path):
+    text = "Zie www.eazwind.nl en https://www.gooisemeren.nl."
+    r = _gm(tmp_path, text, [])
+    assert "www.eazwind.nl" not in r.text and "[URL:" in r.text
+    assert "https://www.gooisemeren.nl." in r.text
+
+
+def test_protected_hosts_come_back_in_place_even_past_a_hundred(tmp_path):
+    """De plaatshouder draagt geen cijfers: een gedetecteerde "123" mag er
+    niet in kunnen matchen, ook niet bij de honderdste host."""
+    text = " ".join(["https://www.gooisemeren.nl"] * 130) + " 123"
+    r = _gm(tmp_path, text, [Entity("PERSON", "123", 0, 3, "openanonymiser", 0.5)])
+    assert r.text.count("https://www.gooisemeren.nl") == 130
+    assert r.text.endswith("[PERSON:" + r.text.rsplit("[PERSON:", 1)[1])
+    assert "\x02" not in r.text and "\x03" not in r.text

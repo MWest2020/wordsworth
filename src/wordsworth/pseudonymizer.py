@@ -241,7 +241,8 @@ class ReversibleAnonymizer:
         # Allow/deny lists refine what the detectors found (typed; allow never
         # crosses types). Suppressions are counted, never silent.
         entities, suppressed = self._lists.apply(body, entities)
-        body, entity_counts = self._pseudonymize_entities(body, entities)
+        hosts = [_host_span(body, b, e) for b, e in self._lists.allowed_spans(body, "URL")]
+        body, entity_counts = self._pseudonymize_entities(body, entities, protected=hosts)
         counts = dict(result.counts)
         for label, n in entity_counts.items():
             counts[label] = counts.get(label, 0) + n
@@ -259,7 +260,8 @@ class ReversibleAnonymizer:
                                    lists_hash=self._lists.hash)
 
     def _pseudonymize_entities(
-        self, text: str, entities: list[Entity]
+        self, text: str, entities: list[Entity],
+        protected: list[tuple[int, int]] = (),
     ) -> tuple[str, dict[str, int]]:
         """Replace every detected entity VALUE with a keyed token under its type's
         key — **offset-independent**.
@@ -297,6 +299,15 @@ class ReversibleAnonymizer:
                 label_of.setdefault(value, e.entity_type.lower())
         if not label_of:
             return text, {}
+
+        # De host van een toegestaan webadres blijft heel (allowed-host-stays-
+        # whole, #157). Vervangen gaat op waarde, overal in het document: een
+        # naam die elders is gevonden, verdween ook ín het adres dat allow.json
+        # leesbaar wil houden -- 133 keer `https://www.[LOCATION:…].nl` na het
+        # herverwerken van 2026-09-23. De host gaat er tijdens de vervanging
+        # én de overlever-controle uit, als plaatshouder, en komt daarna terug.
+        # Alleen de host: een naam in het pad blijft gewoon beschermd.
+        text, terug = _hosts_eruit(text, protected)
 
         counts: dict[str, int] = {}
         waarde_van_token: dict[str, str] = {}
@@ -394,7 +405,45 @@ class ReversibleAnonymizer:
                         "alnum": value.isalnum(),
                     },
                 )
-        return text, counts
+        return terug(text), counts
+
+
+def _host_span(text: str, begin: int, end: int) -> tuple[int, int]:
+    """(begin, eind) van de host binnen het adres text[begin:end]: schema,
+    subdomeinen, domein en poort -- tot de eerste `/`, `?` of `#` na het
+    schema. Het pad hoort er niet bij."""
+    adres = text[begin:end]
+    na_schema = adres.find("://")
+    start = na_schema + 3 if na_schema >= 0 else 0
+    eind = min((i for i in (adres.find(c, start) for c in "/?#") if i >= 0),
+               default=len(adres))
+    return begin, begin + eind
+
+
+def _hosts_eruit(text: str, spans) -> tuple[str, Callable[[str], str]]:
+    """Vervang elke span door een plaatshouder en geef de tekst plus een
+    functie die ze terugzet. Een plaatshouder is \\x02, één teken uit het
+    privégebruik-blok, \\x03: geen van drieën is een woordteken, dus geen
+    waarde kan erin matchen. (Een volgnummer in cijfers kon dat wel: vanaf
+    honderd spans past een gedetecteerde "123" erin.)"""
+    stukken: list[str] = []
+    uit, vorige = [], 0
+    for begin, eind in sorted(spans):
+        if begin < vorige:          # overlap: de eerste span dekt het al
+            continue
+        if len(stukken) == 0x1900:  # blok vol: de rest gewoon vervangen, zoals vroeger
+            break
+        uit.append(text[vorige:begin])
+        uit.append("\x02" + chr(0xE000 + len(stukken)) + "\x03")
+        stukken.append(text[begin:eind])
+        vorige = eind
+    if not stukken:
+        return text, lambda t: t
+    uit.append(text[vorige:])
+
+    def terug(t: str) -> str:
+        return re.sub("\x02([\ue000-\uf8ff])\x03", lambda m: stukken[ord(m.group(1)) - 0xE000], t)
+    return "".join(uit), terug
 
 
 def _current_state(session: Session, document_id: UUID) -> str | None:
