@@ -7,7 +7,15 @@ last_reviewed: 2026-09-13
 
 De eerste keer dat wordsworth op echte documenten is gemeten in plaats van op
 fixtures. Bron: `open.gelderland.nl`, opgehaald met
-`scripts/eval/fetch_woo_corpus.py` (herkomst per document in `herkomst.jsonl`).
+`scripts/eval/fetch_woo_corpus.py` (herkomst per document in `herkomst.jsonl`,
+bewaard naast dit document als
+[`meting-woo-corpus-01.herkomst.jsonl`](meting-woo-corpus-01.herkomst.jsonl)).
+
+The provenance file used to live only on the `wordsworth-corpus` volume, the
+one copy anywhere. It moved here on 2026-09-24, when that volume was removed
+(hoge-beschikbaarheid 5.1). It holds public data only: file name, the
+`media.gelderland.nl` source, the `open.gelderland.nl` decision page, size,
+and fetch time.
 
 ## Opzet
 

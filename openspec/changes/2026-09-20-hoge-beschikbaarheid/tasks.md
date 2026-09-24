@@ -82,5 +82,14 @@ no longer waits for step 1: the api mounts nothing tied to a node.
 - [ ] 4.2 Only then may "highly available" appear in the documentation.
 
 ## 5. Cleanup
-- [ ] 5.1 Inspect `wordsworth-corpus` (mounted by nothing, pinned to node-03)
+- [x] 5.1 Inspect `wordsworth-corpus` (mounted by nothing, pinned to node-03)
   and delete it once its contents are shown to be unneeded.
+
+  Inspected 2026-09-24 through a read-only pod: 204 files, 428 MB. 197 hash
+  to a stored document's `object_key`. The other 6 PDFs are OCR-recovered
+  scans, whose `object_key` moved to the OCR'd object (measurement 01,
+  finding 2); the originals are in S3. `herkomst.jsonl` existed nowhere
+  else and is now `docs/explanation/meting-woo-corpus-01.herkomst.jsonl`
+  (same sha256, `24d67cce…`). The PVC was the staging area of batch intake
+  between batches; `deploy/k8s/50-corpus.yaml` creates a fresh one as its
+  first step, so the next batch is unaffected. Removed from homelab.
