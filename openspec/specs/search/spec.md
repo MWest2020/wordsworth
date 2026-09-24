@@ -12,7 +12,9 @@ The rule that governs everything upstream of this: **no PII reaches the index.**
 Search is the part of the system with the widest audience, so it operates on
 de-identified text only. That is why anonymisation sits before indexing in the
 pipeline and not after.
+
 ## Requirements
+
 ### Requirement: Search index protocol
 
 Indexing and search SHALL be accessed through a `SearchIndex` protocol returning
@@ -75,3 +77,14 @@ score, each carrying the document id and score.
 - **WHEN** `GET /search?q=<terms>` is called
 - **THEN** it returns the ranked hits for the query
 
+### Requirement: A superseded document leaves the index
+
+The `SearchIndex` protocol SHALL provide `delete(doc_id)`, and superseding a
+document SHALL remove its entry, so a search never returns the same stored
+object twice.
+
+#### Scenario: Copies no longer show up in search
+
+- **WHEN** a document with an index entry is superseded
+- **THEN** its entry is gone and a search that matched it returns only the
+  surviving document
