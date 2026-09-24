@@ -52,10 +52,29 @@ Two releases; the order is forced by the constraint (design, Decision 6).
       checked before anything changes.
 
 ## 2. Run it
-- [ ] 2.1 Dry run in the cluster; the counts match 173 / 159 / 173.
-- [ ] 2.2 Apply. Afterwards: 618 live documents, 611 distinct `object_key`s
+- [x] 2.1 Dry run in the cluster; the counts match 173 / 159 / 173.
+- [x] 2.2 Apply. Afterwards: 618 live documents, 611 distinct `object_key`s
       in the index and no key twice, and every dossier count down by its
       copies.
+
+      Done 2026-09-24 on image `32179060…` (main `eb86cd0`), after
+      `wordsworth-reprocess-hosts` had finished, so no job could re-index a
+      copy mid-run. The first attempt did not start: `import
+      wordsworth.pipeline` had failed in every fresh process since #148
+      (fixed in #164, which also found `wordsworth-ingest` broken since
+      2026-09-22).
+
+      Dry run: 93 objects, 173 copies, 173 memberships, as measured. Index
+      before: 770 entries, 159 extra. `--apply`, batch `dedupe-da5f8130`:
+      173 superseded, 0 memberships passed on, 173 removed, 159 index
+      entries removed; exit 0.
+
+      Checked independently afterwards: index 611 entries over 611 objects,
+      none twice; database 791 documents, 618 live over 618 distinct keys,
+      173 `supersede` and 173 `dossier_removed` (actor `dedupe`) records, no
+      membership on a superseded document, no survivor itself superseded;
+      the document audit chain verifies; a copy answers `superseded` with
+      its survivor through the live API. A rerun finds nothing to do.
 
 ## 3. Release 2 — the constraint
 - [ ] 3.1 Unique index on `object_key` where `superseded_by IS NULL`.
