@@ -146,15 +146,20 @@ def build_router(session_factory, keys: dict[str, str],
                              func.max(AuditRecord.seq).label("seq"))
                       .group_by(AuditRecord.document_id).subquery())
             docs = []
+            # Live documents only. Superseding writes an audit record, so the
+            # retired copies would otherwise be the most recently touched and
+            # fill this page (one-document-per-object).
             for d in session.execute(
                     select(Document).outerjoin(latest,
                                                latest.c.document_id == Document.id)
+                    .where(Document.superseded_by.is_(None))
                     .order_by(latest.c.seq.desc().nullslast()).limit(200)).scalars():
                 state = current_state(session, d.id)
                 docs.append({"id": str(d.id), "key": label(d),
                              "state": state.value if state else "—",
                              "types": sorted(per_doc.get(d.id, {}).items())})
-            total = session.execute(select(func.count(Document.id))).scalar_one()
+            total = session.execute(select(func.count(Document.id)).where(
+                Document.superseded_by.is_(None))).scalar_one()
         return TEMPLATES.TemplateResponse(request, "index.html", {
             "docs": docs, "total": total, "caller": _caller(request)})
 

@@ -90,6 +90,10 @@ class SearchIndex(Protocol):
     #: searchable.
     def documents_in(self, dossier: str,
                      limit: int = 10000) -> list[IndexedDocument]: ...
+    #: Remove one document's entry. Returns whether it was there; a document
+    #: that never got indexed is not an error to delete. For a superseded copy
+    #: (one-document-per-object): search must not return the same object twice.
+    def delete(self, document_id: str) -> bool: ...
     def has_object_key(self, object_key: str) -> bool:
         """Is a document with this content key already in the index? Used for
         idempotent ingest — the index is the source of truth for 'searchable',
@@ -138,6 +142,11 @@ class InMemoryIndex:
             return False
         self._topics[document_id] = set(topics or ())
         return True
+
+    def delete(self, document_id) -> bool:
+        self._dossiers.pop(document_id, None)
+        self._topics.pop(document_id, None)
+        return self._docs.pop(document_id, None) is not None
 
     def documents_in(self, dossier: str, limit: int = 10000
                      ) -> list[IndexedDocument]:

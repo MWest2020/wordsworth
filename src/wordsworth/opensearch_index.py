@@ -239,6 +239,17 @@ class OpenSearchIndex:
                 f"index {self._index!r} maps {wrong} with the wrong type; "
                 "a field cannot be retyped in place — reindex into a fresh index")
 
+    def delete(self, document_id) -> bool:
+        """Remove one entry. A 404 is not an error: the document was never
+        indexed, or an earlier run already removed it."""
+        try:
+            self._client.delete(index=self._index, id=document_id, refresh=True)
+        except Exception as exc:                 # opensearchpy NotFoundError
+            if getattr(exc, "status_code", None) != 404:
+                raise
+            return False
+        return True
+
     def has_object_key(self, object_key: str) -> bool:
         """True if a document with this content key is already indexed. The index
         is the source of truth for 'searchable', so this is the correct basis for

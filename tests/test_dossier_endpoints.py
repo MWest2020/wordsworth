@@ -298,3 +298,37 @@ def test_a_field_with_the_wrong_type_is_a_hard_error():
     with pytest.raises(MappingConflict) as exc:
         OpenSearchIndex(Client(), "ww", 64).ensure_ready()
     assert "dossiers" in str(exc.value) and "reindex" in str(exc.value)
+
+
+def test_known_bytes_join_the_live_document_not_a_retired_copy(
+        session_factory, mem_store, fake_embedder, born_digital_pii_pdf):
+    """one-document-per-object: the skip path looked up "the first document
+    with this key". With a retired copy as the older row, that is the copy --
+    and a membership on it would be refused. It has to be the live one."""
+    import hashlib
+
+    from wordsworth.supersession import supersede
+
+    key = "documents/" + hashlib.sha256(born_digital_pii_pdf).hexdigest()
+    index = InMemoryIndex()
+    with session_factory() as s:
+        older, live = register(s, key), register(s, key)
+        s.flush()
+        supersede(s, older.id, live.id, actor="dedupe")
+        s.commit()
+        # Touch the live row last, so the retired copy is the first row an
+        # unordered lookup meets (superseding moved it to the end of the heap).
+        from sqlalchemy import text
+        s.execute(text("UPDATE documents SET filename = 'a.pdf' WHERE id = :i"),
+                  {"i": live.id})
+        s.commit()
+        live_id = live.id
+    index.index(str(live_id), "tekst", key)
+    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+                              search_index=index, embedder=fake_embedder,
+                              anonymizer=DeterministicAnonymizer()))
+    r = c.post("/ingest", params={"dossier": "zaak-b"},
+               files={"files": ("a.pdf", born_digital_pii_pdf, "application/pdf")})
+    assert r.status_code == 200, r.text
+    result = r.json()["results"][0]
+    assert (result["state"], result["document_id"]) == ("added_to_dossier", str(live_id))

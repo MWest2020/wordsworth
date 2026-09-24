@@ -32,6 +32,13 @@ class Document(Base):
     # this column existed. A screen that prints the hash where the name is
     # missing is presenting an identifier as a name; it has to say "naamloos".
     filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Which document took this one's place, once it turned out to be a copy of
+    # an object that already was a document (one-document-per-object). NOT the
+    # state -- that is `superseded` in the audit trail, like every state. This
+    # is the pointer, so a partial unique index can see it; set once, in the
+    # same transaction as that audit record, and a trigger refuses changing it.
+    superseded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
 
 
 class AuditRecord(Base):

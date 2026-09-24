@@ -81,7 +81,9 @@ def assign(session, mapping: dict[str, str], weg_uit: str | None = None,
     batch = uuid4().hex[:12]
     per_dossier: dict[str, int] = {}
     toegewezen = zonder_herkomst = 0
-    for doc in session.execute(select(Document)).scalars():
+    # Live documents only: a superseded copy's survivor is assigned instead.
+    for doc in session.execute(select(Document).where(
+            Document.superseded_by.is_(None))).scalars():
         herkomst = mapping.get(doc.filename or "")
         if herkomst is None:
             zonder_herkomst += 1

@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import dossier_events
-from .models import Dossier, DossierDocument
+from .models import Document, Dossier, DossierDocument
 
 #: What a caller passes to say "every dossier". A word and not an empty value,
 #: so that a scope left out by accident cannot be read as this.
@@ -82,6 +82,13 @@ def add(session: Session, dossier_id: UUID, document_id: UUID, *,
     the easy one, and arriving through ingest is an actor too. Why no reason is
     asked for: see `remove`, and `dossier_events` for both homes.
     """
+    doc = session.get(Document, document_id)
+    if doc is not None and doc.superseded_by is not None:
+        # A retired copy has no business in a case: its survivor holds the
+        # same bytes (one-document-per-object). Refused here, at the one place
+        # every membership passes, rather than trusted to every caller.
+        raise DossierError(f"document {document_id} is superseded by "
+                           f"{doc.superseded_by}; add that one instead")
     existing = session.get(DossierDocument, (dossier_id, document_id))
     if existing is not None:
         return False

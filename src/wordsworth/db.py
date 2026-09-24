@@ -39,6 +39,15 @@ END;
 $$ LANGUAGE plpgsql;
 """
 
+# A superseded document's pointer is set once (one-document-per-object).
+_SUPERSEDED_ONCE_FUNCTION_SQL = """
+CREATE OR REPLACE FUNCTION wordsworth_superseded_once() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'documents.superseded_by is set once';
+END;
+$$ LANGUAGE plpgsql;
+"""
+
 # Tables that are append-only at the schema level: (trigger, table).
 # key_lifecycle_events is the authorisation trail (key-audit-in-postgres).
 _APPEND_ONLY = [
@@ -63,13 +72,24 @@ def make_engine(url: str | None = None) -> Engine:
 
 
 # Additive column migrations for databases created before the column existed
-# (create_all never alters existing tables): (table, column). All VARCHAR.
+# (create_all never alters existing tables): (table, column, type).
 _COLUMNS = [
-    ("pii_mappings", "norm_version"),
-    ("grants", "domain"),
-    ("documents", "filename"),
-    ("grants", "role"),
+    ("pii_mappings", "norm_version", "VARCHAR"),
+    ("grants", "domain", "VARCHAR"),
+    ("documents", "filename", "VARCHAR"),
+    ("grants", "role", "VARCHAR"),
+    ("documents", "superseded_by", "UUID REFERENCES documents(id)"),
 ]
+
+# (trigger, table) -> its CREATE statement, for the triggers that are not the
+# append-only kind.
+_OTHER_TRIGGERS = {
+    ("superseded_once", "documents"):
+        "CREATE TRIGGER superseded_once BEFORE UPDATE OF superseded_by ON documents "
+        "FOR EACH ROW WHEN (OLD.superseded_by IS NOT NULL "
+        "AND NEW.superseded_by IS DISTINCT FROM OLD.superseded_by) "
+        "EXECUTE FUNCTION wordsworth_superseded_once()",
+}
 
 # name -> (table, column). Reveal walks document_pseudonyms on every call;
 # without its index that is a sequential scan over every pseudonym in the
@@ -98,14 +118,15 @@ def _missing_ddl(conn) -> list[str]:
     trigs = {tuple(r) for r in conn.execute(text(
         "SELECT tgname, tgrelid::regclass::text FROM pg_trigger "
         "WHERE NOT tgisinternal"))}
-    ddl = [f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS {c} VARCHAR"
-           for t, c in _COLUMNS if (t, c) not in cols]
+    ddl = [f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS {c} {typ}"
+           for t, c, typ in _COLUMNS if (t, c) not in cols]
     ddl += [f"CREATE INDEX IF NOT EXISTS {name} ON {t} ({c})"
             for name, (t, c) in _INDEXES.items()
             if conn.execute(text("SELECT to_regclass(:n)"), {"n": name}).scalar() is None]
     ddl += [f"CREATE TRIGGER {trig} BEFORE UPDATE OR DELETE ON {t} "
             "FOR EACH ROW EXECUTE FUNCTION wordsworth_forbid_mutation()"
             for trig, t in _APPEND_ONLY if (trig, t) not in trigs]
+    ddl += [sql for key, sql in _OTHER_TRIGGERS.items() if key not in trigs]
     return ddl
 
 
@@ -144,6 +165,7 @@ def init_schema(engine: Engine, *, attempts: int = 20, lock_timeout: str = "5s",
                 # SET LOCAL: scoped to this transaction, gone on commit.
                 conn.execute(text(f"SET LOCAL lock_timeout = '{lock_timeout}'"))
                 conn.execute(text(_FORBID_FUNCTION_SQL))
+                conn.execute(text(_SUPERSEDED_ONCE_FUNCTION_SQL))
                 for stmt in _missing_ddl(conn):
                     conn.execute(text(stmt))
             return

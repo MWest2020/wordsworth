@@ -45,7 +45,7 @@ from .pii_categories import (
 )
 from .pipeline import (
     current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
-    process,
+    live_document_for, process,
 )
 from .rate_limit import (
     EXEMPT_PATHS,
@@ -623,9 +623,15 @@ def create_app(
             extracted → anonymized → indexed) from the audit chain."""
             with session_factory() as session:
                 state = current_state(session, document_id)
+                doc = session.get(Document, document_id)
             if state is None:
                 raise HTTPException(status_code=404, detail="unknown document")
-            return {"document_id": str(document_id), "state": state.value}
+            out = {"document_id": str(document_id), "state": state.value}
+            if doc is not None and doc.superseded_by is not None:
+                # The id existed and may have been cited; say where it went
+                # rather than pretend it never was (one-document-per-object).
+                out["superseded_by"] = str(doc.superseded_by)
+            return out
 
         @app.get("/documents/{document_id}/anonymized",
                  response_model=AnonymizedResponse,
@@ -923,8 +929,9 @@ def create_app(
                 # has to add that membership, or the skip would silently swallow
                 # the one thing this request was actually asking for.
                 with session_factory() as session:
-                    doc = session.execute(select(Document).where(
-                        Document.object_key == key)).scalars().first()
+                    # The live one: a superseded copy has the same key, and a
+                    # membership added to it would vanish from every scope.
+                    doc = live_document_for(session, key)
                     # Actor "ingest": nobody moved this, it arrived. There is no
                     # endpoint that changes a membership by hand, so a caller
                     # identity would be borrowed from a different act.
@@ -1141,8 +1148,7 @@ def create_app(
                             for c in prof.unbroken_combinations()]
                 # The dataset is an artefact with identity (content hash); its run
                 # is an access event on it — aggregates only, never a cell value.
-                doc = session.execute(select(Document).where(
-                    Document.object_key == key)).scalars().first()
+                doc = live_document_for(session, key)
                 if doc is None:
                     doc = register(session, key, prof.domain)
                 state = current_state(session, doc.id)
@@ -1190,6 +1196,13 @@ def create_app(
                     raise HTTPException(status_code=404, detail="unknown grant")
                 if current_state(session, document_id) is None:
                     raise HTTPException(status_code=404, detail="unknown document")
+                copy = session.get(Document, document_id)
+                if copy is not None and copy.superseded_by is not None:
+                    # A copy is not a second door to the same pseudonyms.
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"document is superseded by {copy.superseded_by}; "
+                               "reveal on that one")
                 dom = document_domain(session, document_id)
                 # De geauthenticeerde caller, nodig vóór de autorisatie: een
                 # grant noemt WIE mag onthullen, en dat kunnen we pas toetsen als

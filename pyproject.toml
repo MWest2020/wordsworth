@@ -39,6 +39,7 @@ wordsworth-backfill-dossier = "wordsworth.backfill_dossier:main"
 wordsworth-access-preflight = "wordsworth.access_preflight:main"
 wordsworth-dossier-uit-herkomst = "wordsworth.dossier_tools:main_assign"
 wordsworth-dossier-hernoem = "wordsworth.dossier_tools:main_rename"
+wordsworth-dedupe = "wordsworth.dedupe:main"
 wordsworth-ingest = "wordsworth.ingest_corpus:main"
 wordsworth-measure-combinations = "wordsworth.measure_combinations:main"
 
