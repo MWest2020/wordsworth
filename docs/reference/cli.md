@@ -54,6 +54,11 @@ The API base URL is resolved in this order:
 
 ## Commands
 
+Every console script in `pyproject.toml` is started in its own interpreter by
+`tests/test_entry_points_import.py`. That test exists because an import cycle
+kept `wordsworth-ingest` (the batch-ingest Job) from starting between
+2026-09-22 and 2026-09-24, invisible to a test suite that runs in one process.
+
 | Command | Description |
 | --- | --- |
 | `wordsworth health` | Check the API is up (`GET /health`). |
