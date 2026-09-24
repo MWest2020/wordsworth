@@ -97,5 +97,14 @@ Two releases; the order is forced by the constraint (design, Decision 6).
       Not tested: the same collision branch in `ingest_corpus`, which builds
       OpenSearch and S3 from config inside the function and cannot be given
       fakes. It mirrors the api branch line for line.
-- [ ] 3.4 Deploy; the init creates the index; the constraint is visible in
+- [x] 3.4 Deploy; the init creates the index; the constraint is visible in
       `pg_indexes`.
+
+      Deployed 2026-09-24 on image `409b931b…` (main `e674005`, homelab
+      `0ee60b0`). `pg_indexes`: `CREATE UNIQUE INDEX
+      uq_documents_live_object_key ON public.documents USING btree
+      (object_key) WHERE (superseded_by IS NULL)`. Smoke from the cold side:
+      inserting a second live document for an existing object, inside a
+      transaction that was rolled back, was refused with `duplicate key value
+      violates unique constraint "uq_documents_live_object_key"`; the table
+      still held 791 rows.
