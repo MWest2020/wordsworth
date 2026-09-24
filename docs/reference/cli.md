@@ -189,6 +189,11 @@ only be counted by removing them, so that number is checked afterwards and a
 difference sets exit code 1. It commits one object at a time, so it never holds
 a long transaction on `documents`. A rerun finds nothing left to do.
 
+Since release 2 the database refuses a second live document for the same
+bytes (`uq_documents_live_object_key`), so on a current database a dry run
+finds nothing. On one that still holds copies, `wordsworth-init` fails when it
+tries to create that index: run this command first.
+
 A retired copy is not deleted: its audit trail requires the row. It still
 answers `GET /documents/{id}/state` with `superseded` and `superseded_by`, and
 reveal on it is refused with the survivor's id.

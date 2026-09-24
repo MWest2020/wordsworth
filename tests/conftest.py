@@ -65,6 +65,19 @@ def session_factory(database_url):
 
 
 @pytest.fixture
+def legacy_copies(session_factory):
+    """A database from before one-document-per-object release 2, where the same
+    bytes could be two live documents -- as production was until 2026-09-24.
+    Only the tests of cleaning up such copies need one; everything else runs
+    against the constraint."""
+    from sqlalchemy import text
+    with session_factory() as s:
+        s.execute(text("DROP INDEX IF EXISTS uq_documents_live_object_key"))
+        s.commit()
+    return session_factory
+
+
+@pytest.fixture
 def session(session_factory):
     with session_factory() as s:
         yield s

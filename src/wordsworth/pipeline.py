@@ -16,6 +16,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import audit
@@ -121,8 +122,7 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
     store.put(key, pdf_bytes)
     # Content already ingested is one document, not a second. Delivering it into
     # another dossier adds a membership; that is the normal case, not an error.
-    existing = live_document_for(session, key)
-    doc = existing if existing is not None else register(session, key, domain, filename)
+    doc = register_live(session, key, domain, filename)
     if dossier:
         # Arriving in a case is an act too; "ingest" is who did it.
         dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
@@ -141,6 +141,31 @@ def live_document_for(session: Session, object_key: str) -> Document | None:
         select(Document).where(Document.object_key == object_key,
                                Document.superseded_by.is_(None))
     ).scalars().first()
+
+
+def register_live(session: Session, object_key: str, domain: str = DEFAULT_DOMAIN,
+                  filename: str | None = None) -> Document:
+    """The live document for these bytes: the one that exists, or a new one.
+
+    Two deliveries of the same bytes at once -- two threads, two replicas --
+    both find nothing and both insert. The unique index on live object keys
+    lets one through and refuses the other, which then gets the winner, the
+    way a key mint adopts the winner. Before that index (2026-08-17..19) the
+    same race left 173 copies.
+    """
+    existing = live_document_for(session, object_key)
+    if existing is not None:
+        return existing
+    try:
+        with session.begin_nested():
+            return register(session, object_key, domain, filename)
+    except IntegrityError as exc:
+        if "uq_documents_live_object_key" not in str(exc.orig):
+            raise
+        winner = live_document_for(session, object_key)
+        if winner is None:
+            raise
+        return winner
 
 
 def dossiers_of(session: Session, document_id: UUID) -> list[str]:

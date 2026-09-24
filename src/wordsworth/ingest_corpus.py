@@ -21,7 +21,8 @@ from .embedder import OllamaEmbedder
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
-from .pipeline import ingest, process
+from .models import Document
+from .pipeline import dossiers_of, ingest, process
 from .recovery import recover
 from .states import State
 
@@ -52,11 +53,17 @@ def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
             session.commit()
             if state == State.UNPROCESSABLE_OCR:
                 # Scanned page: OCR to a text layer, then resume the straat.
-                recover(session, doc.id, store)
+                state = recover(session, doc.id, store)
                 session.commit()
-                state = process(session, doc.id, store, anonymizer=anonymizer,
-                                search_index=index, embedder=embedder)
-                session.commit()
+                if state == State.SUPERSEDED:
+                    # Its OCR'd PDF is already a document, which now holds the
+                    # dossiers (one-document-per-object).
+                    owner = session.get(Document, doc.id).superseded_by
+                    index.set_dossiers(str(owner), dossiers_of(session, owner))
+                else:
+                    state = process(session, doc.id, store, anonymizer=anonymizer,
+                                    search_index=index, embedder=embedder)
+                    session.commit()
             results.append((pdf.name, state))
             print(f"{pdf.name}: {state.value}")
     return results

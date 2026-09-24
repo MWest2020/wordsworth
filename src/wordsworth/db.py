@@ -102,6 +102,17 @@ _INDEXES = {
 }
 
 
+# Unique indexes, by name. Creating one fails while duplicates exist, and it
+# should: on a database that still holds copies, run `wordsworth-dedupe` first.
+# An init that quietly skipped the constraint would leave the rule unenforced
+# without anyone knowing (one-document-per-object, design Decision 6).
+_UNIQUE_INDEXES = {
+    "uq_documents_live_object_key":
+        "CREATE UNIQUE INDEX uq_documents_live_object_key ON documents (object_key) "
+        "WHERE superseded_by IS NULL",
+}
+
+
 def _missing_ddl(conn) -> list[str]:
     """The DDL still to do, and nothing else.
 
@@ -127,6 +138,8 @@ def _missing_ddl(conn) -> list[str]:
             "FOR EACH ROW EXECUTE FUNCTION wordsworth_forbid_mutation()"
             for trig, t in _APPEND_ONLY if (trig, t) not in trigs]
     ddl += [sql for key, sql in _OTHER_TRIGGERS.items() if key not in trigs]
+    ddl += [sql for name, sql in _UNIQUE_INDEXES.items()
+            if conn.execute(text("SELECT to_regclass(:n)"), {"n": name}).scalar() is None]
     return ddl
 
 

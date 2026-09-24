@@ -1,4 +1,5 @@
 import json
+from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -17,7 +18,7 @@ from wordsworth.models import Document
 
 
 def _doc(session):
-    doc = Document(object_key="k")
+    doc = Document(object_key=f"k-{uuid4()}")   # one live document per key
     session.add(doc)
     session.flush()
     return doc.id

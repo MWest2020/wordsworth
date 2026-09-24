@@ -77,9 +77,25 @@ Two releases; the order is forced by the constraint (design, Decision 6).
       its survivor through the live API. A rerun finds nothing to do.
 
 ## 3. Release 2 — the constraint
-- [ ] 3.1 Unique index on `object_key` where `superseded_by IS NULL`.
-- [ ] 3.2 Registration adopts the existing document on a unique violation.
+- [x] 3.1 Unique index on `object_key` where `superseded_by IS NULL`.
+- [x] 3.2 Registration adopts the existing document on a unique violation.
       Test: two concurrent registrations of the same bytes give one document.
-- [ ] 3.3 OCR recovery that collides supersedes itself (Decision 7). Test.
+- [x] 3.3 OCR recovery that collides supersedes itself (Decision 7). Test.
+
+      Built 2026-09-24. The index lives in the model (new databases) and in
+      `init_schema` (existing ones); creating it over remaining copies fails
+      the init on purpose. `register_live` is the one way in for new bytes:
+      ingest, the dataset run. OCR recovery checks the owner of the OCR'd
+      object first and supersedes itself `as_object`; the api ingest path then
+      updates the owner's dossiers in the index instead of processing a
+      retired document. Tests in `tests/test_one_live_document.py`, each guard
+      checked once with its fix removed. Release-1 tests that need live copies
+      now ask for a pre-constraint database (`legacy_copies`), and two test
+      fixtures that reused one placeholder key for different documents got
+      their own keys.
+
+      Not tested: the same collision branch in `ingest_corpus`, which builds
+      OpenSearch and S3 from config inside the function and cannot be given
+      fakes. It mirrors the api branch line for line.
 - [ ] 3.4 Deploy; the init creates the index; the constraint is visible in
       `pg_indexes`.
