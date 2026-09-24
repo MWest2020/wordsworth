@@ -9,6 +9,9 @@
       checked once with its fix removed.
 
 ## 2. Out
-- [ ] 2.1 Release, deploy (api and init-job on the same sha).
-- [ ] 2.2 Reprocess the 90 documents that carry `www.[TOKEN]`; recount.
-- [ ] 2.3 Close #157 with the numbers; archive.
+- [x] 2.1 Release, deploy (api and init-job on the same sha). (68203ee, rolled
+      out together with the Origin fix.)
+- [x] 2.2 Reprocess the 90 documents that carry `www.[TOKEN]`; recount.
+      (90/90 after the OpenBao token was reissued; `www.[TOKEN]` 133 -> 1,
+      readable by exception 258 -> 412, whole readable outside allow.json 0.)
+- [x] 2.3 Close #157 with the numbers; archive.
