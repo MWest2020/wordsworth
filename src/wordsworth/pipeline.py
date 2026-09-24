@@ -19,6 +19,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import audit
+# Lives in `audit` (it reads nothing else); imported here so every caller of
+# `pipeline.current_state` keeps working.
+from .audit import current_state
 from . import dossiers
 from . import pseudonym_registry
 from .anonymizer import Anonymizer, DeterministicAnonymizer
@@ -34,15 +37,6 @@ from .search_index import SearchIndex
 from .states import State, is_allowed
 from .structured_log import log_transition
 
-
-def current_state(session: Session, document_id: UUID) -> State | None:
-    to_state = session.execute(
-        select(AuditRecord.to_state)
-        .where(AuditRecord.document_id == document_id)
-        .order_by(AuditRecord.seq.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-    return State(to_state) if to_state else None
 
 
 def _last_ts(session: Session, document_id: UUID):

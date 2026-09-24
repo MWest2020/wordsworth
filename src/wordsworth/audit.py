@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .hashing import GENESIS_HASH, canonical_content, compute_hash
 from .models import AuditRecord
+from .states import State
 
 # Arbitrary constant key identifying the single global audit chain.
 _CHAIN_LOCK_KEY = 4771
@@ -119,3 +120,20 @@ def export_jsonl(session: Session, *, after_seq: int = 0) -> str:
             )
         )
     return "\n".join(lines)
+
+
+def current_state(session: Session, document_id: UUID) -> State | None:
+    """The document's state: the latest audit record's `to_state`.
+
+    Here and not in `pipeline`, because it reads only the trail. In `pipeline`
+    it made an import cycle (pipeline -> dossiers -> dossier_events ->
+    pipeline) that broke any fresh process importing `pipeline` first -- found
+    2026-09-24 when `wordsworth-dedupe` would not start in the cluster.
+    """
+    to_state = session.execute(
+        select(AuditRecord.to_state)
+        .where(AuditRecord.document_id == document_id)
+        .order_by(AuditRecord.seq.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    return State(to_state) if to_state else None

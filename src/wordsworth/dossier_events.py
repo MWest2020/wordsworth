@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from . import audit
 from .models import Dossier, DossierDocument
-from .pipeline import current_state
+from .audit import current_state
 
 #: Steps, kept apart so a reader of the trail can filter on the act rather than
 #: having to interpret a payload.
