@@ -179,3 +179,29 @@ def test_authorized_is_not_the_same_as_resolved(session_factory, mem_store,
         ).scalar_one()
     assert payload["types"] == body["resolved_types"]
     assert payload["requested_types"] == body["authorized_types"]
+
+
+def test_reveal_on_a_retired_copy_is_refused_and_names_the_survivor(
+        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+    """one-document-per-object: a copy is not a second door to the same
+    pseudonyms. The survivor still reveals; the copy says where to go."""
+    from wordsworth.pipeline import register
+    from wordsworth.supersession import supersede
+
+    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+                          born_digital_pii_pdf)
+    with session_factory() as s:
+        from wordsworth.models import Document
+        copy = register(s, s.get(Document, doc_id).object_key)
+        s.flush()
+        supersede(s, copy.id, doc_id, actor="dedupe")
+        s.commit()
+        copy_id = copy.id
+    gs = InMemoryGrantStore()
+    on_copy = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=copy_id)
+    on_survivor = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=doc_id)
+    c = _client(session_factory, kp, gs)
+    r = c.post(f"/documents/{copy_id}/reveal", json={"grant_id": on_copy.grant_id})
+    assert r.status_code == 409 and str(doc_id) in r.json()["detail"]
+    assert c.post(f"/documents/{doc_id}/reveal",
+                  json={"grant_id": on_survivor.grant_id}).status_code == 200

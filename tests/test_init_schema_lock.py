@@ -156,3 +156,19 @@ def test_a_deadlock_is_retried_like_a_lock_timeout():
     assert _is_lock_conflict(exc("40P01"))
     assert _is_lock_conflict(exc("55P03"))
     assert not _is_lock_conflict(exc("28P01"))   # wrong password: waiting won't help
+
+
+def test_a_database_from_before_supersession_gains_column_and_trigger(
+        session_factory, database_url):
+    """Production's documents table predates one-document-per-object; create_all
+    never alters it, so the init has to add both."""
+    engine = make_engine(database_url)
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE documents DROP COLUMN superseded_by CASCADE"))
+        conn.execute(text("DROP TRIGGER IF EXISTS superseded_once ON documents"))
+    assert not _heeft_kolom(engine, "documents", "superseded_by")
+    init_schema(engine, attempts=1)
+    assert _heeft_kolom(engine, "documents", "superseded_by")
+    with engine.connect() as conn:
+        assert conn.execute(text(
+            "SELECT 1 FROM pg_trigger WHERE tgname = 'superseded_once'")).scalar()

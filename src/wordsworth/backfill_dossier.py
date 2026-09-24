@@ -25,10 +25,15 @@ from .pipeline import dossiers_of, get_anonymized_text
 
 
 def orphans(session) -> list[Document]:
-    """Documents that are in no dossier at all."""
+    """Documents that are in no dossier at all.
+
+    Live ones only: a superseded copy left its dossiers on purpose, and its
+    survivor holds them (one-document-per-object).
+    """
     member = select(DossierDocument.document_id)
     return list(session.execute(
-        select(Document).where(Document.id.not_in(member))).scalars())
+        select(Document).where(Document.id.not_in(member),
+                               Document.superseded_by.is_(None))).scalars())
 
 
 def adopt(session, name: str, index=None, *, actor: str = "backfill") -> dict:

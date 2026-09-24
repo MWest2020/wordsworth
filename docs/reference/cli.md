@@ -163,6 +163,31 @@ this was fixed, which made "dry" a lie.
 Run it **after** deploying the new code, not before: in between, the existing
 documents are in no dossier while the new code already requires a scope.
 
+## `wordsworth-dedupe`
+
+Retires every document that is a copy of an object another document already is
+(one-document-per-object). The oldest registered copy of each object survives;
+the others become `superseded`, leave the search index and their dossiers
+(each removal recorded, actor `dedupe`), and pass on any dossier only they were
+in.
+
+```bash
+wordsworth-dedupe                                   # dry run: what it would do
+wordsworth-dedupe --apply --expect-copies 173 --expect-memberships 173 \
+                  --expect-index-entries 159
+```
+
+`--apply` refuses to start without the numbers you expect, and stops before
+changing anything if the database says otherwise: a cleanup that finds more
+than it was sent for has found something nobody looked at. Index entries can
+only be counted by removing them, so that number is checked afterwards and a
+difference sets exit code 1. It commits one object at a time, so it never holds
+a long transaction on `documents`. A rerun finds nothing left to do.
+
+A retired copy is not deleted: its audit trail requires the row. It still
+answers `GET /documents/{id}/state` with `superseded` and `superseded_by`, and
+reveal on it is refused with the survivor's id.
+
 ## `wordsworth-backfill-filenames`
 
 Gives existing documents back the name their file arrived under, by content hash.

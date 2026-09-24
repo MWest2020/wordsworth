@@ -127,14 +127,26 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
     store.put(key, pdf_bytes)
     # Content already ingested is one document, not a second. Delivering it into
     # another dossier adds a membership; that is the normal case, not an error.
-    existing = session.execute(
-        select(Document).where(Document.object_key == key)).scalars().first()
+    existing = live_document_for(session, key)
     doc = existing if existing is not None else register(session, key, domain, filename)
     if dossier:
         # Arriving in a case is an act too; "ingest" is who did it.
         dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
                      actor="ingest")
     return doc
+
+
+def live_document_for(session: Session, object_key: str) -> Document | None:
+    """The document for this object that is not superseded, if any.
+
+    Several rows can carry one `object_key` -- copies retired by
+    one-document-per-object keep theirs -- so "the document for these bytes"
+    is the live one, never simply the first row found.
+    """
+    return session.execute(
+        select(Document).where(Document.object_key == object_key,
+                               Document.superseded_by.is_(None))
+    ).scalars().first()
 
 
 def dossiers_of(session: Session, document_id: UUID) -> list[str]:
