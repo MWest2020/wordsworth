@@ -66,7 +66,19 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   That is step 4.
 
 ## 3. The dependencies
-- [ ] 3.1a OpenSearch with more than one node.
+- [ ] 3.1a OpenSearch with more than one node. Plan: design.md, Decisions
+  1–3 and 5.
+  - [ ] 3.1a.1 Three-node StatefulSet beside the old Deployment, under a new
+    Service: one pod per worker node, headless discovery, PDB
+    `maxUnavailable: 1`, same heap and requests per node.
+  - [ ] 3.1a.2 In a quiet window (no ingest, no reprocess Job): create
+    `wordsworth` with the current mapping, reindex from remote, then compare
+    count, id set, and a sample of vectors value for value.
+  - [ ] 3.1a.3 Switch `WORDSWORTH_OPENSEARCH_URL`; recount after the switch.
+  - [ ] 3.1a.4 Proof: evict one OpenSearch pod under a five-per-second
+    `/search` probe; no failed search, health green again after.
+  - [ ] 3.1a.5 After a week without rollback: remove the old Deployment and
+    its volume.
 - [x] 3.1b Recorded *that* search drops out temporarily and what the console
   shows then: `docs/how-to/zoeken-valt-weg.md`. The distinction between "the
   index is unreachable" and "your query was refused" did not exist — both gave
@@ -74,7 +86,17 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   (`search_index.SearchUnavailable`), not in the console. Only the read paths
   soften; ingest fails hard and holds the document back, because `indexed`
   without an index is a lie.
-- [ ] 3.2 Ollama: a second instance, or a volume that can move.
+- [ ] 3.2 Ollama: a second instance. Plan: design.md, Decisions 1, 4 and 5.
+  - [ ] 3.2.1 wordsworth: an `EmbeddingError` caused by the transport is
+    transient; an empty or malformed embedding stays permanent. Test both.
+  - [ ] 3.2.2 Two-replica StatefulSet, required anti-affinity, PDB
+    `maxUnavailable: 1`; each pod pulls its models in an init container and
+    fails if a digest differs from the pin (`bge-m3` `79076464…2146bab`,
+    `llama3.2:3b` `a80c4f17…cbb5b8b72`). The PostSync pull Job goes.
+  - [ ] 3.2.3 Check both instances report the pinned digests, and that the
+    same text embeds to the same vector on each.
+  - [ ] 3.2.4 Proof: evict one Ollama pod under a five-per-second `/hybrid`
+    probe; no failed query.
 
 ## 4. Proof
 - [ ] 4.1 A node-shutdown test: one node out, the console keeps answering,
