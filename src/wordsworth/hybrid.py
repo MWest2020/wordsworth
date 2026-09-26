@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from zeef.similarity import cosine
 
+from .config import settings
 from .embedder import Embedder
+from .retry import retry_transient
 from .search_index import Hit, SearchIndex
 
 
@@ -20,7 +22,13 @@ def hybrid_search(
     only: list[str] | None = None,
     topic: str | None = None,
 ) -> list[Hit]:
-    query_vector = embedder.embed([query])[0]
+    # The same bounded retry as ingest (hoge-beschikbaarheid 3.2.4): with two
+    # Ollama instances, a query can reach one in the second it goes away --
+    # measured 2026-09-26, 1 of 334 queries got "connection refused" while its
+    # endpoint was being removed. Only transport failures retry; a bad
+    # embedding does not, and after the budget it is still an error.
+    query_vector = retry_transient(lambda: embedder.embed([query])[0],
+                                   settings.retry_attempts, settings.retry_base_delay)
     candidates = index.hybrid_search(query, query_vector, recall=recall, only=only,
                                      topic=topic)
     for hit in candidates:
