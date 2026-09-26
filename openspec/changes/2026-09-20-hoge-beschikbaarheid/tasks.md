@@ -68,17 +68,39 @@ no longer waits for step 1: the api mounts nothing tied to a node.
 ## 3. The dependencies
 - [ ] 3.1a OpenSearch with more than one node. Plan: design.md, Decisions
   1–3 and 5.
-  - [ ] 3.1a.1 Three-node StatefulSet beside the old Deployment, under a new
+  - [x] 3.1a.1 Three-node StatefulSet beside the old Deployment, under a new
     Service: one pod per worker node, headless discovery, PDB
     `maxUnavailable: 1`, same heap and requests per node.
-  - [ ] 3.1a.2 In a quiet window (no ingest, no reprocess Job): create
+  - [x] 3.1a.2 In a quiet window (no ingest, no reprocess Job): create
     `wordsworth` with the current mapping, reindex from remote, then compare
     count, id set, and a sample of vectors value for value.
-  - [ ] 3.1a.3 Switch `WORDSWORTH_OPENSEARCH_URL`; recount after the switch.
-  - [ ] 3.1a.4 Proof: evict one OpenSearch pod under a five-per-second
+  - [x] 3.1a.3 Switch `WORDSWORTH_OPENSEARCH_URL`; recount after the switch.
+  - [x] 3.1a.4 Proof: evict one OpenSearch pod under a five-per-second
     `/search` probe; no failed search, health green again after.
+
+    3.1a.1–3.1a.4 done 2026-09-26. Cluster up at 09:12Z (homelab
+    `902e765`): green, one pod per worker node. In a quiet window (no Job, no
+    audit record in ten minutes) the index was created from the old one's own
+    settings and mapping and copied by reindex-from-remote: 611 created, no
+    failures. Verified document by document: 611 = 611, none missing or
+    extra, **no `_source` different**, vectors included; same mapping and
+    analysis; green with the replica on a second node. Switched at 09:16Z
+    (homelab `2f2b4d1`, a pod-template annotation rolls the api so `envFrom`
+    picks the URL up) and verified again after: unchanged, no writes in
+    between.
+
+    BM25 ranks differently from before, 5 of 6 test queries (hybrid: 1 of 6,
+    through its BM25 recall set). Not the copy: the old index still counted
+    163 deleted documents in its statistics (field doc count 721 against 611
+    live), left by the dedupe and by updates. The new one ranks over the
+    corpus as it is.
+
+    Proof: `/search` probe at three per second; the **cluster manager**
+    `opensearch-cluster-1` evicted at 09:17:17Z, the second eviction refused by
+    the PDB; **360 of 360 searches answered**; `opensearch-cluster-2` elected;
+    green with three nodes again at 09:19:10Z.
   - [ ] 3.1a.5 After a week without rollback: remove the old Deployment and
-    its volume.
+    its volume. Due 2026-10-03.
 - [x] 3.1b Recorded *that* search drops out temporarily and what the console
   shows then: `docs/how-to/zoeken-valt-weg.md`. The distinction between "the
   index is unreachable" and "your query was refused" did not exist — both gave
@@ -86,7 +108,7 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   (`search_index.SearchUnavailable`), not in the console. Only the read paths
   soften; ingest fails hard and holds the document back, because `indexed`
   without an index is a lie.
-- [ ] 3.2 Ollama: a second instance. Plan: design.md, Decisions 1, 4 and 5.
+- [x] 3.2 Ollama: a second instance. Plan: design.md, Decisions 1, 4 and 5.
   - [x] 3.2.1 wordsworth: an `EmbeddingError` caused by the transport is
     transient; an empty or malformed embedding stays permanent. Test both.
     `EmbeddingUnavailable` (unreachable, timeout, 5xx, cut-off response);
@@ -108,7 +130,7 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     instance embedded the indexed text to exactly the stored vector: cosine
     1.0, largest difference 0.0 over 1024 values. So both run the model that
     built the index, not merely a model with the same tag.
-  - [ ] 3.2.4 Proof: evict one Ollama pod under a five-per-second `/hybrid`
+  - [x] 3.2.4 Proof: evict one Ollama pod under a five-per-second `/hybrid`
     probe; no failed query.
 
     First run 2026-09-26 08:45Z (three per second, under the rate limit):
@@ -119,6 +141,12 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     `hybrid_search`, the one place every query embeds (`/hybrid`, console
     search, `/ask`), now takes the same bounded retry as ingest. The probe
     runs again after that deploy; this task closes on that run.
+
+    Second run 2026-09-26 09:06Z, after the query retry was deployed
+    (`e59bb3e`): `ollama-1` evicted (201), **327 of 327 queries answered**.
+    `retry_transient` does not log, so this run cannot show whether a retry
+    fired or the endpoint was simply not hit; the first run shows the failure
+    happens, the unit test shows the retry covers it.
 
 ## 4. Proof
 - [ ] 4.1 A node-shutdown test: one node out, the console keeps answering,

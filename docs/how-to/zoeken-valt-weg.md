@@ -1,19 +1,21 @@
 ---
 status: current
-last_reviewed: 2026-09-22
+last_reviewed: 2026-09-26
 ---
 
 # Als zoeken wegvalt
 
-Wordsworth draait op **één** OpenSearch-node. Valt die weg — een herstart van
-de node waar hij staat is genoeg — dan kan er een paar minuten niet gezocht
-worden. Dat is een bekende beperking, geen storing die iemand moet komen
-oplossen, en de console hoort dat te zeggen in plaats van het te verbergen of te
-laten lijken alsof de lezer iets fout deed.
+Since 2026-09-26 wordsworth searches a **three-node** OpenSearch cluster, one
+node per worker, with every shard on two of them (change
+`2026-09-20-hoge-beschikbaarheid`, task 3.1a). Losing one node no longer
+interrupts search: evicting the cluster manager under a probe of three searches
+a second left 360 of 360 answered. Query embeddings come from two Ollama
+instances, and a query that reaches one as it goes away retries on the other.
 
-De structurele oplossing staat in de change
-`2026-09-20-hoge-beschikbaarheid` (taak 3.1). Die wacht op een opslaglaag die
-niet aan één node vastzit; zolang die er niet is, is dít wat er gebeurt.
+Search can still drop out: two of the three OpenSearch nodes down at once, or
+the whole cluster. Then this page still describes what happens. It is a known
+limit, not an outage somebody has to come and fix, and the console says so
+instead of hiding it or making it look like the reader did something wrong.
 
 ## Wat blijft werken
 
