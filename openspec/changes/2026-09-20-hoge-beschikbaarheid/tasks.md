@@ -155,6 +155,21 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     would have failed, answered on the other instance. That closes the
     inference: the retry fires, and it is what kept the count whole.
 
+## 3.3 The tailnet entry points (added 2026-09-26; design.md, Decision 6)
+- [ ] 3.3 Both tailnet routes survive one node.
+  - [ ] 3.3.1 Verify how a `ProxyGroup` of `type: ingress` works on operator
+    v1.102.2, and what it needs in the tailnet policy. Any policy change is
+    Mark's; write it down before anything moves.
+  - [ ] 3.3.2 Decide whether the http :8000 LoadBalancer (`wordsworth`) can go:
+    check `wordsworthctl` and its callers against the https name.
+  - [ ] 3.3.3 `ProxyGroup` type ingress, two replicas, a `ProxyClass`
+    requiring different nodes.
+  - [ ] 3.3.4 Move the remaining route(s) onto it, keeping their MagicDNS
+    names; time the gap while a name passes from the old device to the
+    group.
+  - [ ] 3.3.5 Proof: probe each remaining name from a tailnet machine, five a
+    second; evict one proxy pod; no failed request.
+
 ## 4. Proof
 - [ ] 4.1 A node-shutdown test: one node out, the console keeps answering,
   and the result is written down with the date and the node.
