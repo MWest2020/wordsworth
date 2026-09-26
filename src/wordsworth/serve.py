@@ -24,6 +24,7 @@ from .db import make_engine, make_session_factory
 from .embedder import OllamaEmbedder
 from .generator import OllamaGenerator
 from .opensearch_index import OpenSearchIndex
+from .structured_log import configure_logging
 
 
 def build_app() -> FastAPI:
@@ -33,6 +34,12 @@ def build_app() -> FastAPI:
     configured — it needs the object store + the OpenAnonymiser driver. Without
     creds the app serves the read surface only, so importing this module never
     requires secrets."""
+    # The pipeline's JSON lines (transitions at INFO, retries at WARNING) go to
+    # stderr. Until 2026-09-26 nothing called this in production: transitions
+    # were written and never printed, and retries only got out through
+    # Python's last-resort handler. Here and not in create_app, so the tests
+    # keep their own logging.
+    configure_logging()
     engine = make_engine()
     session_factory = make_session_factory(engine)
     store = None
