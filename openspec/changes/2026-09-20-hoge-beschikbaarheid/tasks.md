@@ -148,6 +148,13 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     fired or the endpoint was simply not hit; the first run shows the failure
     happens, the unit test shows the retry covers it.
 
+    Third run 2026-09-26 16:55Z, with retries logged (#173, `7fe0e82`):
+    `ollama-0` evicted, **302 of 302 queries answered**, and the probing pod
+    logged exactly one retry -- `{"event": "retry", "what": "query_embed",
+    "error": "EmbeddingUnavailable", "attempt": 1, "of": 3}`. One query that
+    would have failed, answered on the other instance. That closes the
+    inference: the retry fires, and it is what kept the count whole.
+
 ## 4. Proof
 - [ ] 4.1 A node-shutdown test: one node out, the console keeps answering,
   and the result is written down with the date and the node.
