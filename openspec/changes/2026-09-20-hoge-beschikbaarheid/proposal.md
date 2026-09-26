@@ -26,6 +26,10 @@ volume and made everything wait for movable storage. Measured again on
 | SeaweedFS (S3) | 1 | node-01 | stored documents unreachable |
 | OpenSearch | 1 | node-02 | search degrades (handled since 3.1b) |
 | Ollama | 1 | node-03 | no embeddings, no `/ask` |
+| Tailscale proxies (tailnet routes) | 1 each | node-01 (both) | no tailnet access: CLIs, API keys, the https console |
+
+(The last row was added 2026-09-26, after steps 2 and 3 were done; the table
+otherwise shows the cluster as measured on 2026-09-23.)
 
 So the api does not need to wait for storage. The object store does, and it is
 the one piece whose loss takes documents with it.

@@ -126,3 +126,46 @@ fail.
 This proves the services; it does not prove the node. With SeaweedFS still on
 one node, a node-shutdown test (4.1) would still fail on node-01. That waits
 for step 1.
+
+## Decision 6 — the tailnet entry points (added 2026-09-26)
+
+Found after step 3: the public route runs two of everything (tunnel, auth,
+api), but the tailnet route does not. Two Tailscale proxies carry it, each a
+single pod, and both on node-01:
+
+- `ts-wordsworth-api-ts`: the LoadBalancer `wordsworth-api-ts`, plain http on
+  :8000, MagicDNS `wordsworth`, which the CLI uses;
+- `ts-wordsworth-api-https`: the Ingress `wordsworth-api-https`, TLS on 443,
+  MagicDNS `wordsworth-api`, which browser frontends and API-key callers use.
+
+Losing node-01 takes both down, and it is the node SeaweedFS is on, so step 1
+alone would not make the node-shutdown test pass.
+
+Measured in the cluster: operator `tailscale/k8s-operator:v1.102.2`; its
+`ProxyGroup` CRD has `type: ingress` with `replicas` (default 2), and says
+Ingress resources and Services carrying `tailscale.com/proxy-group` are then
+served by the group instead of one dedicated proxy. No `ProxyGroupPolicy`
+exists, so nothing restricts which namespaces may use a group. `ProxyClass`
+supports `affinity` and `topologySpreadConstraints` for the group's pods.
+
+The plan:
+
+1. **Verify before building (not measured yet).** How a `type: ingress`
+   group serves traffic on this version, and what it needs outside the
+   cluster. As understood, it runs on Tailscale Services, which the tailnet
+   policy has to allow (tag ownership, and approval of the service,
+   automatic or by hand). That is tailnet admin, Mark's; if it is needed,
+   the change to the policy is written down here before anything moves.
+2. **One `ProxyGroup` of type ingress,** two replicas, with a `ProxyClass`
+   that requires them on different nodes.
+3. **Consider consolidating first.** Two proxies exist because the CLI talks
+   http on :8000 and browsers need https. If the CLI can use the https name,
+   the http LoadBalancer goes, and there is one thing to make redundant
+   instead of two. Checked against `wordsworthctl` and its callers before
+   deciding; if anything still needs :8000, both move to the group.
+4. **Keep the names.** `wordsworth-api` (and `wordsworth`, if it stays) are
+   what callers and certificates use. A name held by the old single-pod
+   device has to be released before the group can take it, so the switch
+   has a short gap; it is timed and measured, not assumed away.
+5. **Proof,** as in Decision 5: a probe from a tailnet machine, five a second,
+   against each name that remains; evict one proxy pod; no failed request.
