@@ -87,8 +87,13 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   soften; ingest fails hard and holds the document back, because `indexed`
   without an index is a lie.
 - [ ] 3.2 Ollama: a second instance. Plan: design.md, Decisions 1, 4 and 5.
-  - [ ] 3.2.1 wordsworth: an `EmbeddingError` caused by the transport is
+  - [x] 3.2.1 wordsworth: an `EmbeddingError` caused by the transport is
     transient; an empty or malformed embedding stays permanent. Test both.
+    `EmbeddingUnavailable` (unreachable, timeout, 5xx, cut-off response);
+    `tests/test_embedding_transient.py`, including a document whose first
+    embedding attempt hits a lost instance and is indexed on the retry.
+    Checked both ways: without the classification 6 tests fail; with every
+    failure made transient, 2 do.
   - [ ] 3.2.2 Two-replica StatefulSet, required anti-affinity, PDB
     `maxUnavailable: 1`; each pod pulls its models in an init container and
     fails if a digest differs from the pin (`bge-m3` `79076464…2146bab`,
