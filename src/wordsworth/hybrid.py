@@ -28,7 +28,8 @@ def hybrid_search(
     # endpoint was being removed. Only transport failures retry; a bad
     # embedding does not, and after the budget it is still an error.
     query_vector = retry_transient(lambda: embedder.embed([query])[0],
-                                   settings.retry_attempts, settings.retry_base_delay)
+                                   settings.retry_attempts, settings.retry_base_delay,
+                                   what="query_embed")
     candidates = index.hybrid_search(query, query_vector, recall=recall, only=only,
                                      topic=topic)
     for hit in candidates:
