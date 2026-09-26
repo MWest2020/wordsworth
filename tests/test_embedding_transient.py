@@ -96,3 +96,38 @@ def test_a_lost_instance_no_longer_fails_the_document(
     assert process(session, doc.id, mem_store, search_index=mem_index,
                    embedder=embed) == State.INDEXED
     assert embed.calls == 2
+
+
+def test_a_query_survives_an_instance_going_away(monkeypatch):
+    """hoge-beschikbaarheid 3.2.4: under a probe, 1 of 334 queries hit the
+    evicted instance before its endpoint was gone. The query path retries too."""
+    from wordsworth.embedder import DeterministicEmbedder
+    from wordsworth.hybrid import hybrid_search
+    from wordsworth.search_index import InMemoryIndex
+
+    monkeypatch.setenv("WORDSWORTH_RETRY_BASE_DELAY", "0")
+    inner = DeterministicEmbedder(64)
+    index = InMemoryIndex()
+    index.index("d1", "vergunning windpark", "k1",
+                vector=inner.embed(["vergunning windpark"])[0])
+    embed = _OneInstanceGone(inner)
+    hits = hybrid_search(index, embed, "vergunning windpark", size=1)
+    assert [h.document_id for h in hits] == ["d1"] and embed.calls == 2
+
+
+def test_a_bad_query_embedding_is_not_retried(monkeypatch):
+    from wordsworth.hybrid import hybrid_search
+    from wordsworth.search_index import InMemoryIndex
+
+    class _Broken:
+        dim, calls = 64, 0
+
+        def embed(self, texts):
+            self.calls += 1
+            raise EmbeddingError("ollama returned an empty/null embedding")
+
+    monkeypatch.setenv("WORDSWORTH_RETRY_BASE_DELAY", "0")
+    broken = _Broken()
+    with pytest.raises(EmbeddingError):
+        hybrid_search(InMemoryIndex(), broken, "q")
+    assert broken.calls == 1

@@ -94,14 +94,31 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     embedding attempt hits a lost instance and is indexed on the retry.
     Checked both ways: without the classification 6 tests fail; with every
     failure made transient, 2 do.
-  - [ ] 3.2.2 Two-replica StatefulSet, required anti-affinity, PDB
+  - [x] 3.2.2 Two-replica StatefulSet, required anti-affinity, PDB
     `maxUnavailable: 1`; each pod pulls its models in an init container and
     fails if a digest differs from the pin (`bge-m3` `79076464…2146bab`,
     `llama3.2:3b` `a80c4f17…cbb5b8b72`). The PostSync pull Job goes.
-  - [ ] 3.2.3 Check both instances report the pinned digests, and that the
+  - [x] 3.2.3 Check both instances report the pinned digests, and that the
     same text embeds to the same vector on each.
+
+    Done 2026-09-26 (homelab `a9967f8`, then `712844b` removing the old
+    Deployment and its volume). `ollama-0` on node-02, `ollama-1` on node-01;
+    both init containers logged `bge-m3:latest = 790764642607 (pinned)` and
+    `llama3.2:3b = a80c4f17acd5 (pinned)`. On three indexed documents, each
+    instance embedded the indexed text to exactly the stored vector: cosine
+    1.0, largest difference 0.0 over 1024 values. So both run the model that
+    built the index, not merely a model with the same tag.
   - [ ] 3.2.4 Proof: evict one Ollama pod under a five-per-second `/hybrid`
     probe; no failed query.
+
+    First run 2026-09-26 08:45Z (three per second, under the rate limit):
+    eviction of `ollama-0` 201, the second eviction refused by the PDB, the
+    evicted pod back with the pinned models -- and 333 of 334 queries
+    answered, one `500`: `connection refused`, the Service still routing to
+    the pod being evicted. The risk named in design.md before the test. So
+    `hybrid_search`, the one place every query embeds (`/hybrid`, console
+    search, `/ask`), now takes the same bounded retry as ingest. The probe
+    runs again after that deploy; this task closes on that run.
 
 ## 4. Proof
 - [ ] 4.1 A node-shutdown test: one node out, the console keeps answering,
