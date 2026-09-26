@@ -56,3 +56,28 @@ def log_transition(
     )
     logger.log(logging.ERROR if level == "error" else logging.INFO, line)
     return line
+
+
+def log_retry(*, what: str, attempt: int, attempts: int, error: BaseException,
+              delay_s: float | None) -> str:
+    """One JSON line per retried transient failure, and one when the budget runs
+    out (`delay_s` None). The exception's CLASS, never its message: a message
+    can quote a fragment of the document it failed on (measurement 01, finding
+    4). A retry that leaves no trace cannot be told apart from a call that
+    never failed -- which is what hoge-beschikbaarheid 3.2.4 ran into."""
+    exhausted = delay_s is None
+    line = json.dumps(
+        {
+            "event": "retry_exhausted" if exhausted else "retry",
+            "what": what,
+            "attempt": attempt,
+            "of": attempts,
+            "error": type(error).__name__,
+            "delay_s": delay_s,
+            "level": "error" if exhausted else "warning",
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    logger.log(logging.ERROR if exhausted else logging.WARNING, line)
+    return line

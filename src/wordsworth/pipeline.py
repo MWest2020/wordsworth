@@ -274,7 +274,7 @@ def process(
         # indexed with clear PII. Fail-hard per attempt is unchanged.
         result = retry_transient(
             lambda: anonymizer.anonymize(text),
-            settings.retry_attempts, settings.retry_base_delay,
+            settings.retry_attempts, settings.retry_base_delay, what="anonymize",
         )
         session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))
         # Welke pseudonymen bij dit document horen. Mag uit de uitvoer gelezen
@@ -299,7 +299,7 @@ def process(
         # anonymized text carries no clear PII, so retrying is safe.
         vector = retry_transient(
             lambda: embed.embed([anonymized])[0],
-            settings.retry_attempts, settings.retry_base_delay,
+            settings.retry_attempts, settings.retry_base_delay, what="embed",
         )
 
         def _index() -> None:
@@ -308,7 +308,8 @@ def process(
             index.index(str(document_id), anonymized, doc.object_key, vector=vector,
                         dossiers=dossiers_of(session, document_id))
 
-        retry_transient(_index, settings.retry_attempts, settings.retry_base_delay)
+        retry_transient(_index, settings.retry_attempts, settings.retry_base_delay,
+                    what="index")
         transition(session, document_id, State.INDEXED, step="index",
                    payload={"chars": len(anonymized), "dim": len(vector)})
         state = State.INDEXED
@@ -378,11 +379,11 @@ def reanonymize(
     # blip is retried, a persistent failure propagates with the old entry intact.
     result = retry_transient(
         lambda: anonymizer.anonymize(text),
-        settings.retry_attempts, settings.retry_base_delay,
+        settings.retry_attempts, settings.retry_base_delay, what="anonymize",
     )
     vector = retry_transient(
         lambda: embed.embed([result.text])[0],
-        settings.retry_attempts, settings.retry_base_delay,
+        settings.retry_attempts, settings.retry_base_delay, what="embed",
     )
 
     def _index() -> None:
@@ -390,7 +391,8 @@ def reanonymize(
         index.index(str(document_id), result.text, doc.object_key, vector=vector,
                     dossiers=dossiers_of(session, document_id))
 
-    retry_transient(_index, settings.retry_attempts, settings.retry_base_delay)
+    retry_transient(_index, settings.retry_attempts, settings.retry_base_delay,
+                    what="index")
 
     # Only now overwrite the stored text — after the index holds the new tokens.
     session.merge(DocumentText(document_id=document_id, anonymized_text=result.text))

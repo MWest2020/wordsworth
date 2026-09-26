@@ -13,6 +13,7 @@ import httpx
 
 from .extraction import ExtractionError
 from .profiling import ProfilingError
+from .structured_log import log_retry
 
 T = TypeVar("T")
 
@@ -63,17 +64,27 @@ def retry_transient(
     attempts: int,
     base_delay: float,
     sleep: Callable[[float], None] = time.sleep,
+    what: str = "call",
 ) -> T:
     """Call ``fn``, retrying ONLY transient errors up to ``attempts`` total tries
     with exponential backoff (``base_delay * 2**i``). Re-raises the last error when
     attempts are exhausted; a permanent error re-raises immediately without retry.
-    ``sleep`` is injectable so tests do not actually wait."""
+    ``sleep`` is injectable so tests do not actually wait. Every retry, and a
+    transient error that exhausts the budget, is logged (`log_retry`), labelled
+    by ``what``; a permanent error is not a retry and is not logged here."""
     attempts = max(1, attempts)
     for i in range(attempts):
         try:
             return fn()
         except Exception as exc:
-            if not is_transient(exc) or i == attempts - 1:
+            if not is_transient(exc):
                 raise
-            sleep(base_delay * (2 ** i))
+            if i == attempts - 1:
+                log_retry(what=what, attempt=i + 1, attempts=attempts, error=exc,
+                          delay_s=None)
+                raise
+            delay = base_delay * (2 ** i)
+            log_retry(what=what, attempt=i + 1, attempts=attempts, error=exc,
+                      delay_s=delay)
+            sleep(delay)
     raise AssertionError("unreachable")  # the loop always returns or raises
