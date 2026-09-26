@@ -155,13 +155,60 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     would have failed, answered on the other instance. That closes the
     inference: the retry fires, and it is what kept the count whole.
 
+## Found on the way (2026-09-26)
+- [ ] `/ask` with a long context pushes Ollama past its 5 GiB limit. Two
+  `/ask` calls (k=8, run while measuring 3.3.2) got **both** Ollama pods
+  OOM-killed, exit 137, four minutes apart, so one instance served while the
+  other restarted. The single instance before step 3 had the same limit.
+  Not fixed: raise the limit (8.4-9.6 GiB is available per node) or bound the
+  context, measured either way.
+
 ## 3.3 The tailnet entry points (added 2026-09-26; design.md, Decision 6)
 - [ ] 3.3 Both tailnet routes survive one node.
-  - [ ] 3.3.1 Verify how a `ProxyGroup` of `type: ingress` works on operator
+  - [x] 3.3.1 Verify how a `ProxyGroup` of `type: ingress` works on operator
     v1.102.2, and what it needs in the tailnet policy. Any policy change is
     Mark's; write it down before anything moves.
-  - [ ] 3.3.2 Decide whether the http :8000 LoadBalancer (`wordsworth`) can go:
+
+    Read from the operator source at tag v1.102.2 (2026-09-26):
+    `ingress-for-pg.go` (Ingress) and `svc-for-pg.go` (LoadBalancer Service)
+    both turn the resource into a **Tailscale Service** `svc:<hostname>`,
+    created through the Tailscale API, tagged with the operator's default tags
+    or the `tailscale.com/tags` annotation. The group's pods advertise it, and
+    its addresses reach them "in the next netmap update if approved". A
+    Tailscale Service that already exists without the operator's owner
+    reference is an error, not a takeover.
+
+    What that needs on the tailnet, all of it Mark's (tailnet admin):
+    1. Tailscale Services available on the tailnet. A 2025-05 comment in the
+       source says they were behind a per-tailnet alpha flag; whether that
+       still holds could not be seen from here.
+    2. The service approved for the operator's tag: an `autoApprovers`
+       entry for `svc:wordsworth-api` (and `svc:wordsworth` if it stays) in
+       the tailnet policy, or approval by hand in the admin console.
+    3. HTTPS on the tailnet: already on (the current Ingress has a
+       certificate).
+  - [x] 3.3.2 Decide whether the http :8000 LoadBalancer (`wordsworth`) can go:
     check `wordsworthctl` and its callers against the https name.
+
+    Checked 2026-09-26:
+    - The CLI is documented and installed against the **raw tailnet IP**
+      `http://100.100.181.23:8000` (`docs/reference/cli.md`,
+      `scripts/install-cli.sh`), which is the :8000 LoadBalancer. In-cluster
+      callers use the ClusterIP Service and are not affected.
+    - **A Tailscale Service gets its own addresses** from the control plane,
+      so moving either route onto a ProxyGroup changes the IP. Every CLI
+      configured with `100.100.181.23` breaks either way. The name survives;
+      the IP does not.
+    - The https route's proxy (tailscaled serve, `ipn/ipnlocal/serve.go` at
+      v1.102.2) sets no response timeout, only Go's default dial, TLS and
+      idle timeouts, so a long ingest request is not cut off there. Read from
+      source, not measured.
+
+    Conclusion: the http LoadBalancer can go. Every CLI then points at
+    `https://wordsworth-api.tail8f7877.ts.net`, a name rather than an IP, and
+    the docs and installer say so. Where the CLI is configured outside this
+    cluster (Mark's machines) is Mark's to change, one command:
+    `wordsworth config --url https://wordsworth-api.tail8f7877.ts.net`.
   - [ ] 3.3.3 `ProxyGroup` type ingress, two replicas, a `ProxyClass`
     requiring different nodes.
   - [ ] 3.3.4 Move the remaining route(s) onto it, keeping their MagicDNS
