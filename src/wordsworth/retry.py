@@ -38,6 +38,9 @@ def is_transient(exc: BaseException) -> bool:
         return False
     if isinstance(exc, AnonymizationEngineError):
         return True
+    from .embedder import EmbeddingUnavailable
+    if isinstance(exc, EmbeddingUnavailable):
+        return True
     if isinstance(exc, (ConnectionError, TimeoutError, OSError, httpx.TransportError)):
         return True
     # Anything carrying an HTTP status: only 5xx is transient (4xx is a bug).

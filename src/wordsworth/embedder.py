@@ -7,7 +7,9 @@ cosine behave meaningfully without a real model."""
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
+import urllib.error
 import urllib.request
 from typing import Protocol, runtime_checkable
 
@@ -23,6 +25,20 @@ def _stable_bucket(token: str, dim: int) -> int:
 
 class EmbeddingError(Exception):
     """Raised when an embedding cannot be produced. Never return a null vector."""
+
+
+class EmbeddingUnavailable(EmbeddingError):
+    """The embedding service did not answer: unreachable, timed out, a 5xx, or
+    a response cut off mid-read (an Ollama pod going away does exactly that).
+
+    Transient, so bounded retry reaches another attempt -- with two Ollama
+    instances behind one Service, likely the other one (hoge-beschikbaarheid
+    3.2.1). Until 2026-09-26 every failure here was a plain `EmbeddingError`,
+    which `retry.is_transient` read as permanent: one lost instance failed the
+    document. An empty or malformed embedding stays `EmbeddingError`: asking
+    the same model again does not fix it. Not a fallback either way -- after the
+    retry budget the document still fails hard.
+    """
 
 
 @runtime_checkable
@@ -56,7 +72,12 @@ class OllamaEmbedder:
                 with limiter("embed", settings.embed_concurrency), \
                         urllib.request.urlopen(req, timeout=120) as resp:
                     body = json.loads(resp.read())
-            except Exception as exc:  # network/timeout/HTTP -> hard error
+            except urllib.error.HTTPError as exc:
+                cls = EmbeddingUnavailable if exc.code >= 500 else EmbeddingError
+                raise cls(f"ollama embed failed: HTTP {exc.code}") from exc
+            except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+                raise EmbeddingUnavailable(f"ollama embed failed: {exc}") from exc
+            except Exception as exc:  # a body that is not JSON: not the network
                 raise EmbeddingError(f"ollama embed failed: {exc}") from exc
             vector = body.get("embedding")
             if not vector or not any(vector):

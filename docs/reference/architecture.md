@@ -30,7 +30,10 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
   audit record, never stored as a mutable column. There is no separate workflow
   engine.
 - **A failed embedding is a hard error, never a silent fallback.** No silent
-  fallbacks anywhere.
+  fallbacks anywhere. A transport failure (the embedding service unreachable,
+  timed out, a 5xx, a response cut off) is retried within the bounded retry
+  budget first — with two Ollama instances the retry usually reaches the other
+  one — and is a hard error after it. A bad embedding is never retried.
 - **No cloud APIs in the critical path.** Embeddings and any LLM run locally.
 - **Driver/protocol pattern for every adapter** (anonymization, key/mapping
   store, object storage, search, embeddings).
