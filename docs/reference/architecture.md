@@ -38,7 +38,9 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
   A bad embedding is never retried. Every retry is a JSON log line
   (`"event": "retry"`, and `"retry_exhausted"` when the budget runs out) naming
   what was retried and the exception's class, never its message: a message can
-  quote the document.
+  quote the document. Every state transition is a JSON line too (`"event": "transition"`,
+  at INFO). The api prints both to stderr; until 2026-09-26 nothing attached a
+  handler, so transitions were written and never seen.
 - **No cloud APIs in the critical path.** Embeddings and any LLM run locally.
 - **Driver/protocol pattern for every adapter** (anonymization, key/mapping
   store, object storage, search, embeddings).

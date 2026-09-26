@@ -40,3 +40,30 @@ def test_production_rate_limits_are_shared_by_every_replica():
     limiters = mw[0].kwargs["limiters"]
     assert "/console/login" in limiters
     assert all(isinstance(b, PostgresTokenBucket) for b in limiters.values())
+
+
+def test_production_prints_the_pipeline_log_once():
+    """Transitions log at INFO. Without a handler they were written and never
+    printed; with two they would print twice."""
+    import io
+    import logging
+    import uuid
+
+    from wordsworth.structured_log import log_transition
+
+    build_app()
+    build_app()                                     # idempotent: still one handler
+    logger = logging.getLogger("wordsworth.pipeline")
+    assert len(logger.handlers) == 1 and logger.level == logging.INFO
+    # (Root has no handlers in production -- checked in the image -- so this
+    # handler is the only printer. pytest adds its own to root, so that half is
+    # verified live after deploy, not here.)
+    handler, buf = logger.handlers[0], io.StringIO()
+    old = handler.setStream(buf)
+    try:
+        doc = str(uuid.uuid4())
+        log_transition(document_id=doc, from_state="registered", to_state="extractable",
+                       step="profile", duration_ms=1.0)
+    finally:
+        handler.setStream(old)
+    assert buf.getvalue().count(doc) == 1
