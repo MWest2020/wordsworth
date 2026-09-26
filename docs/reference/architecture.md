@@ -33,7 +33,9 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
   fallbacks anywhere. A transport failure (the embedding service unreachable,
   timed out, a 5xx, a response cut off) is retried within the bounded retry
   budget first — with two Ollama instances the retry usually reaches the other
-  one — and is a hard error after it. A bad embedding is never retried.
+  one — and is a hard error after it. That holds for a document's embedding at
+  ingest and for a query's (`hybrid_search`: `/hybrid`, console search, `/ask`).
+  A bad embedding is never retried.
 - **No cloud APIs in the critical path.** Embeddings and any LLM run locally.
 - **Driver/protocol pattern for every adapter** (anonymization, key/mapping
   store, object storage, search, embeddings).
