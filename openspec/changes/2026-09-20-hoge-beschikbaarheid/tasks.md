@@ -156,12 +156,28 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     inference: the retry fires, and it is what kept the count whole.
 
 ## Found on the way (2026-09-26)
-- [ ] `/ask` with a long context pushes Ollama past its 5 GiB limit. Two
+- [x] `/ask` with a long context pushes Ollama past its 5 GiB limit. Two
   `/ask` calls (k=8, run while measuring 3.3.2) got **both** Ollama pods
   OOM-killed, exit 137, four minutes apart, so one instance served while the
   other restarted. The single instance before step 3 had the same limit.
   Not fixed: raise the limit (8.4-9.6 GiB is available per node) or bound the
   context, measured either way.
+
+  Fixed 2026-09-28 (homelab `c03e91f`, limit 5Gi -> 7Gi; the measurement in
+  `392043e`). Measured on `ollama-0` through wordsworth's own `rag.ask`
+  (k=8), cgroup `memory.peak`: one call 6600 MiB, two concurrent 6693, two
+  concurrent plus embeddings 6800; no restart. With both models loaded
+  **anon memory is 5321 MiB** (`memory.stat`), above the old 5120 MiB: the
+  OOM kills were certain, not unlucky. The other ~1.4 GiB is file cache from
+  reading the models, reclaimable. Ollama's own log accounts for it:
+  llama3.2 1918 MiB weights + 896 MiB KV (`n_ctx = 8192`, two parallel
+  slots) + 424 MiB compute; bge-m3 1098 + 384 MiB. 7Gi is the limit the worst
+  case ran under.
+- [ ] Two `/ask` calls on one instance take ~650 s each (one alone: 310 s),
+  measured 2026-09-28, and the api gives generation 600 s
+  (`WORDSWORTH_LLM_TIMEOUT` default). No longer an OOM, now a timeout. Also:
+  all four measured answers came back ungrounded (0 citations). Neither is
+  fixed.
 
 ## 3.3 The tailnet entry points (added 2026-09-26; design.md, Decision 6)
 - [ ] 3.3 Both tailnet routes survive one node.
