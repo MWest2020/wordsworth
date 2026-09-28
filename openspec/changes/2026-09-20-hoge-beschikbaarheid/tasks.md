@@ -179,6 +179,16 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   all four measured answers came back ungrounded (0 citations). Neither is
   fixed.
 
+  2026-09-28: Ollama set to one request per model at a time
+  (`OLLAMA_NUM_PARALLEL=1`, homelab `649ba76`), measured on `ollama-0`: two
+  concurrent `/ask` now take **234 s and 637 s** (was ~650 s each); one alone
+  301 s. The first answer arrives almost three times sooner; the queued one
+  still takes about as long and is still over the api's 600 s. Memory fell
+  too: peak 6013 MiB (was 6600), anon 4527 (was 5321), llama KV cache 448 MiB
+  (was 896). With two instances behind the Service, two concurrent calls land
+  on different instances about half the time and both answer in ~300 s; on
+  the same instance the second still times out through the api. Open.
+
 ## 3.3 The tailnet entry points (added 2026-09-26; design.md, Decision 6)
 - [ ] 3.3 Both tailnet routes survive one node.
   - [x] 3.3.1 Verify how a `ProxyGroup` of `type: ingress` works on operator
