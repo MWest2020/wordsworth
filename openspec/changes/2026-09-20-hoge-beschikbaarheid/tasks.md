@@ -173,7 +173,7 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   llama3.2 1918 MiB weights + 896 MiB KV (`n_ctx = 8192`, two parallel
   slots) + 424 MiB compute; bge-m3 1098 + 384 MiB. 7Gi is the limit the worst
   case ran under.
-- [ ] Two `/ask` calls on one instance take ~650 s each (one alone: 310 s),
+- [x] Two `/ask` calls on one instance take ~650 s each (one alone: 310 s),
   measured 2026-09-28, and the api gives generation 600 s
   (`WORDSWORTH_LLM_TIMEOUT` default). No longer an OOM, now a timeout. Also:
   all four measured answers came back ungrounded (0 citations). Neither is
@@ -188,6 +188,15 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   (was 896). With two instances behind the Service, two concurrent calls land
   on different instances about half the time and both answer in ~300 s; on
   the same instance the second still times out through the api. Open.
+
+  2026-09-29: `WORDSWORTH_LLM_TIMEOUT` 600 -> 900 s (homelab `90dc923`; the
+  path in front of it allows it: gunicorn 1800 s, the tailnet proxies no
+  response timeout). Measured end to end from a tailnet machine through
+  `https://wordsworth-api.tail8f7877.ts.net`: two concurrent `/ask` (k=8),
+  both confirmed on `ollama-0` from its request log, the worst case. **Both
+  200, in 305 s and 546 s**, no restart. The queued call varies between runs
+  (637 s on 09-28, 546 s here); 900 s covers both with room. Still open, and
+  not a timeout: the grounding (see the 0-citation answers above).
 
 ## 3.3 The tailnet entry points (added 2026-09-26; design.md, Decision 6)
 - [ ] 3.3 Both tailnet routes survive one node.
