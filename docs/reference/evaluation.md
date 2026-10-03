@@ -155,9 +155,9 @@ untraceable.
 
 **What it does not settle, and this distinction matters more than the corpus:**
 
-- **Ranking quality.** The IR metrics need qrels and queries. Those do not exist
-  for a Woo corpus and cannot be derived from it; somebody has to make them.
-  Until then the numbers above stay measured on the synthetic collection.
+- **Ranking quality, judged.** Graded relevance for real questions needs a
+  person. A *derived* collection does exist since 2026-10-03, see below; it
+  measures ranking without anyone judging, with a stated bias.
 - **Detection precision and recall.** `pii_run` needs a gold file with character
   offsets. A real corpus has no offsets, so it cannot produce precision, recall
   or a leak count. `pii_gold_synthetic.jsonl` remains the only labelled source.
@@ -173,3 +173,33 @@ number and two e-mail addresses alongside the names of officials acting in
 function. Does our anonymisation find the personal data that the publishing
 authority left in? That question is checkable against the published document,
 needs no annotation, and is the reason this system exists.
+
+## Ranking on the real Woo corpus (derived collection)
+
+`scripts/eval/woo_ranking_eval.py herkomst.jsonl OUT` builds a collection from
+what the publisher recorded and scores a ranker on it, read-only. The rules are
+in `wordsworth.eval.woo_collection` and tested:
+
+- **known-item:** each document's file name, stripped of ids, mail prefixes and
+  file types, is a query; the documents whose names give the same query are
+  its relevant set. Names with fewer than two subject words are skipped.
+- **per decision:** the Woo decision page in `herkomst.jsonl`, its URL slug as
+  the query, its documents as the relevant set.
+
+Bias, stated before any number: title words favour keyword matching. The
+collection is fair between two rankers fed the same queries; a win for a ranker
+that leans on BM25 is the weaker claim.
+
+Baseline, 2026-10-03, production index (194 of the 200 Woo documents linked;
+the 6 unlinked are the OCR-recovered ones, which never got a file name; 116
+known-item queries, 90 of them with a single document). Recall@8, the k `/ask`
+uses, by length third of the known item:
+
+| ranker | short (133-1303 chars) | middle (1319-3955) | long (4069-86352) | all |
+|---|---|---|---|---|
+| hybrid, production (RRF recall + cosine) | 0.692 | 0.103 | **0.000** | 0.219 |
+| BM25 alone (reference) | 0.615 | 0.793 | 0.686 | 0.684 |
+
+The production ranking does not find a long document by its own title, not once
+in 35. BM25 has no such slope. That is the short-document bias of change
+`long-documents-rank-fairly`, measured.

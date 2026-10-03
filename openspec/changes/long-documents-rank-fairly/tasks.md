@@ -1,16 +1,34 @@
 # Tasks: long-documents-rank-fairly
 
 ## 1. The measurement collection
-- [ ] 1.1 `scripts/eval/woo_known_items.py`: known-item queries from the file
+- [x] 1.1 `scripts/eval/woo_known_items.py`: known-item queries from the file
       names of the documents in `herkomst.jsonl`, per-decision queries from
       the decision slugs, written as `queries.tsv` + `qrels.txt` keyed on
       `object_key`. The skip rule for names without subject words is in the
       script, with its count reported.
-- [ ] 1.2 Document lengths in the collection, split in thirds.
+- [x] 1.2 Document lengths in the collection, split in thirds.
 
 ## 2. Baseline
-- [ ] 2.1 The current ranking on both sets: Recall@8, MRR, nDCG@10, overall
+- [x] 2.1 The current ranking on both sets: Recall@8, MRR, nDCG@10, overall
       and per length third. Written down before any change.
+
+      Done 2026-10-03 on the production index (`scripts/eval/woo_ranking_eval.py`,
+      read-only). Collection: 194 of 200 documents linked (the 6 unlinked are
+      the OCR-recovered ones, which have no file name), 41 names skipped as
+      subjectless, 116 known-item queries (90 with one document), 7 decision
+      queries. Length thirds: 133-1303, 1319-3955, 4069-86352 characters.
+
+      | | known-item short | middle | long | all | decision |
+      |---|---|---|---|---|---|
+      | hybrid (production) Recall@8 | 0.692 | 0.103 | **0.000** | 0.219 | 0.086 |
+      | hybrid MRR | 0.429 | 0.108 | 0.022 | 0.175 | 0.491 |
+      | BM25 (reference) Recall@8 | 0.615 | 0.793 | 0.686 | 0.684 | 0.473 |
+      | BM25 MRR | 0.395 | 0.513 | 0.447 | 0.462 | 0.929 |
+
+      Not one of 35 long documents reaches the top 8 for its own title in
+      production; BM25 has no length slope. Title queries favour BM25 (stated
+      in design Decision 1), but that cannot make a 0.69 -> 0.10 -> 0.00
+      gradient inside one ranker.
 
 ## 3. Candidate 1: rank by the fused RRF rank
 - [ ] 3.1 Behind a setting, measured on both sets.
