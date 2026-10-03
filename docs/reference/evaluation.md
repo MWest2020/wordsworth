@@ -203,3 +203,8 @@ uses, by length third of the known item:
 The production ranking does not find a long document by its own title, not once
 in 35. BM25 has no such slope. That is the short-document bias of change
 `long-documents-rank-fairly`, measured.
+
+The runner scores hybrid search in both final orders side by side, explicitly
+and not through the setting: `cosine` (production) and `rrf` (candidate 1, the
+fused rank the recall stage already computes), plus BM25 alone. Production
+switches with `WORDSWORTH_HYBRID_FINAL_RANK` (default `cosine`).
