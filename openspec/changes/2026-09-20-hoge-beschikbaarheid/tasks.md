@@ -66,7 +66,7 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   That is step 4.
 
 ## 3. The dependencies
-- [ ] 3.1a OpenSearch with more than one node. Plan: design.md, Decisions
+- [x] 3.1a OpenSearch with more than one node. Plan: design.md, Decisions
   1–3 and 5.
   - [x] 3.1a.1 Three-node StatefulSet beside the old Deployment, under a new
     Service: one pod per worker node, headless discovery, PDB
@@ -99,8 +99,16 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     `opensearch-cluster-1` evicted at 09:17:17Z, the second eviction refused by
     the PDB; **360 of 360 searches answered**; `opensearch-cluster-2` elected;
     green with three nodes again at 09:19:10Z.
-  - [ ] 3.1a.5 After a week without rollback: remove the old Deployment and
+  - [x] 3.1a.5 After a week without rollback: remove the old Deployment and
     its volume. Due 2026-10-03.
+
+    Done 2026-10-03 (homelab `ecfbda7`). Checked first: the cluster green with
+    3 nodes and 611 documents, wordsworth pointing at it, nothing in homelab
+    referring to the old Service, and no traffic on the old node (query total
+    1371 and index total 1625, unchanged across two readings minutes apart).
+    Deployment, Service, PVC `opensearch-data` and its PV are gone; the three
+    cluster pods were not restarted (age 7d8h). The runbook's rollback bullet
+    now says there is none: recovery from a lost index is a re-index.
 - [x] 3.1b Recorded *that* search drops out temporarily and what the console
   shows then: `docs/how-to/zoeken-valt-weg.md`. The distinction between "the
   index is unreachable" and "your query was refused" did not exist — both gave
