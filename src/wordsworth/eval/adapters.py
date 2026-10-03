@@ -37,10 +37,12 @@ def bm25_adapter(index: SearchIndex, k: int = 10) -> Ranker:
     return search
 
 
-def hybrid_adapter(index: SearchIndex, embedder: Embedder, k: int = 10) -> Ranker:
-    """Hybrid configuration: RRF recall + zeef cosine, ranked external ids."""
+def hybrid_adapter(index: SearchIndex, embedder: Embedder, k: int = 10,
+                   final: str | None = None) -> Ranker:
+    """Hybrid configuration: RRF recall, then the final order -- ``final``
+    "cosine" or "rrf" (see `hybrid.hybrid_search`; None reads the setting)."""
 
     def search(query: str) -> list[str]:
-        return _external_ids(hybrid_search(index, embedder, query, size=k))
+        return _external_ids(hybrid_search(index, embedder, query, size=k, final=final))
 
     return search

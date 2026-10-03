@@ -379,6 +379,18 @@ class Settings:
         return os.environ.get("WORDSWORTH_LLM_MODEL", "llama3.1")
 
     @property
+    def hybrid_final_rank(self) -> str:
+        """How hybrid search orders its recall set: "cosine" (one embedding per
+        whole document, the default) or "rrf" (the fused BM25 + kNN rank the
+        recall stage already computed). Candidate 1 of change
+        long-documents-rank-fairly; the default stays until the measurement
+        picks. Anything else is an error, not a quiet fallback."""
+        value = os.environ.get("WORDSWORTH_HYBRID_FINAL_RANK", "cosine")
+        if value not in ("cosine", "rrf"):
+            raise ValueError(f"WORDSWORTH_HYBRID_FINAL_RANK must be cosine or rrf, not {value!r}")
+        return value
+
+    @property
     def llm_timeout(self) -> float:
         """Per-request timeout (s) for /ask generation. Generous: a small model
         on a CPU-only node is slow."""

@@ -21,7 +21,20 @@ def hybrid_search(
     recall: int = 50,
     only: list[str] | None = None,
     topic: str | None = None,
+    final: str | None = None,
 ) -> list[Hit]:
+    """Hybrid search: RRF recall over BM25 + kNN, then the final order.
+
+    ``final`` -- "cosine" re-sorts the recall set by cosine between the query
+    and each document's one embedding; "rrf" keeps the fused rank the recall
+    stage computed. ``None`` reads ``WORDSWORTH_HYBRID_FINAL_RANK`` (default
+    cosine). Either way ``score`` is the cosine similarity; under "rrf" it no
+    longer decides the order (change long-documents-rank-fairly: cosine over
+    whole-document embeddings ranks long documents last).
+    """
+    final = final or settings.hybrid_final_rank
+    if final not in ("cosine", "rrf"):
+        raise ValueError(f"final rank must be cosine or rrf, not {final!r}")
     # The same bounded retry as ingest (hoge-beschikbaarheid 3.2.4): with two
     # Ollama instances, a query can reach one in the second it goes away --
     # measured 2026-09-26, 1 of 334 queries got "connection refused" while its
@@ -34,5 +47,6 @@ def hybrid_search(
                                      topic=topic)
     for hit in candidates:
         hit.score = round(cosine(query_vector, hit.vector), 6) if hit.vector else 0.0
-    candidates.sort(key=lambda h: h.score, reverse=True)
+    if final == "cosine":
+        candidates.sort(key=lambda h: h.score, reverse=True)
     return candidates[:size]

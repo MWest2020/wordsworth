@@ -108,7 +108,10 @@ def main(argv):
               for k in ("short", "middle", "long")}
     index, emb = OpenSearchIndex.from_config(), OllamaEmbedder.from_config()
     report = {"collection": info, "length_thirds_chars": bounds,
-              "hybrid (production)": score(hybrid_adapter(index, emb, k=DEPTH), queries, lengths),
+              "hybrid cosine (production)": score(
+                  hybrid_adapter(index, emb, k=DEPTH, final="cosine"), queries, lengths),
+              "hybrid rrf (candidate 1)": score(
+                  hybrid_adapter(index, emb, k=DEPTH, final="rrf"), queries, lengths),
               "bm25 (reference)": score(bm25_adapter(index, k=DEPTH), queries, lengths)}
     print(json.dumps(report, indent=1, ensure_ascii=False))
 
