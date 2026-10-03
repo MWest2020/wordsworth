@@ -198,6 +198,24 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   (637 s on 09-28, 546 s here); 900 s covers both with room. Still open, and
   not a timeout: the grounding (see the 0-citation answers above).
 
+- [ ] Why `/ask` answers without sources, measured 2026-10-03 (not
+  availability; recorded here because it was found here). The question
+  "Welke afspraken zijn gemaakt over het windpark en de natuurcompensatie":
+  - Not truncation: eight sources of 316-1375 characters, a prompt of 7638
+    characters, Ollama evaluated 3016 tokens of a 4096 context.
+  - Not the guard: the model answered `{"answer": "", "citations": []}`,
+    which is what the prompt tells it to do when the sources do not answer.
+  - **Retrieval**: none of the eight sources contains "windpark". Two
+    documents in the corpus do; one reaches the hybrid recall set of 50, and
+    the final cosine ranking puts it at **26**. The top 20 are all short
+    (316-1524 characters); the windpark documents' median length is 9600,
+    the rest 1524. Cosine over one embedding per whole document favours short
+    documents; a long document's single vector is the average of everything
+    in it.
+  - Not fixed. Options, each its own change and measured on the evaluation
+    corpus: rank by the hybrid (RRF) score instead of cosine alone, or embed
+    passages instead of whole documents.
+
 ## 3.3 The tailnet entry points (added 2026-09-26; design.md, Decision 6)
 - [ ] 3.3 Both tailnet routes survive one node.
   - [x] 3.3.1 Verify how a `ProxyGroup` of `type: ingress` works on operator
