@@ -31,8 +31,33 @@
       gradient inside one ranker.
 
 ## 3. Candidate 1: rank by the fused RRF rank
-- [ ] 3.1 Behind a setting, measured on both sets.
-- [ ] 3.2 The windpark question as smoke test.
+- [x] 3.1 Behind a setting, measured on both sets.
+- [x] 3.2 The windpark question as smoke test.
+
+      Done 2026-10-03. `WORDSWORTH_HYBRID_FINAL_RANK` = `cosine` (default) |
+      `rrf` (#186, deployed as `dc95cb9` with the default unchanged; the
+      evaluation ran on that image, both orders side by side):
+
+      | | short | middle | long | all | decision |
+      |---|---|---|---|---|---|
+      | Recall@8 cosine (production) | 0.692 | 0.103 | 0.000 | 0.219 | 0.086 |
+      | Recall@8 **rrf** | **0.731** | **0.345** | **0.400** | **0.477** | **0.315** |
+      | Recall@8 BM25 (reference) | 0.615 | 0.793 | 0.686 | 0.684 | 0.473 |
+      | MRR cosine / rrf | 0.429 / 0.517 | 0.108 / 0.199 | 0.022 / 0.119 | 0.175 / 0.276 | 0.491 / 0.726 |
+      | nDCG@10 cosine / rrf | 0.504 / 0.574 | 0.091 / 0.241 | 0.000 / 0.212 | 0.169 / 0.330 | 0.304 / 0.519 |
+
+      Better on every metric in every third, so it meets the design's rule
+      (better on long, no third worse). It does **not** meet the spec's
+      property, Recall@8 long >= short: 0.400 against 0.731. RRF fuses BM25
+      with the same whole-document kNN list, which carries the bias in half
+      its input.
+
+      Smoke test: the windpark question under `rrf` puts a windpark document
+      **first** (9600 characters); the top 8 run from 316 to 14039
+      characters. Under `cosine`, none of the eight mention it.
+
+      Production stays on `cosine` until task 5: candidate 2 is measured
+      first, as the design says.
 
 ## 4. Candidate 2: passage embeddings
 - [ ] 4.1 Offline, on the 200 Woo documents: passages, one embedding each,
