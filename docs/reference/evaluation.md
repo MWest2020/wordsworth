@@ -208,3 +208,12 @@ The runner scores hybrid search in both final orders side by side, explicitly
 and not through the setting: `cosine` (production) and `rrf` (candidate 1, the
 fused rank the recall stage already computes), plus BM25 alone. Production
 switches with `WORDSWORTH_HYBRID_FINAL_RANK` (default `cosine`).
+
+`scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
+2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150
+words, a document scored by its best passage). Passages exist only for the Woo
+documents, so it measures **every** configuration inside that one pool --
+BM25 filtered to the pool's ids, kNN exact in-process -- and its absolute
+numbers are not comparable with the full-index ones above; the comparison
+between configurations is. The passage vectors are cached, so a dropped run
+resumes.
