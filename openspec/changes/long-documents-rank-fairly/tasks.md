@@ -60,8 +60,39 @@
       first, as the design says.
 
 ## 4. Candidate 2: passage embeddings
-- [ ] 4.1 Offline, on the 200 Woo documents: passages, one embedding each,
+- [x] 4.1 Offline, on the 200 Woo documents: passages, one embedding each,
       a document scored by its best passage. Measured on both sets.
+
+      Done 2026-10-03/04 (`scripts/eval/woo_passage_eval.py`, image
+      `e773126`). 194 documents, 1034 passages of 200 words every 150,
+      embedded in 7113 s (~6.9 s a passage on CPU). Every configuration in the
+      same pool of 194, so these numbers are not the full-index ones of 2.1/3.1.
+
+      | Recall@8 | short | middle | long | all | decision |
+      |---|---|---|---|---|---|
+      | cosine, whole document (production) | 0.769 | 0.103 | 0.000 | 0.241 | 0.138 |
+      | rrf, whole document (candidate 1) | 0.846 | 0.345 | 0.257 | 0.450 | 0.285 |
+      | rrf, passages (candidate 2a) | 0.538 | 0.448 | 0.629 | 0.521 | 0.319 |
+      | best-passage cosine (candidate 2b) | 0.462 | 0.310 | 0.400 | 0.365 | 0.271 |
+      | bm25 alone (reference) | 0.615 | 0.793 | 0.686 | 0.693 | 0.496 |
+
+      | MRR / nDCG@10 | short | middle | long | all |
+      |---|---|---|---|---|
+      | production | 0.445 / 0.516 | 0.108 / 0.091 | 0.023 / 0.000 | 0.186 / 0.176 |
+      | candidate 1 | 0.539 / 0.621 | 0.208 / 0.247 | 0.103 / 0.155 | 0.277 / 0.320 |
+      | candidate 2a | 0.433 / 0.456 | 0.310 / 0.331 | 0.447 / 0.483 | 0.411 / 0.420 |
+      | candidate 2b | 0.359 / 0.410 | 0.216 / 0.227 | 0.333 / 0.339 | 0.322 / 0.314 |
+
+      **The design's two criteria exclude each other, and that is the
+      finding.** Decision 2's rule -- better on long *and* no third worse than
+      the baseline -- passes candidate 1 and rejects 2a (short 0.538 against
+      0.769). The spec's property -- long >= short -- is met by 2a (0.629 >=
+      0.538) and BM25, not by candidate 1 (0.257 against 0.846). The baseline's
+      short third is high *because* of the bias, so "no third worse than the
+      baseline" protects exactly what the change is meant to remove; any ranker
+      that removes the bias lowers it. The rule should have been written
+      against a length-neutral reference, not against the biased baseline.
+      Not resolved here: which criterion holds is task 5, and Mark's.
 
 ## 5. Decide
 - [ ] 5.1 Apply the rule in design.md, Decision 2. Write down which candidate
