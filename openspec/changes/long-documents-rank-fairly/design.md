@@ -28,11 +28,18 @@ the two candidates come out close.
 Metrics: Recall@8 (the k `/ask` uses), MRR and nDCG@10, each overall and per
 length third (short, middle, long).
 
-The rule, written as a property instead of a threshold: a candidate replaces
-the current ranking only if it is better on the long third **and** no third is
-worse than in the baseline. A candidate that buys long documents at the cost
-of short ones moves the bias rather than removing it. If neither candidate
-meets that, nothing changes, and the measurement is the result.
+~~The rule: a candidate replaces the current ranking only if it is better on
+the long third **and** no third is worse than in the baseline.~~
+
+**Corrected 2026-10-04, decided by Mark: the spec's goal decides** -- Recall@8
+for the longest third at least that of the shortest. The struck rule measured
+against the baseline, whose short third is high *because* of the bias it was
+meant to remove, so any ranker that removes the bias lowers it, and the rule
+and the goal excluded each other (tasks.md 4.1). A candidate is measured
+against a length-neutral reference instead: the goal itself, and alongside it
+BM25 alone, which has no length slope on this collection. A candidate that
+meets the goal but loses more overall than it gains on long documents is
+still reported, not quietly accepted.
 
 The windpark question that started this is the smoke test, not the measure: one
 question proves nothing about a ranker, but a ranker that still misses it has

@@ -95,7 +95,17 @@
       Not resolved here: which criterion holds is task 5, and Mark's.
 
 ## 5. Decide
-- [ ] 5.1 Apply the rule in design.md, Decision 2. Write down which candidate
+- [x] 5.1 Apply the rule in design.md, Decision 2. Write down which candidate
       meets it, or that neither does.
+
+      Decided 2026-10-04 by Mark: the spec's goal counts (Decision 2,
+      corrected). **Candidate 2a meets it** (long 0.629 >= short 0.538 in the
+      pool) and is the one built for production (5.2, issue #190).
+      Candidate 1 does not (long 0.257 against short 0.846), but is better
+      than production on every metric, so it went live as the interim step the
+      same day: `WORDSWORTH_HYBRID_FINAL_RANK=rrf` (homelab `1ccfb51`), checked
+      on both api pods through the default path -- the windpark question puts
+      a windpark document first.
 - [ ] 5.2 Build the winner for production (if any), make it the default,
-      deploy, and run the windpark question through `/ask`.
+      deploy, and run the windpark question through `/ask`. Candidate 2a;
+      tracked in issue #190.
