@@ -22,6 +22,7 @@ def hybrid_search(
     only: list[str] | None = None,
     topic: str | None = None,
     final: str | None = None,
+    knn: str | None = None,
 ) -> list[Hit]:
     """Hybrid search: RRF recall over BM25 + kNN, then the final order.
 
@@ -35,6 +36,11 @@ def hybrid_search(
     final = final or settings.hybrid_final_rank
     if final not in ("cosine", "rrf"):
         raise ValueError(f"final rank must be cosine or rrf, not {final!r}")
+    # ``knn`` -- "document" or "passage" (WORDSWORTH_HYBRID_KNN): what the kNN
+    # half of the recall compares the query with.
+    knn = knn or settings.hybrid_knn
+    if knn not in ("document", "passage"):
+        raise ValueError(f"knn must be document or passage, not {knn!r}")
     # The same bounded retry as ingest (hoge-beschikbaarheid 3.2.4): with two
     # Ollama instances, a query can reach one in the second it goes away --
     # measured 2026-09-26, 1 of 334 queries got "connection refused" while its
@@ -44,7 +50,7 @@ def hybrid_search(
                                    settings.retry_attempts, settings.retry_base_delay,
                                    what="query_embed")
     candidates = index.hybrid_search(query, query_vector, recall=recall, only=only,
-                                     topic=topic)
+                                     topic=topic, knn=knn)
     for hit in candidates:
         hit.score = round(cosine(query_vector, hit.vector), 6) if hit.vector else 0.0
     if final == "cosine":

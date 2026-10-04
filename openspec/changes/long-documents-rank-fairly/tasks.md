@@ -109,3 +109,8 @@
 - [ ] 5.2 Build the winner for production (if any), make it the default,
       deploy, and run the windpark question through `/ask`. Candidate 2a;
       tracked in issue #190.
+
+      Built 2026-10-04 (design Decision 5): nested `passages` field, passages
+      written at every indexing, `set_passages` + `wordsworth-backfill-passages`,
+      `WORDSWORTH_HYBRID_KNN` (default `document`). Next: deploy, backfill,
+      measure on the full index, switch.

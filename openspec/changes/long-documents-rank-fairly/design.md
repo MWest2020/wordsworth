@@ -62,3 +62,27 @@ Whatever wins, the requirement becomes the property the measurement checks: the
 final ranking does not favour a document for being short. The mechanism moves to
 this design, where a later measurement can change it without the spec claiming
 something that stopped being true.
+
+## Decision 5 — candidate 2a in production: nested passages on the document
+
+Decided by the measurement and Mark's choice of the spec's goal (Decision 2,
+corrected). How it is built:
+
+- **Where the vectors live: a nested field `passages` on each document**, not a
+  separate index. Probed on the running OpenSearch 2.19 before relying on it
+  (throwaway index, 2026-10-04): nested k-NN with `score_mode: max` ranks a
+  document by its best passage, and the dossier filter works *inside* the knn
+  clause on the parent's fields -- the same placement `_scoped_knn` needs to
+  keep small dossiers from coming back empty. A separate index would need every
+  dossier and topic change mirrored onto its passages.
+- **Passages are part of indexing**, whatever the search setting: both paths
+  that index a document (ingest, re-anonymize) compute them from the text they
+  write. `index()` replaces the whole document, so passages left out would be
+  dropped -- the shape of the 2026-09-18 loss of 770 document vectors.
+  Cost: one embedding per passage, ~6.9 s each on CPU as measured, so a long
+  document takes minutes longer to ingest.
+- **The backfill is a partial update** (`set_passages`), resumable, and ends
+  even when a document cannot be done.
+- **Search switches separately** (`WORDSWORTH_HYBRID_KNN`, default `document`)
+  and only after the backfill: a document without passages is invisible to the
+  passage kNN half. Final order stays `rrf` (candidate 1 is already live).

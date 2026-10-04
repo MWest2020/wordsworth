@@ -68,6 +68,19 @@ def _mapping(dim: int) -> dict:
                     "dimension": dim,
                     "method": {"name": "hnsw", "space_type": "cosinesimil", "engine": "lucene"},
                 },
+                # A vector per passage (wordsworth.passages). Nested, so nested
+                # k-NN ranks the document by its best passage and the dossier and
+                # topic filters still apply to the document (long-documents-
+                # rank-fairly; probed on 2.19 before relying on it, 2026-10-04).
+                "passages": {
+                    "type": "nested",
+                    "properties": {"vector": {
+                        "type": "knn_vector",
+                        "dimension": dim,
+                        "method": {"name": "hnsw", "space_type": "cosinesimil",
+                                   "engine": "lucene"},
+                    }},
+                },
             }
         },
     }
@@ -121,7 +134,7 @@ def _scoped(query: dict, only, topic=None) -> dict:
     return {"bool": {"must": [query], "filter": clauses}}
 
 
-def _scoped_knn(query_vector, recall: int, only, topic=None) -> dict:
+def _scoped_knn(query_vector, recall: int, only, topic=None, knn: str = "document") -> dict:
     """De kNN-helft met het dossierfilter BINNEN de knn-clause.
 
     Voor de lexicale helft is ``_scoped`` goed: een ``bool.filter`` naast de
@@ -152,6 +165,11 @@ def _scoped_knn(query_vector, recall: int, only, topic=None) -> dict:
         # geen geldige query.
         clause["filter"] = (clauses[0] if len(clauses) == 1
                             else {"bool": {"filter": clauses}})
+    if knn == "passage":
+        # The filter stays INSIDE the knn clause, on the document's fields: a
+        # nested knn reaches the parent's dossiers and topics from there.
+        return {"nested": {"path": "passages", "score_mode": "max",
+                           "query": {"knn": {"passages.vector": clause}}}}
     return {"knn": {"vector": clause}}
 
 
@@ -261,7 +279,7 @@ class OpenSearchIndex:
         return result.get("count", 0) > 0
 
     def index(self, document_id, text, object_key, vector=None,
-              dossiers=None) -> None:
+              dossiers=None, passages=None) -> None:
         """Schrijf het hele document. Let op: dit vervángt, dus het
         onderwerp-lidmaatschap van dit document valt eraf. Dat is juist — een
         opnieuw verwerkt document hoort niet stilzwijgend in een groep te
@@ -272,7 +290,30 @@ class OpenSearchIndex:
                 "dossiers": list(dossiers or ())}
         if vector is not None:
             body["vector"] = vector
+        if passages:
+            body["passages"] = [{"vector": v} for v in passages]
         self._client.index(index=self._index, id=document_id, body=body, refresh=True)
+
+    def set_passages(self, document_id, passages) -> bool:
+        """Set only the passages: a partial update, like `set_dossiers`, so the
+        backfill never touches the text or the document vector."""
+        try:
+            self._client.update(index=self._index, id=document_id,
+                                body={"doc": {"passages": [{"vector": v} for v in passages]}},
+                                refresh=True)
+        except Exception as exc:                 # opensearchpy NotFoundError
+            if getattr(exc, "status_code", None) != 404:
+                raise
+            return False
+        return True
+
+    def missing_passages(self, limit: int = 100) -> list[tuple[str, str]]:
+        """Indexed documents without passages, with their text."""
+        body = {"size": limit, "_source": ["text"],
+                "query": {"bool": {"must_not": [{"nested": {
+                    "path": "passages", "query": {"exists": {"field": "passages.vector"}}}}]}}}
+        hits = self._client.search(index=self._index, body=body)["hits"]["hits"]
+        return [(h["_id"], h["_source"].get("text") or "") for h in hits]
 
     def set_dossiers(self, document_id, dossiers) -> bool:
         """Werk alleen het dossierveld bij.
@@ -356,13 +397,13 @@ class OpenSearchIndex:
 
     @_reads
     def hybrid_search(self, query, query_vector, recall: int = 50,
-                      only=None, topic=None) -> list[Hit]:
+                      only=None, topic=None, knn: str = "document") -> list[Hit]:
         bm25 = self._ranked_ids(
             {"query": _scoped(_bm25(query), only, topic),
              "size": recall, "_source": False}
         )
         knn = self._ranked_ids(
-            {"query": _scoped_knn(query_vector, recall, only, topic),
+            {"query": _scoped_knn(query_vector, recall, only, topic, knn=knn),
              "size": recall, "_source": False}
         )
         fused = fuse_ranked_ids([bm25, knn])[:recall]
