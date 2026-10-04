@@ -32,9 +32,11 @@ FROM python:3.12-slim-bookworm AS runtime
 # Cache-bust voor de patchlaag. Zonder dit hergebruikt de GHA-cache de laag met
 # apt-lijsten van de dag dat hij gebouwd werd: `apt-get upgrade` draait dan nooit
 # opnieuw en het image blijft op oude pakketversies staan, hoe vaak je ook bouwt.
-# CI geeft hier het ISO-weeknummer mee, dus minstens wekelijks verse patches en
-# daarbuiten blijft de cache intact. (Gevonden 2026-09-06: de Trivy-gate stond
-# rood op libssh2 met status "fixed", en blokkeerde daarmee elke publicatie.)
+# CI passes the date, so patches are at most a day old and the cache is reused
+# within the day. It used to be the ISO week, which left a fix published
+# mid-week out of the image until the next week: on 2026-10-04 libpcre2's fixed
+# HIGH CVE blocked every build that way (#198). (First found 2026-09-06, when
+# the Trivy gate was red on libssh2 with status "fixed".)
 ARG APT_REFRESH=onbekend
 
 # OS security patches + the OCR native stack. ocrmypdf (OCR recovery) shells out

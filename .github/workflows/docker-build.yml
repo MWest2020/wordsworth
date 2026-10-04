@@ -98,7 +98,9 @@ jobs:
       # ISO-week als cache-bust: de patchlaag mag hoogstens een week oud zijn.
       - name: Patchweek bepalen
         id: week
-        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+        # Daily, not weekly: a fixed CVE published mid-week stayed in the cached
+        # patch layer until the next ISO week and blocked every build (#198).
+        run: echo "week=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Build image (load to runner for scan)
         uses: docker/build-push-action@v5
