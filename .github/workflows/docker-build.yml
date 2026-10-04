@@ -95,7 +95,7 @@ jobs:
 
       # Build to the runner first (load, no push) so Trivy scans the exact image
       # before it can reach the registry.
-      # ISO-week als cache-bust: de patchlaag mag hoogstens een week oud zijn.
+      # The date as cache-bust: the patch layer is at most a day old (#198).
       - name: Patchweek bepalen
         id: week
         # Daily, not weekly: a fixed CVE published mid-week stayed in the cached
