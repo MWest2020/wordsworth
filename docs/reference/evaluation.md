@@ -204,10 +204,12 @@ The production ranking does not find a long document by its own title, not once
 in 35. BM25 has no such slope. That is the short-document bias of change
 `long-documents-rank-fairly`, measured.
 
-The runner scores hybrid search in both final orders side by side, explicitly
-and not through the setting: `cosine` (production) and `rrf` (candidate 1, the
-fused rank the recall stage already computes), plus BM25 alone. Production
-switches with `WORDSWORTH_HYBRID_FINAL_RANK` (default `cosine`).
+The runner scores hybrid search in three configurations side by side, explicitly
+and not through the settings: final order `cosine` or `rrf`
+(`WORDSWORTH_HYBRID_FINAL_RANK`), and the kNN half over whole documents or
+passages (`WORDSWORTH_HYBRID_KNN`, candidate 2a), plus BM25 alone. Passage kNN
+only sees documents that have passages, so its numbers mean something only
+after `wordsworth-backfill-passages` has finished.
 
 `scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
 2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150

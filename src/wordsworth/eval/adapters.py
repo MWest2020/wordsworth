@@ -38,11 +38,13 @@ def bm25_adapter(index: SearchIndex, k: int = 10) -> Ranker:
 
 
 def hybrid_adapter(index: SearchIndex, embedder: Embedder, k: int = 10,
-                   final: str | None = None) -> Ranker:
+                   final: str | None = None, knn: str | None = None) -> Ranker:
     """Hybrid configuration: RRF recall, then the final order -- ``final``
-    "cosine" or "rrf" (see `hybrid.hybrid_search`; None reads the setting)."""
+    "cosine" or "rrf", ``knn`` "document" or "passage" (see
+    `hybrid.hybrid_search`; None reads the setting)."""
 
     def search(query: str) -> list[str]:
-        return _external_ids(hybrid_search(index, embedder, query, size=k, final=final))
+        return _external_ids(hybrid_search(index, embedder, query, size=k,
+                                           final=final, knn=knn))
 
     return search
