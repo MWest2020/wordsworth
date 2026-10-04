@@ -33,6 +33,7 @@ from .keys import DEFAULT_DOMAIN
 from .models import AuditRecord, Document, DocumentText, DossierDocument
 from .object_store import ObjectStore
 from .profiling import ProfilingError, profile_pdf
+from .passages import embed_passages
 from .retry import retry_transient
 from .search_index import SearchIndex
 from .states import State, is_allowed
@@ -301,12 +302,15 @@ def process(
             lambda: embed.embed([anonymized])[0],
             settings.retry_attempts, settings.retry_base_delay, what="embed",
         )
+        # A vector per passage of the same text, always: index() replaces the
+        # whole document, so passages left out would be passages dropped.
+        passages = embed_passages(embed, anonymized)
 
         def _index() -> None:
             index.ensure_ready()
             # Idempotent (upsert by id) so a crash between index and commit is safe.
             index.index(str(document_id), anonymized, doc.object_key, vector=vector,
-                        dossiers=dossiers_of(session, document_id))
+                        dossiers=dossiers_of(session, document_id), passages=passages)
 
         retry_transient(_index, settings.retry_attempts, settings.retry_base_delay,
                     what="index")
@@ -385,11 +389,13 @@ def reanonymize(
         lambda: embed.embed([result.text])[0],
         settings.retry_attempts, settings.retry_base_delay, what="embed",
     )
+    # The new text's passages: the old ones describe text that is gone.
+    passages = embed_passages(embed, result.text)
 
     def _index() -> None:
         index.ensure_ready()
         index.index(str(document_id), result.text, doc.object_key, vector=vector,
-                    dossiers=dossiers_of(session, document_id))
+                    dossiers=dossiers_of(session, document_id), passages=passages)
 
     retry_transient(_index, settings.retry_attempts, settings.retry_base_delay,
                     what="index")

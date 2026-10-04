@@ -391,6 +391,19 @@ class Settings:
         return value
 
     @property
+    def hybrid_knn(self) -> str:
+        """What the kNN half of hybrid search compares the query with:
+        "document" (one embedding per whole document, the default) or "passage"
+        (a document ranked by its best passage, nested k-NN). Change
+        long-documents-rank-fairly, candidate 2a. Switch only after every
+        indexed document has passages (`wordsworth-backfill-passages`);
+        a document without them is invisible to the passage kNN half."""
+        value = os.environ.get("WORDSWORTH_HYBRID_KNN", "document")
+        if value not in ("document", "passage"):
+            raise ValueError(f"WORDSWORTH_HYBRID_KNN must be document or passage, not {value!r}")
+        return value
+
+    @property
     def llm_timeout(self) -> float:
         """Per-request timeout (s) for /ask generation. Generous: a small model
         on a CPU-only node is slow."""

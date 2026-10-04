@@ -198,6 +198,26 @@ A retired copy is not deleted: its audit trail requires the row. It still
 answers `GET /documents/{id}/state` with `superseded` and `superseded_by`, and
 reveal on it is refused with the survivor's id.
 
+## `wordsworth-backfill-passages`
+
+Gives every indexed document a vector per passage (200-word windows every 150
+words, `wordsworth.passages`), so hybrid search can rank a document by its best
+passage instead of one vector for all of it (change
+`long-documents-rank-fairly`).
+
+```bash
+wordsworth-backfill-passages            # --workers 2 (one per Ollama instance)
+```
+
+New and reprocessed documents get passages when they are indexed; this fills in
+the ones indexed before. It only sets the `passages` field (a partial update),
+never the text or the document vector. It asks the index what is still missing,
+so a stopped run resumes. A document with no text, or whose embedding fails
+after the retry budget, is set aside and counted; exit code 1 if any failed.
+
+Switch search over only when it is done: `WORDSWORTH_HYBRID_KNN=passage`. A
+document without passages is invisible to the passage kNN half.
+
 ## `wordsworth-backfill-filenames`
 
 Gives existing documents back the name their file arrived under, by content hash.

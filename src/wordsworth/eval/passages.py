@@ -15,22 +15,9 @@ from __future__ import annotations
 
 from zeef.similarity import cosine
 
-WORDS = 200
-STRIDE = 150
-
-
-def split(text: str, words: int = WORDS, stride: int = STRIDE) -> list[str]:
-    """Overlapping word windows covering the whole text; a text no longer than
-    one window is one passage, and an empty text none."""
-    tokens = text.split()
-    if not tokens:
-        return []
-    starts = range(0, max(len(tokens) - words, 0) + 1, stride)
-    out = [" ".join(tokens[s:s + words]) for s in starts]
-    last = starts[-1] + words
-    if last < len(tokens):        # the tail the stride stepped over
-        out.append(" ".join(tokens[-words:]))
-    return out
+# The rule lives in production now (wordsworth.passages); the evaluation uses the
+# same one, so what was measured is what is built.
+from ..passages import STRIDE, WORDS, split  # noqa: F401,E402
 
 
 def best_passage_scores(query_vector: list[float],

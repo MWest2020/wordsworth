@@ -55,9 +55,13 @@ class IndexedDocument:
 @runtime_checkable
 class SearchIndex(Protocol):
     def ensure_ready(self) -> None: ...
+    #: Writes the whole document. ``passages`` are the vectors of its passages
+    #: (`wordsworth.passages`); like ``vector``, leaving them out drops them, so
+    #: every indexing path computes them from the text it writes.
     def index(self, document_id: str, text: str, object_key: str,
               vector: list[float] | None = None,
-              dossiers: list[str] | None = None) -> None: ...
+              dossiers: list[str] | None = None,
+              passages: list[list[float]] | None = None) -> None: ...
     # ``only`` is the scope: a list of dossier ids, or None for every dossier.
     # None means "all" ONLY here, where it arrives from a caller that said so —
     # the API refuses a missing scope before it ever gets this far.
@@ -68,10 +72,21 @@ class SearchIndex(Protocol):
     def search(self, query: str, size: int = 10,
                only: list[str] | None = None,
                topic: str | None = None) -> list[Hit]: ...
+    #: ``knn`` -- "document": the kNN half compares with each document's one
+    #: embedding; "passage": with its passages, a document ranked by its best
+    #: (change long-documents-rank-fairly, candidate 2a).
     def hybrid_search(self, query: str, query_vector: list[float],
                       recall: int = 50,
                       only: list[str] | None = None,
-                      topic: str | None = None) -> list[Hit]: ...
+                      topic: str | None = None,
+                      knn: str = "document") -> list[Hit]: ...
+    #: Set ONLY the passages of an indexed document -- the backfill's partial
+    #: update, for the same reason as `set_dossiers`. Returns whether it was
+    #: there.
+    def set_passages(self, document_id: str, passages: list[list[float]]) -> bool: ...
+    #: (document id, text) of indexed documents that have no passages yet, for
+    #: the backfill to find what is left.
+    def missing_passages(self, limit: int = 100) -> list[tuple[str, str]]: ...
     # Change ONLY the dossiers of a document. Re-indexing to move a membership
     # replaces the whole document, and a caller who forgets `vector=` silently
     # destroys the embedding — with no error, no audit record, and no way to
@@ -115,15 +130,31 @@ class InMemoryIndex:
     _dossiers: dict[str, set[str]] = field(default_factory=dict)
     #: document id -> the topics it belongs to.
     _topics: dict[str, set[str]] = field(default_factory=dict)
+    #: document id -> its passage vectors.
+    _passages: dict[str, list[list[float]]] = field(default_factory=dict)
 
     def ensure_ready(self) -> None:
         pass
 
     def index(self, document_id, text, object_key, vector=None,
-              dossiers=None) -> None:
+              dossiers=None, passages=None) -> None:
         self._docs[document_id] = (text, object_key, vector)  # idempotent upsert
         self._dossiers[document_id] = set(dossiers or ())
         self._topics.pop(document_id, None)   # zie OpenSearchIndex.index
+        if passages:
+            self._passages[document_id] = list(passages)
+        else:
+            self._passages.pop(document_id, None)   # replaced, like the vector
+
+    def set_passages(self, document_id, passages) -> bool:
+        if document_id not in self._docs:
+            return False
+        self._passages[document_id] = list(passages)
+        return True
+
+    def missing_passages(self, limit: int = 100) -> list[tuple[str, str]]:
+        return [(d, t) for d, (t, _k, _v) in self._docs.items()
+                if d not in self._passages][:limit]
 
     # Change ONLY the dossiers of a document. Re-indexing to move a membership
     # replaces the whole document, and a caller who forgets `vector=` silently
@@ -146,6 +177,7 @@ class InMemoryIndex:
     def delete(self, document_id) -> bool:
         self._dossiers.pop(document_id, None)
         self._topics.pop(document_id, None)
+        self._passages.pop(document_id, None)
         return self._docs.pop(document_id, None) is not None
 
     def documents_in(self, dossier: str, limit: int = 10000
@@ -184,14 +216,17 @@ class InMemoryIndex:
         ]
 
     def hybrid_search(self, query, query_vector, recall: int = 50,
-                      only=None, topic=None) -> list[Hit]:
+                      only=None, topic=None, knn: str = "document") -> list[Hit]:
         lexical_ids = [doc_id for doc_id, _ in self._lexical(query, only, topic)]
-        knn = sorted(
-            ((doc_id, cosine(query_vector, vec))
-             for doc_id, (_t, _k, vec) in self._docs.items()
-             if vec and self._in_scope(doc_id, only, topic)),
-            key=lambda p: p[1], reverse=True,
-        )
+        if knn == "passage":
+            pairs = ((d, max(cosine(query_vector, v) for v in vs))
+                     for d, vs in self._passages.items()
+                     if vs and self._in_scope(d, only, topic))
+        else:
+            pairs = ((doc_id, cosine(query_vector, vec))
+                     for doc_id, (_t, _k, vec) in self._docs.items()
+                     if vec and self._in_scope(doc_id, only, topic))
+        knn = sorted(pairs, key=lambda p: p[1], reverse=True)
         knn_ids = [doc_id for doc_id, _ in knn]
         fused = fuse_ranked_ids([lexical_ids, knn_ids])[:recall]
         return [

@@ -15,7 +15,7 @@ class _Recall:
     """An index whose recall set comes back in a fixed fused order, where the
     fused leader has the WORST cosine -- the long document of the measurement."""
 
-    def hybrid_search(self, query, query_vector, recall=50, only=None, topic=None):
+    def hybrid_search(self, query, query_vector, recall=50, only=None, topic=None, **kw):
         return [Hit("long", 0.0, "k-long", [0.2, 1.0]),
                 Hit("mid", 0.0, "k-mid", [0.7, 0.7]),
                 Hit("short", 0.0, "k-short", [1.0, 0.0])]
