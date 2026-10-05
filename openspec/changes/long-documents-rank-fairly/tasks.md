@@ -114,3 +114,42 @@
       written at every indexing, `set_passages` + `wordsworth-backfill-passages`,
       `WORDSWORTH_HYBRID_KNN` (default `document`). Next: deploy, backfill,
       measure on the full index, switch.
+
+      Backfill 2026-10-04/05: 611 documents, 3861 passages, 0 empty, 0 failed,
+      5 h 57 min (Job `wordsworth-backfill-passages`); checked independently
+      afterwards, 0 documents without passages.
+
+      **Measured on the full production index -- not switched.** 200 Woo
+      documents linked (the 6 OCR names restored, #194), 118 known-item and 7
+      decision queries. Recall@8:
+
+      | | short | middle | long | all | decision |
+      |---|---|---|---|---|---|
+      | cosine, document kNN | 0.692 | 0.097 | 0.000 | 0.214 | 0.076 |
+      | **rrf, document kNN (candidate 1, live)** | 0.731 | 0.355 | 0.400 | 0.474 | 0.329 |
+      | rrf, passage kNN (candidate 2a) | 0.538 | 0.387 | 0.514 | 0.459 | 0.227 |
+      | rrf of bm25 + document + passage kNN (3, analysed) | 0.692 | 0.290 | 0.314 | 0.392 | 0.245 |
+      | bm25 alone (reference) | 0.577 | 0.742 | 0.657 | 0.654 | 0.461 |
+
+      MRR / nDCG@10 overall: candidate 1 0.274 / 0.318, 2a 0.403 / 0.389,
+      3 0.266 / 0.275, bm25 0.448 / 0.493.
+
+      - **2a misses the spec's goal on the full index**: long 0.514 against
+        short 0.538 (in the 194-document pool it met it). The gap is smaller
+        than one query in either third -- but the smoke test decides it:
+      - **2a fails the windpark question**: none of its top 8 mention the
+        windpark, and all eight are long (3719-28209 characters). Scoring a
+        document by its best passage gives a long document one chance per
+        passage; the bias flips instead of vanishing.
+      - Fusing both kNN views with BM25 (3) is worse overall and also misses
+        the windpark document.
+      - **Candidate 1 stays live**: best Recall@8 overall, passes the smoke
+        test. No hybrid meets the goal; BM25 alone does, and scores best on
+        this title-word collection -- its stated bias. Whether the vector half
+        helps real questions needs judged ones (#196).
+
+      Per the spec delta, the requirement is not archived as if it held. Open,
+      for Mark: keep candidate 1 and revise the goal with this measurement, or
+      judged questions first (#196). Passages stay in the index and are still
+      computed at every indexing (~4.7 s a passage); switching that off is a
+      one-line change if they will not be used.
