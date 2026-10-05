@@ -82,7 +82,10 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
   IBAN mod-97).
 - **zeef** (`MWest2020/zeef`, MIT) — ranking (local Ollama embeddings,
   cosine, UPGMA clustering, append-only audit-JSONL). clustering ≠ ranking;
-  reach ≠ relevance; `--no-llm` + cosine is the proven path.
+  reach ≠ relevance; `--no-llm` + cosine is the proven path for clustering.
+  Hybrid search does **not** re-sort by whole-document cosine any more: that
+  shut long documents out entirely (change `long-documents-rank-fairly`); its
+  final order is the fused RRF rank.
 
 ## Working method & governance
 

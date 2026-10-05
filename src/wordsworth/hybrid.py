@@ -1,8 +1,11 @@
 """Hybrid search orchestration: embed the query, take an RRF recall set from the
-index (BM25 + kNN), then let zeef's cosine be the final selector.
+index (BM25 + kNN), and order it.
 
-RRF gives recall (candidate set); `zeef.similarity.cosine` gives the order —
-the proven '--no-llm + cosine' selection path. No LLM, no clustering."""
+The order is the fused RRF rank since 2026-10-05 (change
+long-documents-rank-fairly). The earlier final selector, `zeef.similarity.cosine`
+against one embedding per whole document, found not one long document by its
+own title on the Woo collection; it stays as a rollback (`final="cosine"`).
+No LLM, no clustering."""
 from __future__ import annotations
 
 from zeef.similarity import cosine
@@ -29,7 +32,7 @@ def hybrid_search(
     ``final`` -- "cosine" re-sorts the recall set by cosine between the query
     and each document's one embedding; "rrf" keeps the fused rank the recall
     stage computed. ``None`` reads ``WORDSWORTH_HYBRID_FINAL_RANK`` (default
-    cosine). Either way ``score`` is the cosine similarity; under "rrf" it no
+    rrf). Either way ``score`` is the cosine similarity; under "rrf" it no
     longer decides the order (change long-documents-rank-fairly: cosine over
     whole-document embeddings ranks long documents last).
     """

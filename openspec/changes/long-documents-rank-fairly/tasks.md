@@ -106,7 +106,7 @@
       same day: `WORDSWORTH_HYBRID_FINAL_RANK=rrf` (homelab `1ccfb51`), checked
       on both api pods through the default path -- the windpark question puts
       a windpark document first.
-- [ ] 5.2 Build the winner for production (if any), make it the default,
+- [x] 5.2 Build the winner for production (if any), make it the default,
       deploy, and run the windpark question through `/ask`. Candidate 2a;
       tracked in issue #190.
 
@@ -148,8 +148,11 @@
         this title-word collection -- its stated bias. Whether the vector half
         helps real questions needs judged ones (#196).
 
-      Per the spec delta, the requirement is not archived as if it held. Open,
-      for Mark: keep candidate 1 and revise the goal with this measurement, or
-      judged questions first (#196). Passages stay in the index and are still
+      Per the spec delta, the requirement is not archived as if it held.
+      **Decided 2026-10-05 by Mark: keep candidate 1 and revise the goal.**
+      The requirement is renamed and rewritten (`The final ranking does not
+      shut out long documents`): the fused rank, every third above zero and
+      recorded per change, the remaining gap stated as a known limitation.
+      The code default becomes `rrf` so the spec holds without the configmap. Passages stay in the index and are still
       computed at every indexing (~4.7 s a passage); switching that off is a
       one-line change if they will not be used.

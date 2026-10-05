@@ -380,12 +380,13 @@ class Settings:
 
     @property
     def hybrid_final_rank(self) -> str:
-        """How hybrid search orders its recall set: "cosine" (one embedding per
-        whole document, the default) or "rrf" (the fused BM25 + kNN rank the
-        recall stage already computed). Candidate 1 of change
-        long-documents-rank-fairly; the default stays until the measurement
-        picks. Anything else is an error, not a quiet fallback."""
-        value = os.environ.get("WORDSWORTH_HYBRID_FINAL_RANK", "cosine")
+        """How hybrid search orders its recall set: "rrf" (the fused BM25 + kNN
+        rank the recall stage computes, the default since 2026-10-05) or
+        "cosine" (re-sort by one embedding per whole document, kept as a
+        rollback). Change long-documents-rank-fairly: the cosine re-sort found
+        not one long document by its own title. Anything else is an error, not
+        a quiet fallback."""
+        value = os.environ.get("WORDSWORTH_HYBRID_FINAL_RANK", "rrf")
         if value not in ("cosine", "rrf"):
             raise ValueError(f"WORDSWORTH_HYBRID_FINAL_RANK must be cosine or rrf, not {value!r}")
         return value
