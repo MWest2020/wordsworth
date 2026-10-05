@@ -211,6 +211,12 @@ passages (`WORDSWORTH_HYBRID_KNN`, candidate 2a), plus BM25 alone. Passage kNN
 only sees documents that have passages, so its numbers mean something only
 after `wordsworth-backfill-passages` has finished.
 
+Outcome, 2026-10-05 (full index, all 200 Woo documents linked): the fused RRF
+rank over BM25 and whole-document kNN is the default (Recall@8 by third
+0.731 / 0.355 / 0.400). Passage kNN narrowed the length gap (0.538 / 0.387 /
+0.514) but flipped the bias -- its top 8 for the windpark question were all
+long documents -- so it is not used for search.
+
 `scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
 2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150
 words, a document scored by its best passage). Passages exist only for the Woo

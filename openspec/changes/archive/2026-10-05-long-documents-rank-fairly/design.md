@@ -86,3 +86,13 @@ corrected). How it is built:
 - **Search switches separately** (`WORDSWORTH_HYBRID_KNN`, default `document`)
   and only after the backfill: a document without passages is invisible to the
   passage kNN half. Final order stays `rrf` (candidate 1 is already live).
+
+## Decision 6 — the goal, revised by the measurement
+
+The spec's first goal, Recall@8 for long documents at least that of short ones,
+is not met by any hybrid ranking on the full index (tasks.md 5.2). Passages came
+closest and flipped the bias. Decided by Mark on 2026-10-05: keep candidate 1
+and revise the goal to what was measured and holds -- no length third shut out
+(the failure the change was opened for: 0.000 for the long third), the fused
+rank as the order, the values recorded with every ranking change, and the
+remaining gap written down as a known limitation instead of a met goal.

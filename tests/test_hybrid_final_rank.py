@@ -2,8 +2,8 @@
 """The final order of hybrid search, behind a setting (long-documents-rank-fairly).
 
 "cosine" re-sorts the recall set by whole-document cosine; "rrf" keeps the
-fused rank the recall stage computed. The default stays cosine until the
-measurement on the Woo collection picks.
+fused rank the recall stage computed. The default is rrf since 2026-10-05, the
+measurement's pick; cosine stays as the rollback.
 """
 import pytest
 
@@ -42,11 +42,13 @@ def test_rrf_keeps_the_fused_rank_and_still_reports_cosine():
     assert hits[2].score == 1.0          # the score is still the cosine
 
 
-def test_the_default_is_cosine_and_the_setting_switches_it(monkeypatch):
+def test_the_default_is_rrf_and_cosine_is_the_rollback(monkeypatch):
+    """Since 2026-10-05 (long-documents-rank-fairly): the spec says the final
+    ranking keeps the fused rank, so that is what an unset environment gets."""
     monkeypatch.delenv("WORDSWORTH_HYBRID_FINAL_RANK", raising=False)
-    assert _order() == ["short", "mid", "long"]
-    monkeypatch.setenv("WORDSWORTH_HYBRID_FINAL_RANK", "rrf")
     assert _order() == ["long", "mid", "short"]
+    monkeypatch.setenv("WORDSWORTH_HYBRID_FINAL_RANK", "cosine")
+    assert _order() == ["short", "mid", "long"]
 
 
 def test_an_unknown_mode_is_an_error_not_a_fallback(monkeypatch):
