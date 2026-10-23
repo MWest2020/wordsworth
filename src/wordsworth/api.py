@@ -53,6 +53,7 @@ from .rate_limit import (
     TokenBucket,
     limiters_from_settings,
 )
+from .provenance import ProvenanceError, parse_fetched_at, validate_source_url
 from .recovery import recover
 from .retry import is_transient
 from .search_index import SearchIndex
@@ -911,7 +912,9 @@ def create_app(
 
         def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN,
                         filename: str | None = None,
-                        dossier: str | None = None) -> dict:
+                        dossier: str | None = None,
+                        source_url: str | None = None,
+                        fetched_at: datetime | None = None) -> dict:
             """Drive one document to its terminal state; return its metadata
             (id, state, duration, counts). The un-redacted bytes never leave this
             frame and no exception it raises carries document text (fail-hard, no
@@ -964,7 +967,8 @@ def create_app(
                 # keys + mapping store) per document; default mode uses the shared
                 # irreversible driver.
                 anon = _make_anonymizer(session, domain)
-                doc = ingest(session, store, data, domain, filename, dossier)
+                doc = ingest(session, store, data, domain, filename, dossier,
+                            source_url=source_url, fetched_at=fetched_at)
                 session.commit()
                 document_id = doc.id
                 state = process(session, document_id, store, anonymizer=anon,
@@ -994,6 +998,8 @@ def create_app(
             files: list[UploadFile] = File(..., description="One or more PDF files"),
             domain: str | None = None,
             dossier: str | None = None,
+            source_url: str | None = None,
+            fetched_at: str | None = None,
         ) -> IngestResponse:
             """Upload one or more PDFs. Each is driven through
             ingest → OCR recovery (if scanned) → anonymize → store → index and
@@ -1006,7 +1012,12 @@ def create_app(
             probe — otherwise a long batch starves /health and the pod is killed.
 
             ``?domain=`` binds the batch to a pseudonymisation domain
-            (add-domain-keys); default from ``WORDSWORTH_DEFAULT_DOMAIN``."""
+            (add-domain-keys); default from ``WORDSWORTH_DEFAULT_DOMAIN``.
+
+            ``?source_url=`` and ``?fetched_at=`` record where the batch came
+            from (ingest-records-source); both optional, and apply to every file
+            in the batch -- one upload is one delivery from one place. Omitting
+            them leaves ingest exactly as it was before this parameter existed."""
             dom = domain or default_settings.default_domain
             if "/" in dom:
                 raise HTTPException(status_code=400, detail="domain must not contain '/'")
@@ -1018,6 +1029,17 @@ def create_app(
                     status_code=400,
                     detail="name a dossier: a document that belongs to none is "
                            "invisible to a scoped search")
+            if source_url is not None:
+                try:
+                    validate_source_url(source_url)
+                except ProvenanceError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
+            parsed_fetched_at: datetime | None = None
+            if fetched_at is not None:
+                try:
+                    parsed_fetched_at = parse_fetched_at(fetched_at)
+                except ProvenanceError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc))
             results: list[IngestResult] = []
             for f in files:
                 data = f.file.read()
@@ -1026,7 +1048,8 @@ def create_app(
                         filename=f.filename, state="error", error="empty upload"))
                     continue
                 try:
-                    meta = _ingest_one(data, dom, f.filename, dossier)
+                    meta = _ingest_one(data, dom, f.filename, dossier,
+                                       source_url, parsed_fetched_at)
                     results.append(IngestResult(
                         filename=f.filename,
                         document_id=meta.get("document_id"),
@@ -1665,6 +1688,10 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         "document_id": str(document_id),
         "object_key": doc.object_key if doc else None,
         "domain": reg.get("domain") or DEFAULT_DOMAIN,
+        "source_url": doc.source_url if doc else None,
+        "fetched_at": (doc.fetched_at.astimezone(timezone.utc).isoformat()
+                       if doc and doc.fetched_at else None),
+        "source_sha256": doc.source_sha256 if doc else None,
         "state": records[-1].to_state,
         "duration_ms": round(total_ms, 1),
         "counts": counts,

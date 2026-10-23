@@ -217,6 +217,43 @@ rank over BM25 and whole-document kNN is the default (Recall@8 by third
 0.514) but flipped the bias -- its top 8 for the windpark question were all
 long documents -- so it is not used for search.
 
+## The published-dossier pilot (ingest-records-source)
+
+The MVP walking skeleton: **one published municipal publication, ingested as
+one dossier**, run end to end (ingest → anonymize → rank → a person checks
+both). Not a measurement of general quality — a scoped search in a dossier of
+10 to 30 documents returns the one relevant document whatever the ranker
+does, so the ranking step cannot fail on its own. The pilot proves the
+pipeline runs on a real publication, nothing more.
+
+Published documents only — see the non-goal below.
+
+| part | what |
+| --- | --- |
+| corpus | one municipal publication (e.g. Gooise Meren) as one dossier, 10 to 30 real documents, fetched by hand; the report records who checked `robots.txt` and the terms, and when |
+| ranking gate | at least 5 questions, each with its expected document, written **before** any result is seen; pass when the expected document is in the top 8 for at least 4 of 5 — gates this pilot run only |
+| PII gate | a person reads the full `/anonymized` text of every pilot document against the source; any residual direct identifier of a private person (BSN, IBAN, e-mail, phone, name, home address) fails the pilot, unless that document is excluded with the reason written down |
+| also reported, not gates | residual count, placeholder count, the ORGANIZATION over-redaction rate; officials' names without a public role, as a separate finding |
+| a layer that did not run | counts as failed, e.g. a NER backend that is down |
+
+**Gold set.** Offsets and hash only (`sha256, start, end, type`), no PII text
+in git — this works only because a published source can be rebuilt from the
+public PDF. Do not generalise the rule: unpublished documents need their own
+data-handling decision.
+
+**No recall claim from published material.** Published Woo material has
+already been redacted by the municipality before wordsworth ever sees it. A
+pilot on it can show residual identifiers and over-redaction, but it cannot
+show what wordsworth would have missed had it been the one redacting from
+the unredacted original — there is no unredacted original in this pilot to
+miss anything against. **The pilot report does not use the word "recall" for
+PII**, and anonymisation of *unpublished* documents remains unproven by this
+pilot.
+
+Provenance for the pilot corpus is recorded at ingest via `source_url` and
+`fetched_at` (see `docs/reference/ingest.md`), not read back out of an eval
+script's `herkomst.jsonl` after the fact.
+
 `scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
 2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150
 words, a document scored by its best passage). Passages exist only for the Woo

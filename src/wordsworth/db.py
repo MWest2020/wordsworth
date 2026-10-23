@@ -79,6 +79,9 @@ _COLUMNS = [
     ("documents", "filename", "VARCHAR"),
     ("grants", "role", "VARCHAR"),
     ("documents", "superseded_by", "UUID REFERENCES documents(id)"),
+    ("documents", "source_url", "VARCHAR"),
+    ("documents", "fetched_at", "TIMESTAMPTZ"),
+    ("documents", "source_sha256", "VARCHAR"),
 ]
 
 # (trigger, table) -> its CREATE statement, for the triggers that are not the
