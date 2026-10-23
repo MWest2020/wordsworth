@@ -217,6 +217,41 @@ rank over BM25 and whole-document kNN is the default (Recall@8 by third
 0.514) but flipped the bias -- its top 8 for the windpark question were all
 long documents -- so it is not used for search.
 
+## The Gooise Meren pilot (published-dossier MVP)
+
+One published Gooise Meren Woo publication, run through wordsworth as one
+dossier: 10 to 30 real documents, fetched by hand (the pilot report records
+who checked `robots.txt` and the terms, and when). Published material only —
+it was already redacted by the municipality before wordsworth ever saw it.
+
+**Ranking gate.** At least 5 questions, each with its expected document,
+written by a person *before* any result is seen. Pass when the expected
+document is in the top 8 for at least 4 of 5. This gates this pilot only and
+says nothing about general ranking quality.
+
+**PII gate.** A person reads the full `/anonymized` text of every pilot
+document against the source. Any residual direct identifier of a private
+person (BSN, IBAN, e-mail, phone, name, home address) fails the pilot, unless
+that document is excluded with the reason written down. Also reported, not
+gated: residual count, placeholder count, the ORGANIZATION over-redaction
+rate, and officials' names without a public role (a separate finding — a
+private person is a residual, an official without a public role is reported,
+a public office holder is not a residual; where that line falls in a given
+document waits for Mark or the municipality). A layer that did not run (e.g. a
+NER backend that is down) counts as failed, not as a pass by omission.
+
+**No recall claim from published material.** Published Woo documents have
+already been redacted by the municipality — a pilot on them can show residual
+identifiers and over-redaction, but it cannot show what anonymisation misses
+on *unredacted* text, because there is no unredacted original to compare
+against. The pilot report must not use the word "recall" for PII for exactly
+this reason.
+
+**Gold set.** Offsets and hash only (`sha256, start, end, type`), no PII text
+in git — this works only because a published source can be rebuilt from the
+public PDF. This rule does not generalise to unpublished documents, which need
+their own data-handling decision before any such gold set exists for them.
+
 `scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
 2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150
 words, a document scored by its best passage). Passages exist only for the Woo

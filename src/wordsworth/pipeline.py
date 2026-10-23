@@ -12,6 +12,7 @@ not commit, so a transition and its audit record commit (or roll back) together.
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -87,14 +88,23 @@ def transition(
 
 
 def register(session: Session, object_key: str,
-             domain: str = DEFAULT_DOMAIN, filename: str | None = None) -> Document:
-    doc = Document(object_key=object_key, filename=filename)
+             domain: str = DEFAULT_DOMAIN, filename: str | None = None,
+             source_url: str | None = None, fetched_at: datetime | None = None,
+             source_sha256: str | None = None) -> Document:
+    doc = Document(object_key=object_key, filename=filename, source_url=source_url,
+                   fetched_at=fetched_at, source_sha256=source_sha256)
     session.add(doc)
     session.flush()
     # The document's pseudonymisation domain is an audit fact from birth
-    # (add-domain-keys); derived, never a mutable column.
-    transition(session, doc.id, State.REGISTERED, step="register",
-               payload={"domain": domain})
+    # (add-domain-keys); derived, never a mutable column. Provenance
+    # (ingest-records-source) joins it here for the same reason: the chain
+    # proves what the document row claims, not just the row itself.
+    payload: dict[str, Any] = {"domain": domain, "source_sha256": source_sha256}
+    if source_url is not None:
+        payload["source_url"] = source_url
+    if fetched_at is not None:
+        payload["fetched_at"] = fetched_at.astimezone(timezone.utc).isoformat()
+    transition(session, doc.id, State.REGISTERED, step="register", payload=payload)
     return doc
 
 
@@ -112,18 +122,22 @@ def document_domain(session: Session, document_id: UUID) -> str:
 
 def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
            domain: str = DEFAULT_DOMAIN, filename: str | None = None,
-           dossier: str | None = None) -> Document:
+           dossier: str | None = None, source_url: str | None = None,
+           fetched_at: datetime | None = None) -> Document:
     """Store the PDF in object storage under a content-addressed key, then register
     the document against that key. `process` later fetches the bytes back by key —
     this closes the PoC shortcut of passing raw bytes across the pipeline seam.
 
     Content-addressing (sha256) makes the key deterministic, so re-ingesting the
-    same bytes is idempotent at the object layer."""
-    key = "documents/" + hashlib.sha256(pdf_bytes).hexdigest()
+    same bytes is idempotent at the object layer. The same digest is recorded as
+    `source_sha256` (ingest-records-source) — wordsworth's own proof of what it
+    stored, never the client's claim."""
+    digest = hashlib.sha256(pdf_bytes).hexdigest()
+    key = "documents/" + digest
     store.put(key, pdf_bytes)
     # Content already ingested is one document, not a second. Delivering it into
     # another dossier adds a membership; that is the normal case, not an error.
-    doc = register_live(session, key, domain, filename)
+    doc = register_live(session, key, domain, filename, source_url, fetched_at, digest)
     if dossier:
         # Arriving in a case is an act too; "ingest" is who did it.
         dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
@@ -145,21 +159,27 @@ def live_document_for(session: Session, object_key: str) -> Document | None:
 
 
 def register_live(session: Session, object_key: str, domain: str = DEFAULT_DOMAIN,
-                  filename: str | None = None) -> Document:
+                  filename: str | None = None, source_url: str | None = None,
+                  fetched_at: datetime | None = None,
+                  source_sha256: str | None = None) -> Document:
     """The live document for these bytes: the one that exists, or a new one.
 
     Two deliveries of the same bytes at once -- two threads, two replicas --
     both find nothing and both insert. The unique index on live object keys
     lets one through and refuses the other, which then gets the winner, the
     way a key mint adopts the winner. Before that index (2026-08-17..19) the
-    same race left 173 copies.
+    same race left 173 copies. Whichever delivery wins the race keeps ITS
+    provenance; the loser's is discarded along with its row -- the same
+    document cannot have two sources, and the one actually stored is the
+    winner's.
     """
     existing = live_document_for(session, object_key)
     if existing is not None:
         return existing
     try:
         with session.begin_nested():
-            return register(session, object_key, domain, filename)
+            return register(session, object_key, domain, filename,
+                            source_url, fetched_at, source_sha256)
     except IntegrityError as exc:
         if "uq_documents_live_object_key" not in str(exc.orig):
             raise

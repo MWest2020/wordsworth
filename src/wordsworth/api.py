@@ -15,6 +15,7 @@ import re
 import zipfile
 from datetime import datetime, timezone
 from typing import Callable
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -83,6 +84,39 @@ class IngestResponse(BaseModel):
     total: int
     indexed: int
     results: list[IngestResult]
+
+
+_SOURCE_URL_MAX_LEN = 2048
+
+
+def _validate_provenance(
+    source_url: str | None, fetched_at: str | None
+) -> datetime | None:
+    """Reject a malformed `source_url`/`fetched_at` with the reason, before
+    anything is ingested (ingest-records-source). Neither is required: both
+    None is today's behaviour, unchanged. Returns the parsed `fetched_at`, or
+    None."""
+    if source_url is not None:
+        if (len(source_url) > _SOURCE_URL_MAX_LEN
+                or not source_url.startswith("https://")
+                or not urlparse(source_url).netloc):
+            raise HTTPException(
+                status_code=400,
+                detail=f"source_url must be https:// with a host, at most "
+                       f"{_SOURCE_URL_MAX_LEN} characters")
+    if fetched_at is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(fetched_at)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="fetched_at must be ISO-8601 with a timezone")
+    if parsed.tzinfo is None:
+        raise HTTPException(
+            status_code=400,
+            detail="fetched_at must be ISO-8601 with a timezone")
+    return parsed
 
 
 class RevealRequest(BaseModel):
@@ -911,7 +945,9 @@ def create_app(
 
         def _ingest_one(data: bytes, domain: str = DEFAULT_DOMAIN,
                         filename: str | None = None,
-                        dossier: str | None = None) -> dict:
+                        dossier: str | None = None,
+                        source_url: str | None = None,
+                        fetched_at: datetime | None = None) -> dict:
             """Drive one document to its terminal state; return its metadata
             (id, state, duration, counts). The un-redacted bytes never leave this
             frame and no exception it raises carries document text (fail-hard, no
@@ -964,7 +1000,8 @@ def create_app(
                 # keys + mapping store) per document; default mode uses the shared
                 # irreversible driver.
                 anon = _make_anonymizer(session, domain)
-                doc = ingest(session, store, data, domain, filename, dossier)
+                doc = ingest(session, store, data, domain, filename, dossier,
+                            source_url, fetched_at)
                 session.commit()
                 document_id = doc.id
                 state = process(session, document_id, store, anonymizer=anon,
@@ -994,6 +1031,8 @@ def create_app(
             files: list[UploadFile] = File(..., description="One or more PDF files"),
             domain: str | None = None,
             dossier: str | None = None,
+            source_url: str | None = None,
+            fetched_at: str | None = None,
         ) -> IngestResponse:
             """Upload one or more PDFs. Each is driven through
             ingest → OCR recovery (if scanned) → anonymize → store → index and
@@ -1006,7 +1045,12 @@ def create_app(
             probe — otherwise a long batch starves /health and the pod is killed.
 
             ``?domain=`` binds the batch to a pseudonymisation domain
-            (add-domain-keys); default from ``WORDSWORTH_DEFAULT_DOMAIN``."""
+            (add-domain-keys); default from ``WORDSWORTH_DEFAULT_DOMAIN``.
+
+            ``?source_url=`` and ``?fetched_at=`` (ingest-records-source) record
+            where the batch came from — optional, since an unpublished document
+            genuinely has none. wordsworth computes `source_sha256` itself, for
+            every file, whatever these two carry."""
             dom = domain or default_settings.default_domain
             if "/" in dom:
                 raise HTTPException(status_code=400, detail="domain must not contain '/'")
@@ -1018,6 +1062,7 @@ def create_app(
                     status_code=400,
                     detail="name a dossier: a document that belongs to none is "
                            "invisible to a scoped search")
+            parsed_fetched_at = _validate_provenance(source_url, fetched_at)
             results: list[IngestResult] = []
             for f in files:
                 data = f.file.read()
@@ -1026,7 +1071,8 @@ def create_app(
                         filename=f.filename, state="error", error="empty upload"))
                     continue
                 try:
-                    meta = _ingest_one(data, dom, f.filename, dossier)
+                    meta = _ingest_one(data, dom, f.filename, dossier,
+                                       source_url, parsed_fetched_at)
                     results.append(IngestResult(
                         filename=f.filename,
                         document_id=meta.get("document_id"),

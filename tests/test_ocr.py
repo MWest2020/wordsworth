@@ -1,13 +1,18 @@
 import hashlib
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from wordsworth import recovery
+from wordsworth.anonymizer import DeterministicAnonymizer
+from wordsworth.api import create_app
 from wordsworth.extraction import extract_text
 from wordsworth.models import AuditRecord, Document
 from wordsworth.ocr import FixedOcrEngine, OcrEngine, OcrError
 from wordsworth.pipeline import current_state, ingest, process
 from wordsworth.recovery import recover
+from wordsworth.search_index import InMemoryIndex
 from wordsworth.states import TERMINAL, State, is_allowed
 
 
@@ -159,3 +164,31 @@ def test_recover_only_applies_to_unprocessable(session, born_digital_pdf, mem_st
     session.commit()  # still REGISTERED
     with pytest.raises(ValueError):
         recover(session, doc.id, mem_store, engine=FixedOcrEngine("x"))
+
+
+# --- a document without text is never indexed silently (ingest-records-source) --
+
+def test_no_text_layer_and_no_ocr_text_ends_visible_and_unindexed(
+    session_factory, scanned_pdf, mem_store, fake_embedder, monkeypatch,
+):
+    """A scan OCR cannot read: the full /ingest straat parks the document in
+    `unprocessable_ocr` — never indexed as empty text — and the API shows it."""
+    monkeypatch.setattr(recovery, "_default_ocr_engine", lambda: FixedOcrEngine(""))
+    index = InMemoryIndex()
+    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+                              search_index=index, embedder=fake_embedder,
+                              anonymizer=DeterministicAnonymizer()))
+
+    r = c.post("/ingest", params={"dossier": "Z"},
+               files={"files": ("scan.pdf", scanned_pdf, "application/pdf")})
+    assert r.status_code == 200, r.text
+    document_id = r.json()["results"][0]["document_id"]
+    assert r.json()["results"][0]["state"] == "unprocessable_ocr"
+    assert r.json()["indexed"] == 0
+
+    state_resp = c.get(f"/documents/{document_id}/state")
+    assert state_resp.json()["state"] == "unprocessable_ocr"
+    meta_resp = c.get(f"/documents/{document_id}")
+    assert meta_resp.json()["state"] == "unprocessable_ocr"
+
+    assert index._docs == {}

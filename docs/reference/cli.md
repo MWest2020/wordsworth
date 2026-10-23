@@ -88,6 +88,18 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+`POST /ingest` also accepts two optional query parameters, not yet exposed as
+CLI flags (ingest-records-source): `source_url` (`https://`, with a host, at
+most 2048 characters) and `fetched_at` (ISO-8601 with a timezone) — where the
+document came from, for a publication fetched by hand or by a NiFi flow in
+front of wordsworth. A malformed value is refused with `400` and the reason;
+nothing is ingested. Omitting both leaves ingest exactly as it is — most
+documents, especially unpublished ones, have no URL. Whatever is given or
+omitted, wordsworth always records `source_sha256`, the sha256 of the
+uploaded bytes it computed itself — never a hash the caller supplies, which
+would prove nothing. All three land on the document row and in the `register`
+step of the ingest audit record.
+
 ## `wordsworth-dossier-uit-herkomst` and `wordsworth-dossier-hernoem`
 
 Correcting a classification, without guessing.
