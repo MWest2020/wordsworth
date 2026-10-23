@@ -4,9 +4,9 @@
 
 - **Extend `ingest_corpus.py`.** One ingest path. `--manifest` is optional, so
   without it behaviour is as today. With it, the stricter rules below apply.
-- **One shared manifest record per file:** `url`, `fetched_at` (the real
-  download time, ISO-8601 with timezone), `sha256`. Every fetcher writes it, and
-  ingest reads it. The fetcher and the ingest are tested against each other:
+- **One shared manifest record per file:** `file`, `url`, `fetched_at` (the real
+  download time, ISO-8601 with timezone), `sha256`, `bytes`, `status`, `ok`.
+  Every fetcher writes it, and ingest reads it. The fetcher and the ingest are tested against each other:
   write a record the way the fetcher does, then ingest it.
 - **Checks run before any ingest** where they can: every `*.pdf` has an entry
   (an unlisted file aborts the whole run, it is not skipped), and every file's
@@ -23,6 +23,13 @@
   pilot PDF already ingested keeps its old provenance. The read-back catches
   that and fails the document with the reason. This holds for a duplicate in
   the same dossier and in another one.
+- **Backend identity is a required variable, `WORDSWORTH_BACKEND_ENV`**
+  (`homelab|alma`), read like `config.py`'s other environment settings but
+  without a default: missing, empty or unknown is refused, and only `homelab`
+  starts a manifest run. A declared value is auditable; a guess is not.
+- **Own module for the manifest path.** `ingest_corpus.py` is 94 lines and
+  must stay a CLI wrapper; the manifest logic goes in its own module so every
+  file is ≤200 lines.
 - **A layer that did not run is a failure.** A document that did not reach
   `indexed` because a layer did not run (OpenAnonymiser down included) fails the
   run; it is not reported as a success with a note. The exit status is non-zero.
@@ -39,6 +46,9 @@
   OpenSpec change. Reported as a pilot finding.
 - **Adding the dossier to the object key.** Same reason, and it would break
   one-document-per-object.
+- **A host allow-list** to recognise homelab. It drifts as hosts change.
+- **Resolving the backend hosts.** Both clusters use `*.svc.cluster.local`, so
+  the names do not tell homelab from alma.
 - **Defaulting a missing backend to homelab,** or to whatever the environment
   holds. A default is a silent fallback.
 - **Taking `fetched_at` from file mtime or ingest time** when the manifest lacks

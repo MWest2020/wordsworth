@@ -3,7 +3,8 @@
 ### Requirement: Corpus ingest against a manifest
 
 `wordsworth-ingest` SHALL accept an optional `--manifest`, a record per file of
-`url`, `fetched_at` (ISO-8601 with a timezone) and `sha256`, in one format for
+`file`, `url`, `fetched_at` (ISO-8601 with a timezone), `sha256`, `bytes`,
+`status` and `ok`, in one format for
 every fetcher. With a manifest, a `*.pdf` in the corpus directory that has no
 entry SHALL abort the whole run before any file is ingested, and a file whose
 sha256 differs from its entry SHALL fail loudly. Each document SHALL be
@@ -55,18 +56,20 @@ manifest. A run in which any document failed SHALL exit non-zero.
 
 ### Requirement: A manifest run uses homelab backends only
 
-A run with `--manifest` SHALL refuse to start when a backend (object store,
-OpenAnonymiser, OpenSearch, embeddings) is missing or is not a homelab
-backend. It SHALL NOT default a missing backend.
+A run with `--manifest` SHALL require the environment variable
+`WORDSWORTH_BACKEND_ENV` to be `homelab`, and SHALL refuse to start when it is
+missing, empty, `alma` or any other value. The backend SHALL NOT be inferred
+from backend URLs or hosts, and `WORDSWORTH_BACKEND_ENV` SHALL NOT be
+defaulted.
 
 #### Scenario: A non-homelab backend
 
-- **WHEN** a backend is the alma production one
+- **WHEN** `WORDSWORTH_BACKEND_ENV` is `alma`
 - **THEN** the run is refused before any file is ingested
 
 #### Scenario: A missing backend
 
-- **WHEN** a backend is not configured
+- **WHEN** `WORDSWORTH_BACKEND_ENV` is unset or empty
 - **THEN** the run is refused, not defaulted
 
 ### Requirement: A layer that did not run fails the run
