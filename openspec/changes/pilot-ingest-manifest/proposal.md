@@ -47,13 +47,38 @@ The fetch itself is done (odin coding session, 2026-10-24): 12/12 PDFs, with a
    audit record and compares `source_url` and `fetched_at` with the manifest.
    Missing or different fails that document, with the reason. The run exits
    non-zero.
-3. **Homelab only.** A missing or non-homelab backend is refused, not
-   defaulted.
+3. **Homelab only.** The backend is named by a required environment variable
+   `WORDSWORTH_BACKEND_ENV` (`homelab` or `alma`). A manifest run with it
+   missing, empty, or any value other than `homelab` is refused. It is never
+   inferred from the backend URLs and never defaulted.
 4. **A layer that did not run fails the run**, including OpenAnonymiser down.
 5. **Gate order.** The script refuses a manifest whose pilot report has no
    completed robots/terms/Anubis check with who, when and decision `proceed`.
    A `stop` decision stops the pilot; a fallback to Gelderland is a separate
    decision for Mark.
+
+6. **Code layout.** The manifest logic (`ingest_manifest_corpus`, `_advance`,
+   parsing, checks, read-back) lives in its own module; every file stays at
+   or under 200 lines (AGENTS.md). `src/wordsworth/ingest_corpus.py` keeps only
+   the CLI wiring. It was 94 lines and the first build took it to 214, which
+   the reviewer failed.
+7. **No scratch or verification artefacts in the repo.** No `.scratch-verify/`
+   (`check.json`, `manifest-empty.jsonl`, `run_unlisted.sh`). Evidence goes in
+   the PR text.
+8. **The herkomst sample** `docs/explanation/meting-woo-corpus-01.herkomst.jsonl`
+   moves to the manifest keys (`file`, `url`, `fetched_at`).
+
+Settled in the amendment (2026-10-24), after the first build failed review and
+the second stopped on an open question:
+
+- **Backend identity** is the required variable `WORDSWORTH_BACKEND_ENV`
+  (`homelab|alma`), in line with `config.py`'s other environment settings.
+  Rejected: a host allow-list (it drifts) and resolving hosts (both clusters
+  use `*.svc.cluster.local`).
+- **Manifest fields** are `file`, `url`, `fetched_at`, `sha256`, `bytes`,
+  `status`, `ok`.
+- **The freeze on `~/wordsworth-pilot` stays**: ingest nothing, and do not
+  commit the manifest or `check.json`.
 
 Not changed: what `ingest()` does with a duplicate. The key still ignores the
 dossier and an existing live document still wins.
@@ -69,21 +94,11 @@ dossier and an existing live document still wins.
 
 ## Open questions
 
-- **How a backend is identified as "homelab".** The code has no such marker:
-  `config.py` only reads URLs from environment variables. A name allow-list, a
-  declared environment flag, or checking the resolved hosts are all possible.
-  It must be settled before apply; the requirement only says missing or
-  non-homelab is refused.
 - **Where the pilot report lives, and what "completed check" is exactly.** The
   host holds a `check.json` (who, when, robots.txt verbatim, Anubis status,
   "no terms page found", decision `proceed`); the report template carries its
   content and is committed before the manifest. The path and the fields the
   script validates are for `pilot-report-template` and the apply step.
-- **The manifest field names.** Url, fetched_at, sha256 are decided. The key
-  that names the file, and whether `bytes` is kept, are to be taken from what
-  the fetcher already wrote; `fetch_woo_corpus.py` currently writes a different
-  `herkomst.jsonl` (`bestand`, `bron`, `opgehaald`) and will have to move to
-  the shared format.
 - **What happens to a document already in the index with other provenance**
   (the re-delivery case above): fail only, or report as a distinct outcome.
   This change fails it.
