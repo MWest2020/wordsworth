@@ -7,6 +7,10 @@ present, and is absent otherwise. Sentinels avoid touching any backend.
 """
 from __future__ import annotations
 
+import io
+
+from fastapi.testclient import TestClient
+
 from wordsworth.api import create_app
 
 
@@ -43,3 +47,38 @@ def test_ingest_absent_without_store():
 def test_document_meta_endpoint_registered_with_db():
     app = create_app(session_factory=object(), rate_limiters={})
     assert ("/documents/{document_id}", "GET") in _routes(app)
+
+
+# --- provenance (ingest-records-source): rejected before any backend is touched -
+
+def _wired_app():
+    return create_app(
+        session_factory=object(),
+        search_index=object(),
+        embedder=object(),
+        store=object(),
+        anonymizer=object(),   # avoid constructing the real driver
+        rate_limiters={},
+    )
+
+
+def _upload():
+    return {"files": ("x.pdf", io.BytesIO(b"%PDF-1.4"), "application/pdf")}
+
+
+def test_malformed_source_url_rejected_with_400_before_any_backend_is_touched():
+    # Sentinel backends (plain object()) would blow up on first real use; a
+    # 400 here proves validation ran before any of them was touched.
+    client = TestClient(_wired_app())
+    resp = client.post("/ingest", files=_upload(),
+                       params={"dossier": "zaak-1", "source_url": "ftp://x/y"})
+    assert resp.status_code == 400
+    assert "https" in resp.json()["detail"]
+
+
+def test_malformed_fetched_at_rejected_with_400_before_any_backend_is_touched():
+    client = TestClient(_wired_app())
+    resp = client.post("/ingest", files=_upload(),
+                       params={"dossier": "zaak-1", "fetched_at": "not-a-date"})
+    assert resp.status_code == 400
+    assert "ISO-8601" in resp.json()["detail"]

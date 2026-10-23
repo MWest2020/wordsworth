@@ -154,6 +154,34 @@ def test_recovery_engine_failure_leaves_document_untouched(
     assert _audit_count(session, doc.id) == before  # no silent skip, no partial write
 
 
+# --- no text layer stays visible, never silently indexed (ingest-records-source) --
+
+def test_ocr_yields_no_text_stays_unprocessable_and_nothing_is_indexed(
+    session, scanned_pdf, mem_store, mem_index, fake_embedder,
+):
+    doc = _park_as_unprocessable(session, mem_store, scanned_pdf)
+
+    final = recover(session, doc.id, mem_store, threshold=10,
+                    engine=FixedOcrEngine(""))
+    session.commit()
+
+    # Visible error state, not a silent pass-through: the document stays
+    # exactly where a non-recovering attempt leaves it, and the API/console
+    # read that state from the ordinary audit chain.
+    assert final == State.UNPROCESSABLE_OCR
+    assert current_state(session, doc.id) == State.UNPROCESSABLE_OCR
+
+    # The straat's automatic resume after a recovery attempt (api._ingest_one,
+    # ingest_corpus.ingest_corpus) calls process() again regardless of outcome;
+    # on a document still parked at unprocessable_ocr that must stay a no-op —
+    # never an empty text pushed into the index.
+    state = process(session, doc.id, mem_store, search_index=mem_index,
+                    embedder=fake_embedder)
+    session.commit()
+    assert state == State.UNPROCESSABLE_OCR
+    assert str(doc.id) not in mem_index._docs
+
+
 def test_recover_only_applies_to_unprocessable(session, born_digital_pdf, mem_store):
     doc = ingest(session, mem_store, born_digital_pdf)
     session.commit()  # still REGISTERED

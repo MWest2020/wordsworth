@@ -47,6 +47,16 @@ class Document(Base):
     # same transaction as that audit record, and a trigger refuses changing it.
     superseded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True)
+    # Provenance (ingest-records-source): where the bytes came from, when, and
+    # their hash. All nullable -- an unpublished document has no URL, and a
+    # document ingested before this column existed has none of the three.
+    # `source_sha256` is wordsworth's OWN hash of the uploaded bytes, never
+    # taken from the request: a client-supplied hash would only repeat what
+    # the client claims.
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    fetched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    source_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class AuditRecord(Base):
