@@ -438,5 +438,19 @@ class Settings:
     def rate_limit_ask_burst(self) -> float:
         return float(os.environ.get("WORDSWORTH_RATE_LIMIT_ASK_BURST", "3"))
 
+    # --- pilot-ingest-manifest ---
+    @property
+    def homelab_hosts(self) -> list[str]:
+        """Hostnames (or suffixes) that mark a backend URL as homelab -- the
+        lab/factory cluster, never alma production -- from
+        ``WORDSWORTH_HOMELAB_HOSTS`` (comma-separated). A manifest run
+        (`wordsworth-ingest --manifest`) refuses to start against a backend
+        whose host is not in this list, or that is not configured at all.
+        Empty by default: nothing passes until an operator declares the
+        homelab hosts explicitly -- the safe default for a guard whose whole
+        point is refusing an accidental run against alma."""
+        raw = os.environ.get("WORDSWORTH_HOMELAB_HOSTS", "")
+        return [h.strip() for h in raw.split(",") if h.strip()]
+
 
 settings = Settings()

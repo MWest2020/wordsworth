@@ -121,6 +121,19 @@ def document_domain(session: Session, document_id: UUID) -> str:
     return payload.get("domain") or DEFAULT_DOMAIN
 
 
+def register_payload(session: Session, document_id: UUID) -> dict[str, Any]:
+    """The `register` audit record's payload, read back -- not re-derived
+    from the `documents` row. Proves provenance was actually written to the
+    append-only trail, not merely passed to `ingest()` (pilot-ingest-manifest,
+    "measure the artefact the system produced")."""
+    return session.execute(
+        select(AuditRecord.payload)
+        .where(AuditRecord.document_id == document_id, AuditRecord.step == "register")
+        .order_by(AuditRecord.seq)
+        .limit(1)
+    ).scalar_one_or_none() or {}
+
+
 def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
            domain: str = DEFAULT_DOMAIN, filename: str | None = None,
            dossier: str | None = None, source_url: str | None = None,

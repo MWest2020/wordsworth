@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-10-24
 ---
 
 # CLI reference — `wordsworth`
@@ -87,6 +87,31 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   summary. A file that fails does **not** abort the batch. Exit code is non-zero
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
+
+## `wordsworth-ingest`
+
+Walks a directory of PDFs through the full straat on the real sovereign
+backends (S3, OpenAnonymiser, OpenSearch, Ollama) -- the batch-ingest Job, not
+the `wordsworth ingest` client command above.
+
+```bash
+wordsworth-ingest --corpus-dir ./corpus --dossier "corpus-2026-09"
+```
+
+`--manifest <manifest.jsonl> --pilot-report <check.json>` (pilot-ingest-
+manifest) ingests against a provenance manifest instead: every `*.pdf` must
+have an entry and a matching sha256, every backend must be a declared homelab
+one (`WORDSWORTH_HOMELAB_HOSTS`), the pilot report must record a completed
+robots.txt/terms/Anubis check with decision `proceed`, and each document's
+recorded provenance is read back and compared with the manifest afterwards.
+Any of these refuses the run before a file is ingested; a layer that did not
+run (OpenAnonymiser down included) fails it mid-run. See
+`docs/reference/ingest.md`.
+
+```bash
+wordsworth-ingest --corpus-dir ./corpus --dossier "pilot-gooise-meren-2026" \
+    --manifest ./corpus/manifest.jsonl --pilot-report ./corpus/check.json
+```
 
 ## `wordsworth-dossier-uit-herkomst` and `wordsworth-dossier-hernoem`
 

@@ -28,13 +28,16 @@ zonder herkomst, en dan is elke meting erop onnavolgbaar.
 from __future__ import annotations
 
 import argparse
-import json
+import hashlib
 import re
 import sys
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
+
+from wordsworth.manifest import append_entry
 
 BASIS = "https://open.gelderland.nl"
 LIJST = BASIS + "/woo-documenten"
@@ -85,6 +88,10 @@ def main() -> int:
     a = ap.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
+    # Shared with ingest_corpus.py --manifest (pilot-ingest-manifest): url,
+    # fetched_at, sha256. `bestand` is the file-identifying key that
+    # dossier_tools.by_filename already reads from this file, kept as-is;
+    # `besluit` is the Woo decision page, used by wordsworth.eval.woo_collection.
     herkomst_pad = a.out / "herkomst.jsonl"
 
     try:
@@ -97,41 +104,41 @@ def main() -> int:
     print(f"[corpus] {len(details)} Woo-besluiten op de eerste listing-pagina")
 
     gehaald, fouten = 0, 0
-    with herkomst_pad.open("a") as herkomst:
-        for d in details:
+    for d in details:
+        if gehaald >= a.max:
+            break
+        time.sleep(a.pauze)
+        try:
+            pagina = _get(d).decode("utf-8", "replace")
+        except Exception as e:
+            print(f"[corpus] detail mislukt {d}: {e}", file=sys.stderr)
+            fouten += 1
+            continue
+        for u in pdf_urls(pagina):
             if gehaald >= a.max:
                 break
+            naam = u.rsplit("/", 1)[-1]
+            doel = a.out / naam
+            if doel.exists():
+                continue
             time.sleep(a.pauze)
             try:
-                pagina = _get(d).decode("utf-8", "replace")
+                data = _get(u)
             except Exception as e:
-                print(f"[corpus] detail mislukt {d}: {e}", file=sys.stderr)
+                print(f"[corpus] pdf mislukt {u}: {e}", file=sys.stderr)
                 fouten += 1
                 continue
-            for u in pdf_urls(pagina):
-                if gehaald >= a.max:
-                    break
-                naam = u.rsplit("/", 1)[-1]
-                doel = a.out / naam
-                if doel.exists():
-                    continue
-                time.sleep(a.pauze)
-                try:
-                    data = _get(u)
-                except Exception as e:
-                    print(f"[corpus] pdf mislukt {u}: {e}", file=sys.stderr)
-                    fouten += 1
-                    continue
-                doel.write_bytes(data)
-                # Herkomst per document, meteen weggeschreven. Een corpus zonder
-                # herkomst maakt elke meting erop onnavolgbaar.
-                herkomst.write(json.dumps({
-                    "bestand": naam, "bron": u, "besluit": d,
-                    "bytes": len(data), "opgehaald": time.strftime("%FT%TZ", time.gmtime()),
-                }) + "\n")
-                herkomst.flush()
-                gehaald += 1
-                print(f"[corpus] {gehaald}/{a.max} {naam} ({len(data)} bytes)")
+            doel.write_bytes(data)
+            # Herkomst per document, meteen weggeschreven. Een corpus zonder
+            # herkomst maakt elke meting erop onnavolgbaar.
+            append_entry(
+                herkomst_pad, filename=naam, url=u,
+                fetched_at=datetime.now(timezone.utc),
+                sha256=hashlib.sha256(data).hexdigest(),
+                extra={"besluit": d, "bytes": len(data)},
+            )
+            gehaald += 1
+            print(f"[corpus] {gehaald}/{a.max} {naam} ({len(data)} bytes)")
 
     print(f"[corpus] klaar: {gehaald} PDF's in {a.out}, {fouten} fout(en). "
           f"Herkomst: {herkomst_pad}")

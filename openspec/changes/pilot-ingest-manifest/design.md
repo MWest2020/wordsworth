@@ -31,6 +31,31 @@
   robots.txt and terms, Anubis status, decision `proceed`). Git order (check
   committed before manifest) is proven by the pilot report, not by the script.
 
+## Settled (were open questions in proposal.md)
+
+- **Homelab marker.** A declared allow-list, `WORDSWORTH_HOMELAB_HOSTS`
+  (comma-separated hostnames/suffixes), checked against the hostname of each
+  configured backend URL (S3 endpoint, OpenAnonymiser, OpenSearch, Ollama) —
+  no DNS resolution, no network call, so the guard runs before any file is
+  touched. Empty by default, so nothing passes until an operator declares the
+  homelab hosts explicitly: the safe default for a guard whose only job is
+  refusing an accidental run against alma. A backend whose URL has no value at
+  all (only possible for the S3 endpoint today) fails as "missing"; everything
+  else fails as "not a homelab backend" until listed.
+- **The manifest's file-identifying key is `bestand`**, not a new `filename`.
+  `fetch_woo_corpus.py`'s `herkomst.jsonl` and `dossier_tools.by_filename`
+  already read/write that key; inventing a second name would silently break
+  both the moment the fetcher "moved to the shared format". `url` and
+  `fetched_at` are wordsworth's existing ingest-records-source vocabulary.
+  `bytes` and `besluit` (the Woo decision page, read by
+  `wordsworth.eval.woo_collection`) are kept as extra, fetcher-specific fields
+  the shared reader accepts and ignores.
+- **Where the pilot report lives:** the script does not guess a path. A
+  `--pilot-report <file>` argument is required alongside `--manifest`
+  (refused with usage otherwise) — the file itself, including its path
+  convention, is `pilot-report-template`'s to define; this change only reads
+  whatever file it is pointed at and checks the fields named above.
+
 ## Rejected
 
 - **A pilot-only ingest script.** It would drift from the first path.
