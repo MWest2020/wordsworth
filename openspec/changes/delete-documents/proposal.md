@@ -54,7 +54,8 @@ machine gains the state `deleted` (see design.md for why it is a state).
   to a document that also belongs to another dossier is not decided.
 - **The dossier itself.** Whether `DELETE /dossiers/{id}` also removes the
   dossier row and its topics, or only the documents, is not decided.
-- **The CLI's name and arguments** are not decided; `wordsworth-dedupe` is the
-  nearest precedent.
+- **The CLI's script name and arguments** are not decided; `wordsworth-dedupe`
+  is the nearest precedent. Only the module, `wordsworth.delete_cli` with a
+  `main`, is settled.
 - **Deleting from an old index or backup** outside the live systems is not
   covered.
