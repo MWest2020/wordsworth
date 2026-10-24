@@ -14,8 +14,16 @@
       the six in their stores, while the row and its earlier audit records remain.
 - [ ] Write one `deleted` audit record in the same transaction as the removal,
       holding ids and counts only.
-      Proved by: a test that reads the record and asserts no filename, text,
-      token or value appears in it, and that the hash chain still verifies.
+      Proved by: `test_deleted_audit_record_carries_ids_and_counts_only`
+      reads the record and asserts no filename, text, token or value appears in
+      it.
+- [ ] After a deletion the trail is kept: the earlier audit records are
+      unchanged and the chain still verifies (spec scenario "The trail is
+      kept"; reviewer finding on #235).
+      Proved by: `test_deleted_audit_record_carries_ids_and_counts_only`, or a
+      new test next to it, calls `audit.verify_chain(session)` after a deletion
+      and asserts that it passes and that the earlier records are still there
+      and unchanged.
 - [ ] Add state `deleted` to the state machine (terminal, from every state).
       Proved by: the `document-lifecycle` tests: no transition leaves `deleted`.
 - [ ] A removal that fails writes no `deleted` record and leaves the state
@@ -31,10 +39,15 @@
       do not guess them.
 
 ## 4. The CLI
-- [ ] A CLI for a document or a dossier, with `--dry-run`, registered in
-      `pyproject.toml` (name: see open questions).
-      Proved by: a test that `--dry-run` prints the counts, removes nothing and
-      writes no audit record, and that the same run without it removes them.
+- [ ] A CLI for a document or a dossier, with `--dry-run`, as module
+      `wordsworth.delete_cli` with a `main`, registered in `pyproject.toml`
+      (script name: see open questions).
+      Proved by: `tests/test_delete_cli.py` drives `wordsworth.delete_cli.main`
+      itself: with `--dry-run` it prints the counts, removes nothing and writes
+      no audit record; the same run without `--dry-run` removes the documents.
+      A bare import or attribute reference of `main` does not count as proof.
+
+Only check off a task whose named test exists and passes.
 
 ## 5. Docs (CI fails on code without docs)
 - [ ] `docs/reference/cli.md`: the new command, `--dry-run`, and amend the
