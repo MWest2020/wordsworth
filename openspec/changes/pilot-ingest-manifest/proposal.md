@@ -52,8 +52,14 @@ The fetch itself is done (odin coding session, 2026-10-24): 12/12 PDFs, with a
    missing, empty, or any value other than `homelab` is refused. It is never
    inferred from the backend URLs and never defaulted.
 4. **A layer that did not run fails the run**, including OpenAnonymiser down.
-5. **Gate order.** The script refuses a manifest whose pilot report has no
-   completed robots/terms/Anubis check with who, when and decision `proceed`.
+5. **Gate order.** The script refuses a manifest unless `check.json`, a JSON
+   object in the same directory as `manifest.jsonl`, passes. The file already
+   exists in the fetched pilot. Required fields: `checked_by`, `checked_at`
+   (ISO-8601 with timezone), `robots_txt_url`, `robots_txt` (verbatim),
+   `paths_used`, `paths_disallowed_used`, `terms`, `anubis`, `user_agent`,
+   `delay_seconds`, `decision`. The gate passes only when every field is
+   present, `paths_disallowed_used` is empty and `decision` is `proceed`;
+   otherwise ingest refuses the manifest and says which condition failed.
    A `stop` decision stops the pilot; a fallback to Gelderland is a separate
    decision for Mark.
 
@@ -74,6 +80,12 @@ The fetch itself is done (odin coding session, 2026-10-24): 12/12 PDFs, with a
    raised `KeyError` and `by_filename()` silently returned an empty mapping, so
    every document counted as `zonder_herkomst`. No test read the sample, so the
    proof for this item was false.
+
+Settled in the amendment (2026-10-24, architect finding on #221: the gate
+named no location and no fields): the gate reads `check.json` next to
+`manifest.jsonl`, with the fields in item 5, matching the fetched pilot's
+existing file. The full report template stays the later change
+`pilot-report-template`.
 
 Settled in the amendment (2026-10-24), after the first build failed review and
 the second stopped on an open question:
@@ -101,11 +113,6 @@ dossier and an existing live document still wins.
 
 ## Open questions
 
-- **Where the pilot report lives, and what "completed check" is exactly.** The
-  host holds a `check.json` (who, when, robots.txt verbatim, Anubis status,
-  "no terms page found", decision `proceed`); the report template carries its
-  content and is committed before the manifest. The path and the fields the
-  script validates are for `pilot-report-template` and the apply step.
 - **What happens to a document already in the index with other provenance**
   (the re-delivery case above): fail only, or report as a distinct outcome.
   This change fails it.

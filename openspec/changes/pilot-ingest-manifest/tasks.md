@@ -25,9 +25,14 @@
       by: test 6.
 - [ ] A layer that did not run fails the run, OpenAnonymiser down included.
       Proved by: test 7.
-- [ ] A manifest whose pilot report lacks a completed check (who, when, quoted
-      robots.txt and terms, Anubis status, decision `proceed`) is refused.
-      Proved by: test 8.
+- [ ] The gate reads `check.json` in the manifest's directory and passes only
+      when `checked_by`, `checked_at` (ISO-8601 with timezone),
+      `robots_txt_url`, `robots_txt`, `paths_used`, `paths_disallowed_used`,
+      `terms`, `anubis`, `user_agent`, `delay_seconds` and `decision` are all
+      present, `paths_disallowed_used` is empty and `decision == "proceed"`;
+      otherwise it refuses and names the failed condition. Proved by: test 9
+      (one case per condition, plus the passing case) and a run of the
+      installed `wordsworth-ingest` against a directory without `check.json`.
 
 ## 3b. Layout and hygiene (the reviewer's findings)
 - [ ] `ingest_manifest_corpus`, `_advance` and the manifest logic in their own
@@ -68,7 +73,8 @@
       a duplicate delivery keeps its first provenance and fails the run.
       Proved by: a docs review in the PR; the page names `--manifest`.
 - [ ] `docs/reference/evaluation.md`, section "The published-dossier pilot":
-      the gate order (check, then manifest, then ingest) and the layer rule.
+      the gate order (check, then manifest, then ingest), `check.json` with its
+      fields, and the layer rule. Proved by: a docs review in the PR.
 - [ ] `docs/reference/cli.md`: the `wordsworth-ingest --manifest` option.
 
 ## 6. Verification
@@ -76,6 +82,11 @@
       once with an unlisted file, once with `WORDSWORTH_BACKEND_ENV=alma` and
       once with it unset, and see all three refused. Ingest nothing from
       `~/wordsworth-pilot` (frozen). Proved by: the commands and output in the PR description.
+
+## 3d. Architect finding (#221)
+- [ ] The check's location and fields are fixed as above, not left to
+      `pilot-report-template`. Proved by: test 9, and `docs/reference/ingest.md`
+      listing the `check.json` fields and the refusal reasons.
 
 ## 7. Later, not this change
 - Recording provenance on re-delivery (own OpenSpec change).
