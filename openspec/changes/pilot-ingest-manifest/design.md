@@ -51,6 +51,10 @@
   the names do not tell homelab from alma.
 - **Defaulting a missing backend to homelab,** or to whatever the environment
   holds. A default is a silent fallback.
+- **Renaming the keys in the herkomst sample** (`bestand`/`bron`/`opgehaald`
+  to `file`/`url`/`fetched_at`). `woo_collection.build()` and
+  `dossier_tools.by_filename()` read the old keys; a rename breaks one loudly
+  and the other silently. The sample is extended: old and new keys side by side.
 - **Taking `fetched_at` from file mtime or ingest time** when the manifest lacks
   it. A manifest entry without it is invalid.
 - **Trusting the manifest's sha256 over the bytes.** The script hashes the file;
@@ -74,5 +78,9 @@ The change touches a seam, so the tests call both ends:
    The test asserts those two and no intermediate state: when anonymize fails
    past retry the document stays `REGISTERED`, because the step does not commit
    `EXTRACTED`, and the design never promised otherwise.
-8. **Report without a completed check, or with decision other than `proceed`,
+8. **The herkomst sample still feeds its existing readers.** Load
+   `docs/explanation/meting-woo-corpus-01.herkomst.jsonl` through
+   `woo_collection.build()` and `dossier_tools.by_filename()`; assert every row
+   maps: no `KeyError`, no empty mapping, no `zonder_herkomst`.
+9. **Report without a completed check, or with decision other than `proceed`,
    is refused.**
