@@ -85,16 +85,34 @@ SHALL make the run exit non-zero. It SHALL NOT be reported as a success.
 
 ### Requirement: A manifest needs a completed pilot check
 
-`wordsworth-ingest` SHALL refuse a manifest whose pilot report has no completed
-robots.txt, terms and Anubis check recording who, when and the decision
-`proceed`. A decision other than `proceed` SHALL stop the run.
+`wordsworth-ingest` SHALL refuse a manifest unless `check.json`, a JSON object
+in the same directory as `manifest.jsonl`, passes. `check.json` SHALL have the
+fields `checked_by`, `checked_at` (ISO-8601 with a timezone), `robots_txt_url`,
+`robots_txt` (verbatim), `paths_used`, `paths_disallowed_used`, `terms`,
+`anubis`, `user_agent`, `delay_seconds` and `decision`. The check SHALL pass
+only when every field is present, `paths_disallowed_used` is empty and
+`decision` is `proceed`. Otherwise the manifest SHALL be refused and the
+refusal SHALL say which condition failed.
 
 #### Scenario: No completed check
 
-- **WHEN** the pilot report has no completed check
+- **WHEN** `check.json` is missing from the manifest's directory, or a required
+  field is absent
+- **THEN** the run is refused naming the missing file or field, and nothing is
+  ingested
+
+#### Scenario: A disallowed path was used
+
+- **WHEN** `paths_disallowed_used` is not empty
 - **THEN** the run is refused and nothing is ingested
 
 #### Scenario: Decision is stop
 
 - **WHEN** the recorded decision is not `proceed`
 - **THEN** the run is refused and nothing is ingested
+
+#### Scenario: A complete check
+
+- **WHEN** every field is present, `paths_disallowed_used` is empty and
+  `decision` is `proceed`
+- **THEN** the gate passes

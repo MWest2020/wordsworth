@@ -33,10 +33,15 @@
 - **A layer that did not run is a failure.** A document that did not reach
   `indexed` because a layer did not run (OpenAnonymiser down included) fails the
   run; it is not reported as a success with a note. The exit status is non-zero.
-- **Gate order is checked by the script, proven by git.** The script refuses a
-  manifest whose pilot report has no completed check (who, when, quoted
-  robots.txt and terms, Anubis status, decision `proceed`). Git order (check
-  committed before manifest) is proven by the pilot report, not by the script.
+- **The gate reads `check.json`, next to the manifest.** A JSON object in the
+  same directory as `manifest.jsonl`, matching the fetched pilot's existing
+  file. Required: `checked_by`, `checked_at` (ISO-8601 with timezone),
+  `robots_txt_url`, `robots_txt` (verbatim), `paths_used`,
+  `paths_disallowed_used`, `terms`, `anubis`, `user_agent`, `delay_seconds`,
+  `decision`. It passes only when every field is present,
+  `paths_disallowed_used` is empty and `decision == "proceed"`; otherwise ingest
+  refuses and names the failed condition. Git order (check committed before
+  manifest) is proven by the pilot report, not by the script.
 
 ## Rejected
 
@@ -60,6 +65,11 @@
 - **Trusting the manifest's sha256 over the bytes.** The script hashes the file;
   the manifest only has to agree.
 
+- **A flag or config path for the check file.** Nothing to mis-point; the file
+  already sits next to the manifest.
+- **The full report template as the gate.** It does not exist yet and would
+  block this change on `pilot-report-template`, which stays a later change.
+
 ## Tests
 
 The change touches a seam, so the tests call both ends:
@@ -82,5 +92,7 @@ The change touches a seam, so the tests call both ends:
    `docs/explanation/meting-woo-corpus-01.herkomst.jsonl` through
    `woo_collection.build()` and `dossier_tools.by_filename()`; assert every row
    maps: no `KeyError`, no empty mapping, no `zonder_herkomst`.
-9. **Report without a completed check, or with decision other than `proceed`,
-   is refused.**
+9. **`check.json` gate.** A missing file, a missing field, a non-empty
+   `paths_disallowed_used` and a `decision` other than `proceed` are each
+   refused with the failed condition named, and nothing is ingested; a complete
+   file with `decision` `proceed` passes.
