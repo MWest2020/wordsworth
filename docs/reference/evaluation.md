@@ -254,6 +254,25 @@ Provenance for the pilot corpus is recorded at ingest via `source_url` and
 `fetched_at` (see `docs/reference/ingest.md`), not read back out of an eval
 script's `herkomst.jsonl` after the fact.
 
+**Gate order: check, then manifest, then ingest.** `wordsworth-ingest
+--manifest` (`docs/reference/ingest.md`) refuses a manifest unless
+`check.json` — a JSON object next to `manifest.jsonl`, with `checked_by`,
+`checked_at`, `robots_txt_url`, `robots_txt`, `paths_used`,
+`paths_disallowed_used`, `terms`, `anubis`, `user_agent`, `delay_seconds` and
+`decision` — passes: every field present, `paths_disallowed_used` empty, and
+`decision` `"proceed"`. The check is filled in by the person who ran the
+fetch, before the manifest is ever handed to ingest — "a template that can be
+filled in afterwards proves nothing." Only once that gate passes does the
+manifest's per-file sha256/unlisted-file checks run, and only then is
+anything ingested. A `stop` decision stops the pilot there; falling back to
+another source (e.g. Gelderland) is a separate decision, not something ingest
+does on its own.
+
+Within the run itself, the layer rule holds: a document that does not reach
+`indexed` because a layer did not run — OpenAnonymiser down included — is
+reported as failed, never as a success with a note, and the run exits
+non-zero.
+
 `scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
 2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150
 words, a document scored by its best passage). Passages exist only for the Woo

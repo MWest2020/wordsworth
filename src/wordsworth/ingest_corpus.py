@@ -80,10 +80,32 @@ def main(argv: list[str] | None = None) -> int:
     # scoped search, so an optional flag would quietly make unfindable documents.
     parser.add_argument("--dossier", required=True,
                         help="The dossier these documents belong to.")
+    parser.add_argument("--manifest", type=Path,
+                        help="Manifest JSONL pairing each PDF with its "
+                             "recorded url/fetched_at/sha256 (see "
+                             "docs/reference/ingest.md). Stricter: an unlisted "
+                             "or mismatched file aborts before any ingest, "
+                             "provenance is read back and compared after each "
+                             "ingest, and WORDSWORTH_BACKEND_ENV must be "
+                             "'homelab'.")
     args = parser.parse_args(argv)
     if not args.corpus_dir.is_dir():
         print(f"corpus-dir not found: {args.corpus_dir}", file=sys.stderr)
         return 2
+
+    if args.manifest is not None:
+        from .ingest_manifest import ingest_manifest_corpus
+
+        try:
+            outcomes = ingest_manifest_corpus(args.corpus_dir, args.dossier,
+                                              args.manifest)
+        except Exception as exc:
+            print(f"manifest run refused: {exc}", file=sys.stderr)
+            return 1
+        ok = sum(1 for o in outcomes if o.ok)
+        print(f"\n{ok}/{len(outcomes)} indexed with provenance confirmed")
+        return 0 if outcomes and ok == len(outcomes) else 1
+
     results = ingest_corpus(args.corpus_dir, args.dossier)
     indexed = sum(1 for _, s in results if s == State.INDEXED)
     print(f"\n{indexed}/{len(results)} indexed")
