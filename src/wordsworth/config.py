@@ -415,6 +415,17 @@ class Settings:
         """Max tokens the LLM generates per answer — bounds /ask latency on CPU."""
         return int(os.environ.get("WORDSWORTH_LLM_NUM_PREDICT", "512"))
 
+    # --- pilot-ingest-manifest ---
+    @property
+    def backend_env(self) -> str:
+        """Which cluster a manifest-driven ingest run is pointed at, from
+        ``WORDSWORTH_BACKEND_ENV``. No default: a manifest run requires this to
+        be exactly ``homelab`` (``ingest_manifest.check_backend_env``) and
+        refuses missing, empty, ``alma`` or any other value rather than
+        guessing from backend URLs or hosts (both clusters use
+        ``*.svc.cluster.local``, so a host cannot tell them apart)."""
+        return os.environ.get("WORDSWORTH_BACKEND_ENV", "").strip()
+
     # --- add-rate-limiting ---
     @property
     def rate_limit_enabled(self) -> bool:

@@ -28,13 +28,17 @@ zonder herkomst, en dan is elke meting erop onnavolgbaar.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
+
+from wordsworth.ingest_manifest import manifest_record
 
 BASIS = "https://open.gelderland.nl"
 LIJST = BASIS + "/woo-documenten"
@@ -123,12 +127,20 @@ def main() -> int:
                     fouten += 1
                     continue
                 doel.write_bytes(data)
+                nu = datetime.now(timezone.utc)
                 # Herkomst per document, meteen weggeschreven. Een corpus zonder
-                # herkomst maakt elke meting erop onnavolgbaar.
-                herkomst.write(json.dumps({
-                    "bestand": naam, "bron": u, "besluit": d,
-                    "bytes": len(data), "opgehaald": time.strftime("%FT%TZ", time.gmtime()),
-                }) + "\n")
+                # herkomst maakt elke meting erop onnavolgbaar. Eén record, twee
+                # vormen: de NL-namen voor het bestaande gereedschap
+                # (dossier_tools.py, woo_collection.py) en het gedeelde
+                # manifestformaat (pilot-ingest-manifest) dat
+                # `wordsworth-ingest --manifest` leest.
+                record = {"bestand": naam, "bron": u, "besluit": d,
+                         "opgehaald": nu.strftime("%Y-%m-%dT%H:%M:%SZ")}
+                record.update(manifest_record(
+                    file=naam, url=u, fetched_at=nu,
+                    sha256=hashlib.sha256(data).hexdigest(),
+                    bytes_=len(data), status="fetched", ok=True))
+                herkomst.write(json.dumps(record) + "\n")
                 herkomst.flush()
                 gehaald += 1
                 print(f"[corpus] {gehaald}/{a.max} {naam} ({len(data)} bytes)")

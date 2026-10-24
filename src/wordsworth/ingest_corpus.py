@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .db import make_engine, make_session_factory
 from .embedder import OllamaEmbedder
+from .ingest_manifest import ManifestError, ingest_manifest_corpus
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
@@ -80,10 +81,36 @@ def main(argv: list[str] | None = None) -> int:
     # scoped search, so an optional flag would quietly make unfindable documents.
     parser.add_argument("--dossier", required=True,
                         help="The dossier these documents belong to.")
+    parser.add_argument("--manifest", type=Path, default=None,
+                        help="Manifest of file/url/fetched_at/sha256/bytes/"
+                             "status/ok per file (pilot-ingest-manifest). "
+                             "Stricter: an unlisted *.pdf or a sha256 mismatch "
+                             "aborts the run, and provenance is read back and "
+                             "verified after each ingest.")
+    parser.add_argument("--pilot-report", type=Path, default=None,
+                        help="Required with --manifest: the pilot report "
+                             "recording who/when/robots_txt/terms/anubis_status "
+                             "and decision 'proceed'.")
     args = parser.parse_args(argv)
     if not args.corpus_dir.is_dir():
         print(f"corpus-dir not found: {args.corpus_dir}", file=sys.stderr)
         return 2
+
+    if args.manifest is not None:
+        if args.pilot_report is None:
+            print("--pilot-report is required with --manifest", file=sys.stderr)
+            return 2
+        try:
+            manifest_results = ingest_manifest_corpus(
+                args.corpus_dir, args.dossier, args.manifest, args.pilot_report)
+        except ManifestError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        indexed = sum(1 for _, outcome in manifest_results
+                     if outcome == State.INDEXED.value)
+        print(f"\n{indexed}/{len(manifest_results)} indexed")
+        return 0 if manifest_results and indexed == len(manifest_results) else 1
+
     results = ingest_corpus(args.corpus_dir, args.dossier)
     indexed = sum(1 for _, s in results if s == State.INDEXED)
     print(f"\n{indexed}/{len(results)} indexed")

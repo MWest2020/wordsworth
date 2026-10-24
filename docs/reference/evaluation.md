@@ -254,6 +254,17 @@ Provenance for the pilot corpus is recorded at ingest via `source_url` and
 `fetched_at` (see `docs/reference/ingest.md`), not read back out of an eval
 script's `herkomst.jsonl` after the fact.
 
+**Gate order, and how it is ingested (pilot-ingest-manifest).** The pilot
+report's completed check (robots.txt/terms/Anubis, decision `proceed`) is
+committed before the manifest; `wordsworth-ingest --manifest` then refuses to
+start without both a completed check and `WORDSWORTH_BACKEND_ENV=homelab` —
+never inferred, never defaulted, `alma` included in the refusal. Every
+`*.pdf` needs a manifest entry (unlisted aborts the whole run) and its sha256
+must match it. Git order (the check committed before the manifest) is proven
+by the pilot report, not by the script. A layer that did not run, OpenAnonymiser
+down included, fails the run the same way the table above says — never
+reported as a success.
+
 `scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
 2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150
 words, a document scored by its best passage). Passages exist only for the Woo
