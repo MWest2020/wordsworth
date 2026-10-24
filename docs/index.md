@@ -33,6 +33,8 @@ under `openspec/`.
   - [meting 02](explanation/meting-combinaties-02.md) — 654 of 751 documents
     carry PERSON + DATE_TIME + LOCATION together, and what that number does and
     does not say.
+  - [pilot report template](explanation/pilot-report-template.md) — the
+    published-dossier pilot's report, with two gate slots only Mark fills.
   - [access identity](how-to/access-identity.md) — logging in as a person, and
     why the readable header is never a source.
   - [index mapping](how-to/index-mapping.md) — adding a field to the search
