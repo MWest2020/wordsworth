@@ -28,6 +28,7 @@ zonder herkomst, en dan is elke meting erop onnavolgbaar.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -124,10 +125,20 @@ def main() -> int:
                     continue
                 doel.write_bytes(data)
                 # Herkomst per document, meteen weggeschreven. Een corpus zonder
-                # herkomst maakt elke meting erop onnavolgbaar.
+                # herkomst maakt elke meting erop onnavolgbaar. `file`/`url`/
+                # `fetched_at` staan ernaast, niet in plaats van `bestand`/
+                # `bron`/`opgehaald`: `woo_collection.build()` en
+                # `dossier_tools.by_filename()` lezen de oude namen, en elke
+                # fetcher schrijft nu hetzelfde gedeelde manifest-record
+                # (`file`, `url`, `fetched_at`, `sha256`, `bytes`, `status`,
+                # `ok`) dat `ingest_corpus.py --manifest` leest.
+                opgehaald = time.strftime("%FT%TZ", time.gmtime())
                 herkomst.write(json.dumps({
                     "bestand": naam, "bron": u, "besluit": d,
-                    "bytes": len(data), "opgehaald": time.strftime("%FT%TZ", time.gmtime()),
+                    "bytes": len(data), "opgehaald": opgehaald,
+                    "file": naam, "url": u, "fetched_at": opgehaald,
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "status": 200, "ok": True,
                 }) + "\n")
                 herkomst.flush()
                 gehaald += 1

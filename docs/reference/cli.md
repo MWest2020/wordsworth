@@ -88,6 +88,22 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-ingest`
+
+The batch-ingest Job (`src/wordsworth/ingest_corpus.py`), not the HTTP API.
+
+```bash
+wordsworth-ingest --corpus-dir ./corpus --dossier "zaak-a"
+wordsworth-ingest --corpus-dir ./corpus --dossier "zaak-a" --manifest ./corpus/manifest.jsonl
+```
+
+`--manifest` is the stricter, provenance-proving path (see
+`docs/reference/ingest.md`): an unlisted or sha256-mismatched file aborts the
+whole run before anything is ingested, each document's provenance is read
+back from the audit record after it is ingested, `check.json` next to the
+manifest must pass, and `WORDSWORTH_BACKEND_ENV=homelab` is required. Without
+`--manifest`, behaviour is unchanged.
+
 ## `wordsworth-dossier-uit-herkomst` and `wordsworth-dossier-hernoem`
 
 Correcting a classification, without guessing.
