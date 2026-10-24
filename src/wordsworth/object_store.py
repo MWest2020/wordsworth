@@ -22,6 +22,10 @@ class ObjectStore(Protocol):
     def put(self, key: str, data: bytes) -> None: ...
     def get(self, key: str) -> bytes: ...
     def exists(self, key: str) -> bool: ...
+    #: Remove one object. Returns whether it was there -- a missing key is not
+    #: an error to delete (document-deletion): a rerun after a partial failure
+    #: finishes the work, and removing what is already gone is a no-op.
+    def delete(self, key: str) -> bool: ...
 
 
 class S3ObjectStore:
@@ -73,6 +77,12 @@ class S3ObjectStore:
                 return False
             raise ObjectStoreError(f"head {key!r} failed: {exc}") from exc
 
+    def delete(self, key: str) -> bool:
+        if not self.exists(key):
+            return False
+        self._client.delete_object(Bucket=self._bucket, Key=key)
+        return True
+
 
 class InMemoryObjectStore:
     """dict-backed test double. The pipeline never depends on a live bucket in
@@ -92,3 +102,6 @@ class InMemoryObjectStore:
 
     def exists(self, key: str) -> bool:
         return key in self._data
+
+    def delete(self, key: str) -> bool:
+        return self._data.pop(key, None) is not None

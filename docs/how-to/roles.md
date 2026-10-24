@@ -119,4 +119,6 @@ geverifieerde e-mailadres is het callerlabel), later mogelijk Keycloak. Deze
 laag kent alleen namen die daarvandaan komen, zodat de dag dat rollidmaatschap
 ergens anders vandaan komt, alléén dat punt verandert en niet de beslissing.
 
-Zie ook [grants](grants.md) en [api-auth](api-auth.md).
+Zie ook [grants](grants.md), [api-auth](api-auth.md) en
+[deleting documents](deleting-documents.md) — die laatste leunt op precies
+deze rol om te bepalen wie mag verwijderen.

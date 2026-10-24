@@ -27,12 +27,23 @@ def test_terminal_states_have_no_outgoing_edge_but_supersession():
 
 def test_every_state_can_be_superseded_and_superseded_is_final():
     """one-document-per-object: a copy is retired whatever state it reached,
-    and nothing comes back from being retired."""
+    and nothing comes back from being retired -- except being deleted."""
     for s in State:
-        if s is not State.SUPERSEDED:
+        if s not in (State.SUPERSEDED, State.DELETED):
             assert is_allowed(s, State.SUPERSEDED), s
-    assert not any(is_allowed(State.SUPERSEDED, t) for t in State)
+    assert not any(is_allowed(State.SUPERSEDED, t) for t in State if t is not State.DELETED)
     assert not is_allowed(None, State.SUPERSEDED)
+
+
+def test_every_state_can_be_deleted_and_deleted_is_final():
+    """document-deletion: a document is forgotten whatever state it reached,
+    including superseded, and no transition leaves deleted -- there is no
+    restore path."""
+    for s in State:
+        if s is not State.DELETED:
+            assert is_allowed(s, State.DELETED), s
+    assert not any(is_allowed(State.DELETED, t) for t in State)
+    assert not is_allowed(None, State.DELETED)
 
 
 def test_illegal_skips_are_rejected():

@@ -43,6 +43,16 @@ beheerder gets no path around `authorize()`-style checks that other callers do
 not have; this follows the rule in the `rollen` capability. How a caller is
 shown to hold the role is an open question in the proposal.
 
+**Implementation note.** Resolved for this change as: a caller holds
+`beheerder` by being the recipient of an active, unexpired grant naming that
+role (`grants.caller_holds_role`) — the one place this codebase already ties
+an identity to a role name (`authorize()`'s `resolve_role`, and the
+"globaal — alleen op naam van de beheerdersrol" rule in `docs/how-to/roles.md`).
+This is narrower than the general open question: it answers "how does
+`document-deletion` recognise a beheerder", not "how is identity mapped to a
+role" everywhere. If a different answer was intended, this is the one line to
+revisit.
+
 ## `--dry-run`
 
 The CLI reports the counts it would remove, using the same code that deletes,

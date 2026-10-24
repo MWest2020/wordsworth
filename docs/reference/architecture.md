@@ -29,6 +29,15 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
   document state machine — `documents.current_state` is derived from the latest
   audit record, never stored as a mutable column. There is no separate workflow
   engine.
+- **Deleting a document deletes its content, never its row.** `deleted` is a
+  state like any other, terminal and reachable from every state (including
+  `superseded`) — there is no restore path. The `documents` row and every
+  earlier audit record stay, because the audit table's `document_id` is a
+  non-null foreign key and the trail never deletes a record; what goes is the
+  stored object, the stored text, the pseudonyms, the mappings, the index
+  entry and the grants. The one `deleted` audit record holds ids and counts
+  only, written in the same transaction as the removal — see
+  [deleting documents](../how-to/deleting-documents.md).
 - **A failed embedding is a hard error, never a silent fallback.** No silent
   fallbacks anywhere. A transport failure (the embedding service unreachable,
   timed out, a 5xx, a response cut off) is retried within the bounded retry

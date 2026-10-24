@@ -268,6 +268,9 @@ class OpenSearchIndex:
             return False
         return True
 
+    def exists(self, document_id) -> bool:
+        return bool(self._client.exists(index=self._index, id=document_id))
+
     def has_object_key(self, object_key: str) -> bool:
         """True if a document with this content key is already indexed. The index
         is the source of truth for 'searchable', so this is the correct basis for
