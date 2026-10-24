@@ -51,6 +51,13 @@ leak it into logs, history and referrers.
 page that asks for one — and stays subject to rate limiting, because that is the
 one route where guessing pays.
 
+Exempt from authentication, but not blind: it can still read the same verified
+assertion the middleware would use (see [access identity](access-identity.md)).
+Someone the identity provider already knows is sent straight on to `/console`
+instead of seeing the key form; `?key=1` always shows the form anyway, so the
+key route stays reachable. With no identity provider configured, or no
+assertion on the request, the form shows as before.
+
 ## What the pages show
 
 **`/console`** lists documents by the name they arrived under, with their state
