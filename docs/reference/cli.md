@@ -88,6 +88,25 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-ingest`
+
+Batch-ingests a directory of PDFs through the full straat with the real
+sovereign backends (S3, OpenAnonymiser, OpenSearch, Ollama), not the API's
+upload endpoint.
+
+```bash
+wordsworth-ingest --corpus-dir ./corpus --dossier zaak-a
+wordsworth-ingest --corpus-dir ./corpus --dossier zaak-a \
+    --manifest ./corpus/manifest.jsonl --pilot-report ./check.json
+```
+
+`--manifest` switches to the stricter path a fetched corpus needs: every
+`*.pdf` must have a manifest entry (url, fetched_at, sha256), the backend
+must be `WORDSWORTH_BACKEND_ENV=homelab`, and `--pilot-report` must record a
+completed robots/terms/Anubis check with decision `proceed`. See
+`docs/reference/ingest.md` for the full gate order and what is recorded.
+Without `--manifest`, behaviour is unchanged.
+
 ## `wordsworth-dossier-uit-herkomst` and `wordsworth-dossier-hernoem`
 
 Correcting a classification, without guessing.

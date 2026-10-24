@@ -80,10 +80,36 @@ def main(argv: list[str] | None = None) -> int:
     # scoped search, so an optional flag would quietly make unfindable documents.
     parser.add_argument("--dossier", required=True,
                         help="The dossier these documents belong to.")
+    # Optional: without it, behaviour is exactly as above. With it, the
+    # stricter manifest path applies (docs/reference/ingest.md).
+    parser.add_argument("--manifest", type=Path,
+                        help="Manifest JSONL (file, url, fetched_at, sha256, "
+                            "bytes, status, ok per entry); every *.pdf in "
+                            "--corpus-dir must have one.")
+    parser.add_argument("--pilot-report", type=Path,
+                        help="Pilot report JSON recording a completed "
+                            "robots/terms/Anubis check; required with "
+                            "--manifest.")
     args = parser.parse_args(argv)
     if not args.corpus_dir.is_dir():
         print(f"corpus-dir not found: {args.corpus_dir}", file=sys.stderr)
         return 2
+    if args.manifest:
+        if not args.pilot_report:
+            print("--pilot-report is required with --manifest", file=sys.stderr)
+            return 2
+        from .ingest_manifest import ingest_manifest_corpus
+        from .manifest import ManifestError
+
+        try:
+            results = ingest_manifest_corpus(args.corpus_dir, args.dossier,
+                                             args.manifest, args.pilot_report)
+        except ManifestError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 1
+        ok = sum(1 for r in results if r.ok)
+        print(f"\n{ok}/{len(results)} ok")
+        return 0 if results and ok == len(results) else 1
     results = ingest_corpus(args.corpus_dir, args.dossier)
     indexed = sum(1 for _, s in results if s == State.INDEXED)
     print(f"\n{indexed}/{len(results)} indexed")

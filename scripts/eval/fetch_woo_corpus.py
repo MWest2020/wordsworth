@@ -28,6 +28,7 @@ zonder herkomst, en dan is elke meting erop onnavolgbaar.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -35,6 +36,8 @@ import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin
+
+from wordsworth.manifest import ManifestEntry, write_entry
 
 BASIS = "https://open.gelderland.nl"
 LIJST = BASIS + "/woo-documenten"
@@ -86,6 +89,7 @@ def main() -> int:
 
     a.out.mkdir(parents=True, exist_ok=True)
     herkomst_pad = a.out / "herkomst.jsonl"
+    manifest_pad = a.out / "manifest.jsonl"
 
     try:
         listing = _get(LIJST).decode("utf-8", "replace")
@@ -97,7 +101,7 @@ def main() -> int:
     print(f"[corpus] {len(details)} Woo-besluiten op de eerste listing-pagina")
 
     gehaald, fouten = 0, 0
-    with herkomst_pad.open("a") as herkomst:
+    with herkomst_pad.open("a") as herkomst, manifest_pad.open("a") as manifest:
         for d in details:
             if gehaald >= a.max:
                 break
@@ -123,13 +127,22 @@ def main() -> int:
                     fouten += 1
                     continue
                 doel.write_bytes(data)
+                opgehaald = time.strftime("%FT%TZ", time.gmtime())
                 # Herkomst per document, meteen weggeschreven. Een corpus zonder
                 # herkomst maakt elke meting erop onnavolgbaar.
                 herkomst.write(json.dumps({
                     "bestand": naam, "bron": u, "besluit": d,
-                    "bytes": len(data), "opgehaald": time.strftime("%FT%TZ", time.gmtime()),
+                    "bytes": len(data), "opgehaald": opgehaald,
                 }) + "\n")
                 herkomst.flush()
+                # The shared manifest record (pilot-ingest-manifest): the same
+                # vocabulary every fetcher writes and `wordsworth-ingest
+                # --manifest` reads.
+                write_entry(manifest, ManifestEntry(
+                    file=naam, url=u, fetched_at=opgehaald,
+                    sha256=hashlib.sha256(data).hexdigest(), bytes=len(data),
+                    status="ok", ok=True,
+                ))
                 gehaald += 1
                 print(f"[corpus] {gehaald}/{a.max} {naam} ({len(data)} bytes)")
 
