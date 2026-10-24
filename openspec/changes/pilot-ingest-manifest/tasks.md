@@ -39,6 +39,13 @@
       `fetched_at`. Proved by: test 2 reads the sample, and a grep for
       `bron`/`opgehaald`/`bestand` in the file finds nothing.
 
+## 3c. Test correction (CI finding on PR #217)
+- [ ] `test_openanonymiser_down_fails_the_run` asserts `rc == 1` and that
+      nothing is indexed, not `State.EXTRACTED` (a failed anonymize leaves the
+      document `REGISTERED`). Proved by: the test passing against a real
+      Postgres (`WORDSWORTH_TEST_DATABASE_URL`) with the test not skipped, and
+      CI's Fast test gate (offline) green.
+
 ## 4. Tests (`tests/test_ingest_corpus.py`, the design.md list)
 - [ ] Tests 1 to 8 from `design.md`, integration through `ingest_corpus`.
       Database tests: use a private test database

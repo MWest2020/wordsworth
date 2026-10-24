@@ -70,6 +70,9 @@ The change touches a seam, so the tests call both ends:
 5. **Duplicate key, same dossier and another dossier:** the read-back fails the
    document with the reason; the exit status is non-zero.
 6. **Missing and non-homelab backend refused,** alma included.
-7. **OpenAnonymiser down:** the run fails.
+7. **OpenAnonymiser down:** the run fails (`rc == 1`) and nothing is indexed.
+   The test asserts those two and no intermediate state: when anonymize fails
+   past retry the document stays `REGISTERED`, because the step does not commit
+   `EXTRACTED`, and the design never promised otherwise.
 8. **Report without a completed check, or with decision other than `proceed`,
    is refused.**
