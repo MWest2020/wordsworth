@@ -262,6 +262,11 @@ This is not weaker. Both come from the same configured sets, and a forged header
 carries no valid key any more than a forged assertion carries a valid signature.
 
 The way to present a key SHALL stay reachable from behind an identity provider.
+The login page cannot be behind authentication, so it SHALL use the same
+verification as the middleware: when the request carries a verified assertion
+the page SHALL send the browser on to `/console` instead of asking for a key,
+unless the key form is asked for explicitly with `?key=1`, which SHALL always
+show it. A missing or invalid assertion SHALL show the form.
 
 An audit trail that names a shared key answers "which key was used", not "who
 looked". The whole point of putting a person in front of the door is that the
@@ -290,6 +295,23 @@ that only opens behind one vendor is not sovereign software.
 
 - **WHEN** a request arrives with no verified identity and a valid key
 - **THEN** it is accepted, with the key's label as caller, exactly as before
+
+#### Scenario: An identified caller is not asked for a key
+
+- **WHEN** `/console/login` is requested with a verified assertion and without
+  `?key=1`
+- **THEN** it is answered with a 303 to `/console`
+
+#### Scenario: The key form can always be asked for
+
+- **WHEN** `/console/login?key=1` is requested with a verified assertion
+- **THEN** the key form is shown
+
+#### Scenario: No or an invalid assertion shows the form
+
+- **WHEN** `/console/login` is requested with no assertion, or one that fails
+  verification
+- **THEN** the key form is shown
 
 ### Requirement: Grants tied to a key label are named before identities replace them
 
