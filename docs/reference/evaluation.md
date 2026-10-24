@@ -254,6 +254,20 @@ Provenance for the pilot corpus is recorded at ingest via `source_url` and
 `fetched_at` (see `docs/reference/ingest.md`), not read back out of an eval
 script's `herkomst.jsonl` after the fact.
 
+**Gate order:** check, then manifest, then ingest. The pilot report's
+robots/terms/Anubis check (who, when, decision) is committed before the
+manifest is written, and `wordsworth-ingest --manifest` refuses to start a run
+whose pilot report has no completed check, or whose decision is not
+`proceed` — a template that could be filled in afterwards would prove
+nothing. Provenance is then proved, not merely passed along: after each
+document, its `register` audit record is read back against the manifest (see
+`docs/reference/ingest.md`).
+
+**The layer rule applies here too:** a document that does not reach `indexed`
+because a layer did not run — OpenAnonymiser down included — is a failed
+pilot document, never a success with a note, and the ingest run's exit status
+is non-zero.
+
 `scripts/eval/woo_passage_eval.py herkomst.jsonl CACHE.json` measures candidate
 2 (passage embeddings, `wordsworth.eval.passages`: 200-word windows every 150
 words, a document scored by its best passage). Passages exist only for the Woo

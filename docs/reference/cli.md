@@ -88,6 +88,22 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
+## `wordsworth-ingest --manifest` (pilot-ingest-manifest)
+
+```bash
+wordsworth-ingest --corpus-dir ./corpus --dossier pilot-gooise-meren-politieke-avond-2026-09-23 \
+    --manifest ./corpus/manifest.jsonl --pilot-report ./check.json
+```
+
+The operator-side batch ingest (`src/wordsworth/ingest_corpus.py`, same
+`wordsworth-ingest` entry point as a plain `--corpus-dir` run), with the
+pilot's stricter rules: a manifest (`file`/`url`/`fetched_at`/`sha256`/
+`bytes`/`status`/`ok` per line, one format for every fetcher), a completed
+pilot check, and `WORDSWORTH_BACKEND_ENV=homelab` required with no default.
+See `docs/reference/ingest.md` for the full gate order and the read-back
+that proves provenance reached the audit trail. Exit code non-zero if any
+document failed or was refused before ingest.
+
 ## `wordsworth-dossier-uit-herkomst` and `wordsworth-dossier-hernoem`
 
 Correcting a classification, without guessing.

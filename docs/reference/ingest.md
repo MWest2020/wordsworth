@@ -49,3 +49,36 @@ A document whose text extraction and OCR recovery together yield no text ends
 in a visible error state (`unprocessable_ocr`, shown by the API and the
 console) and is never indexed — never an empty text pushed into the search
 index. See the `document-lifecycle` spec for the state machine.
+
+## `wordsworth-ingest --manifest` (pilot-ingest-manifest)
+
+`wordsworth-ingest --corpus-dir DIR --dossier NAME --manifest manifest.jsonl
+--pilot-report check.json` is the same entry point as a plain corpus ingest,
+with stricter rules for provenance that must be proved rather than passed
+along. A manifest is one JSON object per line, one shared format for every
+fetcher (`fetch_woo_corpus.py` writes it; a person fetching by hand writes the
+same fields): `file`, `url`, `fetched_at` (ISO-8601 with a timezone — the real
+download time, never the ingest time), `sha256`, `bytes`, `status`, `ok`.
+
+Checks run before any file is ingested: `WORDSWORTH_BACKEND_ENV` must be
+`homelab` (required, never defaulted, never inferred from backend URLs — see
+`config.py`); the pilot report (`--pilot-report`) must hold a completed check
+(`who`, `when`, `robots`, `terms`, `anubis`, `decision`), and the decision must
+be `proceed`; every `*.pdf` in the corpus directory must have a manifest
+entry, and every file's computed sha256 must match it. Any one of these
+failing refuses the whole run before a single file is touched.
+
+**Read-back is the proof.** After each document is ingested and processed,
+its `register` audit record is read back and compared with the manifest's
+`url` and `fetched_at`. A document that is missing or differs fails with the
+reason, and the run's exit status is non-zero. This is how a duplicate
+delivery is caught: `ingest()`'s content-addressed key means a pilot PDF
+already live as a document — in this dossier or another, from the existing
+corpus or from an earlier manifest run — keeps its first provenance;
+`register_live()` returns the existing document unchanged. The read-back
+is the only place that catches this, and **it fails the document, not the
+other way round** — the duplicate's original provenance is never overwritten.
+
+A document that does not reach `indexed` because a layer did not run —
+OpenAnonymiser being down included — is reported as failed, not as a success
+with a note.

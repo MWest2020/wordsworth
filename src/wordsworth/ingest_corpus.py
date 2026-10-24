@@ -18,6 +18,8 @@ from pathlib import Path
 
 from .db import make_engine, make_session_factory
 from .embedder import OllamaEmbedder
+from .ingest_manifest import ingest_manifest_corpus
+from .manifest import ManifestError
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
@@ -80,10 +82,34 @@ def main(argv: list[str] | None = None) -> int:
     # scoped search, so an optional flag would quietly make unfindable documents.
     parser.add_argument("--dossier", required=True,
                         help="The dossier these documents belong to.")
+    # Pilot-only path (pilot-ingest-manifest): stricter rules, proved
+    # provenance, and the homelab-only guard — see docs/reference/ingest.md.
+    parser.add_argument("--manifest", type=Path, default=None,
+                        help="Per-file provenance (file/url/fetched_at/sha256/"
+                             "bytes/status/ok, one JSON object per line). "
+                             "Requires --pilot-report and WORDSWORTH_BACKEND_ENV=homelab.")
+    parser.add_argument("--pilot-report", type=Path, default=None,
+                        help="Pilot check (who/when/robots/terms/anubis/decision). "
+                             "Required with --manifest.")
     args = parser.parse_args(argv)
     if not args.corpus_dir.is_dir():
         print(f"corpus-dir not found: {args.corpus_dir}", file=sys.stderr)
         return 2
+
+    if args.manifest is not None:
+        if args.pilot_report is None:
+            print("--pilot-report is required with --manifest", file=sys.stderr)
+            return 2
+        try:
+            results = ingest_manifest_corpus(args.corpus_dir, args.dossier,
+                                             args.manifest, args.pilot_report)
+        except ManifestError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 2
+        ok = sum(1 for r in results if r.ok)
+        print(f"\n{ok}/{len(results)} ok")
+        return 0 if results and ok == len(results) else 1
+
     results = ingest_corpus(args.corpus_dir, args.dossier)
     indexed = sum(1 for _, s in results if s == State.INDEXED)
     print(f"\n{indexed}/{len(results)} indexed")

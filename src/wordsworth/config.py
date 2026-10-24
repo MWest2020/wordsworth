@@ -438,5 +438,16 @@ class Settings:
     def rate_limit_ask_burst(self) -> float:
         return float(os.environ.get("WORDSWORTH_RATE_LIMIT_ASK_BURST", "3"))
 
+    # --- pilot-ingest-manifest ---
+    @property
+    def backend_env(self) -> str:
+        """Which physical backend this process is pointed at (``homelab`` or
+        ``alma``), from ``WORDSWORTH_BACKEND_ENV``. No default, unlike every
+        other setting here: a manifest run sends real documents to a real
+        cluster, so a missing or guessed value must read as absent, never as
+        ``homelab``. Enforced only where a manifest run needs it
+        (``ingest_manifest.py``) — reading this elsewhere is inert."""
+        return os.environ.get("WORDSWORTH_BACKEND_ENV", "").strip()
+
 
 settings = Settings()

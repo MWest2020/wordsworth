@@ -28,13 +28,15 @@ zonder herkomst, en dan is elke meting erop onnavolgbaar.
 from __future__ import annotations
 
 import argparse
-import json
+import hashlib
 import re
 import sys
 import time
 import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin
+
+from wordsworth.manifest import write_record
 
 BASIS = "https://open.gelderland.nl"
 LIJST = BASIS + "/woo-documenten"
@@ -124,12 +126,19 @@ def main() -> int:
                     continue
                 doel.write_bytes(data)
                 # Herkomst per document, meteen weggeschreven. Een corpus zonder
-                # herkomst maakt elke meting erop onnavolgbaar.
-                herkomst.write(json.dumps({
-                    "bestand": naam, "bron": u, "besluit": d,
-                    "bytes": len(data), "opgehaald": time.strftime("%FT%TZ", time.gmtime()),
-                }) + "\n")
-                herkomst.flush()
+                # herkomst maakt elke meting erop onnavolgbaar. The shared
+                # manifest fields (file/url/fetched_at/sha256/status/ok) ride
+                # alongside the existing ones: `besluit` still feeds
+                # `wordsworth-dossier-uit-herkomst` and the ranking-eval
+                # tooling, which key on it (pilot-ingest-manifest is additive,
+                # not a breaking rename of this file).
+                opgehaald = time.strftime("%FT%TZ", time.gmtime())
+                write_record(
+                    herkomst, file=naam, url=u, fetched_at=opgehaald,
+                    sha256=hashlib.sha256(data).hexdigest(), bytes=len(data),
+                    status="fetched", ok=True,
+                    bestand=naam, bron=u, besluit=d, opgehaald=opgehaald,
+                )
                 gehaald += 1
                 print(f"[corpus] {gehaald}/{a.max} {naam} ({len(data)} bytes)")
 
