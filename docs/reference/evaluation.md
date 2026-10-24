@@ -226,6 +226,12 @@ both). Not a measurement of general quality — a scoped search in a dossier of
 does, so the ranking step cannot fail on its own. The pilot proves the
 pipeline runs on a real publication, nothing more.
 
+The report for a pilot run is a copy of
+[`docs/explanation/pilot-report-template.md`](../explanation/pilot-report-template.md)
+with its fields filled in. The ranking-gate and PII-gate slots in that
+template are Mark's alone — nobody else fills them, and a slot left empty is
+reported as "not yet run", never as passed.
+
 Published documents only — see the non-goal below.
 
 | part | what |
