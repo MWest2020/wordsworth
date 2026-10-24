@@ -66,7 +66,14 @@ The fetch itself is done (odin coding session, 2026-10-24): 12/12 PDFs, with a
    (`check.json`, `manifest-empty.jsonl`, `run_unlisted.sh`). Evidence goes in
    the PR text.
 8. **The herkomst sample** `docs/explanation/meting-woo-corpus-01.herkomst.jsonl`
-   moves to the manifest keys (`file`, `url`, `fetched_at`).
+   is extended, not renamed: each row keeps `bestand`, `bron`, `opgehaald` and
+   `besluit` and gains `file`, `url`, `fetched_at` next to them. The fetch
+   record stays additive: `wordsworth.eval.woo_collection.build()` reads
+   `bestand` and `dossier_tools.by_filename()` reads `bestand` and `besluit`,
+   and both must keep working. The first build renamed the keys; `build()` then
+   raised `KeyError` and `by_filename()` silently returned an empty mapping, so
+   every document counted as `zonder_herkomst`. No test read the sample, so the
+   proof for this item was false.
 
 Settled in the amendment (2026-10-24), after the first build failed review and
 the second stopped on an open question:

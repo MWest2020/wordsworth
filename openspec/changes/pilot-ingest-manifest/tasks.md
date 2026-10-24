@@ -5,7 +5,9 @@
       `status`, `ok` per file) and a
       reader/writer used by both the fetcher and `ingest_corpus.py`.
       Proved by: test 2 (a record written as the fetcher writes it is ingested).
-- [ ] `fetch_woo_corpus.py` writes the shared record. Proved by: test 2.
+- [ ] `fetch_woo_corpus.py` writes the shared record next to its existing
+      `bestand`/`bron`/`opgehaald`/`besluit` keys, not instead of them. Proved
+      by: tests 2 and 8.
 
 ## 2. `--manifest` in `ingest_corpus.py`
 - [ ] A `*.pdf` without an entry aborts the whole run before any ingest.
@@ -35,9 +37,11 @@
 - [ ] No scratch or verification artefacts committed (no `.scratch-verify/`,
       no manifest, no `check.json`). Proved by: `git diff --stat main` in the PR
       text shows none.
-- [ ] `docs/explanation/meting-woo-corpus-01.herkomst.jsonl` uses `file`, `url`,
-      `fetched_at`. Proved by: test 2 reads the sample, and a grep for
-      `bron`/`opgehaald`/`bestand` in the file finds nothing.
+- [ ] Extend, do not rename: every row of
+      `docs/explanation/meting-woo-corpus-01.herkomst.jsonl` keeps `bestand`,
+      `bron`, `opgehaald`, `besluit` and gains `file`, `url`, `fetched_at`.
+      The fetch record stays additive. Restore the old keys if the earlier
+      build renamed them. Proved by: the herkomst-sample test (task 4).
 
 ## 3c. Test correction (CI finding on PR #217)
 - [ ] `test_openanonymiser_down_fails_the_run` asserts `rc == 1` and that
@@ -47,9 +51,16 @@
       CI's Fast test gate (offline) green.
 
 ## 4. Tests (`tests/test_ingest_corpus.py`, the design.md list)
-- [ ] Tests 1 to 8 from `design.md`, integration through `ingest_corpus`.
+- [ ] Tests 1 to 9 from `design.md`, integration through `ingest_corpus`.
       Database tests: use a private test database
       (`WORDSWORTH_TEST_DATABASE_URL`) and report which tests skipped.
+- [ ] Herkomst-sample test (design test 8, no database needed): load
+      `docs/explanation/meting-woo-corpus-01.herkomst.jsonl` through
+      `wordsworth.eval.woo_collection.build()` and
+      `wordsworth.dossier_tools.by_filename()`; assert every row maps (no
+      `KeyError`, a non-empty mapping with one entry per row, no
+      `zonder_herkomst`). Proved by: the test passing, and failing when the
+      sample's `bestand` keys are removed.
 
 ## 5. Docs (must change with the code; CI fails on code without docs)
 - [ ] `docs/reference/ingest.md`: the manifest format, the required
