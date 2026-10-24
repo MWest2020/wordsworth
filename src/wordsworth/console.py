@@ -56,7 +56,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 def build_router(session_factory, keys: dict[str, str],
                  search_index=None, guard=None, admin_guard=None,
-                 audit=None, embedder=None) -> APIRouter:
+                 audit=None, embedder=None, identity=None) -> APIRouter:
     router = APIRouter(prefix="/console", tags=["console"])
 
     def _caller(request: Request) -> str:
@@ -85,20 +85,24 @@ def build_router(session_factory, keys: dict[str, str],
             admin_guard(request)
 
     @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
-    def login_form(request: Request, fout: str = ""):
-        """The key form, always reachable.
+    def login_form(request: Request, fout: str = "", key: str = ""):
+        """The key form — unless the identity provider already knows you.
 
-        Someone who already has an identity never arrives here: they open
-        /console and the middleware knows them, so there is nothing to skip. And
-        this page is exempt from authentication — it cannot know who you are
-        anyway, which is why an earlier attempt to skip it never fired.
+        This page is exempt from authentication, so the middleware's caller is
+        never set here. That used to mean it always showed the form, even to
+        someone an identity provider already verified: the provider returns the
+        browser HERE after login, and that person then sees a key form for no
+        reason. The same `identity.caller(request)` the middleware would use is
+        available on the request, so this page can ask it directly.
 
-        Reachable ON PURPOSE. Behind an identity provider the assertion rides
-        along on every request, so without a door to the key route a person
-        behind that provider could never choose anything else. Logging in here
-        sets the cookie, and a presented credential wins; /console/logout hands
-        the identity back.
+        `?key=1` always shows the form regardless. Behind an identity provider
+        the assertion rides along on every request, so without this door a
+        person there could never choose anything else. Logging in here sets the
+        cookie, and a presented credential wins; /console/logout hands the
+        identity back.
         """
+        if key != "1" and identity is not None and identity.caller(request):
+            return RedirectResponse("/console", status_code=303)
         return TEMPLATES.TemplateResponse(request, "login.html", {"fout": fout})
 
     @router.post("/login", include_in_schema=False)

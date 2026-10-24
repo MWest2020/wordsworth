@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: MIT
 """The reading console (document-console)."""
 
+import base64
+import json
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from wordsworth import pseudonym_registry
+from wordsworth import access_identity, pseudonym_registry
+from wordsworth.access_identity import Verifier
 from wordsworth.api import create_app
 from wordsworth.console import marked
 from wordsworth.models import DeclaredCombination, DocumentText
@@ -280,3 +286,87 @@ def test_a_static_path_outside_the_subtree_is_not_exempt(session_factory):
     c = _app(session_factory)
     r = c.get("/console/staticky", headers={"Accept": "*/*"})
     assert r.status_code == 401
+
+
+# --- console-login-skip-when-identified: skip the key form for someone the
+# identity provider already knows ------------------------------------------
+
+TEAM = "raspy-wood-e123.cloudflareaccess.com"
+AUD = "320841be57b2e469adbef09614573240756da5f3a188df87b6fb761d40e65d65"
+VERIFIER = Verifier.cloudflare(TEAM, AUD)
+
+
+def _b64(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _key():
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+def _jwks(key, kid="k1"):
+    n = key.public_key().public_numbers()
+    return {"keys": [{"kty": "RSA", "kid": kid, "alg": "RS256",
+                      "n": _b64(n.n.to_bytes((n.n.bit_length() + 7) // 8, "big")),
+                      "e": _b64(n.e.to_bytes((n.e.bit_length() + 7) // 8, "big"))}]}
+
+
+def _token(key, kid="k1", alg="RS256", **claims):
+    # `identity.caller(request)` over HTTP has no injected clock, so `exp` must
+    # be in the future of the real clock, not of the fictional `NU` the other
+    # access-identity tests pin time to.
+    body = {"aud": [AUD], "iss": VERIFIER.issuer, "exp": 4_000_000_000,
+            "email": "mark@westerweel.work"}
+    body.update(claims)
+    head = _b64(json.dumps({"alg": alg, "kid": kid}).encode())
+    payload = _b64(json.dumps(body).encode())
+    sig = key.sign(f"{head}.{payload}".encode(), padding.PKCS1v15(), hashes.SHA256())
+    return f"{head}.{payload}.{_b64(sig)}"
+
+
+def _app_behind_identity(session_factory, monkeypatch, key):
+    """An app with a real `Identity`, its JWKS fetch stubbed to the given key —
+    not a double claiming "valid", because the whole point of this module is
+    that a signature cannot be forged."""
+    monkeypatch.setattr(access_identity, "_fetch", lambda url: _jwks(key))
+    return TestClient(
+        create_app(session_factory=session_factory, api_keys=KEYS,
+                   access_verifier=VERIFIER),
+        follow_redirects=False, base_url="https://testserver")
+
+
+def test_a_verified_assertion_on_login_redirects_to_the_console(
+        session_factory, monkeypatch):
+    key = _key()
+    c = _app_behind_identity(session_factory, monkeypatch, key)
+    r = c.get("/console/login", headers={"authorization": f"Bearer {_token(key)}"})
+    assert r.status_code == 303 and r.headers["location"] == "/console"
+
+
+def test_no_assertion_still_shows_the_form(session_factory, monkeypatch):
+    key = _key()
+    c = _app_behind_identity(session_factory, monkeypatch, key)
+    r = c.get("/console/login")
+    assert r.status_code == 200 and "API-sleutel" in r.text
+
+
+def test_an_invalid_assertion_shows_the_form(session_factory, monkeypatch):
+    key = _key()
+    c = _app_behind_identity(session_factory, monkeypatch, key)
+    # Signed by a different key than the one the provider's JWKS names.
+    r = c.get("/console/login",
+              headers={"authorization": f"Bearer {_token(_key())}"})
+    assert r.status_code == 200 and "API-sleutel" in r.text
+    # Also for the right key but the wrong audience.
+    r = c.get("/console/login",
+              headers={"authorization":
+                       f"Bearer {_token(key, aud=['een-andere-app'])}"})
+    assert r.status_code == 200 and "API-sleutel" in r.text
+
+
+def test_key_equals_1_always_shows_the_form(session_factory, monkeypatch):
+    key = _key()
+    c = _app_behind_identity(session_factory, monkeypatch, key)
+    r = c.get("/console/login?key=1",
+              headers={"authorization": f"Bearer {_token(key)}"})
+    assert r.status_code == 200 and "API-sleutel" in r.text

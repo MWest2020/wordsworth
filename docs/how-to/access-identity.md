@@ -130,6 +130,14 @@ valid signature.
 clears the cookie and hands the identity back. That is the switch, in both
 directions.
 
+**`/console/login` itself skips the form for someone already identified.**
+That page is exempt from authentication, so it cannot rely on the middleware
+having decided anything — but it can run the same verification itself. A
+request carrying a verified assertion is sent straight on to `/console`
+instead of being shown a key form it has no reason to fill in; a missing or
+invalid assertion shows the form as before. `?key=1` is the way to ask for the
+form anyway — the way back to a key, kept reachable on this one page too.
+
 That form is the one path that is reachable without a key **and** answers
 differently for a right and a wrong one. It is rate-limited harder than anything
 else (five attempts, then one per ten seconds): every request there is a guess.
