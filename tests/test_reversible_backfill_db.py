@@ -228,6 +228,52 @@ def test_de_code_van_de_invariant_komt_mee_in_problems(
     assert "Jan Jansen" not in str(uit)
 
 
+def test_value_not_located_is_reported_in_reprocess_problems(
+        session_factory, session, mem_store, mem_index, fake_embedder,
+        born_digital_pii_pdf):
+    """POST /reprocess must not hide a value-not-located box-map outcome
+    (pdf-redaction-locate) behind a plain 'reanonymized' count: the text/
+    embed/index work still succeeded, but the redacted PDF has nothing to
+    serve, and that has to be visible without re-running the whole corpus."""
+    from fastapi.testclient import TestClient
+
+    from wordsworth.anonymizer import AnonymizationResult
+    from wordsworth.api import create_app
+    from wordsworth.keys import InMemoryKeyProvider
+    from wordsworth.mapping_store import PostgresMappingStore
+    from wordsworth.pseudonymizer import Pseudonymizer
+
+    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+                                born_digital_pii_pdf)
+    kp = InMemoryKeyProvider()
+
+    class TwiceBSN:
+        """Stands in for a detector that saw the BSN twice where the PDF's
+        own positioned text only has it once -- the scenario the count check
+        exists for."""
+
+        def __init__(self, session):
+            self._store = PostgresMappingStore(session)
+
+        def anonymize(self, text):
+            token = Pseudonymizer(kp, self._store).pseudonym("bsn", PII_BSN)
+            return AnonymizationResult(text=f"{token} {token}", counts={"bsn": 2})
+
+    app = create_app(session_factory=session_factory, store=mem_store,
+                     search_index=mem_index, embedder=fake_embedder,
+                     anonymizer_factory=lambda s: TwiceBSN(s),
+                     key_provider_factory=lambda s: kp, rate_limiters={})
+    uit = TestClient(app).post("/reprocess",
+                               json={"document_ids": [str(doc.id)]}).json()
+
+    assert uit["reanonymized"] == 1          # text/embed/index succeeded
+    assert uit["failed"] == 0 and uit["retryable"] == 0
+    assert uit["problems"], "value-not-located must surface in problems"
+    assert "value-not-located" in uit["problems"][str(doc.id)]
+    assert "BSN" in uit["problems"][str(doc.id)]
+    assert PII_BSN not in str(uit)
+
+
 def test_de_kenmerken_van_de_invariant_komen_in_de_audit(
         session_factory, session, mem_store, mem_index, fake_embedder,
         born_digital_pii_pdf):

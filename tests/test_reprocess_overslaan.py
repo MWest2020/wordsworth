@@ -20,13 +20,16 @@ from wordsworth.pipeline import lists_hash_of
 from wordsworth.states import State
 
 
-def _doc(session, hash_=None, stap="anonymize"):
-    doc = Document(object_key=f"documents/{id(session)}-{hash_}")
+def _doc(session, hash_=None, stap="anonymize", text_source=None, object_key=None):
+    doc = Document(object_key=object_key or f"documents/{id(session)}-{hash_}")
     session.add(doc)
     session.flush()
+    payload = {"lists_hash": hash_}
+    if text_source is not None:
+        payload["text_source"] = text_source
     audit.append(session, document_id=doc.id, from_state=None,
                  to_state=State.INDEXED.value, step=stap,
-                 payload={"lists_hash": hash_})
+                 payload=payload)
     session.flush()
     return doc.id
 
@@ -57,6 +60,22 @@ def test_a_document_never_processed_under_lists_counts_as_outdated(session_facto
         assert lists_hash_of(s, doc_id) is None
 
 
+def test_outdated_also_picks_up_documents_without_pdfium_v1(session_factory):
+    """The backfill picks up every document without `text_source`
+    `pdfium-v1` (pdf-redaction-locate), even when its lists_hash is already
+    current -- the one PDF extraction landed after some documents were
+    already processed under the old pypdf path."""
+    from wordsworth.pdf_text import TEXT_SOURCE
+    from wordsworth.reprocess import outdated
+
+    with session_factory() as s:
+        huidig = _doc(s, "abc123", object_key=f"documents/{id(s)}-1",
+                     text_source=TEXT_SOURCE)
+        # same lists_hash, no text_source at all
+        zonder_bron = _doc(s, "abc123", object_key=f"documents/{id(s)}-2")
+        assert outdated(s, [huidig, zonder_bron], "abc123") == [zonder_bron]
+
+
 def test_other_audit_steps_do_not_answer_this_question(session_factory):
     """Alleen de de-identificatie zegt onder welke lijsten er gewerkt is. Een
     onthulling of een dossierwijziging zegt daar niets over, en zou de laatste
@@ -85,8 +104,11 @@ def test_reprocess_skips_what_is_already_current(session_factory, tmp_path,
         encoding="utf-8")
     huidig = DetectionLists.load(tmp_path).hash
 
+    from wordsworth.pdf_text import TEXT_SOURCE
+
     with session_factory() as s:
-        bij = _doc(s, huidig)        # al onder de huidige lijsten verwerkt
+        # al onder de huidige lijsten EN de ene pdfium-extractie verwerkt
+        bij = _doc(s, huidig, text_source=TEXT_SOURCE)
         achter = _doc(s, "oude-hash")
         s.commit()
 

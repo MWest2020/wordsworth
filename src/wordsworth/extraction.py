@@ -1,13 +1,12 @@
-"""Real text extraction (pypdf). In-memory only — clear text is never persisted.
+"""Real text extraction: `positioned_text` (pypdfium2, pdf-redaction-locate).
+In-memory only — clear text is never persisted.
 
 By the time a document is `extractable` it has already parsed successfully during
 profiling, so extraction rarely fails; if it does, that is a loud failure
 (ExtractionError -> FAILED), never a silent skip."""
 from __future__ import annotations
 
-import io
-
-from pypdf import PdfReader
+from .pdf_text import positioned_text
 
 
 class ExtractionError(Exception):
@@ -16,7 +15,6 @@ class ExtractionError(Exception):
 
 def extract_text(data: bytes) -> str:
     try:
-        reader = PdfReader(io.BytesIO(data))
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
+        return positioned_text(data)
     except Exception as exc:
         raise ExtractionError(str(exc)) from exc
