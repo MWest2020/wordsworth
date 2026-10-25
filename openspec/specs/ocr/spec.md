@@ -12,15 +12,17 @@ is invisible to search — not wrong, just silently absent, which is worse.
 not leave the country, let alone the organisation; an OCR service in someone
 else's cloud would undo the privacy posture of every other capability here before
 anonymisation ever ran.
+
 ## Requirements
+
 ### Requirement: Local OCR engine
 
 OCR SHALL be accessed through an `OcrEngine` protocol backed by a local engine
 (no cloud OCR). The engine SHALL produce a **text-layer PDF** — the scanned PDF
 with a searchable text layer added (e.g. ocrmypdf) — returned as PDF bytes, NOT
 raw text. This lets a recovered document flow through the existing `profile_pdf`
-and `extract_text` (pypdf) path unchanged. Engine failure SHALL raise (loud),
-never silently skip a document.
+and `positioned_text` (pypdfium2) path unchanged. Engine failure SHALL raise
+(loud), never silently skip a document.
 
 #### Scenario: Injected local engine is used
 
@@ -32,7 +34,7 @@ never silently skip a document.
 
 - **WHEN** a scanned document is OCR'd
 - **THEN** the returned bytes are a PDF whose text layer is extractable by the
-  normal pypdf extraction path
+  normal pdfium extraction path
 
 ### Requirement: OCR recovery of scanned documents
 
@@ -63,4 +65,3 @@ recovering attempt's audit record SHALL carry the old and new object keys.
 - **WHEN** OCR produces text below the threshold
 - **THEN** the document remains `unprocessable_ocr` AND an audit record of the OCR
   attempt (with the metric) is written — not a silent no-op
-
