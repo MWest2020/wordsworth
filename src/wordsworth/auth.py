@@ -43,6 +43,26 @@ def authorize_grant_issue(caller: str | None, issuer_labels: list[str],
     return bool(caller) and caller in set(issuer_labels)
 
 
+def authorize_delete(caller: str | None, issuer_labels: list[str],
+                     auth_enabled: bool, *, is_beheerder: bool) -> bool:
+    """Mag deze caller een document of dossier verwijderen (document-deletion)?
+
+    Verwijderen is onomkeerbaar (er is geen restore-pad), dus least privilege:
+    alleen de beheerdersrol of een expliciet genoemd issuer-label. `is_beheerder`
+    komt van de aanroeper (resolved tegen de grants-tabel — een caller houdt de
+    rol wanneer hij recipient is van een actieve, niet-verlopen grant die hem
+    noemt), omdat deze functie zelf geen database raakt.
+
+    Zonder api-key-auth (`auth_enabled` False) is er geen caller om op te
+    beslissen en verandert er niets — dezelfde tailnet-interne modus als overal
+    elders in dit bestand."""
+    if not auth_enabled:
+        return True
+    if caller and caller in set(issuer_labels):
+        return True
+    return bool(caller) and is_beheerder
+
+
 def authorize_corpus_read(caller: str | None, allowed_labels: list[str]) -> bool:
     """Whether ``caller`` may read full de-identified document text
     (``/documents/{id}/anonymized`` and ``/export/anonymized.zip``).

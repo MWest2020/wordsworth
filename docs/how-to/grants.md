@@ -196,3 +196,8 @@ oracle.
   (`key_audit_pg.verify_chain`). Until 2026-09-23 it was a JSONL file on an
   emptyDir and did not survive a restart; `WORDSWORTH_KEY_LIFECYCLE_AUDIT_PATH`
   no longer exists.
+- `WORDSWORTH_GRANT_ISSUER_LABELS` also names who may delete a document (see
+  [deleting documents](deleting-documents.md)) — the same "issuer label" named
+  there, since minting a grant and deleting a document are both the kind of
+  act this circle exists for. A grant naming role `beheerder` is also how a
+  caller is recognised as holding that role, for deletion's other door.

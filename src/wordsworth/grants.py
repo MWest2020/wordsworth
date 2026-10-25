@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .key_audit import KeyLifecycleAudit
@@ -160,6 +161,36 @@ def permitted_types(grant: Grant, resolve_role=None) -> set[str]:
             return set()
         return {t.upper() for t in resolve_role(grant.role)}
     return {t.upper() for t in grant.allowed_types}
+
+
+def caller_holds_role(session: Session, caller: str | None, role: str) -> bool:
+    """Does ``caller`` currently hold ``role``?
+
+    There is no identity-to-role table in this system (`roles.py`'s docstring:
+    "wie iemand is" lives in the sign-on, not here). The one place a caller
+    identity is already tied to a role name is a grant: ``recipient`` names who,
+    ``role`` names which. So "holds the role" means "is the recipient of an
+    active, unexpired grant naming it" — the same fact `authorize()` already
+    reads when a role-granted reveal is resolved, read here for a yes/no instead
+    of a type set. A revoked or expired grant answers no, like everywhere else.
+    """
+    if not caller:
+        return False
+    now = _now()
+    rows = session.execute(
+        select(GrantRecord).where(GrantRecord.recipient == caller,
+                                  GrantRecord.role == role,
+                                  GrantRecord.status == ACTIVE)
+    ).scalars()
+    for row in rows:
+        if row.expires_at is not None:
+            expires = row.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if now >= expires:
+                continue
+        return True
+    return False
 
 
 @runtime_checkable

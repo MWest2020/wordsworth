@@ -109,6 +109,10 @@ class SearchIndex(Protocol):
     #: that never got indexed is not an error to delete. For a superseded copy
     #: (one-document-per-object): search must not return the same object twice.
     def delete(self, document_id: str) -> bool: ...
+    #: Is this document currently indexed? A read, never a mutation -- the
+    #: dry-run half of a deletion needs to report what `delete` WOULD remove
+    #: without removing it.
+    def exists(self, document_id: str) -> bool: ...
     def has_object_key(self, object_key: str) -> bool:
         """Is a document with this content key already in the index? Used for
         idempotent ingest — the index is the source of truth for 'searchable',
@@ -179,6 +183,9 @@ class InMemoryIndex:
         self._topics.pop(document_id, None)
         self._passages.pop(document_id, None)
         return self._docs.pop(document_id, None) is not None
+
+    def exists(self, document_id) -> bool:
+        return document_id in self._docs
 
     def documents_in(self, dossier: str, limit: int = 10000
                      ) -> list[IndexedDocument]:

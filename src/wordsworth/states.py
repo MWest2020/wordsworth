@@ -13,16 +13,21 @@ class State(str, Enum):
     INDEXED = "indexed"
     FAILED = "failed"
     SUPERSEDED = "superseded"
+    DELETED = "deleted"
 
 
-TERMINAL: frozenset[State] = frozenset({State.INDEXED, State.FAILED, State.SUPERSEDED})
+TERMINAL: frozenset[State] = frozenset(
+    {State.INDEXED, State.FAILED, State.SUPERSEDED, State.DELETED}
+)
 
 # Allowed transitions. None = the document does not exist yet. FAILED is
 # reachable from every non-terminal state. Terminal states have no outgoing
-# edge, with ONE exception, named here rather than bent quietly: `superseded`
-# is reachable from every state, the terminal ones included. A copy of an
-# object that is already a document is retired, whatever state it reached
-# (one-document-per-object); `superseded` itself has no way out.
+# edge, with TWO exceptions, named here rather than bent quietly: `superseded`
+# and `deleted` are each reachable from every state, the terminal ones
+# included. A copy of an object that is already a document is retired,
+# whatever state it reached (one-document-per-object); a document is forgotten,
+# whatever state it reached (document-deletion). Neither has a way out of
+# itself, and `deleted` has no way out at all -- there is no restore path.
 # `unprocessable_ocr` is a resting state, not terminal: the born-digital pass
 # leaves a document there, and the opt-in OCR recovery step (add-ocr) is its one
 # outgoing edge back into the searchable flow (-> extractable).
@@ -37,9 +42,11 @@ _EDGES: dict[State | None, frozenset[State]] = {
     State.ANONYMIZED: frozenset({State.INDEXED, State.FAILED}),
     State.INDEXED: frozenset(),
     State.FAILED: frozenset(),
+    State.SUPERSEDED: frozenset(),
 }
 ALLOWED: dict[State | None, frozenset[State]] = {
-    frm: to | ({State.SUPERSEDED} if frm is not None else frozenset())
+    frm: to | (({State.SUPERSEDED, State.DELETED} - {frm})
+               if frm is not None else frozenset())
     for frm, to in _EDGES.items()
 }
 

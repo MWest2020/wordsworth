@@ -27,12 +27,13 @@ from starlette.middleware.cors import CORSMiddleware
 
 from .console_headers import ConsoleSafety
 from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
-                   authorize_grant_issue)
+                   authorize_delete, authorize_grant_issue)
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
+from .deletion import DeletionError, delete_document
 from .embedder import Embedder
 from .generator import Generator
-from .grants import GrantStore
+from .grants import GrantStore, caller_holds_role
 from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
 from .roles import ADMIN as ROLES_ADMIN
@@ -448,6 +449,18 @@ def create_app(
                 status_code=403,
                 detail="caller not authorized to issue or revoke grants")
 
+    def _guard_delete(request: Request, session: Session) -> None:
+        """Verwijderen is onomkeerbaar: alleen de beheerdersrol of een expliciet
+        genoemd issuer-label mag het, voor zowel de documenten- als de
+        dossier-route. `is_beheerder` wordt hier opgelost (de caller is
+        recipient van een actieve grant op naam van `roles.ADMIN`) omdat
+        `authorize_delete` zelf geen database raakt."""
+        caller = getattr(request.state, "caller", None)
+        beheerder = bool(caller) and caller_holds_role(session, caller, ROLES_ADMIN)
+        if not authorize_delete(caller, grant_issuer_labels, auth_enabled,
+                                is_beheerder=beheerder):
+            raise HTTPException(status_code=403, detail="caller not authorized to delete")
+
     def _resolve_audit(session) -> KeyLifecycleAudit:
         """The key-lifecycle stream, bound to the caller's session.
 
@@ -712,6 +725,31 @@ def create_app(
                 session.commit()
                 return {"document_id": str(document_id), "seq": rec.seq,
                         "recorded": payload}
+
+        if store is not None and search_index is not None:
+
+            @app.delete("/documents/{document_id}",
+                       summary="Delete a document's content (irreversible)",
+                       tags=["write"])
+            def delete_document_endpoint(document_id: UUID, request: Request) -> dict:
+                """Remove the stored object, the stored text, the pseudonyms,
+                the mappings, the index entry and the grants of one document.
+                The ``documents`` row and its earlier audit records stay — the
+                audit trail is append-only and this is the same reason a
+                superseded copy keeps its row. Only role `beheerder` or an
+                issuer label may call this; anyone else gets 403 and nothing is
+                removed. 404 for an unknown document. There is no undo."""
+                with session_factory() as session:
+                    _guard_delete(request, session)
+                    try:
+                        counts = delete_document(
+                            session, document_id, store, search_index,
+                            actor=_actor(request))
+                    except DeletionError:
+                        raise HTTPException(status_code=404,
+                                            detail="unknown document")
+                    session.commit()
+                return {"document_id": str(document_id), **counts.as_dict()}
 
         @app.get("/export/anonymized.zip",
                  summary="Export de-identified document texts as a ZIP",

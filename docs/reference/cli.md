@@ -212,7 +212,34 @@ tries to create that index: run this command first.
 
 A retired copy is not deleted: its audit trail requires the row. It still
 answers `GET /documents/{id}/state` with `superseded` and `superseded_by`, and
-reveal on it is refused with the survivor's id.
+reveal on it is refused with the survivor's id. Actually deleting a document —
+removing it, not retiring it — is `wordsworth-delete`, below.
+
+## `wordsworth-delete`
+
+Removes a document's content: the stored object, its text, its pseudonyms,
+its mappings, its search-index entry and its grants. The `documents` row and
+its audit trail stay — the trail is append-only, the same reason a superseded
+copy keeps its row. There is **no undo**.
+
+```bash
+wordsworth-delete <document-id> [<document-id> ...] --actor <who> [--dry-run]
+```
+
+`--actor` is required and is checked the same way the API checks a caller:
+only role `beheerder` (held via an active, unexpired grant naming it) or a
+label in `WORDSWORTH_GRANT_ISSUER_LABELS` may delete. Any other actor is
+refused and nothing is removed.
+
+`--dry-run` reports the counts it would remove, using the exact same code
+path, and stops before the first removal — no store, index or database
+change, and no `deleted` record. Each named document commits on its own, so a
+failure partway through a multi-document run leaves only the untouched ones
+for a rerun to finish; removing what a previous run already removed is a
+no-op.
+
+See [deleting documents](../how-to/deleting-documents.md) for what goes, what
+stays, and `DELETE /documents/{id}` over the API.
 
 ## `wordsworth-backfill-passages`
 
