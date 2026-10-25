@@ -88,18 +88,20 @@ def test_value_not_located_writes_audit_and_persists_no_box_map(
         s.commit()
         mapping_store = PostgresMappingStore(s)
         anonymizer = Pseudonymizer(kp, mapping_store)
-        plain = (f"Aanvrager BSN {PII_BSN} IBAN {PII_IBAN} email {PII_EMAIL} einde.")
+        # The BSN occurs twice in the text the anonymizer runs over (the token
+        # is therefore registered twice in the anonymised text), but
+        # born_digital_pii_pdf's own positioned text only has it once —
+        # the scenario the fail-hard count check exists for.
+        plain = (f"Aanvrager BSN {PII_BSN} IBAN {PII_IBAN} email {PII_EMAIL} "
+                 f"BSN {PII_BSN} einde.")
         result = anonymizer.anonymize(plain)
         from wordsworth import pseudonym_registry
 
         pseudonym_registry.register(s, doc.id, result.text)
         s.flush()
 
-        # A fabricated pypdf_text with one BSN occurrence more than the PDF
-        # itself has — the scenario the fail-hard check exists for.
-        bogus_pypdf_text = plain + " " + PII_BSN
         box_map = compute_box_map(
-            s, doc.id, born_digital_pii_pdf, bogus_pypdf_text, result.text,
+            s, doc.id, born_digital_pii_pdf, result.text,
             result.lists_hash, kp, mapping_store,
         )
         assert box_map is None
@@ -110,7 +112,7 @@ def test_value_not_located_writes_audit_and_persists_no_box_map(
                                       AuditRecord.step == "value-not-located")
         ).scalar_one()
         assert rec.payload["pii_type"] == "BSN"
-        assert rec.payload["in_pypdf"] == 2
+        assert rec.payload["in_anonymized"] == 2
         assert rec.payload["in_positioned"] == 1
         assert PII_BSN not in str(rec.payload)
         assert s.get(BoxMap, doc.id) is None

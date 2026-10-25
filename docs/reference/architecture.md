@@ -14,8 +14,14 @@ without a content review, so this page is `draft`; a real review promotes it to
 wordsworth is a single linear pipeline:
 
 ```
-ingest → text extraction → anonymize/pseudonymize → store → index → hybrid search → rank
+ingest → text extraction (pdfium) → anonymize/pseudonymize → store → index → hybrid search → rank
 ```
+
+Text extraction is the single `positioned_text` function (pypdfium2,
+`text_source` `pdfium-v1`): profiling, detection, the stored text, the index
+text and the redacted-PDF box map all read it, so a value detection finds
+cannot fail to exist in the text the box map searches
+(pdf-redaction-locate).
 
 What a consumer does with the documents afterwards is out of scope — wordsworth
 is the engine. Reference case: Woo-request handling for a Dutch municipality.

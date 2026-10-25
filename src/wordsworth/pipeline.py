@@ -34,8 +34,10 @@ from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
 from .object_store import ObjectStore
+from .pdf_text import TEXT_SOURCE
 from .profiling import ProfilingError, profile_pdf
 from .passages import embed_passages
+from .pseudonymizer import label_of
 from .retry import retry_transient
 from .search_index import SearchIndex
 from .states import State, is_allowed
@@ -313,14 +315,17 @@ def process(
         pseudonym_registry.register(session, document_id, result.text)
         session.flush()
         # Counts per type + per-layer confidence aggregates (add-detection-
-        # confidence): aggregates only, never a value or an offset.
+        # confidence): aggregates only, never a value or an offset. text_source
+        # names the one PDF extraction this text came from (pdf-redaction-locate),
+        # so the backfill can find every document still derived from an older one.
         transition(session, document_id, State.ANONYMIZED, step="anonymize",
                    payload={**result.counts, "detections": result.detections,
-                            "lists_hash": result.lists_hash})
+                            "lists_hash": result.lists_hash,
+                            "text_source": TEXT_SOURCE})
         if key_provider is not None and mapping_store is not None:
             from .pdf_redaction import compute_box_map
 
-            compute_box_map(session, document_id, pdf(), text, result.text,
+            compute_box_map(session, document_id, pdf(), result.text,
                             result.lists_hash, key_provider, mapping_store)
         state = State.ANONYMIZED
 
@@ -376,6 +381,36 @@ def lists_hash_of(session: Session, document_id: UUID) -> str | None:
     return (rij or {}).get("lists_hash")
 
 
+def text_source_of(session: Session, document_id: UUID) -> str | None:
+    """The ``text_source`` this document's text was last derived under
+    (pdf-redaction-locate), the same fact-from-the-trail shape as
+    `lists_hash_of`. ``None`` = recorded before this column existed, which
+    counts as outdated: it was extracted by the retired pypdf path."""
+    rij = session.execute(
+        select(AuditRecord.payload)
+        .where(AuditRecord.document_id == document_id,
+               AuditRecord.step.in_(("anonymize", "reanonymize")))
+        .order_by(AuditRecord.seq.desc()).limit(1)
+    ).scalar_one_or_none()
+    return (rij or {}).get("text_source")
+
+
+def _orphaned_tokens(before: set[str], after_text: str) -> dict[str, int]:
+    """Counts, per PII type, of tokens registered for this document before a
+    reanonymize run that do not occur in the text the run just produced.
+
+    `pseudonym_registry.register` never removes a token (an in-flight reveal
+    of the same document may still need it), so a re-derivation under a new
+    text source can leave some of its registered tokens unreachable from the
+    current text. Reported as counts only, never a token or a value."""
+    after = pseudonym_registry.tokens_in(after_text)
+    counts: dict[str, int] = {}
+    for token in before - after:
+        label = label_of(token)
+        counts[label] = counts.get(label, 0) + 1
+    return counts
+
+
 def reanonymize(
     session: Session,
     document_id: UUID,
@@ -411,6 +446,10 @@ def reanonymize(
     anonymizer = anonymizer or DeterministicAnonymizer()
     index = search_index or _default_index()
     embed = embedder or _default_embedder()
+
+    # Before re-deriving: which tokens this document already carries, so the
+    # run can report any that the new text no longer reaches (_orphaned_tokens).
+    registered_before = pseudonym_registry.registered(session, document_id)
 
     # Re-derive the source text from the stored bytes (never a clear-text store).
     raw = store.get(doc.object_key)
@@ -453,11 +492,13 @@ def reanonymize(
         to_state=state.value,
         step="reanonymize",
         payload={"counts": result.counts, "detections": result.detections,
-                 "lists_hash": result.lists_hash, "reanonymized": True},
+                 "lists_hash": result.lists_hash, "reanonymized": True,
+                 "text_source": TEXT_SOURCE,
+                 "orphaned_tokens": _orphaned_tokens(registered_before, result.text)},
     )
     if key_provider is not None and mapping_store is not None:
         from .pdf_redaction import compute_box_map
 
-        compute_box_map(session, document_id, raw, text, result.text,
+        compute_box_map(session, document_id, raw, result.text,
                         result.lists_hash, key_provider, mapping_store)
     return state

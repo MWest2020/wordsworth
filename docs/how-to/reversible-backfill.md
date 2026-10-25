@@ -75,6 +75,19 @@ their box maps; a document the run could not locate a value for gets a
 `value-not-located` audit record instead of a box map, and is reported in
 `problems`, not hidden. See [pdf-redaction](pdf-redaction.md).
 
+## After the one-PDF-extraction change (pdf-redaction-locate)
+
+`anonymize` and `reanonymize` now record `text_source` (`pdfium-v1` for a PDF
+run through `positioned_text`). `{"only_outdated": true}` picks up every
+document whose last de-identification record lacks `text_source` `pdfium-v1`
+— in addition to the existing lists-hash check — so a corpus last processed
+under the retired pypdf extraction is reprocessed without having to name it
+explicitly. `reanonymize` also reports, per run, the count of pseudonyms this
+document had registered before the run that its newly-derived text no longer
+carries ("orphaned" — the new extraction can split or join a value
+differently from the old one); counts only, by PII type, never a token or a
+value.
+
 ## After a normalisation-profile change
 
 Tokens are derived from `normalize(type, value)` (see `normalization.py`,

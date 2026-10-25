@@ -5,9 +5,9 @@ so the recovery step (recovery.recover) can be tested with a double and the real
 engine swapped without pipeline changes. Local OCR only — no cloud in the
 critical path. An engine returns a TEXT-LAYER PDF (the scanned PDF with a
 searchable text layer added), never raw text: a recovered document must flow
-through the ordinary profile_pdf/extract_text (pypdf) path unchanged. A failed
-OCR is a HARD error (OcrError): loud and retryable, never a silent skip that
-would drop a scanned document from the corpus."""
+through the ordinary profile_pdf/positioned_text (pypdfium2, pdf-redaction-locate)
+path unchanged. A failed OCR is a HARD error (OcrError): loud and retryable,
+never a silent skip that would drop a scanned document from the corpus."""
 from __future__ import annotations
 
 import os
@@ -31,9 +31,10 @@ class TesseractEngine:
     """Local OCR via ocrmypdf + tesseract (Dutch model). No cloud, no network.
 
     ocrmypdf rasterises and OCRs the image-only PDF and writes a searchable PDF
-    (`out.pdf`) whose text layer pypdf can extract; those bytes are the result.
-    The toolchain import and invocation are lazy: the born-digital path never
-    needs OCR, and any failure surfaces as OcrError.
+    (`out.pdf`) whose text layer `positioned_text` (pypdfium2) can extract;
+    those bytes are the result. The toolchain import and invocation are lazy:
+    the born-digital path never needs OCR, and any failure surfaces as
+    OcrError.
     """
 
     def __init__(self, lang: str = "nld"):
@@ -66,7 +67,8 @@ class TesseractEngine:
 class FixedOcrEngine:
     """Test double: renders the preset text into a real text-layer PDF
     (reportlab, dev-only, imported lazily). No OCR model, no binary, no network —
-    but the output honours the contract: PDF bytes whose text layer pypdf reads.
+    but the output honours the contract: PDF bytes whose text layer
+    `positioned_text` (pypdfium2) reads.
     """
 
     def __init__(self, text: str, lang: str = "nld"):

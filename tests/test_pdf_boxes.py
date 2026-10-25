@@ -22,7 +22,7 @@ def _pdf(draw) -> bytes:
 
 def test_single_value_gets_one_box_on_its_page():
     pdf = _pdf(lambda c: c.drawString(72, 800, "Aanvrager Jansen woont hier."))
-    boxes = build_box_map(pdf, "Aanvrager Jansen woont hier.",
+    boxes = build_box_map(pdf, "Aanvrager [PERSON:aaaaaaaa] woont hier.",
                           [("[PERSON:aaaaaaaa]", "Jansen")])
     assert len(boxes) == 1
     assert boxes[0].page == 0
@@ -33,7 +33,7 @@ def test_single_value_gets_one_box_on_its_page():
 
 def test_box_map_holds_no_value():
     pdf = _pdf(lambda c: c.drawString(72, 800, "Aanvrager Jansen woont hier."))
-    boxes = build_box_map(pdf, "Aanvrager Jansen woont hier.",
+    boxes = build_box_map(pdf, "Aanvrager [PERSON:aaaaaaaa] woont hier.",
                           [("[PERSON:aaaaaaaa]", "Jansen")])
     for b in boxes:
         assert "Jansen" not in repr(b)
@@ -45,7 +45,7 @@ def test_two_line_name_gives_two_rectangles():
         c.drawString(72, 800, "Aanvrager Jan"),
         c.drawString(72, 786, "sen woont hier"),
     ))
-    boxes = build_box_map(pdf, "Aanvrager Jansen woont hier",
+    boxes = build_box_map(pdf, "Aanvrager [PERSON:aaaaaaaa] woont hier",
                           [("[PERSON:aaaaaaaa]", "Jansen")])
     assert len(boxes) == 2
     assert {b.page for b in boxes} == {0}
@@ -57,13 +57,14 @@ def test_two_line_name_gives_two_rectangles():
 
 def test_value_not_located_fails_hard_with_no_partial_box_map():
     pdf = _pdf(lambda c: c.drawString(72, 800, "Jansen is hier."))
-    # pypdf_text claims two occurrences; the PDF itself has only one.
+    # The anonymised text claims two occurrences of the token; the PDF
+    # itself only has the value once.
+    anonymized = "[PERSON:aaaaaaaa] is hier. [PERSON:aaaaaaaa] weer."
     with pytest.raises(ValueNotLocatedError) as exc_info:
-        build_box_map(pdf, "Jansen is hier. Jansen weer.",
-                      [("[PERSON:aaaaaaaa]", "Jansen")])
+        build_box_map(pdf, anonymized, [("[PERSON:aaaaaaaa]", "Jansen")])
     exc = exc_info.value
     assert exc.token == "[PERSON:aaaaaaaa]"
-    assert exc.in_pypdf == 2
+    assert exc.in_anonymized == 2
     assert exc.in_positioned == 1
     assert "Jansen" not in str(exc)  # never the value, only counts
 

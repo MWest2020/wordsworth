@@ -20,9 +20,10 @@ from uuid import UUID
 from sqlalchemy import select
 
 from . import audit
-from .models import Document
+from .models import AuditRecord, Document
+from .pdf_text import TEXT_SOURCE
 from .pipeline import (current_state, document_domain, lists_hash_of,
-                       reanonymize)
+                       reanonymize, text_source_of)
 from .retry import is_transient
 from .states import State
 
@@ -98,12 +99,30 @@ def note_failure(session_factory, document_id: UUID, exc: Exception) -> None:
         pass          # take down the run it is bookkeeping for
 
 
+def _value_not_located_detail(session, document_id: UUID) -> str | None:
+    """The `problems` text for this document, if the run just finished ended
+    in `value-not-located` (pdf-redaction-locate) rather than a usable box
+    map. Names the PII type and the counts, never the value -- the same
+    contract the audit record itself keeps."""
+    row = session.execute(
+        select(AuditRecord.step, AuditRecord.payload)
+        .where(AuditRecord.document_id == document_id)
+        .order_by(AuditRecord.seq.desc()).limit(1)
+    ).first()
+    if row is None or row[0] != "value-not-located":
+        return None
+    payload = row[1] or {}
+    return (f"value-not-located: {payload.get('pii_type')} "
+            f"({payload.get('in_anonymized')} of {payload.get('in_positioned')} located)")
+
+
 def one(session_factory, document_id: UUID, *, make_anonymizer,
-        store, search_index=None, embedder=None, resolve_key_provider=None) -> str:
+        store, search_index=None, embedder=None,
+        resolve_key_provider=None) -> tuple[str, str | None]:
     with session_factory() as session:
         state = current_state(session, document_id)
         if state not in (State.INDEXED, State.ANONYMIZED):
-            return "skipped"
+            return "skipped", None
         anon = make_anonymizer(session, document_domain(session, document_id))
         # pdf-redaction: a key provider lets reanonymize recompute the box map
         # under the lists this run just reanonymized under; absent in
@@ -118,15 +137,21 @@ def one(session_factory, document_id: UUID, *, make_anonymizer,
                     search_index=search_index, embedder=embedder,
                     key_provider=key_provider, mapping_store=mapping_store)
         session.commit()
-    return "reanonymized"
+        # The text/embed/index work above succeeded regardless -- only the box
+        # map may not have (pdf-redaction-locate): report it, do not hide a
+        # reanonymized document behind a different counts bucket.
+        detail = _value_not_located_detail(session, document_id)
+    return "reanonymized", detail
 
 def outdated(session, ids, lists_hash: str | None):
-    """De documenten die nog niet onder deze lijst-hash zijn verwerkt.
+    """De documenten die nog niet onder deze lijst-hash zijn verwerkt, OF nog
+    niet onder de ene pdfium-extractie (pdf-redaction-locate).
 
-    Zie `pipeline.lists_hash_of`: "al bijgewerkt" is een feit uit het spoor en
-    geen tijdstempel die iemand moet onthouden.
+    Zie `pipeline.lists_hash_of`/`text_source_of`: "al bijgewerkt" is een feit
+    uit het spoor en geen tijdstempel die iemand moet onthouden.
     """
-    return [i for i in ids if lists_hash_of(session, i) != lists_hash]
+    return [i for i in ids if lists_hash_of(session, i) != lists_hash
+            or text_source_of(session, i) != TEXT_SOURCE]
 
 
 def indexed_ids(session) -> list[UUID]:
@@ -146,10 +171,13 @@ def run(session_factory, ids, *, make_anonymizer, store, search_index=None,
     problems: dict[str, str] = {}
     for n, document_id in enumerate(ids, 1):
         try:
-            counts[one(session_factory, document_id,
+            outcome, detail = one(session_factory, document_id,
                        make_anonymizer=make_anonymizer, store=store,
                        search_index=search_index, embedder=embedder,
-                       resolve_key_provider=resolve_key_provider)] += 1
+                       resolve_key_provider=resolve_key_provider)
+            counts[outcome] += 1
+            if detail is not None:
+                problems[str(document_id)] = detail
         except Exception as exc:   # never leaks text; entry left intact
             counts["retryable" if is_transient(exc) else "failed"] += 1
             problems[str(document_id)] = cause_chain(exc)

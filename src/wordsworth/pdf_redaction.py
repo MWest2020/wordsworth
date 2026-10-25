@@ -72,7 +72,7 @@ def redacted_cache_key(document_id: UUID, boxmap_hash: str) -> str:
 
 
 def compute_box_map(
-    session: Session, document_id: UUID, pdf_bytes: bytes, pypdf_text: str,
+    session: Session, document_id: UUID, pdf_bytes: bytes,
     anonymized_text: str, lists_hash: str | None,
     key_provider: KeyProvider, mapping_store: MappingStore,
 ) -> BoxMap | None:
@@ -85,14 +85,15 @@ def compute_box_map(
     items = _clear_values(session, document_id, anonymized_text, key_provider, mapping_store)
     state = audit.current_state(session, document_id)
     try:
-        boxes = build_box_map(pdf_bytes, pypdf_text, items)
+        boxes = build_box_map(pdf_bytes, anonymized_text, items)
     except ValueNotLocatedError as exc:
         audit.append(
             session, document_id=document_id,
             from_state=state.value, to_state=state.value,
             step="value-not-located",
             payload={"pii_type": label_of(exc.token),
-                     "in_pypdf": exc.in_pypdf, "in_positioned": exc.in_positioned},
+                     "in_anonymized": exc.in_anonymized,
+                     "in_positioned": exc.in_positioned},
         )
         return None
     payload = json.dumps(_serialise(boxes), sort_keys=True)

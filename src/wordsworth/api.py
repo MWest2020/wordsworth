@@ -1903,7 +1903,8 @@ def _document_meta(session: Session, document_id: UUID) -> dict | None:
         prev_ts = r.ts
     total_ms = (records[-1].ts - records[0].ts).total_seconds() * 1000
     anon = next((r.payload for r in records if r.step == "anonymize"), {})
-    counts = {k: v for k, v in anon.items() if k not in ("detections", "lists_hash")}
+    counts = {k: v for k, v in anon.items()
+             if k not in ("detections", "lists_hash", "text_source")}
     profile = next((r.payload for r in records if r.step == "profile"), {})
     reg = next((r.payload for r in records if r.step == "register"), {})
     doc = session.get(Document, document_id)

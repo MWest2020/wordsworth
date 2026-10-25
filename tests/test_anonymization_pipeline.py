@@ -35,9 +35,12 @@ def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf,
     assert "[BSN]" in stored and "[IBAN]" in stored and "[EMAIL]" in stored
     payload = _anonymize_payload(session, doc.id)
     # add-detection-confidence: counts per type + per-layer aggregates (no values)
-    assert {k: v for k, v in payload.items() if k not in ("detections", "lists_hash")} == {
+    assert {k: v for k, v in payload.items()
+           if k not in ("detections", "lists_hash", "text_source")} == {
         "email": 1, "iban": 1, "bsn": 1, "postcode": 0}
     assert payload["detections"]["deterministic"]["BSN"]["count"] == 1
+    # pdf-redaction-locate: the one PDF extraction this text came from.
+    assert payload["text_source"] == "pdfium-v1"
 
     ok, bad = audit.verify_chain(session)
     assert ok is True and bad is None
@@ -57,7 +60,8 @@ def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index,
 
     assert get_anonymized_text(session, doc.id) == "MARKER"
     payload = _anonymize_payload(session, doc.id)
-    assert {k: v for k, v in payload.items() if k not in ("detections", "lists_hash")} == {
+    assert {k: v for k, v in payload.items()
+           if k not in ("detections", "lists_hash", "text_source")} == {
         "custom": 7}
 
 

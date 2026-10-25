@@ -60,15 +60,22 @@ record with `view: "pdf"`, the resolved types, and no clear value.
 
 ## The `value-not-located` audit record
 
-A value is located **whole-word** in the PDF's own positioned text
-(pypdfium2), never by character offsets from the pypdf text the detectors ran
-over — the two extractors order and whitespace text differently, so an offset
-from one does not land on the right place in the other. When a value is
-found fewer times there than it occurs in the pypdf text, the run writes a
+Detection, profiling, the index text and the box map all read the **one** PDF
+extraction (`positioned_text`, pypdfium2, `text_source` `pdfium-v1`,
+pdf-redaction-locate) — pypdf is not used to extract PDF text any more. A
+space is inserted where pdfium itself emits none between two characters that
+sit far enough apart on a line; the inserted space has no character box, so
+nothing is drawn for it.
+
+A value is located **whole-word** in that positioned text. The count check: a
+token's count in the anonymised text must be at most the whole-word match
+count of its value in the positioned text. When it is not, the run writes a
 `value-not-located` audit record (the PII type and the two counts, never the
 value) and persists no box map — a partly-redacted PDF is never produced. The
 endpoint then answers 409 until a later run (after a text/lists change)
-locates it.
+locates it. `POST /reprocess` (see
+[reversible backfill](reversible-backfill.md)) lists every `value-not-located`
+outcome it hits in its `problems` response, by document, PII type and counts.
 
 ## How it is built
 
