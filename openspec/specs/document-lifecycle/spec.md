@@ -22,10 +22,12 @@ a pipeline nobody dares restart.
 
 Each ingested document SHALL progress through an explicit, ordered set of
 states: `registered`, `extractable`, `unprocessable_ocr`, `extracted`,
-`anonymized`, `indexed`, `failed`, and `superseded`. A document SHALL be in
-exactly one state at any time, and transitions SHALL follow only the defined
-edges. `superseded` SHALL be terminal and reachable from every state; it is
-the only edge that leaves `indexed` or `failed`.
+`anonymized`, `indexed`, `failed`, `superseded`, and `deleted`. A document SHALL
+be in exactly one state at any time, and transitions SHALL follow only the
+defined edges. `superseded` SHALL be terminal and reachable from every state; it
+is the only edge that leaves `indexed` or `failed` other than `deleted`.
+`deleted` SHALL be terminal and reachable from every state, including
+`superseded`.
 
 #### Scenario: New document enters as registered
 
@@ -42,6 +44,11 @@ the only edge that leaves `indexed` or `failed`.
 
 - **WHEN** an `indexed` document is superseded
 - **THEN** its state is `superseded`, and no transition leaves `superseded`
+
+#### Scenario: A deleted document stays deleted
+
+- **WHEN** a document has been deleted
+- **THEN** its state is `deleted` and no transition leaves `deleted`
 
 ### Requirement: Atomic transition and audit write
 
