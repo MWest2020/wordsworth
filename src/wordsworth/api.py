@@ -475,6 +475,14 @@ def create_app(
         from .key_audit_pg import PostgresKeyLifecycleAudit
         return PostgresKeyLifecycleAudit(session)
 
+    def _resolve_key_provider(session: Session) -> KeyProvider | None:
+        """The key provider for this session, or ``None`` outside reversible
+        mode (pdf-redaction): a document anonymized irreversibly has no
+        mapping to decrypt, so there is nothing a box map could locate."""
+        if key_provider_factory is not None:
+            return key_provider_factory(session)
+        return key_provider
+
     def _guard_corpus_read(request: Request) -> None:
         caller = getattr(request.state, "caller", None)
         if not authorize_corpus_read(caller, corpus_read_labels):
@@ -676,6 +684,61 @@ def create_app(
                                           view=view, legend=legend)
             return AnonymizedResponse(document_id=str(document_id),
                                       anonymized_text=anonymized_text)
+
+        if store is not None:
+
+            @app.get("/documents/{document_id}/redacted.pdf",
+                     summary="Redacted PDF: layout intact, PII gone from "
+                             "pixels and text",
+                     tags=["read"])
+            def redacted_pdf(document_id: UUID, request: Request) -> Response:
+                """The document's redacted PDF — rasterised, boxes painted
+                over every detected value, a typed label on each box, cached
+                under ``redacted/<doc>/<boxmap_hash>``. 409 if there is no box
+                map yet (reversible mode only; `reanonymize` builds one, or
+                refuses with a `value-not-located` audit record if a value
+                cannot be boxed) or if the current detection lists differ from
+                the ones the box map was made under (`stale`; `reanonymize`
+                refreshes it). 404 if the document is unknown."""
+                _guard_corpus_read(request)
+                from .detection_lists import DetectionLists
+                from .models import BoxMap
+                from .pdf_redaction import boxes_of, redacted_cache_key
+                from .pdf_render import render as render_pdf
+
+                with session_factory() as session:
+                    if current_state(session, document_id) is None:
+                        raise HTTPException(status_code=404,
+                                            detail="unknown document")
+                    box_map = session.get(BoxMap, document_id)
+                    if box_map is None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="no box map yet (reversible mode required; "
+                                   "reanonymize to build one)")
+                    # Compared against the lists AS CURRENTLY CONFIGURED, not
+                    # against the document's own audit trail: those two are
+                    # the same number right after `reanonymize` runs, by
+                    # construction, so comparing a document to itself could
+                    # never detect staleness. Staleness is the lists having
+                    # moved on git/deploy since the box map was made.
+                    current_hash = DetectionLists.load(
+                        default_settings.detection_lists_dir).hash
+                    if box_map.lists_hash != current_hash:
+                        raise HTTPException(status_code=409, detail="stale")
+                    cache_key = redacted_cache_key(document_id, box_map.boxmap_hash)
+                    if store.exists(cache_key):
+                        pdf_bytes = store.get(cache_key)
+                    else:
+                        doc = session.get(Document, document_id)
+                        source = store.get(doc.object_key)
+                        anonymized = get_anonymized_text(session, document_id) or ""
+                        _, legend = to_legible(anonymized)
+                        labels = {token: placeholder
+                                 for placeholder, token in legend.items()}
+                        pdf_bytes = render_pdf(source, boxes_of(box_map), labels)
+                        store.put(cache_key, pdf_bytes)
+                return Response(content=pdf_bytes, media_type="application/pdf")
 
         @app.get("/metrics", summary="Prometheus metrics", tags=["ops"])
         def metrics() -> Response:
@@ -964,6 +1027,8 @@ def create_app(
             stays correct even if the index was recreated (those docs become
             eligible again). Re-running a directory therefore resumes cleanly,
             processing only what is actually missing from the index."""
+            from .mapping_store import PostgresMappingStore
+
             key = "documents/" + hashlib.sha256(data).hexdigest()
             if search_index.has_object_key(key):
                 # Already processed — but a delivery into ANOTHER dossier still
@@ -1003,14 +1068,19 @@ def create_app(
             with session_factory() as session:
                 # Reversible mode binds a fresh session-scoped anonymizer (durable
                 # keys + mapping store) per document; default mode uses the shared
-                # irreversible driver.
+                # irreversible driver. The same session's key provider + a fresh
+                # mapping store let `process` compute the pdf-redaction box map
+                # right after anonymizing; absent in irreversible mode (None).
                 anon = _make_anonymizer(session, domain)
+                kp = _resolve_key_provider(session)
+                mstore = PostgresMappingStore(session) if kp is not None else None
                 doc = ingest(session, store, data, domain, filename, dossier,
                             source_url=source_url, fetched_at=fetched_at)
                 session.commit()
                 document_id = doc.id
                 state = process(session, document_id, store, anonymizer=anon,
-                                search_index=search_index, embedder=embedder)
+                                search_index=search_index, embedder=embedder,
+                                key_provider=kp, mapping_store=mstore)
                 session.commit()
                 if state == State.UNPROCESSABLE_OCR:
                     # Scanned page: OCR to a text layer, then resume the straat.
@@ -1025,7 +1095,8 @@ def create_app(
                     else:
                         state = process(session, document_id, store,
                                         anonymizer=anon,
-                                        search_index=search_index, embedder=embedder)
+                                        search_index=search_index, embedder=embedder,
+                                        key_provider=kp, mapping_store=mstore)
                         session.commit()
                 meta = _document_meta(session, document_id)
             return meta or {"document_id": str(document_id), "state": state.value}
@@ -1143,7 +1214,8 @@ def create_app(
                                 default_settings.detection_lists_dir).hash)
                 counts, problems = backfill.run(
                     session_factory, ids, make_anonymizer=_make_anonymizer,
-                    store=store, search_index=search_index, embedder=embedder)
+                    store=store, search_index=search_index, embedder=embedder,
+                    resolve_key_provider=_resolve_key_provider)
                 return ReprocessResponse(total=len(ids), problems=problems,
                                          **counts)
 
@@ -1364,6 +1436,119 @@ def create_app(
                 grant_id=body.grant_id,
                 by_legal_basis=by_basis,
             )
+
+        if store is not None:
+
+            @app.post("/documents/{document_id}/reveal.pdf", tags=["write"],
+                      summary="Reveal a document's redacted PDF, gated per "
+                              "type by a grant")
+            def reveal_pdf(document_id: UUID, body: RevealRequest,
+                           request: Request) -> Response:
+                """Like `/reveal`, but a PDF: the granted types are drawn in
+                clear, straight from the original page — every other type
+                keeps its box and label. Never cached or stored (a fresh
+                render every call); audited exactly like `/reveal`, with
+                `view=pdf` and no clear value in the audit trail. 409 if the
+                document has no box map yet; otherwise the same 404/403 as
+                `/reveal`."""
+                from .grants import authorize, permitted_types
+                from . import roles as roles_mod
+                from .mapping_store import PostgresMappingStore
+                from .models import BoxMap
+                from .pdf_redaction import boxes_of
+                from .pdf_render import render as render_pdf
+                from .pseudonymizer import deanonymize
+
+                now = datetime.now(timezone.utc)
+                with session_factory() as session:
+                    gs = grant_store_factory(session) if grant_store_factory else grant_store
+                    kp = _resolve_key_provider(session)
+
+                    grant = gs.get(body.grant_id)
+                    if grant is None:
+                        raise HTTPException(status_code=404, detail="unknown grant")
+                    if current_state(session, document_id) is None:
+                        raise HTTPException(status_code=404, detail="unknown document")
+                    copy = session.get(Document, document_id)
+                    if copy is not None and copy.superseded_by is not None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"document is superseded by {copy.superseded_by}; "
+                                   "reveal on that one")
+                    box_map = session.get(BoxMap, document_id)
+                    if box_map is None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="no box map yet (reversible mode required; "
+                                   "reanonymize to build one)")
+                    dom = document_domain(session, document_id)
+                    caller = getattr(request.state, "caller", None)
+
+                    def _resolve_role(naam: str) -> set[str]:
+                        return set(roles_mod.resolve(session, naam).types)
+
+                    rol_gaten = {"resolve_role": _resolve_role,
+                                 "global_roles": {roles_mod.ADMIN}}
+                    if not authorize(grant, document_id,
+                                     permitted_types(grant, _resolve_role),
+                                     now, dom, allow_global_grants, caller,
+                                     auth_enabled, **rol_gaten):
+                        raise HTTPException(status_code=403, detail="grant not applicable")
+                    pseudo_text = get_anonymized_text(session, document_id)
+                    if pseudo_text is None:
+                        raise HTTPException(
+                            status_code=409, detail="document not yet de-identified")
+                    requested = (body.types if body.types
+                                 else sorted(permitted_types(grant, _resolve_role)))
+                    allowed = authorize(grant, document_id, set(requested), now, dom,
+                                        allow_global_grants, caller, auth_enabled,
+                                        **rol_gaten)
+                    extra_audit = {"grant_id": body.grant_id, "view": "pdf"}
+                    if caller:
+                        extra_audit["caller"] = caller
+                    if grant.role:
+                        extra_audit["role"] = grant.role
+                        if grant.document_id is None:
+                            extra_audit["global_by_role"] = True
+                    try:
+                        allowed, vc_audit = apply_vc_gate(
+                            allowed, request.headers.get("x-vc"),
+                            public_key=vc_public_key,
+                            expected_vct=vc_expected_vct,
+                            expected_issuer=vc_expected_issuer,
+                            required=vc_required, now=now,
+                        )
+                    except VcError as exc:
+                        raise HTTPException(status_code=403, detail=f"vc rejected: {exc}")
+                    extra_audit.update(vc_audit)
+                    # deanonymize() writes the audit record this endpoint needs
+                    # (types + resolved pseudonyms, no clear value); its
+                    # returned TEXT is not used here — the PDF is rendered
+                    # straight from the original page, never from decrypted
+                    # values held in this frame.
+                    deanonymize(
+                        session, document_id, pseudo_text, kp,
+                        PostgresMappingStore(session), actor=grant.recipient,
+                        allowed_types=allowed, extra_audit=extra_audit,
+                    )
+                    resolved_pseudonyms = set(session.execute(
+                        select(AuditRecord.payload)
+                        .where(AuditRecord.document_id == document_id)
+                        .order_by(AuditRecord.seq.desc()).limit(1)
+                    ).scalar_one()["pseudonyms"])
+                    # A box whose token actually resolved is left out of the
+                    # redaction list entirely: its box is never painted, so
+                    # the original pixels AND the original invisible text
+                    # pass straight through — no clear value is handled here.
+                    boxes = [b for b in boxes_of(box_map)
+                            if b.token not in resolved_pseudonyms]
+                    _, legend = to_legible(pseudo_text)
+                    labels = {token: placeholder for placeholder, token in legend.items()}
+                    doc = session.get(Document, document_id)
+                    source = store.get(doc.object_key)
+                    pdf_bytes = render_pdf(source, boxes, labels)
+                    session.commit()
+                return Response(content=pdf_bytes, media_type="application/pdf")
 
     if session_factory is not None and generator is not None:
 

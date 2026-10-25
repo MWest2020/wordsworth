@@ -2010,7 +2010,9 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "pypdf" },
+    { name = "pypdfium2" },
     { name = "python-multipart" },
+    { name = "reportlab" },
     { name = "scipy" },
     { name = "sqlalchemy" },
     { name = "uvicorn", extra = ["standard"] },
@@ -2020,7 +2022,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "reportlab" },
 ]
 
 [package.metadata]
@@ -2036,7 +2037,9 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pypdf", specifier = ">=6.21.2" },
+    { name = "pypdfium2", specifier = ">=5.11.0" },
     { name = "python-multipart", specifier = ">=0.0.18" },
+    { name = "reportlab", specifier = ">=5.0.0" },
     { name = "scipy", specifier = ">=1.11" },
     { name = "sqlalchemy", specifier = ">=2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
@@ -2044,10 +2047,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "reportlab", specifier = ">=5.0.0" },
-]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "zeef"

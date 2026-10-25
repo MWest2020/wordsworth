@@ -64,6 +64,17 @@ failed}`.
 - The pre-existing corpus's original bytes must still be in the object store
   (they are, unless orphan-cleaned); the backfill reads from there.
 
+## Also backfills the redacted-PDF box map
+
+Since `pdf-redaction`, `reanonymize` computes the box map (page, rect, token —
+never a value) right after re-deriving the text, whenever a key provider and
+mapping store are passed through — which `wordsworth reprocess`/`POST
+/reprocess` now do automatically in reversible mode. Running this backfill
+over the 12 pilot documents and `gooise-meren-woo-2022` therefore also builds
+their box maps; a document the run could not locate a value for gets a
+`value-not-located` audit record instead of a box map, and is reported in
+`problems`, not hidden. See [pdf-redaction](pdf-redaction.md).
+
 ## After a normalisation-profile change
 
 Tokens are derived from `normalize(type, value)` (see `normalization.py`,

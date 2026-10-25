@@ -43,3 +43,5 @@ under `openspec/`.
     `lists_hash` in audit, the feedback endpoint.
   - [dataset pseudonymisation](how-to/dataset-pseudonymisation.md) — CSV
     column path: profiles, per-attribute/per-record, NEN 7524-style output.
+  - [pdf-redaction](how-to/pdf-redaction.md) — the redacted/reveal PDF
+    endpoints, the `stale`/`value-not-located` responses, how it is built.
