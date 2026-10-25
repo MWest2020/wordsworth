@@ -113,7 +113,7 @@ def _value_not_located_detail(session, document_id: UUID) -> str | None:
         return None
     payload = row[1] or {}
     return (f"value-not-located: {payload.get('pii_type')} "
-            f"({payload.get('in_anonymized')} of {payload.get('in_positioned')} located)")
+            f"({payload.get('in_positioned')} of {payload.get('in_anonymized')} located)")
 
 
 def one(session_factory, document_id: UUID, *, make_anonymizer,

@@ -6,13 +6,14 @@ a value that was found once exists here to be found again.
 
 pypdfium2 inserts ``\\r\\n`` between lines it detects by layout, which breaks a
 literal match of a value that wraps across two lines. We therefore search a
-per-page copy of the text with line breaks removed (keeping each surviving
-character's box, or ``None`` for a space `pdf_text.page_chars` inserted), then
-split the matched characters back into per-line rectangles by where their
-vertical position jumps. A merge that joins two unrelated words at a page's
-line boundary can only ever cause a MISSED match (the trailing/leading word
-character fails the match's own word-boundary check) — never a wrong one; a
-miss is exactly what the fail-hard count check below is for.
+per-page copy of the text with every run of ``\\r``/``\\n`` collapsed to one
+space (keeping each surviving character's box, or ``None`` for a space —
+this one or one `pdf_text.page_chars` inserted), and match a value's words
+with optional whitespace between them, then split the matched characters
+back into per-line rectangles by where their vertical position jumps. A
+value is matched the way its PII type is normalised: case-insensitively for
+the casefold types, whitespace-insensitively for POSTCODE, exactly
+otherwise (pdf-redaction-match).
 """
 from __future__ import annotations
 
@@ -21,7 +22,9 @@ from dataclasses import dataclass
 
 import pypdfium2 as pdfium
 
+from .normalization import RULES, _casefold, _postcode
 from .pdf_text import Char, page_chars
+from .pseudonymizer import label_of
 
 
 @dataclass(frozen=True)
@@ -59,19 +62,37 @@ class ValueNotLocatedError(Exception):
         self.in_positioned = in_positioned
 
 
-def _whole_word(value: str) -> re.Pattern[str]:
-    return re.compile(r"(?<!\w)" + re.escape(value) + r"(?!\w)")
+def _whole_word(value: str, *, flags: int = 0, whitespace_insensitive: bool = False) -> re.Pattern[str]:
+    """A whole-word pattern for ``value``. Its words (split on whitespace) are
+    joined with ``\\s*``, so a value detected across a line break — where
+    ``_flatten`` leaves a single space or nothing — still matches.
+    ``whitespace_insensitive`` additionally makes every whitespace position
+    INSIDE a word optional (POSTCODE: normalisation strips whitespace
+    everywhere, not only between words)."""
+    if whitespace_insensitive:
+        body = r"\s*".join(re.escape(c) for c in value if not c.isspace())
+    else:
+        body = r"\s*".join(re.escape(w) for w in value.split())
+    return re.compile(r"(?<!\w)" + body + r"(?!\w)", flags)
 
 
 def _flatten(chars: list[Char]) -> tuple[str, list[tuple[float, float, float, float] | None]]:
-    """``chars`` with every ``\\r``/``\\n`` dropped: the text to search, plus
-    each surviving character's box (``None`` for an inserted space — nothing
-    is drawn for it on its own)."""
+    """``chars`` with every RUN of ``\\r``/``\\n`` collapsed to one space: the
+    text to search, plus each surviving character's box (``None`` for a
+    space — either this one or one `page_chars` inserted — nothing is drawn
+    for it on its own). A line break thus acts as a word separator, never
+    joining the last word of a line to the first word of the next."""
     text: list[str] = []
     rects: list[tuple[float, float, float, float] | None] = []
+    in_break = False
     for c in chars:
         if c.char in "\r\n":
+            if not in_break:
+                text.append(" ")
+                rects.append(None)
+                in_break = True
             continue
+        in_break = False
         text.append(c.char)
         rects.append(c.rect)
     return "".join(text), rects
@@ -132,7 +153,10 @@ def build_box_map(
             if not value:
                 continue
             expected = anonymized_text.count(token)
-            pattern = _whole_word(value)
+            rule = RULES.get(label_of(token))
+            pattern = _whole_word(
+                value, flags=re.IGNORECASE if rule is _casefold else 0,
+                whitespace_insensitive=rule is _postcode)
             found = 0
             for page_index, (flat, rects) in enumerate(page_data):
                 for m in pattern.finditer(flat):
