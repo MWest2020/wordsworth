@@ -67,15 +67,25 @@ space is inserted where pdfium itself emits none between two characters that
 sit far enough apart on a line; the inserted space has no character box, so
 nothing is drawn for it.
 
-A value is located **whole-word** in that positioned text. The count check: a
-token's count in the anonymised text must be at most the whole-word match
-count of its value in the positioned text. When it is not, the run writes a
-`value-not-located` audit record (the PII type and the two counts, never the
-value) and persists no box map — a partly-redacted PDF is never produced. The
-endpoint then answers 409 until a later run (after a text/lists change)
-locates it. `POST /reprocess` (see
+A value is located **whole-word** in that positioned text. A line break acts
+as a word separator (each run of it becomes one such space), so the last
+word of a line is never glued to the first word of the next; a value's own
+words are matched with optional whitespace between them, so a value detected
+across a line break — carrying a literal break of its own — still matches.
+Matching otherwise follows the value's normalisation rule
+(pdf-redaction-match): case-insensitive for the casefold types (PERSON,
+ORGANIZATION, LOCATION, EMAIL), whitespace-insensitive for POSTCODE, and
+exact for every other type.
+
+The count check: a token's count in the anonymised text must be at most the
+whole-word match count of its value in the positioned text. When it is not,
+the run writes a `value-not-located` audit record (the PII type and the two
+counts, never the value) and persists no box map — a partly-redacted PDF is
+never produced. The endpoint then answers 409 until a later run (after a
+text/lists change) locates it. `POST /reprocess` (see
 [reversible backfill](reversible-backfill.md)) lists every `value-not-located`
-outcome it hits in its `problems` response, by document, PII type and counts.
+outcome it hits in its `problems` response, by document, PII type and the
+counts (`located of in-text`, e.g. `0 of 1 located`).
 
 ## How it is built
 

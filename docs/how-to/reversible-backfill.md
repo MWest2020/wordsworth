@@ -73,7 +73,10 @@ mapping store are passed through — which `wordsworth reprocess`/`POST
 over the 12 pilot documents and `gooise-meren-woo-2022` therefore also builds
 their box maps; a document the run could not locate a value for gets a
 `value-not-located` audit record instead of a box map, and is reported in
-`problems`, not hidden. See [pdf-redaction](pdf-redaction.md).
+`problems`, not hidden — naming the document, the PII type and the counts,
+read `located of in-text` (e.g. `0 of 1 located` means the value occurs once
+in the text and none of its occurrences could be located), never the value.
+See [pdf-redaction](pdf-redaction.md).
 
 ## After the one-PDF-extraction change (pdf-redaction-locate)
 

@@ -141,6 +141,23 @@ def test_reprocess_skips_what_is_already_current(session_factory, tmp_path,
     assert alles["total"] == 2
 
 
+def test_value_not_located_detail_reads_located_of_in_text(session_factory):
+    """pdf-redaction-match: the counts read `located of in-text`, not the
+    other way round -- `0 of 1 located` means 1 occurrence in the text and
+    none located, never the reverse."""
+    from wordsworth.reprocess import _value_not_located_detail
+
+    with session_factory() as s:
+        doc_id = _doc(s, "abc123")
+        audit.append(s, document_id=doc_id, from_state=State.INDEXED.value,
+                     to_state=State.INDEXED.value, step="value-not-located",
+                     payload={"pii_type": "PERSON", "in_anonymized": 1,
+                              "in_positioned": 0})
+        s.flush()
+        assert _value_not_located_detail(s, doc_id) == \
+            "value-not-located: PERSON (0 of 1 located)"
+
+
 def test_a_failure_leaves_a_trace_in_the_trail(session_factory, mem_store,
                                                mem_index, fake_embedder):
     """Dit is waarom de lus één plek heeft.
