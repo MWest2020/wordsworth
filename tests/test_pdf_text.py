@@ -129,3 +129,53 @@ def test_pypdf_joins_cells_the_new_text_does_not():
     boxes = build_box_map(pdf, "[DATE_MONTH:bbbbbbbb]",
                           [("[DATE_MONTH:bbbbbbbb]", "oktober")])
     assert {b.token for b in boxes} == {"[DATE_MONTH:bbbbbbbb]"}
+
+
+class _DegenerateTextpage:
+    """A textpage whose tight boxes are 0.01 pt high -- what pdfium reported for
+    every character of the Word-exported Gooise Meren Woo PDFs (2026-10-26)."""
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def count_chars(self):
+        return len(self.text)
+
+    def get_text_range(self, start, n):
+        return self.text[start:start + n]
+
+    def get_charbox(self, i, loose=False):
+        x0 = 10.0 + 6.0 * i
+        if loose:
+            return (x0, 700.0, x0 + 5.5, 708.0)
+        return (x0, 704.0, x0 + 5.5, 704.01)
+
+
+def test_char_box_falls_back_to_the_loose_box_when_the_tight_one_is_degenerate():
+    from wordsworth.pdf_text import char_box
+
+    x0, y0, x1, y1 = char_box(_DegenerateTextpage("Jansen"), 0)
+    assert y1 - y0 == 8.0
+
+
+def test_page_chars_carry_boxes_with_a_surface_on_degenerate_fonts():
+    chars = page_chars(_DegenerateTextpage("Jansen woont"))
+    rects = [c.rect for c in chars if c.rect is not None]
+    assert rects and all(r[3] - r[1] >= 0.5 for r in rects)
+
+
+def test_a_normal_tight_box_is_kept():
+    from wordsworth.pdf_text import char_box
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 700, "Jansen")
+    c.save()
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(buf.getvalue())
+    tp = pdf[0].get_textpage()
+    assert char_box(tp, 0) == tuple(tp.get_charbox(0))
+    tp.close()
+    pdf.close()

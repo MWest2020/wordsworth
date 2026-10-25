@@ -87,6 +87,20 @@ text/lists change) locates it. `POST /reprocess` (see
 outcome it hits in its `problems` response, by document, PII type and the
 counts (`located of in-text`, e.g. `0 of 1 located`).
 
+## Character boxes: tight, or loose when tight is empty
+
+Every box comes from `pdf_text.char_box`: pdfium's tight character box, or
+its loose box (the font's full bounds) when the tight one is degenerate.
+The Word-exported PDFs of the Gooise Meren Woo dossier report a tight box
+0.01 pt high for every character (2026-10-26). Box maps built from those
+covered nothing, and the first "redacted" PDFs showed every name; those
+cached renders were deleted the same day.
+
+The render refuses a box with no surface (`DegenerateBoxError`); the two
+PDF endpoints answer 409 `"box map unusable ..."` until `reanonymize`
+rebuilds the box map with real boxes. A redacted PDF that hides nothing is
+never served.
+
 ## How it is built
 
 Every page is rasterised at 300 dpi; the rectangles are painted into the

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A redacted PDF hid nothing on real documents.** pdfium reported a tight
+  character box 0.01 pt high for every character of the Word-exported Gooise
+  Meren Woo PDFs, so every redaction box had zero height and the page raster
+  kept every name. `pdf_text.char_box` now falls back to the loose box when
+  the tight one is degenerate (text, box map and render all use it), the
+  render refuses a box without surface, and both PDF endpoints answer 409
+  until the box map is rebuilt. The two cached renders were deleted.
+
 ### Added
 
 - **Web addresses are detected** (`urls-are-detected`, issue #124). A

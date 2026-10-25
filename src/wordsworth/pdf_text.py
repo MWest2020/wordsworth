@@ -58,6 +58,24 @@ class Char:
     rect: Rect | None
 
 
+# A tight charbox thinner or narrower than this is degenerate. Real documents
+# have it: Word-exported Woo PDFs of the Gooise Meren dossier gave a tight box
+# 0.01 pt high for every character (2026-10-26), and a redaction box built
+# from those covered nothing -- the "redacted" PDF showed every name.
+_DEGENERATE_PT = 0.5
+
+
+def char_box(textpage, index: int) -> Rect:
+    """The box of one character: pdfium's tight box, or its loose box (the
+    font's full bounds) when the tight one is degenerate. The one place every
+    caller takes a character's box from -- text, box map and render must agree
+    on where a glyph is, or the text layer and the paint disagree."""
+    x0, y0, x1, y1 = textpage.get_charbox(index)
+    if (y1 - y0) < _DEGENERATE_PT or (x1 - x0) <= 0:
+        x0, y0, x1, y1 = textpage.get_charbox(index, loose=True)
+    return (x0, y0, x1, y1)
+
+
 def _needs_space(prev_rect: Rect, rect: Rect) -> bool:
     height = max(prev_rect[3] - prev_rect[1], rect[3] - rect[1], 1.0)
     gap = rect[0] - prev_rect[2]
@@ -80,7 +98,7 @@ def page_chars(textpage) -> list[Char]:
             chars.append(Char(ch, None))
             prev_rect = None
             continue
-        rect = textpage.get_charbox(i)
+        rect = char_box(textpage, i)
         if prev_rect is not None and ch != " " and _needs_space(prev_rect, rect):
             chars.append(Char(" ", None))
         chars.append(Char(ch, rect))

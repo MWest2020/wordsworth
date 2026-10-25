@@ -142,3 +142,12 @@ def test_tesseract_finds_no_name_in_the_raster():
     found = pytesseract.image_to_string(image, lang="nld")
     assert NAME not in found
     assert BSN not in found
+
+
+def test_a_box_without_surface_is_refused_not_rendered():
+    from wordsworth.pdf_boxes import Box, Rect
+    from wordsworth.pdf_render import DegenerateBoxError
+
+    flat = Box(0, Rect(168.5, 724.1, 184.0, 724.1), "[PERSON:aaaaaaaa]")
+    with pytest.raises(DegenerateBoxError):
+        render(_source_pdf(), [flat], LABELS)
