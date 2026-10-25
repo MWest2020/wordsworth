@@ -31,6 +31,7 @@ from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .deletion import DeletionError, delete_document
+from .dossier_deletion import DossierDeletionError, delete_dossier
 from .embedder import Embedder
 from .generator import Generator
 from .grants import GrantStore, caller_holds_role
@@ -813,6 +814,29 @@ def create_app(
                                             detail="unknown document")
                     session.commit()
                 return {"document_id": str(document_id), **counts.as_dict()}
+
+            @app.delete("/dossiers/{dossier_id}",
+                       summary="Delete a dossier (irreversible)",
+                       tags=["write"])
+            def delete_dossier_endpoint(dossier_id: UUID, request: Request) -> dict:
+                """Remove the dossier's memberships and the dossier row. A
+                member document is deleted, as above, only if it belongs to no
+                other dossier; one that belongs to another dossier too keeps
+                its content and loses only its membership of this one. Same
+                guard as document deletion: only role `beheerder` or an
+                issuer label may call this, 403 for anyone else, 404 for an
+                unknown dossier. There is no undo."""
+                with session_factory() as session:
+                    _guard_delete(request, session)
+                    try:
+                        report = delete_dossier(
+                            session, dossier_id, store, search_index,
+                            actor=_actor(request))
+                    except DossierDeletionError:
+                        raise HTTPException(status_code=404,
+                                            detail="unknown dossier")
+                    session.commit()
+                return {"dossier_id": str(dossier_id), **report.as_dict()}
 
         @app.get("/export/anonymized.zip",
                  summary="Export de-identified document texts as a ZIP",

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""`wordsworth-delete`: remove one or more documents' content.
+"""`wordsworth-delete`: remove one or more documents' content, or a dossier.
 
 ``--dry-run`` reports the counts it would remove, using the exact same code
 path as a real run (`deletion.delete_document`), and stops before the first
@@ -8,14 +8,15 @@ named document is deleted and committed on its own -- the same shape as
 `wordsworth-dedupe` -- so a failure partway through a multi-document run
 leaves only the untouched documents for a rerun to finish.
 
-Only role `beheerder` or a configured issuer label may run this without
+``--dossier`` deletes a dossier instead (the CLI counterpart of
+`DELETE /dossiers/{id}`, `dossier_deletion.delete_dossier`): its memberships
+and the dossier row go, and a member document is deleted only if it belongs to
+no other dossier. ``--dry-run`` reports which documents would be deleted and
+which only released, through that same code path.
+
+Only role `beheerder` or a configured issuer label may run either without
 ``--dry-run``; ``--actor`` names who is asking, checked the same way the API
 checks a caller (`auth.authorize_delete`). A refusal removes nothing.
-
-Deleting a dossier -- the CLI counterpart of `DELETE /dossiers/{id}` -- is not
-here. The proposal leaves open what happens to a document a second dossier
-also holds, and to the dossier row itself; this command does not guess either
-answer.
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from uuid import UUID
 from . import roles
 from .auth import authorize_delete
 from .deletion import DeletionError, delete_document
+from .dossier_deletion import DossierDeletionError, delete_dossier
 from .grants import caller_holds_role
 
 
@@ -47,6 +49,21 @@ def run(session_factory, store, index, document_ids: list[UUID], *,
     return {"dry_run": dry_run, "results": results}
 
 
+def run_dossier(session_factory, store, index, dossier_id: UUID, *,
+                dry_run: bool, actor: str) -> dict:
+    with session_factory() as session:
+        try:
+            report = delete_dossier(session, dossier_id, store, index,
+                                    actor=actor, dry_run=dry_run)
+        except DossierDeletionError as exc:
+            return {"dry_run": dry_run,
+                   "results": [{"dossier_id": str(dossier_id), "error": str(exc)}]}
+        if not dry_run:
+            session.commit()
+        return {"dry_run": dry_run,
+               "results": [{"dossier_id": str(dossier_id), **report.as_dict()}]}
+
+
 def main(argv: list[str] | None = None, *, session_factory=None, store=None,
         index=None, issuer_labels: list[str] | None = None) -> int:
     """Entry point. ``session_factory``/``store``/``index``/``issuer_labels``
@@ -57,8 +74,13 @@ def main(argv: list[str] | None = None, *, session_factory=None, store=None,
         prog="wordsworth-delete",
         description="Remove a document's content: the stored object, its "
                     "text, its pseudonyms, its mappings, its index entry and "
-                    "its grants. The documents row and its audit trail stay.")
-    ap.add_argument("document", nargs="+", help="document id(s) (uuid)")
+                    "its grants. The documents row and its audit trail stay. "
+                    "With --dossier, remove a dossier instead: its "
+                    "memberships and the dossier row, deleting each member "
+                    "that belongs to no other dossier.")
+    ap.add_argument("document", nargs="*", help="document id(s) (uuid)")
+    ap.add_argument("--dossier", help="dossier id (uuid) -- delete the "
+                    "dossier instead of named documents")
     ap.add_argument("--dry-run", action="store_true",
                     help="report the counts; remove nothing")
     ap.add_argument("--actor", required=True,
@@ -66,10 +88,14 @@ def main(argv: list[str] | None = None, *, session_factory=None, store=None,
                          "or WORDSWORTH_GRANT_ISSUER_LABELS")
     args = ap.parse_args(argv)
 
+    if bool(args.document) == bool(args.dossier):
+        ap.error("give document id(s), or --dossier <id>, not both and not neither")
+
     try:
         document_ids = [UUID(d) for d in args.document]
+        dossier_id = UUID(args.dossier) if args.dossier else None
     except ValueError as exc:
-        ap.error(f"not a document id: {exc}")
+        ap.error(f"not a uuid: {exc}")
 
     if session_factory is None:
         from .db import make_engine, make_session_factory
@@ -96,8 +122,12 @@ def main(argv: list[str] | None = None, *, session_factory=None, store=None,
 
         index = OpenSearchIndex.from_config()
 
-    report = run(session_factory, store, index, document_ids,
-                dry_run=args.dry_run, actor=args.actor)
+    if dossier_id is not None:
+        report = run_dossier(session_factory, store, index, dossier_id,
+                             dry_run=args.dry_run, actor=args.actor)
+    else:
+        report = run(session_factory, store, index, document_ids,
+                    dry_run=args.dry_run, actor=args.actor)
     print(json.dumps(report, indent=2, default=str))
     return 1 if any("error" in r for r in report["results"]) else 0
 

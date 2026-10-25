@@ -37,6 +37,7 @@ from .audit import current_state
 #: having to interpret a payload.
 ADDED = "dossier_added"
 REMOVED = "dossier_removed"
+DELETED = "dossier-deleted"
 
 
 class MissingAuditStream(RuntimeError):
@@ -79,6 +80,27 @@ def membership_changed(session: Session, *, document_id: UUID, dossier_id: UUID,
         payload["batch"] = batch
     audit.append(session, document_id=document_id, from_state=state.value,
                  to_state=state.value, step=step, payload=payload)
+
+
+def dossier_deleted(session: Session, *, document_id: UUID, dossier_id: UUID,
+                    actor: str, released: bool) -> None:
+    """Record that deleting a dossier touched this document: deleted (it
+    belonged to no other dossier) or released (only its membership here went;
+    another dossier still holds it).
+
+    `from == to`, for the same reason as `membership_changed`: a document
+    released from a dossier does not change state, and one that was also
+    deleted already has its own `delete` record for the content -- this one
+    is about the DOSSIER's removal, keyed by the document because the audit
+    table has no other home for a dossier-only fact.
+    """
+    state = current_state(session, document_id)
+    if state is None:
+        raise ValueError(f"document {document_id} has no audit record to extend")
+    payload = {"dossier_id": str(dossier_id), "actor": actor,
+              "action": "released" if released else "deleted"}
+    audit.append(session, document_id=document_id, from_state=state.value,
+                 to_state=state.value, step=DELETED, payload=payload)
 
 
 def renamed(session: Session, lifecycle, *, dossier, old: str, actor: str) -> None:
