@@ -146,6 +146,13 @@ in de pod die het verkeer bedient: een meting daar legde die pod om (OOM).
 Die run moest halverwege onderbroken worden. Zónder `only_outdated` had de
 vervolgrun de 200 afgeronde documenten overgedaan — dáárom bestaat de vlag.
 
+**De redacted PDF wordt stale.** `reanonymize` herbouwt ook de box map
+(pdf-redaction); zolang dat niet is gebeurd, antwoordt
+`GET /documents/{id}/redacted.pdf` met 409 `stale` zodra de huidige lijsten
+afwijken van de lijsten waaronder die box map is gemaakt — ook als het
+document zelf nog niet opnieuw is verwerkt. Pas na deze run (of een losse
+`reanonymize` op dat document) levert het eindpunt weer een PDF.
+
 A reader who spots a false positive or a miss records it against the document:
 ```
 curl -XPOST $API/documents/<doc>/feedback -H 'content-type: application/json' \

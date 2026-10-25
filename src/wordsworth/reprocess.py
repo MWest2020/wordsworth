@@ -99,14 +99,24 @@ def note_failure(session_factory, document_id: UUID, exc: Exception) -> None:
 
 
 def one(session_factory, document_id: UUID, *, make_anonymizer,
-        store, search_index=None, embedder=None) -> str:
+        store, search_index=None, embedder=None, resolve_key_provider=None) -> str:
     with session_factory() as session:
         state = current_state(session, document_id)
         if state not in (State.INDEXED, State.ANONYMIZED):
             return "skipped"
         anon = make_anonymizer(session, document_domain(session, document_id))
+        # pdf-redaction: a key provider lets reanonymize recompute the box map
+        # under the lists this run just reanonymized under; absent in
+        # irreversible mode, where there is no mapping to decrypt anyway.
+        key_provider = resolve_key_provider(session) if resolve_key_provider else None
+        mapping_store = None
+        if key_provider is not None:
+            from .mapping_store import PostgresMappingStore
+
+            mapping_store = PostgresMappingStore(session)
         reanonymize(session, document_id, store, anonymizer=anon,
-                    search_index=search_index, embedder=embedder)
+                    search_index=search_index, embedder=embedder,
+                    key_provider=key_provider, mapping_store=mapping_store)
         session.commit()
     return "reanonymized"
 
@@ -126,7 +136,7 @@ def indexed_ids(session) -> list[UUID]:
 
 
 def run(session_factory, ids, *, make_anonymizer, store, search_index=None,
-        embedder=None, on_progress=None) -> tuple[dict, dict]:
+        embedder=None, on_progress=None, resolve_key_provider=None) -> tuple[dict, dict]:
     """Verwerk `ids` en geef (tellingen, problemen).
 
     `on_progress(n, totaal)` wordt na elk document aangeroepen, zodat een Job
@@ -138,7 +148,8 @@ def run(session_factory, ids, *, make_anonymizer, store, search_index=None,
         try:
             counts[one(session_factory, document_id,
                        make_anonymizer=make_anonymizer, store=store,
-                       search_index=search_index, embedder=embedder)] += 1
+                       search_index=search_index, embedder=embedder,
+                       resolve_key_provider=resolve_key_provider)] += 1
         except Exception as exc:   # never leaks text; entry left intact
             counts["retryable" if is_transient(exc) else "failed"] += 1
             problems[str(document_id)] = cause_chain(exc)

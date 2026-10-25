@@ -117,6 +117,16 @@ Only the granted types are revealed; every other type stays pseudonymised. The
 access is audited (actor = grant recipient, plus the `grant_id`), never logging
 clear values.
 
+**As a PDF**, with the layout intact:
+```sh
+curl -XPOST $API/documents/<doc>/reveal.pdf -H 'content-type: application/json' \
+  -d '{"grant_id":"<grant_id>","types":["PERSON"]}' -o reveal.pdf
+```
+Same grant, same gates (see [pdf-redaction](pdf-redaction.md) for the full
+contract) — the granted types are drawn in clear on the page, every other type
+keeps its box and label. Never cached, never stored; audited exactly like
+`/reveal`, as a `deanonymize` record with `view: "pdf"` and no clear value.
+
 ### Three type lists, and why they differ
 
 | veld | betekenis |

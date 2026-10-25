@@ -19,6 +19,15 @@ dependencies = [
     "pydantic>=2",
     "python-multipart>=0.0.18",
     "pypdf>=6.21.2",  # 6.19.0: three HIGH DoS CVEs (CVE-2026-115572, -115580, -115585)
+    # pdf-redaction: pypdfium2 (confirmed via package metadata: "BSD-3-Clause,
+    # Apache-2.0, dependency licenses" -- its own code dual BSD-3-Clause/
+    # Apache-2.0, bundling Google's PDFium under the same) gives the
+    # positioned text + rasterisation the box map and the redacted render
+    # need; reportlab (confirmed: "BSD license") rebuilds the output PDF --
+    # both MIT-compatible (CLAUDE.md), so moved here from the dev group
+    # rather than left a dev-only dependency.
+    "pypdfium2>=5.11.0",
+    "reportlab>=5.0.0",
     # Agglomeratieve clustering voor onderwerpen. Kwam tot nu toe mee via zeef;
     # rechtstreeks gebruiken betekent zelf verklaren, anders verdwijnt hij bij
     # de eerste keer dat zeef iets anders kiest.
@@ -72,5 +81,4 @@ zeef = { git = "https://github.com/MWest2020/zeef" }
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "reportlab>=5.0.0",
 ]

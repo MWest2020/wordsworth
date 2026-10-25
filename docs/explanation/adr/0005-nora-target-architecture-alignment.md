@@ -85,6 +85,16 @@ Recommend: **out of core.** wordsworth emits de-identified text, JSON and
 (with `add-legible-placeholders`) a legible view; re-rendering a docx/PDF with
 placeholders is a separate render component behind the API, like the console.
 
+> **Amended 2026-10 (`pdf-redaction`), narrowly.** A **redacted rendering of
+> the source PDF** is a core output after all: the guarantee a redacted file
+> makes — the text under the box is gone, not merely covered — can only be
+> given by the code that holds the detections, so a separate render component
+> would need to hold that same data and would simply be the core again under
+> another name. `GET /documents/{id}/redacted.pdf` and
+> `POST /documents/{id}/reveal.pdf` are therefore part of the API, not a
+> separate service. Every other rendered format (docx and the like) stays
+> out, for the reason above: D11 otherwise stands.
+
 ## Consequences
 
 - Eight OpenSpec proposals implement the compatible gaps; the order is in the

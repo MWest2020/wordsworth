@@ -30,7 +30,8 @@ from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
-from .keys import DEFAULT_DOMAIN
+from .keys import DEFAULT_DOMAIN, KeyProvider
+from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
 from .object_store import ObjectStore
 from .profiling import ProfilingError, profile_pdf
@@ -237,8 +238,16 @@ def process(
     anonymizer: Anonymizer | None = None,
     search_index: SearchIndex | None = None,
     embedder: Embedder | None = None,
+    key_provider: KeyProvider | None = None,
+    mapping_store: MappingStore | None = None,
 ) -> State:
     """Advance one document from its current state until terminal. Resumable.
+
+    ``key_provider``/``mapping_store`` are optional and both-or-neither
+    (pdf-redaction): given, the box map is computed right after anonymizing,
+    by transiently decrypting this document's own just-minted pseudonyms —
+    the irreversible driver mints no mapping, so a document anonymized
+    without them simply gets no box map, not a guess.
 
     Source bytes are fetched from object storage by the document's recorded key —
     never received directly. Resume/re-processing re-fetches deterministically by
@@ -308,6 +317,11 @@ def process(
         transition(session, document_id, State.ANONYMIZED, step="anonymize",
                    payload={**result.counts, "detections": result.detections,
                             "lists_hash": result.lists_hash})
+        if key_provider is not None and mapping_store is not None:
+            from .pdf_redaction import compute_box_map
+
+            compute_box_map(session, document_id, pdf(), text, result.text,
+                            result.lists_hash, key_provider, mapping_store)
         state = State.ANONYMIZED
 
     if state == State.ANONYMIZED:
@@ -369,6 +383,8 @@ def reanonymize(
     anonymizer: Anonymizer | None = None,
     search_index: SearchIndex | None = None,
     embedder: Embedder | None = None,
+    key_provider: KeyProvider | None = None,
+    mapping_store: MappingStore | None = None,
 ) -> State:
     """Re-run the de-identify step of an already-processed document through the
     CURRENT (injected) anonymizer, then re-index and overwrite the stored text.
@@ -397,7 +413,8 @@ def reanonymize(
     embed = embedder or _default_embedder()
 
     # Re-derive the source text from the stored bytes (never a clear-text store).
-    text = extract_text(store.get(doc.object_key))
+    raw = store.get(doc.object_key)
+    text = extract_text(raw)
 
     # Compute + embed + re-index the NEW de-identified text first; a transient
     # blip is retried, a persistent failure propagates with the old entry intact.
@@ -438,4 +455,9 @@ def reanonymize(
         payload={"counts": result.counts, "detections": result.detections,
                  "lists_hash": result.lists_hash, "reanonymized": True},
     )
+    if key_provider is not None and mapping_store is not None:
+        from .pdf_redaction import compute_box_map
+
+        compute_box_map(session, document_id, raw, text, result.text,
+                        result.lists_hash, key_provider, mapping_store)
     return state

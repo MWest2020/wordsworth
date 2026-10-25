@@ -350,6 +350,30 @@ class Role(Base):
     created_by: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class BoxMap(Base):
+    """Where each redaction goes on the page: page, rectangle and pseudonym
+    token, per document (pdf-redaction). Derived working data like
+    ``DocumentText`` — mutable, overwritten whole on `reanonymize` — because
+    it holds no value and is never the thing being audited; `lists_hash` is
+    what lets ``GET /documents/{id}/redacted.pdf`` tell a current box map from
+    a stale one. ``boxmap_hash`` is the content hash of ``boxes``, used as the
+    cache key under ``redacted/<doc>/<boxmap_hash>`` — it changes exactly when
+    the rendered PDF would, so the cache can never serve a mismatched byte."""
+
+    __tablename__ = "box_maps"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id"), primary_key=True)
+    boxmap_hash: Mapped[str] = mapped_column(String, nullable=False)
+    lists_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # [{"page": int, "rect": [x0, y0, x1, y1], "token": "[TYPE:hash8]"}, ...]
+    # -- no detected value, ever (same contract as AnonymizationResult).
+    boxes: Mapped[list] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))
+
+
 class DocumentSummary(Base):
     """Een korte samenvatting van één document (samenvattingen).
 
