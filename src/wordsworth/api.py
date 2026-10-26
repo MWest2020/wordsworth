@@ -705,7 +705,7 @@ def create_app(
                 from .detection_lists import DetectionLists
                 from .models import BoxMap
                 from .pdf_redaction import boxes_of, redacted_cache_key
-                from .pdf_render import render as render_pdf
+                from .pdf_render import DegenerateBoxError, render as render_pdf
 
                 with session_factory() as session:
                     if current_state(session, document_id) is None:
@@ -737,7 +737,14 @@ def create_app(
                         _, legend = to_legible(anonymized)
                         labels = {token: placeholder
                                  for placeholder, token in legend.items()}
-                        pdf_bytes = render_pdf(source, boxes_of(box_map), labels)
+                        try:
+                            pdf_bytes = render_pdf(source, boxes_of(box_map), labels)
+                        except DegenerateBoxError:
+                            # A box map from before the char-box fix: its boxes
+                            # cover nothing. Refuse rather than serve the page.
+                            raise HTTPException(status_code=409, detail=(
+                                "box map unusable (a box has no surface); "
+                                "reanonymize to build one"))
                         store.put(cache_key, pdf_bytes)
                 return Response(content=pdf_bytes, media_type="application/pdf")
 
@@ -1480,7 +1487,7 @@ def create_app(
                 from .mapping_store import PostgresMappingStore
                 from .models import BoxMap
                 from .pdf_redaction import boxes_of
-                from .pdf_render import render as render_pdf
+                from .pdf_render import DegenerateBoxError, render as render_pdf
                 from .pseudonymizer import deanonymize
 
                 now = datetime.now(timezone.utc)
@@ -1570,7 +1577,12 @@ def create_app(
                     labels = {token: placeholder for placeholder, token in legend.items()}
                     doc = session.get(Document, document_id)
                     source = store.get(doc.object_key)
-                    pdf_bytes = render_pdf(source, boxes, labels)
+                    try:
+                        pdf_bytes = render_pdf(source, boxes, labels)
+                    except DegenerateBoxError:
+                        raise HTTPException(status_code=409, detail=(
+                            "box map unusable (a box has no surface); "
+                            "reanonymize to build one"))
                     session.commit()
                 return Response(content=pdf_bytes, media_type="application/pdf")
 

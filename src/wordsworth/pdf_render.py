@@ -21,6 +21,10 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .pdf_boxes import Box, Rect
+from .pdf_text import char_box
+
+# A box thinner or narrower than this hides nothing at any useful zoom.
+_MIN_BOX_PT = 0.5
 
 DPI = 300
 _SCALE = DPI / 72
@@ -43,6 +47,18 @@ def _to_pixels(rect: Rect, page_height: float) -> tuple[float, float, float, flo
         rect.x1 * _SCALE,
         (page_height - rect.y0) * _SCALE,
     )
+
+
+class DegenerateBoxError(ValueError):
+    """A redaction box with no surface. Painting it would hide nothing while
+    the PDF still claims to be redacted, so the render refuses instead."""
+
+
+def _check_boxes(boxes: list[Box]) -> None:
+    for b in boxes:
+        if (b.rect.y1 - b.rect.y0) < _MIN_BOX_PT or (b.rect.x1 - b.rect.x0) < _MIN_BOX_PT:
+            raise DegenerateBoxError(
+                f"box for {b.token} on page {b.page} has no surface; rebuild the box map")
 
 
 def _paint(image, boxes: list[Box], page_height: float) -> None:
@@ -113,7 +129,7 @@ def _draw_invisible_layer(c: canvas.Canvas, textpage, boxes: list[Box]) -> None:
             flush()
             origin = None
             continue
-        char_rect = Rect(*textpage.get_charbox(i))
+        char_rect = Rect(*char_box(textpage, i))
         if _covering(boxes, char_rect) is not None:
             flush()
             origin = None
@@ -134,6 +150,7 @@ def render(pdf_bytes: bytes, boxes: list[Box], labels: dict[str, str]) -> bytes:
     PDF with reportlab: vector labels on the boxes plus an invisible text
     layer. A box not in ``boxes`` is left untouched — its pixels and its
     original characters pass straight through (the reveal use)."""
+    _check_boxes(boxes)  # fail closed: never a "redacted" PDF that hides nothing
     grouped = _by_page(boxes)
     pdf = pdfium.PdfDocument(pdf_bytes)
     try:
