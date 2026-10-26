@@ -87,10 +87,32 @@ no `deleted` record is written, and the document stays in its previous state.
 A later call (the same `curl`, the same `wordsworth-delete`) finishes the work;
 each content kind is removed only once, so repeating is safe.
 
+## Delete a dossier
+
+```bash
+curl -XDELETE $API/dossiers/<dossier-id>
+wordsworth-delete --dossier <dossier-id> --actor <who> [--dry-run]
+```
+
+Removes the dossier's memberships and the dossier row. A member document is
+deleted, as above, only if it belongs to no other dossier; one that belongs to
+another dossier too keeps its content and loses only its membership of this
+one — deleting one case must not silently empty another.
+
+One `dossier-deleted` audit record is written per document the deletion
+touched, whether it was deleted or only released: the document id, the
+dossier id, the actor and which of the two happened — never a name or a
+value. A document that is also deleted gets its usual `deleted` record too
+(above).
+
+Who may: the same guard as deleting a document — only role `beheerder` or an
+issuer label, refused before anything is read or removed, no record on a
+refusal.
+
+`--dry-run` walks the same code path and reports exactly what the real run
+would do: which documents would be deleted and which would only lose their
+membership. Nothing changes and no record is written.
+
 ## What is not here
 
-- **Deleting a dossier.** `DELETE /dossiers/{id}` is not implemented. What it
-  should do to a document that also belongs to another dossier, and whether it
-  removes the dossier row itself, are open questions the proposal explicitly
-  leaves undecided — this change does not guess them.
 - **Un-deleting.** There is no restore path, by design.

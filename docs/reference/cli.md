@@ -238,8 +238,21 @@ failure partway through a multi-document run leaves only the untouched ones
 for a rerun to finish; removing what a previous run already removed is a
 no-op.
 
+### `--dossier`
+
+```bash
+wordsworth-delete --dossier <dossier-id> --actor <who> [--dry-run]
+```
+
+Deletes a dossier instead of named documents — mutually exclusive with the
+positional document ids. Removes the dossier's memberships and the dossier
+row; a member document is deleted only if it belongs to no other dossier,
+otherwise only its membership of this one goes. `--actor` and `--dry-run` are
+checked and behave the same way as above; the dry run reports which documents
+would be deleted and which would only be released.
+
 See [deleting documents](../how-to/deleting-documents.md) for what goes, what
-stays, and `DELETE /documents/{id}` over the API.
+stays, and `DELETE /documents/{id}` / `DELETE /dossiers/{id}` over the API.
 
 ## `wordsworth-backfill-passages`
 
