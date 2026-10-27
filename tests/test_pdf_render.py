@@ -7,7 +7,9 @@ import shutil
 import pypdf
 import pypdfium2 as pdfium
 import pytest
+from PIL import Image
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from wordsworth.pdf_boxes import build_box_map
@@ -18,6 +20,25 @@ BSN = "123456782"
 LINE = f"Aanvrager {NAME} woont in Naarden, BSN {BSN}."
 LABELS = {"[PERSON:aaaaaaaa]": "[PERSOON 1]", "[BSN:bbbbbbbb]": "[BSN 1]"}
 ITEMS = [("[PERSON:aaaaaaaa]", NAME), ("[BSN:bbbbbbbb]", BSN)]
+
+# A page with a plain text line compresses to a few KB under flate already —
+# it would pass any believable budget before this change too, and so could
+# not catch the regression. A page with a noisy embedded raster (the
+# letterhead/photo content real Woo dossier pages carry) is what actually
+# drove one document to 151 MB: flate barely shrinks pixel noise, JPEG does.
+BYTES_PER_PAGE_BUDGET = 1_000_000
+
+
+def _noisy_source_pdf() -> bytes:
+    letterhead = Image.effect_noise((900, 300), 30).convert("RGB")
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.drawImage(ImageReader(letterhead), 36, 650, width=450, height=150)
+    c.setFont("Helvetica", 12)
+    c.drawString(72, 600, LINE)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
 
 
 def _source_pdf() -> bytes:
@@ -151,3 +172,57 @@ def test_a_box_without_surface_is_refused_not_rendered():
     flat = Box(0, Rect(168.5, 724.1, 184.0, 724.1), "[PERSON:aaaaaaaa]")
     with pytest.raises(DegenerateBoxError):
         render(_source_pdf(), [flat], LABELS)
+
+
+def test_compression_does_not_weaken_the_redaction():
+    # the codec's stated tolerance: 1 px inset from the box edge (JPEG
+    # ringing lives at edges, not inside a solid fill) and 20/255 per
+    # channel (measured worst case on this fixture is 16/255).
+    source = _noisy_source_pdf()
+    boxes = build_box_map(source, LINE, ITEMS)
+    out = render(source, boxes, LABELS)
+
+    pdf = pdfium.PdfDocument(out)
+    page = pdf[0]
+    height = page.get_height()
+    scale = 300 / 72
+    image = page.render(scale=scale).to_pil().convert("RGB")
+    for b in boxes:
+        r = b.rect
+        x0, x1 = int(r.x0 * scale) + 1, int(r.x1 * scale) - 1
+        y0, y1 = int((height - r.y1) * scale) + 1, int((height - r.y0) * scale) - 1
+        for x in (x0, (x0 + x1) // 2, x1):
+            for y in (y0, (y0 + y1) // 2, y1):
+                px = image.getpixel((x, y))
+                assert max(px) <= 20, f"{b.token} pixel {px} at ({x},{y})"
+    page.close()
+    pdf.close()
+
+    if shutil.which("tesseract") is None:
+        pytest.skip("tesseract not installed")
+    pytesseract = pytest.importorskip("pytesseract")
+    found = pytesseract.image_to_string(image, lang="nld")
+    assert NAME not in found
+    assert BSN not in found
+
+
+def test_page_size_is_bounded():
+    source = _noisy_source_pdf()
+    boxes = build_box_map(source, LINE, ITEMS)
+    out = render(source, boxes, LABELS)
+
+    pdf = pdfium.PdfDocument(source)
+    page = pdf[0]
+    width, height = page.get_size()
+    page.close()
+    pdf.close()
+    raw_raster_bytes = int(width * 300 / 72) * int(height * 300 / 72) * 3
+
+    assert len(out) < BYTES_PER_PAGE_BUDGET
+    assert len(out) < raw_raster_bytes / 10
+
+
+def test_reveal_page_size_is_bounded():
+    source = _noisy_source_pdf()
+    out = render(source, [], LABELS)
+    assert len(out) < BYTES_PER_PAGE_BUDGET
