@@ -21,7 +21,7 @@ from wordsworth import dossiers, grants as grants_mod, roles
 from wordsworth.api import create_app
 from wordsworth.audit import current_state, verify_chain
 from wordsworth.dossier_deletion import DossierDeletionError, delete_dossier
-from wordsworth.models import AuditRecord, Dossier, DossierDocument, GrantRecord
+from wordsworth.models import AuditRecord, Dossier, DossierDocument, GrantRecord, Topic
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import dossiers_of, register
 from wordsworth.search_index import InMemoryIndex
@@ -62,6 +62,7 @@ def test_a_dossier_of_several_exclusive_documents_is_fully_deleted(session):
 
     assert set(report.deleted) == {str(a.id), str(b.id)}
     assert report.released == []
+    assert report.topics == 0
     for doc in (a, b):
         assert current_state(session, doc.id) == State.DELETED
     assert not store.exists(KEY_A) and not store.exists(KEY_B)
@@ -88,6 +89,7 @@ def test_a_shared_document_keeps_its_content_and_its_other_membership(session):
 
     assert report.deleted == []
     assert report.released == [str(shared.id)]
+    assert report.topics == 0
     # content untouched
     assert store.exists(KEY_A)
     assert index.exists(str(shared.id))
@@ -113,7 +115,7 @@ def test_an_empty_dossier_is_removed_and_no_document_changes(session):
     report = delete_dossier(session, empty.id, store, index, actor="tester")
     session.commit()
 
-    assert report.as_dict() == {"deleted": [], "released": []}
+    assert report.as_dict() == {"deleted": [], "released": [], "topics": 0}
     assert session.get(Dossier, empty.id) is None
     assert dossiers_of(session, doc.id) == [str(other.id)]
 
@@ -147,6 +149,75 @@ def test_one_dossier_deleted_record_per_document_touched(session):
 
     ok, bad = verify_chain(session)
     assert ok and bad is None
+
+
+def _topic(dossier_id, name="onderwerp"):
+    return Topic(dossier_id=dossier_id, computed_name=name, computed_at=_now(),
+                document_count=1)
+
+
+def test_a_dossier_with_topics_is_deleted_along_with_them(session):
+    """The bug this change fixes: `topics` used to survive the dossier and
+    the delete failed with `ForeignKeyViolation` on `topics_dossier_id_fkey`.
+    """
+    store, index = InMemoryObjectStore(), InMemoryIndex()
+    doomed = dossiers.ensure(session, "zaak-met-onderwerpen")
+    kept = dossiers.ensure(session, "andere-zaak")
+    doomed_topic = _topic(doomed.id)
+    kept_topic = _topic(kept.id)
+    session.add_all([doomed_topic, kept_topic])
+    session.commit()
+    doomed_topic_id, kept_topic_id = doomed_topic.id, kept_topic.id
+
+    report = delete_dossier(session, doomed.id, store, index, actor="tester")
+    session.commit()
+
+    assert report.topics == 1
+    assert session.get(Topic, doomed_topic_id) is None
+    assert session.get(Topic, kept_topic_id) is not None
+    assert session.get(Dossier, doomed.id) is None
+
+
+class _FlakyIndex(InMemoryIndex):
+    """An index that fails once, so the rerun scenario can be driven on
+    purpose rather than waited for -- same device as
+    `test_delete_documents._FlakyIndex`."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail = True
+
+    def exists(self, document_id):
+        if self.fail:
+            raise RuntimeError("index down")
+        return super().exists(document_id)
+
+
+def test_a_failed_deletion_leaves_the_topics_in_place(session):
+    store, index = InMemoryObjectStore(), _FlakyIndex()
+    dossier = dossiers.ensure(session, "zaak")
+    doc = register(session, KEY_A)
+    session.flush()
+    store.put(KEY_A, b"a")
+    dossiers.add(session, dossier.id, doc.id, actor="t")
+    topic = _topic(dossier.id)
+    session.add(topic)
+    session.commit()
+    topic_id = topic.id
+    index.index(str(doc.id), "tekst", KEY_A, dossiers=[str(dossier.id)])
+
+    with pytest.raises(RuntimeError):
+        delete_dossier(session, dossier.id, store, index, actor="tester")
+    session.rollback()
+    assert session.get(Dossier, dossier.id) is not None
+    assert session.get(Topic, topic_id) is not None
+
+    index.fail = False
+    report = delete_dossier(session, dossier.id, store, index, actor="tester")
+    session.commit()
+    assert report.topics == 1
+    assert session.get(Dossier, dossier.id) is None
+    assert session.get(Topic, topic_id) is None
 
 
 def test_unknown_dossier_is_refused(session):
