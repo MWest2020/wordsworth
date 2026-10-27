@@ -112,9 +112,12 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
   that it did. `main` is deliberately NOT protected (Mark declined branch
   protection; the gate is CI plus the local pre-push hook). What still goes to
   Mark: anything that changes a promise and has an open question in it, and the
-  agent definitions in `.claude/agents/`.
+  agent definitions, which live in the handbook (`MWest2020/handbook`,
+  `docs/agents/`; habitat reads `docs/agents/seeds/<role>.md` at the commit
+  pinned as `handbook_ref` in ratatoskr's `agents/factory.yml`).
 - **This file is maintained by Claude** (Mark, 2026-09-17) and records how we
-  actually work. `.claude/agents/`, `CODEOWNERS` and CI config stay Mark's.
+  actually work. The agent definitions (handbook), `CODEOWNERS` and CI config
+  stay Mark's.
   Note that `CODEOWNERS` still lists `/CLAUDE.md` as his and says agents must
   never modify it; that line is now out of date and its correction is his call,
   not something to change from here.
