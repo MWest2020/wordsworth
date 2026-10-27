@@ -72,10 +72,12 @@ Repeating the deletion SHALL finish the work.
 ### Requirement: A dossier can be deleted
 
 `DELETE /dossiers/{id}` and `wordsworth-delete --dossier <id>` SHALL remove the
-dossier's memberships and the dossier itself, under the same authorisation. A
-member document SHALL be deleted as described above only if it belongs to no
-other dossier; a document that belongs to another dossier SHALL lose only its
-membership of this one.
+dossier's memberships, the dossier's topics and the dossier itself, under the
+same authorisation. A member document SHALL be deleted as described above only
+if it belongs to no other dossier; a document that belongs to another dossier
+SHALL lose only its membership of this one. The topics SHALL be removed in the
+same transaction as the dossier, so that a dossier with topics is deleted
+instead of failing on them.
 
 #### Scenario: A dossier with several documents
 
@@ -101,12 +103,25 @@ membership of this one.
 - **THEN** the answer is 403, the dossier and its memberships remain and no
   record is written
 
+#### Scenario: A dossier with topics
+
+- **WHEN** a dossier that has topics is deleted
+- **THEN** the deletion succeeds, the dossier and its topics no longer exist,
+  and the topics of other dossiers are unchanged
+
+#### Scenario: A failed deletion keeps the topics
+
+- **WHEN** a dossier deletion fails part-way
+- **THEN** the dossier and its topics are still there, and a later call
+  completes the deletion
+
 ### Requirement: A dry run changes nothing
 
 The deletion CLI SHALL accept `--dry-run`, which reports what would be removed,
 as counts, and SHALL NOT remove anything or write an audit record. On a dossier
 it SHALL report exactly what the delete would do, by the same code path: which
-documents would be deleted and which would only lose their membership.
+documents would be deleted, which would only lose their membership, and how
+many topics would be removed.
 
 #### Scenario: Dry run
 
@@ -119,6 +134,12 @@ documents would be deleted and which would only lose their membership.
 - **WHEN** the CLI runs with `--dry-run` on a dossier and then without
 - **THEN** the documents the real run deleted and the documents it only
   released are exactly those the dry run reported
+
+#### Scenario: The dry run reports topics
+
+- **WHEN** the CLI runs with `--dry-run` on a dossier that has topics
+- **THEN** the number of topics is printed, no topic is removed, and the real
+  run then removes that same number
 
 ### Requirement: A dossier deletion is recorded per document touched
 
