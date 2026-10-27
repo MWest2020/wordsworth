@@ -18,7 +18,7 @@ from wordsworth import dossiers, grants as grants_mod
 from wordsworth import roles
 from wordsworth.audit import current_state
 from wordsworth.delete_cli import main
-from wordsworth.models import AuditRecord, Dossier, DocumentText, GrantRecord
+from wordsworth.models import AuditRecord, Dossier, DocumentText, GrantRecord, Topic
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
@@ -155,7 +155,8 @@ def test_dossier_dry_run_reports_without_removing_anything(session_factory, caps
     report = json.loads(capsys.readouterr().out)
     assert report["dry_run"] is True
     assert report["results"] == [
-        {"dossier_id": str(dossier_id), "deleted": [str(doc_id)], "released": []}]
+        {"dossier_id": str(dossier_id), "deleted": [str(doc_id)], "released": [],
+         "topics": 0}]
     # nothing removed
     assert store.exists(KEY)
     assert index.exists(str(doc_id))
@@ -184,12 +185,47 @@ def test_dossier_call_without_dry_run_does_what_was_reported(session_factory, ca
     report = json.loads(capsys.readouterr().out)
     assert report["dry_run"] is False
     assert report["results"] == [
-        {"dossier_id": str(dossier_id), "deleted": [str(doc_id)], "released": []}]
+        {"dossier_id": str(dossier_id), "deleted": [str(doc_id)], "released": [],
+         "topics": 0}]
     assert not store.exists(KEY)
     assert not index.exists(str(doc_id))
     with session_factory() as s:
         assert s.get(Dossier, dossier_id) is None
         assert current_state(s, doc_id) == State.DELETED
+
+
+def test_dossier_dry_run_reports_the_topic_count_and_removes_none(
+        session_factory, capsys):
+    store, index = InMemoryObjectStore(), InMemoryIndex()
+    with session_factory() as s:
+        dossier = dossiers.ensure(s, "zaak-met-onderwerpen")
+        s.add(Topic(dossier_id=dossier.id, computed_name="a",
+                    computed_at=datetime.now(timezone.utc), document_count=1))
+        _make_beheerder(s, "operator")
+        s.commit()
+        dossier_id = dossier.id
+
+    code = main(["--dossier", str(dossier_id), "--dry-run", "--actor", "operator"],
+               session_factory=session_factory, store=store, index=index)
+
+    assert code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["results"] == [
+        {"dossier_id": str(dossier_id), "deleted": [], "released": [], "topics": 1}]
+    with session_factory() as s:
+        assert s.get(Dossier, dossier_id) is not None
+        assert s.execute(
+            select(Topic).where(Topic.dossier_id == dossier_id)
+        ).first() is not None
+
+    code = main(["--dossier", str(dossier_id), "--actor", "operator"],
+               session_factory=session_factory, store=store, index=index)
+    assert code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["results"] == [
+        {"dossier_id": str(dossier_id), "deleted": [], "released": [], "topics": 1}]
+    with session_factory() as s:
+        assert s.get(Dossier, dossier_id) is None
 
 
 def test_a_dossier_caller_without_the_role_or_an_issuer_label_is_refused(

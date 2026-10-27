@@ -245,11 +245,13 @@ wordsworth-delete --dossier <dossier-id> --actor <who> [--dry-run]
 ```
 
 Deletes a dossier instead of named documents — mutually exclusive with the
-positional document ids. Removes the dossier's memberships and the dossier
-row; a member document is deleted only if it belongs to no other dossier,
-otherwise only its membership of this one goes. `--actor` and `--dry-run` are
-checked and behave the same way as above; the dry run reports which documents
-would be deleted and which would only be released.
+positional document ids. Removes the dossier's memberships, its topics and
+the dossier row; a member document is deleted only if it belongs to no other
+dossier, otherwise only its membership of this one goes. `--actor` and
+`--dry-run` are checked and behave the same way as above; the dry run reports
+which documents would be deleted, which would only be released, and the
+number of topics (`topics`) that would be removed; the output of a real run
+carries the same `topics` count.
 
 See [deleting documents](../how-to/deleting-documents.md) for what goes, what
 stays, and `DELETE /documents/{id}` / `DELETE /dossiers/{id}` over the API.

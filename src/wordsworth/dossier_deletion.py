@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
-"""Deleting a dossier (delete-dossiers): the memberships and the dossier row
-go; a member document is deleted only when this dossier is its last.
+"""Deleting a dossier (delete-dossiers): the memberships, the dossier's topics
+and the dossier row go; a member document is deleted only when this dossier
+is its last.
 
 Content-addressing lets one document belong to several dossiers (`dossiers`
 spec), so deleting dossier A must not destroy a document dossier B still
@@ -20,22 +21,27 @@ first removal, so its report cannot drift from what the real run does.
 
 Order: a released document is resolved (classified) and its membership row is
 removed before the dossier row goes, because the dossier row is the parent of
-every membership -- the foreign key would refuse the delete otherwise. A
-failed member deletion is a hard error, as in `deletion.py`; the dossier row
-is removed only once every member has been handled, so a rerun finishes the
-work.
+every membership -- the foreign key would refuse the delete otherwise. The
+dossier's `topics` rows are removed the same way and for the same reason
+(`topics_dossier_id_fkey`): a topic holds only a description (name, computed
+time, document count) and its membership lives in the search index, not in
+this table, so the rows have no meaning once the dossier is gone. A failed
+member or topic deletion is a hard error, as in `deletion.py`; the dossier row
+is removed only once every member and topic has been handled, so a rerun
+finishes the work.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import dossier_events
 from .deletion import delete_document
-from .models import Dossier, DossierDocument
+from .models import Dossier, DossierDocument, Topic
 from .object_store import ObjectStore
 from .pipeline import dossiers_of
 from .search_index import SearchIndex
@@ -47,16 +53,18 @@ class DossierDeletionError(ValueError):
 
 @dataclass
 class DossierDeletionReport:
-    """Which documents a dossier deletion deleted outright, and which only
-    lost their membership of this dossier. Ids only -- this is exactly what
-    the API and CLI report back, and what the `dossier-deleted` records
-    confirm, never a name or a value."""
+    """Which documents a dossier deletion deleted outright, which only lost
+    their membership of this dossier, and how many topics it removed. Ids and
+    a count only -- this is exactly what the API and CLI report back, and
+    what the `dossier-deleted` records confirm, never a name or a value."""
 
     deleted: list[str] = field(default_factory=list)
     released: list[str] = field(default_factory=list)
+    topics: int = 0
 
-    def as_dict(self) -> dict[str, list[str]]:
-        return {"deleted": self.deleted, "released": self.released}
+    def as_dict(self) -> dict[str, list[str] | int]:
+        return {"deleted": self.deleted, "released": self.released,
+                "topics": self.topics}
 
 
 def _member_elsewhere(session: Session, document_id: UUID, dossier_id: UUID) -> bool:
@@ -78,12 +86,12 @@ def delete_dossier(
     actor: str,
     dry_run: bool = False,
 ) -> DossierDeletionReport:
-    """Remove a dossier: its memberships, the dossier row, and the content of
-    every member document that belongs to no other dossier. A member that
-    belongs to another dossier too keeps its content and loses only this
-    membership. ``dry_run`` reports exactly what the real run would do,
-    through the same classification and the same `delete_document` dry run,
-    without removing anything.
+    """Remove a dossier: its memberships, its topics, the dossier row, and
+    the content of every member document that belongs to no other dossier. A
+    member that belongs to another dossier too keeps its content and loses
+    only this membership. ``dry_run`` reports exactly what the real run would
+    do, through the same classification and the same `delete_document` dry
+    run, without removing anything.
 
     Raises `DossierDeletionError` for an unknown dossier. Any other failure
     (a member deletion failing) propagates uncaught, same as
@@ -109,6 +117,10 @@ def delete_dossier(
                             actor=actor, dry_run=dry_run)
             report.deleted.append(str(document_id))
 
+    report.topics = len(session.execute(
+        select(Topic.id).where(Topic.dossier_id == dossier_id)
+    ).scalars().all())
+
     if dry_run:
         return report
 
@@ -126,6 +138,9 @@ def delete_dossier(
         dossier_events.dossier_deleted(
             session, document_id=document_id, dossier_id=dossier_id,
             actor=actor, released=released)
+
+    session.execute(sa_delete(Topic).where(Topic.dossier_id == dossier_id))
+    session.flush()
 
     session.delete(dossier)
     return report

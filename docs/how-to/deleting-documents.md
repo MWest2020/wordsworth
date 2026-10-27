@@ -94,10 +94,13 @@ curl -XDELETE $API/dossiers/<dossier-id>
 wordsworth-delete --dossier <dossier-id> --actor <who> [--dry-run]
 ```
 
-Removes the dossier's memberships and the dossier row. A member document is
-deleted, as above, only if it belongs to no other dossier; one that belongs to
-another dossier too keeps its content and loses only its membership of this
-one — deleting one case must not silently empty another.
+Removes the dossier's memberships, the dossier's topics and the dossier row.
+A member document is deleted, as above, only if it belongs to no other
+dossier; one that belongs to another dossier too keeps its content and loses
+only its membership of this one — deleting one case must not silently empty
+another. The topics (`onderwerpen`) are removed in the same transaction, so a
+dossier that has topics is deleted instead of failing on
+`topics_dossier_id_fkey`.
 
 One `dossier-deleted` audit record is written per document the deletion
 touched, whether it was deleted or only released: the document id, the
@@ -110,8 +113,10 @@ issuer label, refused before anything is read or removed, no record on a
 refusal.
 
 `--dry-run` walks the same code path and reports exactly what the real run
-would do: which documents would be deleted and which would only lose their
-membership. Nothing changes and no record is written.
+would do: which documents would be deleted, which would only lose their
+membership, and how many topics would be removed (a count, not a list of
+names — topic names are derived from document terms and the report keeps
+names out). Nothing changes and no record is written.
 
 ## What is not here
 
