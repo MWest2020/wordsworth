@@ -22,6 +22,8 @@ under `openspec/`.
   - [cli](reference/cli.md) — the `wordsworth` API client: install, commands,
     ingesting a directory.
 - [explanation/](explanation/nora-gap-analysis.md) — reasoning and decisions.
+  - [Key-user review 2026-10-28](explanation/review-key-user-2026-10-28.md) — the
+    console against four jobs: find topics, ask, judge relevance, share.
   - [NORA gap analysis](explanation/nora-gap-analysis.md) — wordsworth tested
     against the "Anonimiseren & Pseudonimiseren bij de Bron" target architecture;
     verdict per requirement, build order.
