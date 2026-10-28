@@ -4,9 +4,12 @@ Rewritten 2026-09-23 after measuring the cluster again (see proposal). Step 2
 no longer waits for step 1: the api mounts nothing tied to a node.
 
 ## 1. Object storage that survives a node (Mark's decision, homelab)
-- [ ] 1.1 Choose object storage that survives one node, for the documents and
+- [x] 1.1 Choose object storage that survives one node, for the documents and
   for the WORM exports. A candidate counts only once Object Lock is shown to
-  work on it.
+  work on it. *Done 2026-10-28: SeaweedFS stays (Mark, by mail), wordsworth
+  replicated `001` on two nodes (homelab #27, #28), Object Lock COMPLIANCE
+  shown live (#193). The filer metadata and master are still on one node; that
+  is what 1.2 still has to prove.*
 - [ ] 1.2 Show it: a node goes away, objects stay readable and a
   retention-locked object stays locked.
 - [ ] 1.3 Move the `wordsworth` bucket onto it.
