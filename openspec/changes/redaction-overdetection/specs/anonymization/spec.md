@@ -1,33 +1,34 @@
 ## ADDED Requirements
 
-### Requirement: An over-detection change is measured before and after
+### Requirement: The over-detection baseline is recorded as counts, per type
 
-A change that reduces what detection redacts (an allow entry or a score
-threshold) SHALL be measured on the evaluation corpus both before and after the
-change, on the same corpus and the same detections, and both results SHALL be
-recorded with their date. Recall on seeded PII and the number of leaks SHALL be
-unchanged by the change.
+The over-detection baseline SHALL be measured on the evaluation corpus, with and
+without the current lists, and recorded with its date in
+`docs/explanation/meting-overdetectie-07.md`: precision, recall, leaks and false
+positives, per type. How the values `statushouders`, `bewoners`,
+`woningcorporaties`, `juni` and `wereldvluchtelingendag` are typed today SHALL be
+recorded as counts per type. The record SHALL contain no document text.
 
-The effect of the change across a reprocess SHALL be read from the run's own
-`suppressed_by_list` counts, not from comparing the index before and after.
+#### Scenario: The baseline is recorded with its date
 
-#### Scenario: The before and after are recorded
+- **WHEN** the baseline measurement is taken
+- **THEN** `meting-overdetectie-07.md` holds precision, recall, leaks and false
+  positives per type, with and without lists, and the date
 
-- **WHEN** an allow entry or threshold that reduces redaction is introduced
-- **THEN** the baseline and the result are recorded with their date, per type
+#### Scenario: The five words are counted, not quoted from documents
 
-#### Scenario: Recall does not move
+- **WHEN** the record says how the five words are typed today
+- **THEN** it gives a count per type for each word and no sentence or passage
+  from any document
 
-- **WHEN** the evaluation is run after the change
-- **THEN** recall on seeded PII and the leak count equal the baseline
+### Requirement: No measurement or diagnostic logs a value
 
-### Requirement: A reduction in redaction needs a human decision per value
+Nothing that measures or diagnoses detection SHALL log, print or write a detected
+value or the text around it. Output SHALL be counts, types and identifiers that
+carry no personal data.
 
-An entry that stops a value being redacted SHALL be added only after a human has
-decided that the value is not PII, and SHALL carry that reason. The system and
-its build agents SHALL NOT read document text to find candidate values.
+#### Scenario: A measurement run writes no value
 
-#### Scenario: An allow entry without a reason is refused
-
-- **WHEN** the lists are loaded and an allow entry has no reason
-- **THEN** loading fails, and no list is applied
+- **WHEN** the evaluation or a diagnostic over stored runs completes
+- **THEN** its output, logs and report contain counts per type and no detected
+  value
