@@ -2,10 +2,13 @@
 
 ### Requirement: The over-detection baseline is recorded as counts, per type
 
-The over-detection baseline SHALL be measured on the evaluation corpus, with and
-without the current lists, and recorded with its date in
-`docs/explanation/meting-overdetectie-07.md`: precision, recall, leaks and false
-positives, per type. How the values `statushouders`, `bewoners`,
+The over-detection baseline SHALL be measured on synthetic or fixture sentences,
+never on the pilot corpus, with and without the current lists, and recorded with
+its date in `docs/explanation/meting-overdetectie-07.md`: precision, recall,
+leaks and false positives, per type. The record SHALL be labelled "what
+detection would do now on this text", not "what it did". If OpenAnonymiser is
+unreachable the report SHALL say "not run" and SHALL NOT show a
+deterministic-only table as the baseline. How the values `statushouders`, `bewoners`,
 `woningcorporaties`, `juni` and `wereldvluchtelingendag` are typed today SHALL be
 recorded as counts per type. The record SHALL contain no document text.
 
@@ -14,6 +17,11 @@ recorded as counts per type. The record SHALL contain no document text.
 - **WHEN** the baseline measurement is taken
 - **THEN** `meting-overdetectie-07.md` holds precision, recall, leaks and false
   positives per type, with and without lists, and the date
+
+#### Scenario: OpenAnonymiser is unreachable
+
+- **WHEN** the measurement runs and OpenAnonymiser cannot be reached
+- **THEN** the report says "not run" and shows no table
 
 #### Scenario: The five words are counted, not quoted from documents
 
