@@ -1,4 +1,4 @@
-# Find and fix why 51 documents have no box map
+# Investigate the surviving value, then re-measure the 51 missing box maps
 
 ## Why
 
@@ -11,51 +11,46 @@ refuses those with a 409."* And on the invariant error: *"a value that survived
 replacement means clear text in anonymised output. Look at that first."*
 
 Every miss fails closed today (no PDF rather than a half-redacted one), and that
-stays. What is missing is the cause of each miss. The earlier change
-`pdf-redaction-match` found its three causes with a count-only diagnostic and
-only then fixed them; this change uses the same method for the remaining types.
+stays. The 51 were measured before `pdf-redaction-match`; that change may already
+have removed some of them, so the number is not assumed but re-measured on the
+artefact the deployed service produces.
 
-The 4 ORGANIZATION misses overlap with the ORGANIZATION case of 4d58906e (1 in
-text, 0 located). That case is covered here and is not diagnosed separately.
-
-This changes a promise (when a value counts as located, and what happens when
-a value survives replacement), so it is an OpenSpec change.
+This changes a promise (what happens when a value survives replacement, and what
+the logs and reports of this work may contain), so it is an OpenSpec change.
 
 ## What changes
 
-In this order:
+Narrowed to one buildable unit, in this order:
 
 1. **The invariant error first.** One document raises
    `AnonymizationInvariantError` (code `waarde-overleefde-vervanging`): a
-   detected value is still in the text after replacement. Find out which
-   document, which type and why, using the safe features the error already
-   carries (type, length, counts, word count) and never the value. If anonymised
-   output outside the redacted PDF is affected, that goes to Mark at once, not
-   into the queue.
-2. **A count-only diagnostic per type** for the value-not-located documents
-   (DATE_TIME, LOCATION, PERSON, EMAIL, ORGANIZATION, PHONE_NUMBER). It reports
-   per document and type the counts and a closed-vocabulary cause class, never a
-   value or a page text.
-3. **A fix per cause**, only after the diagnostic has named it.
-4. **The two documents with flat boxes** are rebuilt so the render no longer
-   answers 409 `box map unusable`.
+   detected value is still in the text after replacement. Investigate it using
+   the safe features the error already carries (type, length, counts, word
+   count) and never the value. A test proves the text is never emitted. The
+   investigation ends in a yes or no: is anonymised output outside the redacted
+   PDF affected?
+2. **A count-only reprocess report by type**, run on the deployed service after
+   `pdf-redaction-match` is deployed. It re-measures the 51 and lists what is
+   left by PII type, with counts only.
 
-Every miss keeps failing closed. No PII is read.
+The report and any new module log only type, length and counts, never a value.
+Every miss keeps failing closed.
+
+Out of this change, because they are not decided: the per-type diagnostic, the
+per-cause fixes and the rebuild of the flat boxes. The reprocess report decides
+whether they get their own changes, written after it.
 
 ## Open questions
 
-- Which causes the diagnostic will name is not known yet. The fixes, and the
-  requirements that describe them, are added to this change once the diagnostic
-  has named them; none is decided here.
 - Whether the surviving value in the invariant case also reaches anonymised
   output outside the PDF is unknown until step 1. If it does, Mark decides what
   happens to the output already produced.
-- `redacted-pdf-overdetection` changes which spans get boxed and builds after
-  this change; whether it shifts the counts above is not known.
+- `redaction-overdetection` changes which spans get boxed and builds after this
+  change; whether it shifts the counts is not known.
 
 ## Impact
 
-- Specs: `pdf-redaction` (ADDED), `anonymization` (ADDED).
-- Code: the diagnostic (counts only), the fixes it names, a rebuild of the flat
-  box maps via `reanonymize`.
+- Specs: `anonymization` (ADDED), `pdf-redaction` (ADDED).
+- Code: at most a count or class feature on the invariant error, and the
+  count-by-type report.
 - Docs: `docs/how-to/pdf-redaction.md`, `docs/how-to/reversible-backfill.md`.

@@ -8,38 +8,24 @@
       value.
 - [ ] State whether anonymised output outside the redacted PDF is affected.
       Proved by: the report says yes or no; on yes, Mark is told at once.
-- [ ] A test with a text that reproduces the cause: replacement leaves no
-      detected value, or the error is still raised and the text is not emitted.
-      Proved by: the test, built after the cause is named.
+- [ ] A test that when a detected value survives replacement the error is
+      raised and the text is never emitted, and that the error, its message and
+      the audit record hold no value. Proved by: the test.
 
-## 2. Per-type diagnostic
-- [ ] A count-only diagnostic over the value-not-located documents, per
-      document and PII type: counts and a closed-vocabulary cause class.
-      Proved by: a test that the output holds no value and no page text, and
-      that it covers all six types.
-- [ ] Run it on the deployed service, including 4d58906e (ORGANIZATION, 1 in
-      text, 0 located). Proved by: the report in the PR, counts per type and
-      cause.
+## 2. Count-only reprocess report (after `pdf-redaction-match`)
+- [ ] Confirm `pdf-redaction-match` is deployed before measuring. Proved by:
+      the running image in the PR containing that change.
+- [ ] `POST /reprocess` over the 415 documents on the deployed service; list the
+      remaining `problems` by PII type with document counts and located-of-
+      occurrences counts. Proved by: the response, reduced to counts, in the PR,
+      compared with the 51 of issue #259.
+- [ ] A test that the report and the log lines of any new module hold only type,
+      length and counts: no value, page text or context. Proved by: the test.
 
-## 3. Fixes
-- [ ] One fix per named cause, each with a test that a document with that cause
-      is located. Proved by: a test per cause; tasks are added here when the
-      diagnostic names the causes.
-- [ ] The count check still refuses: a token occurring twice with one match
-      writes `value-not-located` and 409. Proved by: the existing
-      `test_value_not_located_writes_audit_and_persists_no_box_map` stays green.
-
-## 4. Flat boxes
-- [ ] `reanonymize` the two documents with flat boxes. Proved by: `GET
-      redacted.pdf` answers 200 for both and no box has zero surface.
-
-## 5. Acceptance
-- [ ] `POST /reprocess` over the 51 documents: the remaining `problems` are
-      listed by type and counts. Proved by: the response in the PR.
-
-## 6. Docs (must change with the code)
-- [ ] `docs/how-to/pdf-redaction.md`: the causes found, the diagnostic, the
-      flat-box 409 and its rebuild. Proved by: the section names each cause.
-- [ ] `docs/how-to/reversible-backfill.md`: how the diagnostic is run and what
-      it reports. Proved by: the section names the counts it reports.
+## 3. Docs (must change with the code)
+- [ ] `docs/how-to/pdf-redaction.md`: the by-type report and the invariant error
+      (code, what it carries, that it is not retried). Proved by: the section
+      names both.
+- [ ] `docs/how-to/reversible-backfill.md`: how the report is run and what it
+      reports (type, counts, no value). Proved by: the section names the counts.
 - [ ] `openspec validate redaction-locate-remaining --strict` passes.

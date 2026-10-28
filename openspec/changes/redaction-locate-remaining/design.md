@@ -4,9 +4,8 @@
 
 The invariant error comes first because it is a possible clear-text leak, not a
 missing PDF. The value-not-located misses are fail-closed: nothing wrong is
-shown. A fix is written only after a diagnostic has named its cause; the
-earlier changes (`pdf-redaction-locate`, `pdf-redaction-match`) show that a
-plausible guess about the cause was wrong more than once.
+shown. The report comes after `pdf-redaction-match` is deployed, so that the 51
+is measured on what the service produces now and not carried over.
 
 ## The invariant error
 
@@ -16,37 +15,29 @@ hold clear PII. The error already carries safe features (`label`, `lengte`,
 do not suffice, a feature may be added only if it cannot identify anyone (a
 count, a class, a length). Two earlier attempts to reproduce it from outside
 failed because the real path runs the deterministic layer first and chunks on
-other boundaries, so the diagnostic runs inside the real path on the stored
+other boundaries, so the investigation runs inside the real path on the stored
 original, not a rebuild of the loop.
 
-## The diagnostic
+## The report
 
-Per document and PII type it reports: occurrences in the anonymised text,
-whole-word matches in the positioned text, and a cause class from a closed
-list (for example: split by the extractor, differs in case, differs in
-whitespace, absent from the positioned text). A closed list cannot quote a
-document. It does not print a value, a page text or a context window, and it is
-run against the stored data in the deployed environment.
+The existing `POST /reprocess` `problems` list already names document, type and
+counts. The report groups that by PII type, with the number of documents and the
+located-of-occurrences counts. It is run on the deployed service and the result
+is the measurement; it is not a re-run of logic over a fixture.
 
-ORGANIZATION is covered by the same run, including 4d58906e.
+## Counts only
 
-## Fixes
-
-Each fix keeps the count check intact: a token that occurs more often in the
-anonymised text than its value is located stays `value-not-located` and 409.
-
-## Flat boxes
-
-The two documents are rebuilt with `reanonymize`, which regenerates the box map
-with `char_box`: the tight box, or the loose box when the tight one is empty.
-The render keeps refusing boxes without surface.
+The report and any module added by this change log type, length and counts. A
+value, a page text or a context window never enters a log line, an error, an
+audit record or a PR description.
 
 ## Rejected alternatives
 
-- **Fix by guess, then measure**: earlier guesses about the cause were wrong.
-- **Fuzzy or approximate locating**: can leave part of a value unredacted;
-  rejected by `pdf-redaction-locate` and again here.
+- **Diagnose per type and fix per cause in this change**: the causes are not
+  known and the report may show that fewer remain; those become their own
+  changes, written after the report.
+- **Rebuild the flat boxes here**: not decided; same reason.
+- **Assume the 51 still stands**: it predates `pdf-redaction-match`.
+- **Fuzzy or approximate locating**: can leave part of a value unredacted.
 - **Skip an unlocated value and serve the PDF**: a partly redacted PDF.
-- **Diagnose ORGANIZATION in a separate change**: the 4 misses overlap with
-  4d58906e; doing it twice costs a second run.
 - **Print the surviving value to find it faster**: no PII read.

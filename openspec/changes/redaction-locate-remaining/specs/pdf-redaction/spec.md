@@ -1,33 +1,21 @@
 ## ADDED Requirements
 
-### Requirement: A locate miss is diagnosed with counts and a cause class only
+### Requirement: The reprocess report counts remaining misses by type
 
-The system SHALL provide a diagnostic for documents in `value-not-located` that
-reports, per document and PII type, the number of occurrences in the anonymised
-text, the number of whole-word matches in the positioned text, and a cause class
-from a closed list. The diagnostic SHALL NOT output a value, a page text or a
-context around a value.
+The reprocess report SHALL list the `value-not-located` outcomes grouped by PII
+type, with the number of documents and the located-of-occurrences counts per
+type. The report, and any module added for it, SHALL log and output only the
+type, the length and counts, never a value, a page text or a context around a
+value.
 
-#### Scenario: The diagnostic holds no value
+#### Scenario: The report is grouped by type
 
-- **WHEN** the diagnostic runs over a document with a `value-not-located`
-- **THEN** its output has the document, the PII type, the two counts and a
-  cause class, and none of the detected values nor any page text
+- **WHEN** a reprocess run hits `value-not-located` for documents of several
+  PII types
+- **THEN** the report names each type with its document count and counts, and
+  none of the detected values nor any page text
 
-### Requirement: A document with flat boxes is rebuilt, never served flat
+#### Scenario: A miss still fails closed
 
-A box map whose boxes have no surface SHALL be replaced by `reanonymize` with a
-box map built from `char_box`. Until then the endpoints SHALL keep answering 409
-`box map unusable`.
-
-#### Scenario: A flat box map is rebuilt
-
-- **WHEN** `reanonymize` runs for a document whose box map has a box without
-  surface
-- **THEN** the new box map has surface on every box and `GET redacted.pdf`
-  answers 200
-
-#### Scenario: A flat box map is not served
-
-- **WHEN** a document still has a box without surface
-- **THEN** the endpoint answers 409 and no PDF
+- **WHEN** a value cannot be located
+- **THEN** no redacted PDF is served for that document and the report lists it
