@@ -31,6 +31,10 @@ _SCALE = DPI / 72
 _BOX_RGB = (0, 0, 0)
 _LABEL_RGB = (1, 1, 1)
 
+# JPEG, not FlateDecode (reportlab's default): flate barely shrinks a 300
+# dpi page raster, which is why one document came out at 151 MB.
+_JPEG_QUALITY = 80
+
 
 def _by_page(boxes: list[Box]) -> dict[int, list[Box]]:
     out: dict[int, list[Box]] = defaultdict(list)
@@ -65,6 +69,15 @@ def _paint(image, boxes: list[Box], page_height: float) -> None:
     draw = ImageDraw.Draw(image)
     for b in boxes:
         draw.rectangle(_to_pixels(b.rect, page_height), fill=_BOX_RGB)
+
+
+def _encode(image) -> ImageReader:
+    # A file object, not a bare PIL Image, is what makes reportlab embed the
+    # already-compressed bytes (DCTDecode) instead of re-flating the pixels.
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=_JPEG_QUALITY)
+    buf.seek(0)
+    return ImageReader(buf)
 
 
 def _label_size(rect: Rect) -> float:
@@ -146,10 +159,11 @@ def _draw_invisible_layer(c: canvas.Canvas, textpage, boxes: list[Box]) -> None:
 
 
 def render(pdf_bytes: bytes, boxes: list[Box], labels: dict[str, str]) -> bytes:
-    """Rasterise every page at 300 dpi, paint ``boxes``, and rebuild a fresh
-    PDF with reportlab: vector labels on the boxes plus an invisible text
-    layer. A box not in ``boxes`` is left untouched — its pixels and its
-    original characters pass straight through (the reveal use)."""
+    """Rasterise every page at 300 dpi, paint ``boxes``, JPEG-encode the
+    result, and rebuild a fresh PDF with reportlab: vector labels on the
+    boxes plus an invisible text layer. A box not in ``boxes`` is left
+    untouched — its pixels and its original characters pass straight through
+    (the reveal use)."""
     _check_boxes(boxes)  # fail closed: never a "redacted" PDF that hides nothing
     grouped = _by_page(boxes)
     pdf = pdfium.PdfDocument(pdf_bytes)
@@ -168,7 +182,7 @@ def render(pdf_bytes: bytes, boxes: list[Box], labels: dict[str, str]) -> bytes:
             image = bitmap.to_pil().convert("RGB")
             _paint(image, page_boxes, height)
             c.setPageSize((width, height))
-            c.drawImage(ImageReader(image), 0, 0, width=width, height=height)
+            c.drawImage(_encode(image), 0, 0, width=width, height=height)
             textpage = page.get_textpage()
             try:
                 _draw_invisible_layer(c, textpage, page_boxes)

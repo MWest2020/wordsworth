@@ -104,13 +104,18 @@ never served.
 ## How it is built
 
 Every page is rasterised at 300 dpi; the rectangles are painted into the
-raster, so the text underneath is genuinely gone, not covered. The PDF is
-then rebuilt from scratch with reportlab: vector `[PERSOON 1]`-style labels on
-the boxes (`legible.to_legible`'s numbering — the same as
-`?view=legible` on `/documents/{id}/anonymized`) plus an invisible text layer
-for everything that is *not* redacted, so search and copy keep working for
-the rest of the page. Nothing is copied from the source document: no
-metadata, no annotations, no outline.
+raster, so the text underneath is genuinely gone, not covered. The painted
+raster is then JPEG-encoded (quality 80) before the PDF is rebuilt from
+scratch with reportlab — flate, reportlab's default, barely shrinks a 300 dpi
+page raster and one document came out at 151 MB under it; JPEG keeps a page
+under the 1 MB/page budget `tests/test_pdf_render.py::test_page_size_is_bounded`
+enforces. Encoding happens after the boxes are painted, so the codec never
+sees anything but the box colour under a redaction. The PDF then carries
+vector `[PERSOON 1]`-style labels on the boxes (`legible.to_legible`'s
+numbering — the same as `?view=legible` on `/documents/{id}/anonymized`) plus
+an invisible text layer for everything that is *not* redacted, so search and
+copy keep working for the rest of the page. Nothing is copied from the source
+document: no metadata, no annotations, no outline.
 
 Scanned documents use the existing OCR text layer
 (`object_key` repointed by the OCR recovery step) — there is no separate OCR
