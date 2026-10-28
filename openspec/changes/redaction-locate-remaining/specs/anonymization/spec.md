@@ -4,9 +4,9 @@
 
 When a detected value is still present after replacement, the system SHALL
 refuse to emit the text and SHALL raise `AnonymizationInvariantError` with code
-`waarde-overleefde-vervanging`. The error and the audit trail SHALL carry only
-the PII type, the length, the counts and the word count of the value, never the
-value.
+`waarde-overleefde-vervanging`. The error, the logs and the audit trail SHALL
+carry only the PII type, the length, the counts and the word count of the value,
+never the value.
 
 #### Scenario: The text is refused
 
