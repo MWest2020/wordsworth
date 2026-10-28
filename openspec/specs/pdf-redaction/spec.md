@@ -76,12 +76,14 @@ no fallback to a partly redacted PDF.
 
 ### Requirement: The redacted PDF has nothing under the box
 
-The redacted PDF SHALL be produced by rasterising every page at 300 dpi,
-painting the rectangles, and rebuilding the document with reportlab. It SHALL
-carry vector labels (`[PERSOON n]`, from `legible.to_legible`) on the
-rectangles and an invisible text layer in which the labels replace the redacted
-spans. Nothing SHALL be copied from the source PDF: no metadata, no annotations,
-no outlines.
+The redacted PDF SHALL be produced by rasterising every page, painting the
+rectangles into the raster, and rebuilding the document with reportlab. The
+painting SHALL happen before the raster is encoded. It SHALL carry vector labels
+(`[PERSOON n]`, from `legible.to_legible`) on the rectangles and an invisible
+text layer in which the labels replace the redacted spans. Nothing SHALL be
+copied from the source PDF: no metadata, no annotations, no outlines. The page
+rasters SHALL be stored compressed, so that the size of the PDF is bounded per
+page and not by the raw pixel count.
 
 #### Scenario: Name and BSN are gone from the text layer
 
@@ -104,6 +106,19 @@ no outlines.
 
 - **WHEN** the output PDF is inspected
 - **THEN** it has none of the source metadata, annotations or outlines
+
+#### Scenario: A page costs a bounded number of bytes
+
+- **WHEN** a page with text and a redaction box is rendered
+- **THEN** the PDF is smaller, per page, than the budget set in the test, and
+  far smaller than the uncompressed raster of that page
+
+#### Scenario: Compression does not weaken the redaction
+
+- **WHEN** the compressed PDF is rendered again and compared with the source
+  page
+- **THEN** the pixels inside every rectangle are still the box colour and the
+  redacted value is not legible in it
 
 ### Requirement: The redacted PDF is served from a cache that knows when it is stale
 
