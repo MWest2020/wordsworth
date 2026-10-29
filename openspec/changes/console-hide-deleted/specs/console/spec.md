@@ -2,16 +2,20 @@
 
 ### Requirement: Deleted and superseded documents are hidden unless asked for
 
-The console document list, the search page and the topics page SHALL hide
-documents whose state is `deleted`, and superseded copies, by default. Each of
-those pages SHALL offer an explicit toggle that shows them.
+The console document list SHALL hide documents whose state is `deleted`, and
+superseded copies, by default. The list SHALL offer an explicit toggle that
+shows them.
 
 A deletion keeps the document's row, so a cleaned-up corpus shows mostly what
 was removed and buries what is worth reading. Showing the hidden documents is
 a choice the reader makes, not what they get when they say nothing.
 
-A page that is hiding documents SHALL say so. A list that silently leaves rows
-out reads as the whole corpus.
+A list that is hiding documents SHALL say so, with one total. A list that
+silently leaves rows out reads as the whole corpus.
+
+The console search page SHALL NOT show a hit for a deleted or superseded
+document and offers no toggle for it: deletion and superseding already remove
+the index entry, so the rule there only guards against a stale entry.
 
 Opening a single document by its id is not affected: that is an explicit
 request for that document.
@@ -29,21 +33,14 @@ request for that document.
 - **THEN** the deleted and the superseded document are listed too, with their
   state
 
-#### Scenario: Search leaves hidden documents out
+#### Scenario: Search never shows a hidden document
 
-- **WHEN** a search would return a hit for a deleted document
-- **THEN** the hit is not shown by default, and is shown when the toggle is on
+- **WHEN** the search index holds a stale entry for a deleted document
+- **THEN** the hit is not shown, and search offers no toggle to show it
 
-#### Scenario: Topics do not count hidden documents
+#### Scenario: A list with nothing hidden does not claim otherwise
 
-- **WHEN** the topics page is shown for a dossier that holds deleted or
-  superseded documents
-- **THEN** by default they are neither listed nor counted, and with the toggle
-  on they are
-
-#### Scenario: A page with nothing hidden does not claim otherwise
-
-- **WHEN** a page shows a corpus without deleted or superseded documents
+- **WHEN** the list shows a corpus without deleted or superseded documents
 - **THEN** it shows no notice that documents are hidden
 
 #### Scenario: A deleted document can still be opened by id
