@@ -21,5 +21,10 @@ the hidden-documents rule of the console requires.
 
 #### Scenario: An unknown dossier is named
 
-- **WHEN** an operator opens `/console/dossiers/<name>` for a name that does not exist
+- **WHEN** an operator opens `/console/dossier?dossier=<name>` for a name that does not exist
 - **THEN** the answer is 404 and lists the dossiers that do
+
+#### Scenario: A dossier name is free text
+
+- **WHEN** an operator opens the page of a dossier whose name contains a slash or a space
+- **THEN** that dossier's page is shown, because the dossier is addressed by the `dossier` query parameter
