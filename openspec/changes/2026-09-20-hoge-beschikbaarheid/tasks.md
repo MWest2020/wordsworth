@@ -273,11 +273,28 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     the docs and installer say so. Where the CLI is configured outside this
     cluster (Mark's machines) is Mark's to change, one command:
     `wordsworth config --url https://wordsworth-api.tail8f7877.ts.net`.
-  - [ ] 3.3.3 `ProxyGroup` type ingress, two replicas, a `ProxyClass`
+  - [x] 3.3.3 `ProxyGroup` type ingress, two replicas, a `ProxyClass`
     requiring different nodes.
+
+    Done 2026-10-29 (homelab #29): `ProxyGroup` `wordsworth-ingress`, Ready
+    and Available, pods on node-03 and node-02 (`ProxyClass` `wordsworth-ha`,
+    required anti-affinity on hostname).
   - [ ] 3.3.4 Move the remaining route(s) onto it, keeping their MagicDNS
     names; time the gap while a name passes from the old device to the
     group.
+
+    First attempt 2026-10-29 failed and was rolled back (homelab #30, revert
+    e1d73da). The operator could not create `svc:wordsworth-api`: "error
+    creating Tailscale Service: not found (404)", while the tailnet's Services
+    API answers for an admin key. Most likely the operator's OAuth client has
+    no Services scope (Mark's, admin console). The switch had already removed
+    the dedicated proxy, and a leftover cert secret of the group path (same
+    parent labels) then broke the plain reconciler too ("input does not match
+    format", an Sscanf over secret names); deleting it restored the route. The
+    name `wordsworth-api` was down 17.2 minutes (probe, 5/s from a tailnet
+    machine; the Cloudflare console route stayed up). Before the next attempt:
+    create the Service once by hand or by a dry run, so a 404 shows up before
+    the old proxy goes.
   - [ ] 3.3.5 Proof: probe each remaining name from a tailnet machine, five a
     second; evict one proxy pod; no failed request.
 
