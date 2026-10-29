@@ -13,7 +13,12 @@ pilot read of the Gooise Meren dossier found exactly that: a full name shaped
 `<first name> ter <last name>` left in a meeting agenda.
 
 The rule SHALL NOT turn ordinary text into a name: a particle between words that
-are not a name SHALL NOT yield a `PERSON`.
+are not a name SHALL NOT yield a `PERSON`. In particular it SHALL NOT match the
+name of an institution, which has the same shape of capitalised word, particle,
+capitalised word: `Raad van State`, `Kamer van Koophandel`, `Ministerie van
+Binnenlandse Zaken`, `Vereniging van Eigenaren` and `Hoogheemraadschap van
+Rijnland` stay readable, as an organisation's name is not personal data and
+redacting it makes a decision unreadable without protecting anyone.
 
 #### Scenario: A name with each particle is one PERSON
 
@@ -31,3 +36,56 @@ are not a name SHALL NOT yield a `PERSON`.
 
 - **WHEN** a sentence contains `de` or `van` between ordinary lowercase words
 - **THEN** no `PERSON` is detected
+
+#### Scenario: Raad van State is not a name
+
+- **WHEN** a sentence contains `Raad van State`
+- **THEN** no `PERSON` is detected for it
+
+#### Scenario: Kamer van Koophandel is not a name
+
+- **WHEN** a sentence contains `Kamer van Koophandel`
+- **THEN** no `PERSON` is detected for it
+
+#### Scenario: Ministerie van Binnenlandse Zaken is not a name
+
+- **WHEN** a sentence contains `Ministerie van Binnenlandse Zaken`
+- **THEN** no `PERSON` is detected for it
+
+#### Scenario: Vereniging van Eigenaren is not a name
+
+- **WHEN** a sentence contains `Vereniging van Eigenaren`
+- **THEN** no `PERSON` is detected for it
+
+#### Scenario: Hoogheemraadschap van Rijnland is not a name
+
+- **WHEN** a sentence contains `Hoogheemraadschap van Rijnland`
+- **THEN** no `PERSON` is detected for it
+
+### Requirement: The particle rule is not a deterministic detector
+
+The rule that detects a name with a Dutch particle SHALL NOT be a row in the
+shared detector table (`detectors.DETECTORS`). That table holds validated,
+high-precision values, and it is read by the anonymizer, the pseudonymizer,
+`find_deterministic()`, the PII evaluation's deterministic layer and the dataset
+column validation. A name rule is neither validated nor high-precision, and a
+row there would change what all of those report without anyone having chosen
+it: the evaluation would score a name rule as a deterministic layer, and a
+dataset column of organisation names would be classified as holding `PERSON`.
+
+#### Scenario: The detector table is unchanged
+
+- **WHEN** the labels in `detectors.DETECTORS` are listed
+- **THEN** they are `bsn`, `iban`, `email` and `postcode`, and no other
+
+#### Scenario: find_deterministic ignores a name with a particle
+
+- **WHEN** `find_deterministic()` is given a text holding a first name, a
+  particle and a last name
+- **THEN** it returns no hit for that name
+
+#### Scenario: The PII evaluation's deterministic layer is unchanged
+
+- **WHEN** the deterministic layer of the PII evaluation runs on a text holding
+  such a name
+- **THEN** it predicts no entity for it
