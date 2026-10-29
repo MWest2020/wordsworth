@@ -6,6 +6,14 @@
       `redacted/<doc>/<render_version>/<boxmap_hash>`; the redacted endpoint
       uses it. Proved by: `tests/test_redacted_api.py`, a cached object is found
       under the new key form.
+- [ ] `src/wordsworth/pdf_render.py` stays at or under 200 lines (AGENTS.md:
+      "Files ≤ 200 lines"; it was 197, and the first build took it to 201). The
+      `render_version` constant goes in with a one-line comment, or, if that does
+      not fit, in a small separate module that `pdf_render` and
+      `redacted_cache_key` import it from. Acceptance criterion: no file this
+      change touches exceeds 200 lines. Proved by: `wc -l
+      src/wordsworth/pdf_render.py` prints 200 or less, and the same for any new
+      module.
 - [ ] A test that changing the render version misses the cache: cache a render,
       change the version, call again, and see a fresh render stored under the
       new key. Proved by: the test in `tests/test_redacted_api.py`.

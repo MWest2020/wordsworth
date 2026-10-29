@@ -9,6 +9,9 @@
 - **The constant lives in `pdf_render`.** The version is a property of the
   renderer, so it sits next to the code it describes. `redacted_cache_key` takes
   it as part of the key; the endpoint passes nothing new.
+  `pdf_render.py` was 197 lines, so the constant carries a one-line comment at
+  most; if that still pushes the file over the 200-line invariant, it moves to a
+  small separate module. The file limit wins over the placement.
 - **Bumped by hand with every change to `pdf_render`.** That is the decision.
   Enforcement is an open question in the proposal and is not a requirement here.
 - **Old prefixes are orphaned and cleared by runbook.** They cost storage, not
