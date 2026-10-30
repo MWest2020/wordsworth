@@ -32,6 +32,12 @@ under `openspec/`.
   - [ADR-0007](explanation/adr/0007-one-token-per-type.md) — one token per type,
     also where a combination identifies: why a named quasi-identifier is
     reported and measured but never fused.
+  - [ADR-0008](explanation/adr/0008-envelope-encryption-of-originals.md) —
+    originals encrypted under a key per document, wrapped by a KEK that can be
+    the organisation's own; crypto-shredding on delete.
+  - [ADR-0009](explanation/adr/0009-separate-key-and-reveal-service.md) — one
+    service holds the keys, the encrypted values and the reveal decision; the
+    rest of wordsworth sees tokens only.
   - [meting 02](explanation/meting-combinaties-02.md) — 654 of 751 documents
     carry PERSON + DATE_TIME + LOCATION together, and what that number does and
     does not say.

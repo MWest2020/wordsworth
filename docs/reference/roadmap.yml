@@ -10,6 +10,19 @@ current: pilot
 phases:
   - {id: poc, name: "Proof of concept", summary: "ingest, anonymise, search, reversible tokens with grants, the console"}
   - {id: pilot, name: "Pilot: Gooise Meren", summary: "one real Woo publication (415 documents) end to end, for a key user"}
+  - id: data-autonomy
+    name: "Data autonomy"
+    summary: "the organisation holds the keys: originals encrypted, rights per group, a separate key service, keys exportable (ADR-0008, ADR-0009)"
+    # The next phase's done-means, open until built and verified (the overview
+    # shows done_means for the current phase only).
+    done_means:
+      - {item: "New originals stored encrypted under a per-document key", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-envelope-encryption"}
+      - {item: "Deleting a document destroys its key (crypto-shredding)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-crypto-shred"}
+      - {item: "The existing corpus sealed and verified", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-encrypt-existing"}
+      - {item: "Rights per Keycloak group, managed as data", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/keycloak-groups-to-roles"}
+      - {item: "A separate key-and-reveal service with its own database", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/key-service-skeleton"}
+      - {item: "wordsworth cut over to the key service, verified", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/key-service-cutover"}
+      - {item: "Keys exportable only wrapped (escrow, moving away)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/key-export-escrow"}
   - {id: production, name: "Production", summary: "survives a node, NORA-aligned, ready for a first organisation"}
 done_means:
   - {item: "Pilot report filled in, ranking gate passed", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/284"}
