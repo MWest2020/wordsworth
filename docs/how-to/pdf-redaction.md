@@ -87,6 +87,31 @@ text/lists change) locates it. `POST /reprocess` (see
 outcome it hits in its `problems` response, by document, PII type and the
 counts (`located of in-text`, e.g. `0 of 1 located`).
 
+## The count-by-type report
+
+`wordsworth.value_not_located_report.by_type(problems)` groups a reprocess
+run's `value-not-located` outcomes (its `problems` dict) by PII type: per
+type, the number of documents and the located/occurrence totals summed across
+them — nothing else. It is a pure function over the `problems` dict the
+reprocess endpoint already returns, so it runs offline on synthetic input and,
+unchanged, over the real response of a live run (see
+[reversible backfill](reversible-backfill.md)). It never carries a value, a
+page text or a context window — only the PII type and integers.
+
+## When replacement itself survives: `AnonymizationInvariantError`
+
+A `value-not-located` miss means a value could not be found again in the PDF
+to box it — the text itself is clean. A detected value that is still present
+in the anonymised *text* after replacement is a different, more serious
+failure: the pseudonymiser refuses to emit it and raises
+`AnonymizationInvariantError` with code `waarde-overleefde-vervanging`
+(`pseudonymizer.py`). It carries only safe features of the survivor — `label`,
+`lengte`, `in_bron`, `na_vervanging`, `woorden`, `alnum` — never the value
+itself, in the error, its `str`/`repr`, or the audit record. It is not
+retried: `is_transient()` (`retry.py`) returns `False` for it, so a document
+raising it counts as `failed`, never `retryable` — retrying a deterministic
+code bug only burns GLiNER time to reach the same conclusion again.
+
 ## Character boxes: tight, or loose when tight is empty
 
 Every box comes from `pdf_text.char_box`: pdfium's tight character box, or
