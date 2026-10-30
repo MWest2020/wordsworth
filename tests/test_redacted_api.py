@@ -72,6 +72,36 @@ def test_redacted_pdf_served_and_cached(session_factory, mem_store, mem_index,
     assert calls == []  # the second call read the cached object, not a re-render
 
 
+def test_render_version_change_misses_cache(session_factory, mem_store, mem_index,
+                                             fake_embedder, born_digital_pii_pdf,
+                                             monkeypatch):
+    import wordsworth.pdf_render as pdf_render
+
+    kp = InMemoryKeyProvider()
+    doc_id = _ingest_and_process(session_factory, mem_store, mem_index,
+                                 fake_embedder, born_digital_pii_pdf, kp)
+    client = _client(session_factory, mem_store, kp)
+
+    r1 = client.get(f"/documents/{doc_id}/redacted.pdf")
+    assert r1.status_code == 200
+    old_version = pdf_render.RENDER_VERSION
+    new_version = old_version + 1
+    monkeypatch.setattr(pdf_render, "RENDER_VERSION", new_version)
+
+    calls: list[str] = []
+    original_put = mem_store.put
+    mem_store.put = lambda key, data: (calls.append(key), original_put(key, data))[1]
+    try:
+        r2 = client.get(f"/documents/{doc_id}/redacted.pdf")
+    finally:
+        mem_store.put = original_put
+
+    assert r2.status_code == 200
+    assert len(calls) == 1  # the version bump missed the old cache entry and rendered again
+    parts = calls[0].split("/")
+    assert parts == ["redacted", str(doc_id), str(new_version), parts[3]]
+
+
 def test_unknown_document_is_404(session_factory, mem_store):
     client = _client(session_factory, mem_store, InMemoryKeyProvider())
     assert client.get(f"/documents/{uuid4()}/redacted.pdf").status_code == 404

@@ -356,9 +356,12 @@ class BoxMap(Base):
     ``DocumentText`` — mutable, overwritten whole on `reanonymize` — because
     it holds no value and is never the thing being audited; `lists_hash` is
     what lets ``GET /documents/{id}/redacted.pdf`` tell a current box map from
-    a stale one. ``boxmap_hash`` is the content hash of ``boxes``, used as the
-    cache key under ``redacted/<doc>/<boxmap_hash>`` — it changes exactly when
-    the rendered PDF would, so the cache can never serve a mismatched byte."""
+    a stale one. ``boxmap_hash`` is the content hash of ``boxes``, used as
+    part of the cache key under
+    ``redacted/<doc>/<render_version>/<boxmap_hash>`` — it changes exactly
+    when the rendered PDF would, so the cache can never serve a mismatched
+    byte; `render_version` (`pdf_render`) catches a renderer change the box
+    map itself does not reflect."""
 
     __tablename__ = "box_maps"
 

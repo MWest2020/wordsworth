@@ -26,8 +26,16 @@ and never gets a box map. `GET .../redacted.pdf` then answers 409.
 curl $API/documents/<doc>/redacted.pdf -o redacted.pdf
 ```
 
-Cached under `redacted/<doc>/<boxmap_hash>` in object storage — a second call
-reads the cached object rather than re-rendering. Responses:
+Cached under `redacted/<doc>/<render_version>/<boxmap_hash>` in object
+storage — a second call reads the cached object rather than re-rendering.
+`render_version` is a constant in `pdf_render.py`, bumped by hand with every
+change to that module, so a renderer change (a size fix, a box fix) is never
+served from a render an older renderer made — the new version simply misses
+the cache and renders again. Objects under the old
+`redacted/<doc>/<boxmap_hash>` prefix (from before this change) and under a
+superseded `render_version` are never read again; they only cost storage, not
+correctness. Clear them by hand when reclaiming space — nothing reads them.
+Responses:
 
 | Status | Meaning |
 |---|---|
@@ -119,7 +127,8 @@ its loose box (the font's full bounds) when the tight one is degenerate.
 The Word-exported PDFs of the Gooise Meren Woo dossier report a tight box
 0.01 pt high for every character (2026-10-26). Box maps built from those
 covered nothing, and the first "redacted" PDFs showed every name; those
-cached renders were deleted the same day.
+cached renders were deleted by hand the same day — bumping `render_version`
+now makes that unnecessary, since the fix itself changes the cache key.
 
 The render refuses a box with no surface (`DegenerateBoxError`); the two
 PDF endpoints answer 409 `"box map unusable ..."` until `reanonymize`
