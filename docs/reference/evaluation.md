@@ -72,6 +72,40 @@ python -m wordsworth.eval.pii_run gold.jsonl [--layers deterministic,openanonymi
   service failure is a hard error, never an empty result. Read-only: nothing is
   ingested, indexed or audited.
 
+## Over-detection baseline (redaction-overdetection)
+
+Separate again: not "does detection find PII" but "does detection find things
+that are NOT PII" — ordinary Dutch words redacted as ORGANIZATION, LOCATION or
+DATE_TIME. `wordsworth.eval.overdetection` holds the fixture sentences and the
+report format; `wordsworth.eval.overdetection_run` is the CLI that runs it
+against the deployed seam and writes
+[`docs/explanation/meting-overdetectie-07.md`](../explanation/meting-overdetectie-07.md).
+
+```
+python -m wordsworth.eval.overdetection_run gold.jsonl --lists lists --out meting-overdetectie-07.md
+python -m wordsworth.eval.overdetection_run gold.jsonl --out meting-overdetectie-07.md
+```
+
+The first line measures with the current lists applied, the second without —
+same gold corpus, same detection pass, only the lists behind it differ (meting
+05's rule for isolating a list's effect). `gold.jsonl` is the same format as
+`pii_run` above; `tests/fixtures/pii_gold_synthetic.jsonl` works for both.
+
+- **Needs the service.** The baseline always calls OpenAnonymiser — the
+  deterministic layer alone cannot even find these words; it has no
+  ORGANIZATION/LOCATION/DATE_TIME detector. If
+  `WORDSWORTH_OPENANONYMISER_URL` is unreachable the report says **"not run"**
+  and shows no table — never a deterministic-only table standing in for the
+  baseline, which would measure a different thing and call it the baseline.
+- **Prints no values.** The report holds counts and type labels only: per-type
+  precision/recall/leaks/false-positives, and how the five words
+  (`statushouders`, `bewoners`, `woningcorporaties`, `juni`,
+  `wereldvluchtelingendag`) are typed today, as a count per type. No document
+  text, no detected value, ever appears in the output or its logs.
+- **Label.** Every run is headed "what detection would do now on this text" —
+  it re-runs detection over given text; it does not read what a past run
+  produced.
+
 ## Generating a corpus whose answer we know
 
 Measurement 01 ran on 31 documents: enough to find a bug, too little to carry a
