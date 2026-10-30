@@ -1,0 +1,23 @@
+# Roadmap, as data. Drafted 2026-10-30 by the odin coding session from this
+# repository's own docs and merged work, for the overview at westerweel.work/nu/.
+# Mark reviews and corrects it; until then it is a proposal. An item is "done"
+# only with evidence (a PR, issue or doc); everything else is "open".
+# Schema: project, goal, current (a phase id), phases [id, name, summary], and
+# done_means for the current phase [item, status done|open, evidence].
+project: wordsworth
+goal: "A sovereign pipeline that turns large volumes of Dutch government documents into a searchable, privacy-safe corpus with layered, audited de-anonymisation."
+current: pilot
+phases:
+  - {id: poc, name: "Proof of concept", summary: "ingest, anonymise, search, reversible tokens with grants, the console"}
+  - {id: pilot, name: "Pilot: Gooise Meren", summary: "one real Woo publication (415 documents) end to end, for a key user"}
+  - {id: production, name: "Production", summary: "survives a node, NORA-aligned, ready for a first organisation"}
+done_means:
+  - {item: "Pilot report filled in, ranking gate passed", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/284"}
+  - {item: "PII read on a sample of the anonymised output", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/284"}
+  - {item: "No untokenised names left (names with particles like ter, van der)", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/285"}
+  - {item: "A redacted PDF for every reversible document in the dossier", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/259"}
+  - {item: "Console for the key user: deleted documents hidden, a dossier home", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/277"}
+  - {item: "Readable topics (named by the language model) and search that shows the matching passage", status: open, evidence: "https://github.com/MWest2020/wordsworth/blob/main/docs/explanation/review-key-user-2026-10-28.md"}
+  - {item: "Share from the console with layered anonymisation (a grant at a PPL, the redacted and reveal PDF)", status: open, evidence: "https://github.com/MWest2020/wordsworth/blob/main/docs/explanation/review-key-user-2026-10-28.md"}
+  - {item: "Documents survive a node (storage on two nodes, proven)", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/193"}
+  - {item: "The API survives a node (tailnet ingress on two nodes)", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/192"}
