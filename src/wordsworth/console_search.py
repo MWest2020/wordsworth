@@ -17,6 +17,7 @@ from fastapi import Request
 from . import console_data
 from .console_data import _Missing, label
 from .dossiers import DossierError
+from .pipeline import current_state
 from .search_index import SearchUnavailable
 from .models import Document, DocumentText
 
@@ -128,10 +129,18 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                     samenvattingen = by_document(session, ids)
                     for h in raw:
                         doc_id = UUID(str(h.document_id))
+                        doc = session.get(Document, doc_id)
+                        # A guard against a stale index entry, not a claim that
+                        # one exists today: deletion and superseding already
+                        # remove the index entry (console-hide-deleted).
+                        if console_data.is_hidden(
+                                current_state(session, doc_id),
+                                doc.superseded_by if doc else None):
+                            continue
                         row = session.get(DocumentText, doc_id)
                         hits.append({
                             "id": str(doc_id),
-                            "key": label(session.get(Document, doc_id) or _Missing()),
+                            "key": label(doc or _Missing()),
                             "score": round(float(h.score), 2),
                             "fragment": console_data.fragment(
                                 row.anonymized_text if row else "", q),
