@@ -10,11 +10,12 @@ from __future__ import annotations
 import re
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from .grants import ACTIVE
 from .pseudonymizer import label_of
 from .models import AuditRecord, DocumentPseudonym, GrantRecord
+from .states import State
 
 #: Terms offered on the search page. Examples, not a promise: whether one matches
 #: depends on the corpus that happens to be loaded, and a term with no hits says
@@ -166,6 +167,41 @@ def types_per_document(session) -> dict:
         out.setdefault(doc_id, {})
         out[doc_id][label] = out[doc_id].get(label, 0) + 1
     return out
+
+
+def latest_state_subquery():
+    """``document_id -> to_state`` of each document's latest audit record.
+
+    A join, not a per-document query: the list filters hidden documents here,
+    at the query, so a capped page and its total agree on what "hidden" means
+    (filtering after the `LIMIT`, or in the template, would make a page of 200
+    rows show fewer than 200 live documents and a total that does not match).
+    """
+    latest_seq = (select(AuditRecord.document_id,
+                         func.max(AuditRecord.seq).label("seq"))
+                  .group_by(AuditRecord.document_id).subquery())
+    return (select(AuditRecord.document_id.label("document_id"),
+                   AuditRecord.to_state.label("to_state"))
+            .join(latest_seq,
+                  (AuditRecord.document_id == latest_seq.c.document_id)
+                  & (AuditRecord.seq == latest_seq.c.seq))
+            .subquery())
+
+
+def hidden_condition(to_state, superseded_by):
+    """Hidden by default: state `deleted`, or superseded.
+
+    The one rule behind both the list's query (``to_state`` from
+    `latest_state_subquery`, ``superseded_by`` from `Document`) and the search
+    guard's check on an already-loaded document (`is_hidden`) — written once
+    so the two cannot drift apart.
+    """
+    return or_(to_state == State.DELETED.value, superseded_by.isnot(None))
+
+
+def is_hidden(state: State | None, superseded_by) -> bool:
+    """The same rule, for a state and a document already loaded in Python."""
+    return state == State.DELETED or superseded_by is not None
 
 
 def reach(session, types: set[str]) -> tuple[int, list[str]]:

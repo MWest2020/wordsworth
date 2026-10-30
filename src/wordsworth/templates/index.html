@@ -11,6 +11,17 @@ er gebeurd is, niet wat er zou gebeuren.</p>
 <div class="card" style="margin-top:22px">
  <div class="panel-head"><span class="dot"></span><h3>Corpus</h3>
    <span class="badge">{{ total }} document{{ '' if total == 1 else 'en' }}{% if total > docs|length %} · nieuwste {{ docs|length }}{% endif %}</span></div>
+ {% if hidden_total %}
+ <p class="note">
+ {% if alles %}
+ Verwijderde en vervangen documenten worden getoond.
+ <a href="/console">Verberg ze weer</a>.
+ {% else %}
+ {{ hidden_total }} verwijderd of vervangen document{{ '' if hidden_total == 1 else 'en' }} verborgen.
+ <a href="/console?alles=1">Toon ze</a>.
+ {% endif %}
+ </p>
+ {% endif %}
  {% if docs %}
  <table><thead><tr><th>sleutel</th><th>toestand</th><th>aangetroffen types</th></tr></thead>
  <tbody>

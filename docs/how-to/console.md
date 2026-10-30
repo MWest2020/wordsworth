@@ -69,6 +69,16 @@ per document, not from re-running the detectors over the source text: that would
 answer "what would the detectors say today", which is a different question from
 "what did the pipeline do".
 
+A deletion keeps a document's row (see below), and a superseded copy is a
+retired row of the same object (`wordsworth-supersession`), so by default the
+list hides both: documents whose state is `deleted`, and superseded copies. A
+cleaned-up corpus would otherwise show mostly what was removed and bury what is
+worth reading. `?alles=1` is the explicit toggle that shows them too, with their
+state; the total in the badge follows the same rule as the rows underneath it.
+When something is hidden the page says so, with one total and a link to the
+toggle — a list that silently leaves rows out reads as the whole corpus. A list
+with nothing hidden shows no such notice.
+
 **`/console/documents/{id}`** shows the stored pseudonymised text with each token
 marked and labelled, plus which declared combinations the document carries in
 full and which it leaves untouched.
@@ -116,6 +126,11 @@ The offered terms are examples, not a promise: whether one matches depends on th
 corpus that happens to be loaded. A term with no hits says so; an index that is
 down says *that*, rather than returning an empty list that reads as "nothing
 matched".
+
+A hit for a deleted or superseded document never shows, and the page offers no
+toggle for it: deleting or superseding a document already removes its index
+entry, so there is nothing a toggle could reveal. The rule here only guards
+against a stale index entry that should not exist.
 
 ## Revealing
 

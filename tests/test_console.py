@@ -71,6 +71,153 @@ def test_logging_in_sets_an_httponly_cookie_and_the_list_renders(session_factory
     assert "mark" in page.text                       # the caller label, from the key
 
 
+# --- console-hide-deleted: default hides deleted and superseded documents --
+
+def _supersede_for_test(session, copy_id, survivor_id, actor="test"):
+    """Marks `copy_id` superseded by `survivor_id` directly, the way
+    `supersession.supersede()` does, but without its same-object-key rule --
+    these tests are about what the console shows, not about the supersession
+    workflow itself, so the two documents need no shared `object_key`."""
+    from wordsworth.models import Document
+    from wordsworth.pipeline import transition
+    from wordsworth.states import State
+
+    transition(session, copy_id, State.SUPERSEDED, step="supersede",
+               payload={"superseded_by": str(survivor_id), "actor": actor})
+    session.get(Document, copy_id).superseded_by = survivor_id
+    session.flush()
+
+
+def test_hidden_condition_and_is_hidden_agree_on_live_deleted_and_superseded(
+        session):
+    """The one rule behind the list's query and the search guard's check:
+    hidden by default means state `deleted`, or superseded."""
+    from sqlalchemy import select
+
+    from wordsworth import console_data
+    from wordsworth.deletion import delete_document
+    from wordsworth.models import Document
+    from wordsworth.object_store import InMemoryObjectStore
+    from wordsworth.pipeline import current_state, register
+    from wordsworth.search_index import InMemoryIndex
+
+    live = register(session, "documents/live")
+    deleted = register(session, "documents/deleted")
+    copy = register(session, "documents/copy")
+    survivor = register(session, "documents/survivor")
+    session.flush()
+    delete_document(session, deleted.id, InMemoryObjectStore(), InMemoryIndex(),
+                    actor="tester")
+    _supersede_for_test(session, copy.id, survivor.id)
+    session.commit()
+
+    states = console_data.latest_state_subquery()
+    hidden = console_data.hidden_condition(states.c.to_state, Document.superseded_by)
+    by_id = {str(doc_id): row_hidden for doc_id, row_hidden in session.execute(
+        select(Document.id, hidden)
+        .outerjoin(states, states.c.document_id == Document.id)).all()}
+    assert by_id[str(live.id)] is False
+    assert by_id[str(deleted.id)] is True
+    assert by_id[str(copy.id)] is True
+    assert by_id[str(survivor.id)] is False
+
+    # The pure predicate, used by the search guard on an already-loaded
+    # document, agrees with the query condition above.
+    assert console_data.is_hidden(current_state(session, live.id),
+                                  live.superseded_by) is False
+    assert console_data.is_hidden(current_state(session, deleted.id),
+                                  deleted.superseded_by) is True
+    assert console_data.is_hidden(current_state(session, copy.id),
+                                  copy.superseded_by) is True
+    assert console_data.is_hidden(current_state(session, survivor.id),
+                                  survivor.superseded_by) is False
+
+
+def test_the_list_hides_deleted_and_superseded_documents_by_default(session_factory):
+    """The list a reader opens by default; the toggle that shows what it hides;
+    the notice that says so with one total -- and says nothing when there is
+    nothing to hide."""
+    from wordsworth.deletion import delete_document
+    from wordsworth.models import Document
+    from wordsworth.object_store import InMemoryObjectStore
+    from wordsworth.search_index import InMemoryIndex
+
+    with session_factory() as s:
+        live_id = _seed(s, "live.pdf", "Een levend document.").id
+        survivor_id = _seed(s, "survivor.pdf", "De overlevende.").id
+        s.commit()
+
+    c = _app(session_factory)
+    c.post("/console/login", data={"key": "s3cret"})
+
+    schoon = c.get("/console")
+    assert "live.pdf" in schoon.text and "survivor.pdf" in schoon.text
+    assert "verborgen" not in schoon.text  # nothing hidden, no claim of hiding
+
+    with session_factory() as s:
+        deleted_id = _seed(s, "deleted.pdf", "Een verwijderd document.").id
+        copy_id = _seed(s, "copy.pdf", "Een vervangen document.").id
+        delete_document(s, deleted_id, InMemoryObjectStore(), InMemoryIndex(),
+                        actor="tester")
+        _supersede_for_test(s, copy_id, survivor_id)
+        s.commit()
+
+    default = c.get("/console")
+    assert "live.pdf" in default.text and "survivor.pdf" in default.text
+    assert "deleted.pdf" not in default.text
+    assert "copy.pdf" not in default.text
+    assert "2 verwijderd of vervangen documenten verborgen" in default.text
+    assert "Toon ze" in default.text
+
+    getoond = c.get("/console?alles=1")
+    for naam in ("live.pdf", "deleted.pdf", "copy.pdf", "survivor.pdf"):
+        assert naam in getoond.text
+    assert "deleted" in getoond.text and "superseded" in getoond.text
+    assert "worden getoond" in getoond.text and "Verberg ze weer" in getoond.text
+
+    # Opening a deleted document by id is unaffected: an explicit request for
+    # that document, not the list.
+    assert c.get(f"/console/documents/{deleted_id}").status_code == 200
+
+
+def test_search_guard_drops_a_hand_built_stale_entry_for_a_deleted_document(
+        session_factory):
+    """Deletion already removes the index entry (console-hide-deleted); this
+    test builds a stale entry BY HAND to prove the guard against it, not to
+    claim that deletion leaves hits behind."""
+    from wordsworth.deletion import delete_document
+    from wordsworth.dossiers import add, ensure
+    from wordsworth.models import DocumentText
+    from wordsworth.object_store import InMemoryObjectStore
+    from wordsworth.search_index import InMemoryIndex
+
+    index = InMemoryIndex()
+    with session_factory() as s:
+        dossier = ensure(s, "zaak")
+        s.flush()
+        doc = register(s, "documents/stale", filename="stale.pdf")
+        add(s, dossier.id, doc.id, actor="test")
+        s.merge(DocumentText(document_id=doc.id,
+                             anonymized_text="Een verwijderd stuk."))
+        s.commit()
+        doc_id, dossier_id = doc.id, dossier.id
+
+    with session_factory() as s:
+        delete_document(s, doc_id, InMemoryObjectStore(), index, actor="tester")
+        s.commit()
+
+    # The stale entry, built by hand: deletion just removed this very id from
+    # this very index above; this re-adds it to simulate a leftover entry the
+    # guard has to catch, not something deletion itself produces.
+    index.index(str(doc_id), "Een verwijderd stuk.", "documents/stale",
+               dossiers=[str(dossier_id)])
+
+    c = _app(session_factory)
+    c.post("/console/login", data={"key": "s3cret"})
+    r = c.get("/console/search", params={"q": "verwijderd", "dossier": "zaak"})
+    assert "stale.pdf" not in r.text
+
+
 def test_a_document_page_shows_the_artefact_and_marks_its_tokens(session_factory):
     with session_factory() as s:
         d = _seed(s, "besluit-2.pdf", "Betreft [PERSON:aabbccdd] te [POSTCODE:11223344].")

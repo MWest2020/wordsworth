@@ -45,6 +45,7 @@ from .auth import CONSOLE_COOKIE
 from .console_data import label, marked, reach, types_per_document
 from .models import AuditRecord, DeclaredCombination, Document, DocumentText
 from .pipeline import current_state
+from .states import State
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 #: Self-hosted fonts and stylesheet. A sovereignty demo that fetches its letters
@@ -138,7 +139,9 @@ def build_router(session_factory, keys: dict[str, str],
         return r
 
     @router.get("", response_class=HTMLResponse, include_in_schema=False)
-    def index(request: Request):
+    def index(request: Request, alles: bool = False):
+        """``?alles=1`` is the explicit toggle: a deleted or superseded
+        document is hidden unless the reader asks for it (console-hide-deleted)."""
         _mag_lezen(request)
         with session_factory() as session:
             per_doc = types_per_document(session)
@@ -149,23 +152,32 @@ def build_router(session_factory, keys: dict[str, str],
             latest = (select(AuditRecord.document_id,
                              func.max(AuditRecord.seq).label("seq"))
                       .group_by(AuditRecord.document_id).subquery())
+            states = console_data.latest_state_subquery()
+            hidden = console_data.hidden_condition(states.c.to_state,
+                                                   Document.superseded_by)
+            rows = (select(Document, states.c.to_state)
+                   .outerjoin(latest, latest.c.document_id == Document.id)
+                   .outerjoin(states, states.c.document_id == Document.id)
+                   .order_by(latest.c.seq.desc().nullslast()))
+            if not alles:
+                rows = rows.where(~hidden)
             docs = []
-            # Live documents only. Superseding writes an audit record, so the
-            # retired copies would otherwise be the most recently touched and
-            # fill this page (one-document-per-object).
-            for d in session.execute(
-                    select(Document).outerjoin(latest,
-                                               latest.c.document_id == Document.id)
-                    .where(Document.superseded_by.is_(None))
-                    .order_by(latest.c.seq.desc().nullslast()).limit(200)).scalars():
-                state = current_state(session, d.id)
+            for d, to_state in session.execute(rows.limit(200)):
+                state = State(to_state) if to_state else None
                 docs.append({"id": str(d.id), "key": label(d),
                              "state": state.value if state else "—",
                              "types": sorted(per_doc.get(d.id, {}).items())})
-            total = session.execute(select(func.count(Document.id)).where(
-                Document.superseded_by.is_(None))).scalar_one()
+            counted = (select(func.count(Document.id))
+                      .outerjoin(states, states.c.document_id == Document.id))
+            total = session.execute(
+                counted if alles else counted.where(~hidden)).scalar_one()
+            # How many are hidden right now, shown regardless of the toggle so
+            # the notice (and its "show them" / "hide them again" link) match
+            # what the corpus actually holds.
+            hidden_total = session.execute(counted.where(hidden)).scalar_one()
         return TEMPLATES.TemplateResponse(request, "index.html", {
-            "docs": docs, "total": total, "caller": _caller(request)})
+            "docs": docs, "total": total, "alles": alles,
+            "hidden_total": hidden_total, "caller": _caller(request)})
 
     console_search.mount(router, session_factory, search_index, TEMPLATES,
                          _mag_lezen, embedder)
