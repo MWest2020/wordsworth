@@ -34,6 +34,21 @@
       silent fallback. Proved by: a test that the rule fails loudly when the
       file is absent.
 
+- [ ] A brake on the gazetteer. Proved by: a new test (e.g.
+      `tests/test_particle_names_veiligheid.py`, modelled on
+      `tests/test_allow_list_veiligheid.py`) that runs every shipped gazetteer
+      entry against the evaluation corpus and fails when an entry produces a
+      `PERSON` from ordinary text.
+- [ ] First names that are also common capitalised words at sentence start
+      (`Ton`, `Wil`, `Bart`) are excluded. Proved by: a test that the shipped
+      gazetteer holds none of them, and that `Ton van der <last name>` at
+      sentence start with a word like `Ton` yields no `PERSON`.
+- [ ] Run `python -m wordsworth.eval.overdetection_run gold.jsonl --out
+      meting-overdetectie-<nn>.md` with the gazetteer rule in place and record
+      the result in `docs/explanation/` with the date. Proved by: the
+      measurement file exists and holds the result. If OpenAnonymiser is
+      unreachable the run reports "not run"; record that, never an estimate.
+
 ## 3. Outside the deterministic table
 - [ ] Add no row to `detectors.DETECTORS`. Proved by: a test asserting the set of
       labels in `DETECTORS` is still `{bsn, iban, email, postcode}`.
@@ -44,7 +59,20 @@
       dataset tests pass unchanged, and a test that
       `eval.pii.deterministic_entities` returns nothing for a particle name.
 
-## 4. Measured
+## 4. Aggregates
+
+- [ ] Per-layer aggregates and the bare first name. `winner` in
+      `src/wordsworth/pseudonymizer.py:251-256` is keyed by text, so a person is
+      counted twice when GLiNER returns the bare first name next to the
+      full-name span. Either dedupe the audit aggregate so the shorter span is
+      absorbed into the longer one, or state the overcount in the spec and test
+      it (the choice is an open question in the proposal). Replacement stays
+      unchanged. Proved by: a test with a text where a stub entity layer returns
+      the bare first name and the full name, asserting the aggregate counts for
+      that person (one, or the stated overcount), and that the anonymised output
+      is identical either way.
+
+## 5. Measured
 - [ ] Run the PII eval on the generated evaluation corpus before and after
       (`python scripts/eval/generate_ground_truth.py /tmp/gt --count 500`, then
       `python -m wordsworth.eval.pii_run /tmp/gt/gold.jsonl` with the
@@ -52,8 +80,16 @@
       `docs/reference/evaluation.md`. Proved by: the section holds both numbers
       and the date. If the service is unreachable the run fails hard; record
       that instead of a number, never an estimate.
+- [ ] Label the measurement as circular. The gold names come from
+      `eval/synthetic.py:18-21`, the same first names a gazetteer would be
+      seeded from. Proved by: `docs/reference/evaluation.md` says so next to the
+      numbers.
+- [ ] Report recall on a gold set not derived from the gazetteer's own first
+      names. Proved by: `docs/reference/evaluation.md` holds a second PERSON
+      recall number with the date, on names whose first names are not in the
+      shipped gazetteer's source, and says how that set was built.
 
-## 5. Docs (must change with the code)
+## 6. Docs (must change with the code)
 - [ ] `docs/reference/evaluation.md`: state that names with a Dutch particle are
       detected as one `PERSON` by the `dutch_particle_name` rule, anchored on a
       first-name gazetteer, that institution names are excluded, and that the
@@ -64,8 +100,11 @@
       name) and note that a miss of this shape is fixed by adding the first
       name to the gazetteer, not by `deny.json`. Proved by: the section exists
       and names the file.
+- [ ] `docs/how-to/detection-lists.md` and `docs/reference/evaluation.md` also state
+      the gazetteer brake (every entry tested against the corpus; `Ton`, `Wil`,
+      `Bart` excluded). Proved by: the section exists and names the test file.
 
-## 6. Check
+## 7. Check
 - [ ] `openspec validate detect-dutch-particle-names --strict` passes.
 - [ ] `uvx ruff check src/ tests/` and the full test suite pass; skipped
       database tests are listed in the report.

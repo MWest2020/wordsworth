@@ -39,6 +39,22 @@
 - **Every gazetteer entry has a reason.** An entry is `{"naam", "reden"}`; the
   loader refuses an entry without a reason, as `detection_lists.py` does for
   `allow.json`. A bare list nobody can review is not accepted.
+- **A brake on the gazetteer.** Like the allow-list brake
+  (`tests/test_allow_list_veiligheid.py`), every gazetteer entry is tested
+  against the evaluation corpus, so "this entry turns ordinary text into a
+  person" is established before roll-out rather than trusted. First names that
+  are also common capitalised words at sentence start (`Ton`, `Wil`, `Bart`) are
+  excluded from the gazetteer. `eval/overdetection_run.py` runs as a task and
+  its result is recorded. The gazetteer-anchored design is unchanged.
+- **The measurement says what it is.** The gold names of the generated corpus
+  come from `eval/synthetic.py:18-21`; a gazetteer seeded from the same first
+  names scores itself. The result is labelled circular in
+  `docs/reference/evaluation.md`, and recall is also reported on a gold set not
+  derived from the gazetteer's own first names.
+- **Replacement stays unchanged.** `winner` in `pseudonymizer.py:251-256` is keyed
+  by text, so when GLiNER returns the bare first name next to the full-name span
+  the per-layer aggregate counts one person twice. Only the aggregate is at
+  stake; what is replaced is not touched.
 - **Fixed particle list.** `van`, `de`, `ter`, `ten`, `van der`. A particle of
   two words is one particle. Further particles are a later change.
 - **Proof by shape, not by value.** The tests use synthetic names, one example
@@ -60,5 +76,6 @@
 
 ## Left open
 
-The initial gazetteer entries and their source, and particles beyond the five:
+The initial gazetteer entries and their source, particles beyond the five, and
+whether the double count in the aggregates is deduplicated or stated and tested:
 see the proposal's open questions. They are not requirements.
