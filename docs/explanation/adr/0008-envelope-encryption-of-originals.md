@@ -58,6 +58,13 @@ can revoke its KEK and every one of its documents becomes unreadable at once.
   `key_id`, nonce) followed by the AES-256-GCM ciphertext. The associated data
   binds the ciphertext to the document id and to the SHA-256 of the plaintext,
   so an object swapped between documents fails to decrypt.
+  *Amended 2026-10-31:* the associated data is the object key (which is
+  `documents/` + the SHA-256 of the plaintext) and the `key_id`, without the
+  document id. One object can belong to successive documents (a superseded
+  copy, a re-ingest after deletion); binding the document id would force a
+  re-seal over a stored object at every change of owner. A swapped or copied
+  object still fails to decrypt. Reasoning in
+  `openspec/changes/originals-cipher-and-key-store/design.md` §3.
 - **The object key stays `documents/<sha256 of the plaintext>`**, so
   de-duplication by content still works and the existing provenance (source
   hash) stays comparable. The hash reveals equality of content, not content.
@@ -90,6 +97,12 @@ can revoke its KEK and every one of its documents becomes unreadable at once.
   object count, and per document that the decrypted bytes hash to the recorded
   source hash. The plaintext object is removed only after its encrypted
   successor verifies. Replicated copies (SeaweedFS `001`) follow the object.
+  Built as the chain `originals-cipher-and-key-store` →
+  `deleted-document-releases-object-key` → `originals-encrypted-ingest` →
+  `originals-ocr-sealed` → `originals-crypto-shred` →
+  `originals-encrypt-existing` (the migration itself). The chain replaced
+  `originals-envelope-encryption` (#306), which was too large to build at
+  once; its decisions are in `originals-cipher-and-key-store/design.md`.
 - **WORM and Object Lock**: the audit exports (S3 Object Lock, COMPLIANCE)
   contain no originals, so nothing changes there. Should originals ever sit
   under a retention lock, crypto-shredding is the only deletion that remains

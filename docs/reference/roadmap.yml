@@ -16,7 +16,10 @@ phases:
     # The next phase's done-means, open until built and verified (the overview
     # shows done_means for the current phase only).
     done_means:
-      - {item: "New originals stored encrypted under a per-document key", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-envelope-encryption"}
+      - {item: "Sealed-original format and wrapped key store (nothing sealed yet)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-cipher-and-key-store"}
+      - {item: "A deleted document releases its object key (same bytes can be ingested again)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/deleted-document-releases-object-key"}
+      - {item: "New originals stored encrypted under a per-document key, every reader opens them", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-encrypted-ingest"}
+      - {item: "OCR-recovered originals stored encrypted, never over another document", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-ocr-sealed"}
       - {item: "Deleting a document destroys its key (crypto-shredding)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-crypto-shred"}
       - {item: "The existing corpus sealed and verified", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-encrypt-existing"}
       - {item: "Rights per Keycloak group, managed as data", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/keycloak-groups-to-roles"}
