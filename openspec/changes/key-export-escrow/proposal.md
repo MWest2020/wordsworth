@@ -18,4 +18,4 @@ for recovery. Keys may only ever leave wrapped.
 
 ## Depends on
 
-`key-service-cutover`.
+`key-service-cutover`; built after `search-by-value` (chain order).
