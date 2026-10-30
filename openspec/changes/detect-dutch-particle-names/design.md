@@ -22,10 +22,25 @@
   high-precision, and a row there would silently change all of those paths: the
   eval would score a name rule as a "deterministic" layer, and a dataset column
   holding company names would be classified as containing PERSON. So the rule
-  lives in the entity (PERSON) step instead, and the following stay as they are:
+  lives in its own module instead, and the following stay as they are:
   `DETECTORS` keeps its four labels, `find_deterministic()` returns no hit for a
   name with a particle, and the PII eval's deterministic layer and the dataset
   column validation give the same results as before. Tests pin each.
+- **Mechanism: its own pattern in a new module.** The rule finds the span
+  itself (first name, particle, last name) instead of widening what the entity
+  layer found. Widening depends on the entity layer having found a fragment
+  first, which is exactly what failed for the Gooise Meren name, and it would
+  make the result depend on a model. Its detections carry the layer name
+  `dutch_particle_name`, so the per-layer aggregates show what it found.
+- **Anchor: a first-name gazetteer.** The pattern matches only when the word
+  before the particle is in the gazetteer. Institution words (`Raad`, `Kamer`,
+  `Ministerie`, ...) are not first names, so the class of institutions is
+  excluded, not just five named ones.
+- **Every gazetteer entry has a reason.** An entry is `{"naam", "reden"}`; the
+  loader refuses an entry without a reason, as `detection_lists.py` does for
+  `allow.json`. A bare list nobody can review is not accepted.
+- **Fixed particle list.** `van`, `de`, `ter`, `ten`, `van der`. A particle of
+  two words is one particle. Further particles are a later change.
 - **Proof by shape, not by value.** The tests use synthetic names, one example
   per particle.
 
@@ -40,12 +55,10 @@
   `find_deterministic()` and everything built on it without anyone choosing to.
 - **An institution deny-list as the only precision measure.** Five named
   institutions are scenarios, not the whole class; a list of them alone does not
-  generalise to `Waterschap van ...` or `Stichting van ...`. The apply step
-  chooses the anchor (see the proposal) and the scenarios are the acceptance.
+  generalise to `Waterschap van ...` or `Stichting van ...`.
+- **Widening the spans the entity layer finds.** See Mechanism above.
 
 ## Left open
 
-Mechanism, the first-name gazetteer and the full particle list: see the
-proposal's open questions. They are not requirements. If a gazetteer is
-chosen, each entry carries a reason, in the form `allow.json` uses
-(`{"patroon"/name, "reden"}`), refused at load when missing.
+The initial gazetteer entries and their source, and particles beyond the five:
+see the proposal's open questions. They are not requirements.

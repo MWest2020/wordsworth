@@ -28,35 +28,34 @@ through `find_deterministic()`.
 
 ## What changes
 
-1. **Detection**: a first name, a Dutch particle (one or more words: `van`,
-   `de`, `ter`, `ten`, `van der`, ...) and a last name are detected as ONE
-   `PERSON` span.
-2. **A precision anchor**: the rule SHALL NOT match institution names. The
-   spec carries negative scenarios for `Raad van State`, `Kamer van
-   Koophandel`, `Ministerie van Binnenlandse Zaken`, `Vereniging van Eigenaren`
-   and `Hoogheemraadschap van Rijnland`.
-3. **Outside `DETECTORS`**: the rule is NOT a row in `detectors.DETECTORS`, so
-   `find_deterministic()`, the PII eval's deterministic layer and the dataset
-   column validation behave exactly as before. A second requirement and tests
-   pin that.
-4. **Tests** with synthetic examples, one per particle, plus the negative cases.
-5. **Docs** that describe the behaviour change with it.
+1. **Detection**: a first name, a Dutch particle and a last name are detected
+   as ONE `PERSON` span. The particle list is fixed in this change: `van`,
+   `de`, `ter`, `ten`, `van der`.
+2. **Mechanism**: the rule is its own deterministic pattern in a new module.
+   It does not widen spans the entity layer already found, and it is not a row
+   in `detectors.DETECTORS`. Its detections carry the layer name
+   `dutch_particle_name`.
+3. **Precision anchor**: a first-name gazetteer. The pattern only matches when
+   the word before the particle is a gazetteer entry, so `Raad van State`,
+   `Kamer van Koophandel`, `Ministerie van Binnenlandse Zaken`, `Vereniging van
+   Eigenaren` and `Hoogheemraadschap van Rijnland` are not names. Every entry
+   carries a reason, as entries in `allow.json` do
+   (`docs/how-to/detection-lists.md`); the loader refuses an entry without one.
+4. **Outside `DETECTORS`**: `find_deterministic()`, the PII eval's deterministic
+   layer and the dataset column validation behave exactly as before. A
+   requirement and tests pin that.
+5. **Tests** with synthetic examples, one per particle, plus the negative cases.
+6. **Docs** that describe the behaviour change with it.
 
 ## Open questions
 
-- **Mechanism.** Not decided in the channel: whether the span is widened from
-  what the entity layer already finds or found by its own pattern. The apply
-  step chooses. Whatever it chooses must be deterministic, must live outside
-  `detectors.DETECTORS`, and must satisfy the negative scenarios.
-- **First-name gazetteer.** Whether the precision anchor is a list of known
-  first names is not decided. If one is chosen, every entry carries a reason, as
-  entries in `allow.json` do (`docs/how-to/detection-lists.md`): the loader
-  refuses an entry without one, and a bare list of names that nobody can review
-  is not accepted. This is a constraint on that option, not a requirement of
-  this change.
-- **Which particles are in the list.** The channel named `van`, `de`, `ter`,
-  `ten`, `van der` and "...". The full list is not fixed here; the spec and
-  tests cover the five named.
+- **The initial gazetteer entries.** The mechanism and the rule that each entry
+  has a reason are decided; which first names the list starts with, and from
+  what source, is not. The build needs a starting list to prove the scenarios;
+  its coverage decides how many real names this misses, which the PII
+  measurement in `tasks.md` reports.
+- **Particles beyond the five** (`van den`, `van de`, `von`, `op de`, ...) are
+  not in this change. Adding one is a later change to the fixed list.
 - **Re-running the affected document and the corpus.** Re-anonymising document
   `1c87f856` and the count-only check on its anonymised text need the
   deployed corpus; they are an operator step, not a build task, and are not in
@@ -66,7 +65,8 @@ through `find_deterministic()`.
 
 ## Impact
 
-- Specs: `anonymization` (ADDED, two requirements).
-- Code: the PERSON detection step (not `src/wordsworth/detectors.py`'s
-  `DETECTORS`); new tests.
+- Specs: `anonymization` (ADDED, three requirements).
+- Code: a new module for the particle rule and its gazetteer loader (not
+  `src/wordsworth/detectors.py`'s `DETECTORS`); a gazetteer data file; new
+  tests.
 - Docs: `docs/reference/evaluation.md` and `docs/how-to/detection-lists.md`.

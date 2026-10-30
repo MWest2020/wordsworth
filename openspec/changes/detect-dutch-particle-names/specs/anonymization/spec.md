@@ -3,8 +3,10 @@
 ### Requirement: A name with a Dutch particle is one person
 
 Detection SHALL treat a first name, a Dutch particle and a last name as ONE
-`PERSON` span. The particles include `van`, `de`, `ter`, `ten` and `van der`;
-a particle of several words is one particle.
+`PERSON` span. The particles are `van`, `de`, `ter`, `ten` and `van der`; a
+particle of several words is one particle. The rule is its own deterministic
+pattern, not a widening of spans another layer found, and its detections carry
+the layer name `dutch_particle_name`.
 
 What identifies a person is the whole name. Detecting the first name and the
 last name apart leaves the particle readable or yields several tokens for one
@@ -25,6 +27,11 @@ redacting it makes a decision unreadable without protecting anyone.
 - **WHEN** a synthetic name is built with each of `van`, `de`, `ter`, `ten` and
   `van der` between a first name and a last name
 - **THEN** each is detected as one `PERSON` span covering the whole name
+
+#### Scenario: The detection carries its own layer name
+
+- **WHEN** such a name is detected
+- **THEN** the detection's layer is `dutch_particle_name`
 
 #### Scenario: No part of the name stays readable
 
@@ -61,6 +68,35 @@ redacting it makes a decision unreadable without protecting anyone.
 
 - **WHEN** a sentence contains `Hoogheemraadschap van Rijnland`
 - **THEN** no `PERSON` is detected for it
+
+### Requirement: The particle rule is anchored on a first-name gazetteer
+
+The rule SHALL match only when the word before the particle is an entry of a
+first-name gazetteer. Every entry SHALL carry a reason, as entries in
+`allow.json` do, and the loader SHALL refuse an entry without one: a bare list
+of names that nobody can review is not accepted. A missing or unreadable
+gazetteer SHALL be a hard error, not an empty list.
+
+The gazetteer is what keeps institutions out: a word like `Raad`, `Kamer` or
+`Ministerie` is not a first name, so the shape `<Capitalised> van <Capitalised>`
+alone never yields a `PERSON`.
+
+#### Scenario: A word that is not a listed first name is not a name
+
+- **WHEN** a capitalised word that is not in the gazetteer stands before a
+  particle and a capitalised word
+- **THEN** no `PERSON` is detected for it
+
+#### Scenario: A gazetteer entry without a reason is refused
+
+- **WHEN** the gazetteer is loaded with an entry that has no reason, or a blank
+  one
+- **THEN** loading fails and names the entry
+
+#### Scenario: A missing gazetteer is an error
+
+- **WHEN** the gazetteer file is absent or unreadable
+- **THEN** the rule fails loudly and does not run with an empty list
 
 ### Requirement: The particle rule is not a deterministic detector
 
