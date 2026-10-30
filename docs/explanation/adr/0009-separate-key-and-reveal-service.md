@@ -104,6 +104,10 @@ nothing from being separate services; they stay in the monolith.
    sample reveal before and after); wordsworth switches its key, mapping and
    reveal drivers to the service's API; the old tables are dropped only after a
    verification window, and the rollback is switching the drivers back.
+3. Search on a real value (`search-by-value`), after the cutover: the service
+   translates a typed value into its tokens for an authorised caller, and
+   wordsworth searches on the tokens. The index still holds no value, not
+   even encrypted; a refusal looks like "no hits". Follows from this ADR.
 
 ## Failure modes
 

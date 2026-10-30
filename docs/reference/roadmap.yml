@@ -22,6 +22,7 @@ phases:
       - {item: "Rights per Keycloak group, managed as data", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/keycloak-groups-to-roles"}
       - {item: "A separate key-and-reveal service with its own database", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/key-service-skeleton"}
       - {item: "wordsworth cut over to the key service, verified", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/key-service-cutover"}
+      - {item: "Search on a real value via the key service, no values in the index", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/search-by-value"}
       - {item: "Keys exportable only wrapped (escrow, moving away)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/key-export-escrow"}
   - {id: production, name: "Production", summary: "survives a node, NORA-aligned, ready for a first organisation"}
 done_means:
