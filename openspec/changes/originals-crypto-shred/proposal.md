@@ -9,10 +9,12 @@ document's data key does that (crypto-shredding).
 ## What changes
 
 - Deleting a document (document or dossier deletion) destroys its wrapped data
-  key, unless another live document still references the same key (a
-  de-duplicated original), in addition to removing the object.
+  key, unconditionally, in addition to removing the object. Per
+  `originals-envelope-encryption`, `uq_documents_live_object_key` allows only
+  one live document per object key, so a key is never shared by a live
+  document and there is no "keep it while another document uses it" case.
 - The `deleted` audit record counts the destroyed key (never the key itself).
-- Dry run reports whether the key would be destroyed or kept (shared).
+- Dry run reports that the key would be destroyed.
 
 ## Depends on
 
