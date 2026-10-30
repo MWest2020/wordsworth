@@ -32,10 +32,32 @@ registry returns an existing document for identical bytes, ingest SHALL NOT
 re-seal and SHALL NOT overwrite: it SHALL reuse the existing ciphertext and
 wrapped key. Each data key SHALL belong to exactly one live document.
 
+A deleted document SHALL NOT count as existing: every rule that asks whether a
+document already exists SHALL treat state DELETED as not existing, because
+deletion keeps the row and does not set `superseded_by`.
+
 #### Scenario: Identical bytes ingested twice
 
 - **WHEN** the same bytes are ingested a second time
 - **THEN** one wrapped key exists and the original ciphertext is unchanged
+
+#### Scenario: Bytes of a deleted document are ingested again
+
+- **WHEN** bytes are ingested whose only document is in state DELETED
+- **THEN** a new document is created with its own new data key, and the
+  deleted document's ciphertext and key are not reused
+
+### Requirement: Every original write is encrypted
+
+Every write of an original, including OCR recovery, SHALL go through the
+envelope path, and `object_key` SHALL point to the ciphertext. No plaintext
+original SHALL be written.
+
+#### Scenario: OCR recovery writes ciphertext
+
+- **WHEN** an `unprocessable_ocr` document is recovered
+- **THEN** the OCR'd PDF in the store is ciphertext and the document's
+  `object_key` points to it
 
 ### Requirement: Ingest fails closed without the key service
 
@@ -47,6 +69,24 @@ SHALL NOT store the original in clear as a fallback.
 - **WHEN** a document is ingested while OpenBao cannot be reached
 - **THEN** ingest fails with the named error and nothing is written to the
   object store
+
+#### Scenario: Irreversible mode needs the key service too
+
+- **WHEN** a document is ingested in irreversible mode while OpenBao cannot be
+  reached
+- **THEN** ingest fails with a clear error and the original is not stored in
+  clear
+
+### Requirement: Keys are backed up before originals are sealed
+
+`document_keys` SHALL be backed up and the KEK escrowed before this change is
+deployed; the deploy task and the runbook SHALL say so.
+
+#### Scenario: Deploy without backup
+
+- **WHEN** the deploy task is followed
+- **THEN** it requires the `document_keys` backup and the KEK escrow before
+  any original is sealed
 
 ### Requirement: Key material never leaves the key path in clear
 
