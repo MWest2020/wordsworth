@@ -98,6 +98,27 @@ alone never yields a `PERSON`.
 - **WHEN** the gazetteer file is absent or unreadable
 - **THEN** the rule fails loudly and does not run with an empty list
 
+### Requirement: The gazetteer is braked by the evaluation corpus
+
+Every entry of the first-name gazetteer SHALL be tested against the evaluation
+corpus, in the manner of the allow-list brake
+(`tests/test_allow_list_veiligheid.py`): an entry that turns ordinary text into a
+`PERSON` is a fact established before roll-out, not a matter of trust. A first
+name that is also a common capitalised word at sentence start (`Ton`, `Wil`,
+`Bart`) SHALL NOT be a gazetteer entry.
+
+#### Scenario: Every gazetteer entry is tested against the corpus
+
+- **WHEN** the brake test runs
+- **THEN** each entry of the shipped gazetteer has been tested against the
+  evaluation corpus, and an entry that produces a `PERSON` from ordinary text
+  fails the test
+
+#### Scenario: A first name that is a common word is excluded
+
+- **WHEN** the shipped gazetteer is listed
+- **THEN** it holds none of `Ton`, `Wil` and `Bart`
+
 ### Requirement: The particle rule is not a deterministic detector
 
 The rule that detects a name with a Dutch particle SHALL NOT be a row in the
