@@ -1,7 +1,8 @@
 # Design
 
 `deletion.py` gains one step after the object removal: `DocumentKeys.destroy(
-document_id)` deletes the `document_keys` row and the wrapped key itself. The
+document_id)` deletes the document's `document_keys` rows (one per object: an
+OCR-recovered document has two) and so the wrapped keys themselves. The
 step is unconditional: `uq_documents_live_object_key` allows only one live
 document per object key, so no other live document can reference the key.
 The step runs in the same transaction as the rest of the content removal; a

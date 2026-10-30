@@ -2,7 +2,7 @@
 
 ## Why
 
-ADR-0008: after `originals-envelope-encryption`, new originals are sealed; the
+ADR-0008: after `originals-encrypted-ingest` and `originals-ocr-sealed`, new originals are sealed; the
 existing corpus (about 420 objects on the homelab) is still plaintext. This
 change seals it, verifiably, without losing a document.
 
@@ -18,4 +18,5 @@ change seals it, verifiably, without losing a document.
 
 ## Depends on
 
-`originals-envelope-encryption`.
+`originals-crypto-shred` (chain order; it replaced `originals-envelope-encryption`
+together with the four changes before it).
