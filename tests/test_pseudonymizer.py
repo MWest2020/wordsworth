@@ -134,6 +134,58 @@ def test_injectable_into_pipeline(session, born_digital_pii_pdf, mem_index,
         assert secret in restored
 
 
+def test_masking_an_existing_token_can_expose_a_survivor(session):
+    """redaction-locate-remaining, the invariant error investigated: a value
+    need not have occurred in the source text at all to be caught. Masking
+    EVERY existing token to a fixed 2-char placeholder (so a token's hex hash
+    can never spell out a value by coincidence) can itself create a new word
+    boundary where none existed, exposing a survivor -- the mechanism behind
+    the eight documents measured on 2026-09-14 ("a neighbour becomes a token,
+    and a token begins with '['"). Minimal, deterministic, no detection
+    service and no real PII: a pre-existing token sits directly against the
+    letter "a" with no separating space; masking it to "xx" spells "axx",
+    an entity value that never appeared as literal text beforehand.
+
+    Proves the investigation needs no new feature: the existing safe
+    `kenmerken` (label, lengte, in_bron, na_vervanging, woorden, alnum) already
+    explain the cause -- `in_bron` is 0 (the value was never in the source)
+    while `na_vervanging` is 1 (masking created it) -- and none of them, nor
+    `str`/`repr` of the error, carries the value or any multi-character
+    substring of it.
+    """
+    from wordsworth.keys import InMemoryKeyProvider
+    from wordsworth.mapping_store import PostgresMappingStore
+    from wordsworth.openanonymiser_driver import (
+        AnonymizationInvariantError, Entity,
+    )
+    from wordsworth.pseudonymizer import ReversibleAnonymizer
+
+    anon = ReversibleAnonymizer(InMemoryKeyProvider(), PostgresMappingStore(session))
+    value = "axx"
+    # a pre-existing (e.g. deterministic-layer) token directly against "a"
+    text = "Bar a[EMAIL:aabbccdd] baz"
+    entities = [Entity("LOCATION", value, 0, 0)]
+
+    try:
+        anon._pseudonymize_entities(text, entities)
+    except AnonymizationInvariantError as exc:
+        assert exc.code == "waarde-overleefde-vervanging"
+        assert set(exc.kenmerken) == {
+            "label", "lengte", "in_bron", "na_vervanging", "woorden", "alnum"}
+        assert exc.kenmerken["label"] == "location"
+        assert exc.kenmerken["lengte"] == len(value)
+        assert exc.kenmerken["in_bron"] == 0           # never in the source
+        assert exc.kenmerken["na_vervanging"] == 1     # masking created it
+        assert exc.kenmerken["woorden"] == 1
+        assert exc.kenmerken["alnum"] is True
+        for kijk in (str(exc), repr(exc), str(exc.kenmerken)):
+            assert value not in kijk
+            # geen deel van de waarde langer dan één teken
+            assert all(value[i:i + 2] not in kijk for i in range(len(value) - 1))
+    else:
+        raise AssertionError("de overlevende waarde werd niet gevangen")
+
+
 def test_reversible_entity_deanonymize_and_audit(session):
     """ReversibleAnonymizer (entities via a fake detector, so no service needed)
     end-to-end: entity + deterministic PII become keyed tokens, deanonymize with

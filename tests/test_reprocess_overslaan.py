@@ -204,3 +204,43 @@ def test_a_failure_leaves_a_trace_in_the_trail(session_factory, mem_store,
     assert "transient" in payload
     # En geen tekst uit het document.
     assert "de motor doet het niet" not in str(payload)
+
+
+def test_een_gebroken_invariant_telt_als_failed_niet_retryable(
+        session_factory, mem_store, mem_index, fake_embedder,
+        born_digital_pii_pdf):
+    """redaction-locate-remaining: `AnonymizationInvariantError` gaat niet
+    vanzelf over -- een document dat hem opwerpt moet onder `failed` tellen,
+    nooit onder `retryable` (anders kost elke herhaalpoging weer GLiNER-tijd
+    om tot dezelfde conclusie te komen, gemeten op 2026-09-14)."""
+    from wordsworth.anonymizer import DeterministicAnonymizer
+    from wordsworth import reprocess as backfill
+    from wordsworth.models import Document
+    from wordsworth.openanonymiser_driver import AnonymizationInvariantError
+    from wordsworth.pipeline import ingest, process
+    from wordsworth.states import State
+
+    class BreektOpEenOverlever:
+        def anonymize(self, text):
+            raise AnonymizationInvariantError(
+                "een waarde overleefde de vervanging",
+                code="waarde-overleefde-vervanging")
+
+    with session_factory() as s:
+        doc = ingest(s, mem_store, born_digital_pii_pdf)
+        s.commit()
+        st = process(s, doc.id, mem_store, anonymizer=DeterministicAnonymizer(),
+                    search_index=mem_index, embedder=fake_embedder)
+        s.commit()
+        assert st == State.INDEXED
+        doc_id = doc.id
+
+    counts, problems = backfill.run(
+        session_factory, [doc_id],
+        make_anonymizer=lambda ses, domain: BreektOpEenOverlever(),
+        store=mem_store, search_index=mem_index, embedder=fake_embedder)
+
+    assert counts["failed"] == 1 and counts["retryable"] == 0
+    assert "AnonymizationInvariantError[waarde-overleefde-vervanging]" in \
+        problems[str(doc_id)]
+    assert "een waarde overleefde de vervanging" not in str(problems)

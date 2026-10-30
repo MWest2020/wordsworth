@@ -274,6 +274,47 @@ def test_value_not_located_is_reported_in_reprocess_problems(
     assert PII_BSN not in str(uit)
 
 
+def test_a_value_not_located_miss_is_in_the_report_and_still_fails_closed(
+        session_factory, session, mem_store, mem_index, fake_embedder,
+        born_digital_pii_pdf):
+    """redaction-locate-remaining: the count-by-type report names this
+    document's type, and the redacted PDF is still refused (409) for it --
+    the report is a view on the miss, not a way around it."""
+    from fastapi.testclient import TestClient
+
+    from wordsworth.anonymizer import AnonymizationResult
+    from wordsworth.api import create_app
+    from wordsworth.keys import InMemoryKeyProvider
+    from wordsworth.mapping_store import PostgresMappingStore
+    from wordsworth.pseudonymizer import Pseudonymizer
+    from wordsworth.value_not_located_report import by_type
+
+    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+                                born_digital_pii_pdf)
+    kp = InMemoryKeyProvider()
+
+    class TwiceBSN:
+        def __init__(self, session):
+            self._store = PostgresMappingStore(session)
+
+        def anonymize(self, text):
+            token = Pseudonymizer(kp, self._store).pseudonym("bsn", PII_BSN)
+            return AnonymizationResult(text=f"{token} {token}", counts={"bsn": 2})
+
+    app = create_app(session_factory=session_factory, store=mem_store,
+                     search_index=mem_index, embedder=fake_embedder,
+                     anonymizer_factory=lambda s: TwiceBSN(s),
+                     key_provider_factory=lambda s: kp, rate_limiters={})
+    client = TestClient(app)
+    uit = client.post("/reprocess",
+                      json={"document_ids": [str(doc.id)]}).json()
+
+    report = by_type(uit["problems"])
+    assert report == {"BSN": {"documents": 1, "located": 1, "occurrences": 2}}
+
+    assert client.get(f"/documents/{doc.id}/redacted.pdf").status_code == 409
+
+
 def test_de_kenmerken_van_de_invariant_komen_in_de_audit(
         session_factory, session, mem_store, mem_index, fake_embedder,
         born_digital_pii_pdf):
