@@ -53,3 +53,5 @@ under `openspec/`.
     column path: profiles, per-attribute/per-record, NEN 7524-style output.
   - [pdf-redaction](how-to/pdf-redaction.md) — the redacted/reveal PDF
     endpoints, the `stale`/`value-not-located` responses, how it is built.
+  - [film](how-to/film.md) — the proof-gated explainer film: a claim is in it only
+    when its check passes today; numbers come from check output.

@@ -1,0 +1,167 @@
+# What the wordsworth explainer film may say: only what is proven on the day it is
+# built (Mark, 2026-10-30: "enkel wat we concreet in handen hebben en bewezen").
+# tools/film/build.sh runs every check; a claim whose check fails is left out of the
+# film, and every number in a sentence comes from a check's output, never typed here.
+#
+# Check kinds (one per claim; `requires` adds other claims that must also hold):
+#   pytest: [node ids]   all must PASS (a skipped test counts as not proven)
+#   facts: "<expr>"      a Python expression over the live facts probe
+#                        (tools/film/live_facts.py, counts only, run in the api pod)
+#   cmd: "<shell>"       exit 0; stdout lines `key=value` become values
+# Sentences are Dutch, the film's language; `{name}` takes a value from the check.
+# How to add a claim: docs/how-to/film.md.
+
+live_facts_cmd: >-
+  ssh -o BatchMode=yes jumpy kubectl -n wordsworth exec -i deploy/wordsworth-api --
+  python - < tools/film/live_facts.py
+
+claims:
+  - id: pilot-corpus
+    scene: probleem
+    facts: "documents >= 100"
+    sentences:
+      - "Een Woo-publicatie telt al snel honderden documenten; die in onze pilot telde er {documents}."
+  - id: pii-found
+    scene: probleem
+    facts: "persons > 0 and phones > 0"
+    sentences:
+      - "Daarin markeerde wordsworth {persons} verschillende namen en {phones} telefoonnummers als persoonsgegeven."
+
+  - id: pipeline-read
+    scene: straat
+    facts: "indexed_docs > 0"
+    pytest: [tests/test_indexing_pipeline.py::test_document_is_indexed_and_searchable]
+    sentences:
+      - "Wordsworth leest elk document in en haalt de tekst eruit."
+  - id: detect-two-layers
+    scene: straat
+    facts: "model_detections > 0"
+    pytest: [tests/test_detectors.py::test_valid_bsn_passes_elfproef,
+             tests/test_detectors.py::test_valid_iban_passes_mod97]
+    sentences:
+      - "Persoonsgegevens worden gevonden: met vaste regels én met een taalmodel."
+  - id: tokens-before-index
+    scene: straat
+    pytest: [tests/test_anonymization_pipeline.py::test_pii_document_ends_pii_free_and_indexed,
+             tests/test_anonymization_pipeline.py::test_only_anonymized_text_is_stored]
+    sentences:
+      - "Elke waarde wordt vervangen door een code, vóórdat iets doorzoekbaar wordt."
+
+  - id: hybrid-search
+    scene: zoeken
+    facts: "vectors > 0 and vectors == indexed_docs"
+    pytest: [tests/test_hybrid_final_rank.py::test_the_default_is_rrf_and_cosine_is_the_rollback]
+    sentences:
+      - "Zoeken gaat op woorden én op betekenis."
+  - id: topics
+    scene: zoeken
+    facts: "topics > 0 and topic_docs > 0"
+    sentences:
+      - "Documenten worden gegroepeerd in onderwerpen: {topics} in deze publicatie."
+
+  - id: index-codes
+    scene: index
+    facts: "indexed_docs > 0"
+    pytest: [tests/test_anonymization_pipeline.py::test_pii_document_ends_pii_free_and_indexed]
+    sentences:
+      - "In de zoekindex staan alleen codes: nooit echte waarden, ook niet versleuteld."
+  - id: index-why
+    scene: index
+    requires: [index-codes]
+    sentences:
+      - "Versleutelde tekst is niet doorzoekbaar."
+      - "En een zoekmachine die kan ontsleutelen, bewaart sleutels én persoonsgegevens."
+  - id: reveal-after
+    scene: index
+    pytest: [tests/test_reveal_api.py::test_reveal_only_granted_type,
+             tests/test_reveal_api.py::test_reveal_is_audited,
+             tests/test_reveal_pdf_api.py::test_never_cached]
+    sentences:
+      - "Onthullen gebeurt daarna, per document, alleen voor de typen van jouw recht."
+      - "In het geheugen, vastgelegd in het auditspoor, en nergens bewaard."
+
+  - id: public-demo
+    scene: demo
+    cmd: "curl -fsS --max-time 30 https://mwest2020.github.io/wordsworth-demo/ | grep -qi 'verzonnen\\|fictief\\|synthetisch'"
+    sentences:
+      - "Dit is de publieke demo: een nagebootste omgeving met verzonnen gegevens."
+      - "Zoeken in de gepseudonimiseerde documenten."
+      - "Een document opent zonder één echte waarde."
+      - "Per afdeling zie je alleen de typen waarvoor je een sleutel hebt."
+      - "Elke onthulling komt in het auditspoor."
+
+  - id: roles
+    scene: delen
+    pytest: [tests/test_roles.py::test_a_role_supplies_the_types,
+             tests/test_reveal_api.py::test_reveal_only_granted_type]
+    sentences:
+      - "Rechten per rol: wie welke soort persoonsgegevens mag zien."
+  - id: redacted-pdf
+    scene: delen
+    facts: "box_maps > 0"
+    pytest: [tests/test_pdf_render.py::test_pixels_under_the_box_are_the_box_colour,
+             tests/test_pdf_render.py::test_name_and_bsn_gone_from_text_layer_pdfium]
+    sentences:
+      - "De gelakte pdf houdt de opmaak; de waarden zijn echt van de pagina verwijderd."
+  - id: reveal-pdf-api
+    scene: delen
+    pytest: [tests/test_reveal_pdf_api.py::test_granted_type_is_drawn_other_stays_labelled]
+    sentences:
+      - "Met een recht levert de API dezelfde pdf, met alleen jouw typen leesbaar."
+
+  - id: own-hardware
+    scene: autonomie
+    facts: "internal_services == 1"
+    sentences:
+      - "Alles draait op eigen hardware, met lokale modellen: geen cloud in het pad."
+  - id: key-vault
+    scene: autonomie
+    facts: "keys > 0 and vault_internal == 1"
+    sentences:
+      - "De sleutels om persoonsgegevens te onthullen staan in een eigen sleutelkluis, op dezelfde hardware."
+
+  - id: audit-chain
+    scene: controle
+    facts: "audit_records > 0"
+    pytest: [tests/test_audit.py::test_append_only_enforced_by_trigger,
+             tests/test_audit.py::test_verify_detects_tamper]
+    sentences:
+      - "Elke stap en elke onthulling komt in een auditspoor dat alleen kan groeien en met hashes is geketend: niet ongemerkt te wijzigen."
+  - id: licence
+    scene: controle
+    cmd: "python3 tools/film/licence_check.py"
+    sentences:
+      - "De broncode is open, onder de {licence}-licentie."
+  - id: nora
+    scene: controle
+    cmd: "test -s docs/explanation/nora-gap-analysis.md"
+    sentences:
+      - "Getoetst aan het NORA-model voor anonimiseren, met een openbare gap-analyse."
+
+  - id: pilot-docs
+    scene: bewijs
+    facts: "documents > 0"
+    sentences:
+      - "Pilot op een echte Woo-publicatie van een gemeente: {documents} documenten."
+  - id: pilot-redacted
+    scene: bewijs
+    facts: "box_maps > 0"
+    sentences:
+      - "Voor {box_maps} daarvan is er een gelakte pdf."
+  - id: pilot-ranking
+    scene: bewijs
+    cmd: "python3 tools/film/pilot_facts.py"
+    sentences:
+      - "{q_total} zoekvragen: het verwachte document stond {q_top2} keer in de top 2."
+      - "Kanttekening: die vragen kwamen niet van een onafhankelijke gebruiker."
+  - id: pilot-sample
+    scene: bewijs
+    cmd: "python3 tools/film/pilot_facts.py"
+    sentences:
+      - "Steekproef van {sample_n} documenten: in {sample_clean} geen achtergebleven persoonsgegeven."
+
+  - id: contact
+    scene: contact
+    cmd: "curl -fsS -o /dev/null --max-time 30 https://westerweel.work/"
+    sentences:
+      - "Meer weten: westerweel.work"
