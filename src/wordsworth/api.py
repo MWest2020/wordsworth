@@ -695,17 +695,17 @@ def create_app(
             def redacted_pdf(document_id: UUID, request: Request) -> Response:
                 """The document's redacted PDF — rasterised, boxes painted
                 over every detected value, a typed label on each box, cached
-                under ``redacted/<doc>/<boxmap_hash>``. 409 if there is no box
-                map yet (reversible mode only; `reanonymize` builds one, or
-                refuses with a `value-not-located` audit record if a value
-                cannot be boxed) or if the current detection lists differ from
-                the ones the box map was made under (`stale`; `reanonymize`
-                refreshes it). 404 if the document is unknown."""
+                under ``redacted/<doc>/<render_version>/<boxmap_hash>``. 409 if
+                there is no box map yet (reversible mode only; `reanonymize`
+                builds one, or refuses with a `value-not-located` audit record
+                if a value cannot be boxed) or if the current detection lists
+                differ from the ones the box map was made under (`stale`;
+                `reanonymize` refreshes it). 404 if the document is unknown."""
                 _guard_corpus_read(request)
                 from .detection_lists import DetectionLists
                 from .models import BoxMap
                 from .pdf_redaction import boxes_of, redacted_cache_key
-                from .pdf_render import DegenerateBoxError, render as render_pdf
+                from .pdf_render import DegenerateBoxError, RENDER_VERSION, render as render_pdf
 
                 with session_factory() as session:
                     if current_state(session, document_id) is None:
@@ -727,7 +727,8 @@ def create_app(
                         default_settings.detection_lists_dir).hash
                     if box_map.lists_hash != current_hash:
                         raise HTTPException(status_code=409, detail="stale")
-                    cache_key = redacted_cache_key(document_id, box_map.boxmap_hash)
+                    cache_key = redacted_cache_key(document_id, RENDER_VERSION,
+                                                   box_map.boxmap_hash)
                     if store.exists(cache_key):
                         pdf_bytes = store.get(cache_key)
                     else:

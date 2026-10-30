@@ -67,8 +67,8 @@ def boxes_of(box_map: BoxMap) -> list[Box]:
     return [Box(row["page"], Rect(*row["rect"]), row["token"]) for row in box_map.boxes]
 
 
-def redacted_cache_key(document_id: UUID, boxmap_hash: str) -> str:
-    return f"redacted/{document_id}/{boxmap_hash}"
+def redacted_cache_key(document_id: UUID, render_version: int, boxmap_hash: str) -> str:
+    return f"redacted/{document_id}/{render_version}/{boxmap_hash}"
 
 
 def compute_box_map(

@@ -35,6 +35,9 @@ _LABEL_RGB = (1, 1, 1)
 # dpi page raster, which is why one document came out at 151 MB.
 _JPEG_QUALITY = 80
 
+# Bumped by hand with every change to this module; part of the cache key.
+RENDER_VERSION = 1
+
 
 def _by_page(boxes: list[Box]) -> dict[int, list[Box]]:
     out: dict[int, list[Box]] = defaultdict(list)
