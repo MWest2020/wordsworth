@@ -38,9 +38,29 @@
       Proved by: a test with a Transit that raises: ingest raises the named
       error, nothing is written to the object store, no `document_keys` row is
       left, and no plaintext fallback is used.
-- [ ] Every further guess-point in the full architect verdict on wordsworth#305
-      is resolved and recorded in design.md. Proved by: design.md has one line
-      per decision, and each decision with a behaviour has a test named here.
+- [ ] OCR recovery seals too: `recovery.py` writes the OCR'd PDF through
+      `put_original` and repoints `object_key` to the ciphertext. Proved by:
+      a test that runs the recovery path (also via the `api.py:1119` caller)
+      and reads back the OCR'd PDF through the encrypting store.
+- [ ] No plaintext original is written after this change. Proved by: a test
+      that ingests and OCR-recovers documents with a marker and asserts that
+      no `put` on the inner store carries bytes without the header, plus a
+      check that no other `store.put` of original bytes exists in `src/`.
+- [ ] Irreversible-mode ingest fails closed when OpenBao is unreachable, with a
+      clear error and no plaintext fallback (working default, Mark can
+      overrule). Proved by: a test in irreversible mode with a raising Transit.
+- [ ] Existence rules exclude state DELETED. Proved by: tests with a DELETED
+      document (row kept, `superseded_by` unset): re-ingest of its bytes
+      creates a new document with a new DEK and does not reuse the deleted
+      one's ciphertext; and each other rule using `live_document_for` for
+      "already exists" (including `recovery.py:79` and `api.py:1072`) has a
+      test with a DELETED document.
+- [ ] Backup of `document_keys` and escrow of the KEK are a precondition of
+      deploy. Proved by: the deploy task and the runbook (see section 3) state
+      it, and the backup procedure is shown to include `document_keys`.
+- [ ] The fourth guess-point of the #306 architect finding is read and settled
+      before the build. Proved by: it is removed from the proposal's open
+      questions and recorded in design.md with a test named here.
 - [ ] Clear key material never reaches logs or exceptions. Proved by: a test
       capturing logs during seal/open/failure and asserting the DEK bytes (hex
       and base64) are absent.
@@ -56,7 +76,13 @@
       contain that statement (grep in review).
 - [ ] Deploy notes (the how-to's deployment section; no separate deploy doc
       exists under `docs/`) say that OpenBao must be reachable by the ingest
-      path before this change is deployed.
+      path before this change is deployed, and that `document_keys` is backed
+      up and the KEK escrowed first (deploy precondition, not left to
+      `key-export-escrow`). The runbook says the same. Proved by: grep in
+      review.
+- [ ] `docs/how-to/deleting-documents.md` and the OCR recovery description in
+      `docs/reference/architecture.md` say OCR'd originals are sealed too, and
+      that a deleted document does not count as existing for re-ingest.
 
 ## 4. Negative and security tests (required)
 A skipped test counts as failed for every reviewer.

@@ -29,14 +29,30 @@ encrypts every **new** original; the existing corpus follows in
 - Availability: ingest fails closed, with a named error, when OpenBao is
   unreachable. Irreversible-mode ingest now needs the key service.
 
+- Amended after the architect FAIL on #306:
+  - Every original write is encrypted, including OCR recovery
+    (`recovery.py:78`, `store.put`, reached from `api.py:1119`): it goes
+    through the same envelope path and repoints `object_key` to ciphertext.
+    After this change no plaintext original is written anywhere.
+  - Backup of `document_keys` and escrow of the KEK are a precondition of
+    deploying this change, not of `key-export-escrow`. Without them one lost
+    database or sealed KEK makes every sealed original unreadable.
+  - "The document already exists" rules use `live_document_for` but exclude
+    state DELETED, because `deletion.py` never removes the row or sets
+    `superseded_by`. The re-ingest rule and every other existence rule are
+    tested with a DELETED document.
+
 ## Open questions
 
 - **Availability default, for Mark**: is fail-closed ingest acceptable when
-  OpenBao is down? Default: yes, fail closed, no plaintext fallback; ingest
-  waits for the key service.
-- The full architect verdict on #305 was not readable when this amendment was
-  written. The builder resolves any further guess-points in it and records
-  them in design.md (see tasks.md section 1).
+  OpenBao is down, including irreversible mode? Working default: yes, fail
+  closed with a clear error, no plaintext fallback. Mark can overrule it.
+- **Fourth guess-point of the architect FAIL on #306**: the full finding (branch
+  `habitat/architect/originals-envelope-encryption-20261030-205708-29471`)
+  could not be read when this amendment was written, so the fourth point is
+  not settled here and is not a requirement. It must be read and decided
+  before the build; until then the builder stops and reports instead of
+  guessing.
 
 ## Out of scope
 

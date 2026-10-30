@@ -31,6 +31,25 @@
   with a clear, named error when OpenBao is unreachable. There is no plaintext
   fallback. Irreversible-mode ingest, which needed no key service before, now
   needs it; the how-to and the deploy notes say so.
-- **Further guess-points**: the builder resolves any other guess-point in the
-  full architect verdict on wordsworth#305 and records each decision here,
-  one line per decision, before applying.
+- **Every original write is sealed, OCR recovery included** (amended after
+  architect FAIL on #306): `recovery.py:78` (`store.put(new_key, ocr_bytes)`,
+  reached from `api.py:1119`) goes through `put_original` like ingest, and
+  `object_key` is repointed to the ciphertext object. The OCR'd PDF gets its
+  own DEK for its own document id. Rejected: leaving recovery in clear until
+  `originals-encrypt-existing`; that would keep writing new plaintext originals
+  after this change.
+- **Backup and escrow are a deploy precondition** (amended): `document_keys`
+  must be in the database backup and the KEK escrowed before this change is
+  deployed. Rejected: leaving this to `key-export-escrow`, which comes last in
+  the chain, after originals are already sealed.
+- **Irreversible mode fails closed too** (working default, Mark can overrule):
+  with OpenBao unreachable, ingest in irreversible mode raises the named error,
+  with no plaintext fallback.
+- **Existence rules exclude DELETED**: `deletion.py` never removes the row or
+  sets `superseded_by`, so `live_document_for` alone still returns a deleted
+  document. The re-ingest rule ("Re-ingest does not re-seal") and every other
+  rule that asks whether a document already exists use `live_document_for`
+  and additionally treat state DELETED as "does not exist". Re-ingesting bytes
+  of a deleted document therefore creates a new document with a new DEK.
+- **Fourth guess-point of the #306 architect finding**: not settled; see the
+  proposal's open questions. Nothing is designed for it here.
