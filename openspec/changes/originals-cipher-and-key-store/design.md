@@ -1,7 +1,11 @@
 # Design
 
 This design settles the five points the architect left open on #306 (verdict
-of 2026-10-30 21:24) and the cache question. Each is a decision, with the
+of 2026-10-30 21:24) and the cache question. The amendment of 2026-10-31
+settles the four seam questions of the architect's verdict on #320 (31 Oct
+00:28): the raw read (§2), the KEK factory ("KEK per domain"), transaction
+ownership (§3a, "Sessions") and the header-less object with a key row (§3a,
+rules 4 and 5). Each is a decision, with the
 reason; none is left to the builder. Points that only the later changes act
 on are decided here too, so the four changes agree.
 
@@ -28,6 +32,18 @@ raising `SealedObjectError`. Rejected: returning ciphertext and trusting every
 caller to know; that is the silent fallback CLAUDE.md forbids. Cost: one
 prefix comparison per `get`.
 
+**The raw read.** The `ObjectStore` protocol gets one unguarded read,
+`get_raw(key) -> bytes`, in both drivers. `get` is `get_raw` plus the
+magic-prefix guard. Exactly three callers use `get_raw`, and each needs the
+sealed bytes or the header:
+- `OriginalsStore.get_original`;
+- `put_original`'s header inspection (§3a);
+- `wordsworth-sealed-orphans`.
+
+Everything else keeps `get`. `SealedObjectError` and the magic-prefix
+predicate live in `object_store.py`, the lower layer, so `object_store` never
+imports `originals_envelope`.
+
 ## 3. What the ciphertext is bound to
 
 - The associated data (AAD) is `b"wordsworth-original/1" || object_key.encode()
@@ -53,7 +69,7 @@ prefix comparison per `get`.
 
 ## 3a. `put_original`: one idempotent rule for every writer
 
-`put_original(document_id, object_key, data)` is the only way an original is
+`put_original(session, document_id, object_key, data)` is the only way an original is
 written, by ingest (`originals-encrypted-ingest`), OCR recovery
 (`originals-ocr-sealed`) and the corpus migration (`originals-encrypt-existing`).
 It never mints a second key for an object, and never overwrites bytes that a
@@ -72,10 +88,32 @@ document can still read:
 3. No key row, and the object is missing or sealed (an orphan from a
    rolled-back write): mint a key, insert the row (in a savepoint, adopting the
    winner on a primary-key conflict, as `register_live` does), then write.
-4. No key row, and the object is a legacy plaintext object: **no write**,
-   return "legacy". Replacing it is `originals-encrypt-existing`, which verifies
-   before it removes plaintext; doing it here would put the only readable copy
-   of a live document inside an uncommitted transaction.
+4. The stored object is a legacy plaintext object (no sealed header), and
+   there is **no key row, or a key row with `sealed_at` NULL**: **no write**,
+   return "legacy". The second case is the state `originals-encrypt-existing`
+   commits on purpose before it replaces a plaintext object. Replacing it is
+   `originals-encrypt-existing`, which verifies before it removes plaintext;
+   doing it here would put the only readable copy of a live document inside an
+   uncommitted transaction.
+5. The stored object has no sealed header, but its key row has `sealed_at`
+   set: a downgrade (the sealed object was replaced by plaintext). **Raise
+   `SealedObjectError`; no write.** Overwriting it would repair by guess;
+   loud beats quiet. This is the same state `get_original` refuses (task 3.4).
+
+Rule 2 writes regardless of `sealed_at`, and sets `sealed_at` when it writes.
+
+**Sessions.** The session is a per-call parameter:
+- `put_original(session, document_id, object_key, data)`;
+- `get_original(session, object_key)`;
+- `DocumentKeys.mint(session, …)`;
+- `DocumentKeys.unwrap(session, object_key)`.
+
+That is the pattern of `register`, `ingest` and `transition` in `pipeline.py`.
+The key row therefore lands in the caller's transaction (the crash analysis
+below depends on it). An `OriginalsStore(objects, keys)` holds **no
+session**, so one process-lifetime instance (built once in `serve.py` by
+`originals-encrypted-ingest`) keeps the unwrap cache of §6 warm across
+requests.
 
 A key service that is unreachable or refuses raises `OriginalsKeyUnavailable`
 at any step, before anything is written. `put_original` returns whether it
@@ -144,9 +182,24 @@ which would not match the ids `key_vault` uses.
 
 `WORDSWORTH_ORIGINALS_KEK` (default: the current `transit_kek_name`) and an
 optional `WORDSWORTH_ORIGINALS_KEK_BY_DOMAIN` (JSON object, domain → KEK name).
-The KEK used is the one for the document's domain at seal time, recorded as
-`kek_ref` in the row; `open` unwraps with the row's `kek_ref`, never with the
-current setting. A changed setting therefore affects new objects only.
+The KEK used is the one for the document's domain at seal time. The domain
+comes from `pipeline.document_domain(session, document_id)`, imported inside
+the function (`pipeline` imports this module from the next change on, and a
+module-level import would then cycle). The KEK name is recorded as `kek_ref`
+in the row. `open` unwraps with the row's `kek_ref`, never with the current
+setting, so a changed setting affects new objects only.
+
+**The seam is a factory, not one Transit.** `OpenBaoTransit` binds its KEK
+name at construction, because OpenBao's encrypt and decrypt endpoints carry it
+in the path. So `DocumentKeys` takes `transit_for: Callable[[str], Transit]`:
+- `mint` wraps with `transit_for(kek_name_for(domain))`;
+- `unwrap` uses `transit_for(row.kek_ref)`.
+
+In production the factory returns one `OpenBaoTransit(url, token, name)` per
+name, cached. In tests it is keyed by name:
+`lambda name: FakeTransit(kek=sha256(name.encode()).digest())`. A key wrapped
+under one name then really fails to unwrap under another, and the wrong-KEK
+test of task 2.1 has something to vary. `FakeTransit` itself does not change.
 
 ## Orphans
 
@@ -162,9 +215,31 @@ unless `--apply`. A writer that fails inside its own code after
 `put_original` wrote deletes the object itself; a failed commit in a caller is
 left to the sweep.
 
+## Files and known drift
+
+- `config.py` (442 lines) and `models.py` (401) are already past the
+  files-≤-200 invariant. This change adds three settings to `config.py`
+  (`WORDSWORTH_ORIGINALS_KEK`, `WORDSWORTH_ORIGINALS_KEK_BY_DOMAIN`,
+  `WORDSWORTH_DOCUMENT_KEY_CACHE_SIZE`) as earlier changes did. That is the
+  precedent, not fresh drift, and the PR says so. Split `config.py` in its own
+  change, not here.
+- `object_store.py` is 108 lines; `get_raw`, the guard and `iter_objects`
+  belong there.
+- The `document_keys` model lives in `document_keys.py`, outside `models.py`.
+  A model class in a module nobody imports is absent from `Base.metadata`, so
+  `init_schema`/`wordsworth-init` would create every table except this one
+  while the tests stayed green. Guard: `db.py` imports `document_keys` next to
+  `from .models import Base`. Proof: a test runs `init_schema` in a fresh
+  interpreter (subprocess) that never imports `document_keys` itself, and
+  finds the table.
+- `OriginalsStore` is a concrete class, not a protocol with drivers. It
+  composes two existing seams (`ObjectStore`, `Transit`) and adapts no
+  external system, so the driver pattern doesn't apply. The architecture doc
+  says so.
+
 ## Availability
 
 Wrong, missing or unreachable KEK: `open` raises `OriginalsKeyUnavailable`;
 there is never a fallback to plaintext for an object that has a key row.
-Whether ingest may stop when OpenBao is down, in irreversible mode too, is
-Mark's call (#318); the working default is yes, fail closed.
+Ingest stops when OpenBao is down, in irreversible mode too: fail closed
+(#318, decided 2026-10-31).

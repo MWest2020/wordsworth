@@ -8,7 +8,7 @@ design.md (points 1 to 6, §3a and "Availability"). What is specific here:
 ```
 digest = sha256(bytes); key = "documents/" + digest
 doc = register_live(session, key, ...)        # id first; flush
-wrote = originals.put_original(doc.id, key, bytes)
+wrote = originals.put_original(session, doc.id, key, bytes)
 try:   dossier membership, as today
 except: if wrote: store.delete(key); raise
 ```
@@ -28,12 +28,14 @@ and stays as it is.
 
 `process`, `reanonymize` and `recover` take `originals: OriginalsStore` in
 place of `store: ObjectStore`, and the two PDF routes read
-`originals.get_original(doc.object_key)`. Renaming the parameter (rather than
+`originals.get_original(session, doc.object_key)`. Renaming the parameter (rather than
 passing an `OriginalsStore` where an `ObjectStore` is typed) makes a missed
 caller a type and test failure, not a runtime surprise; the plain-`get` guard
 of the previous change catches whatever a test still misses. `OriginalsStore`
 exposes the underlying store as `.objects` for deletion and the sweep, which
-remove objects and never read originals.
+remove objects and never read originals. Each call passes the caller's
+session (`originals-cipher-and-key-store` §3a "Sessions"); the
+`OriginalsStore` itself holds none, so one instance serves the whole process.
 
 The cached redacted PDF (`api.py:733`, `redacted_cache_key`) and the stored
 audit exports stay plain objects: they are derived, de-identified bytes, not

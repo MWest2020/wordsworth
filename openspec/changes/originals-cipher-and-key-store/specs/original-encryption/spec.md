@@ -62,8 +62,15 @@ cannot open, and no plaintext.
 #### Scenario: Legacy objects are left alone
 
 - **WHEN** an original is written for an object that is stored as legacy
-  plaintext
+  plaintext, with no key row or with a key row that does not yet record the
+  object as sealed
 - **THEN** the object is not overwritten and the call reports it as legacy
+
+#### Scenario: A downgraded object is not overwritten
+
+- **WHEN** an original is written for an object without a sealed header whose
+  key row records it as sealed
+- **THEN** the write raises and nothing is written
 
 ### Requirement: The unwrap cache is bounded in size and time
 
