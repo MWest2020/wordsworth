@@ -18,7 +18,7 @@ dependencies = [
     "psycopg[binary]>=3",
     "pydantic>=2",
     "python-multipart>=0.0.18",
-    "pypdf>=6.21.2",  # 6.19.0: three HIGH DoS CVEs (CVE-2026-115572, -115580, -115585)
+    "pypdf>=6.21.4",  # 6.21.4: HIGH DoS CVE-2026-119203; 6.19.0: CVE-2026-115572, -115580, -115585
     # pdf-redaction: pypdfium2 (confirmed via package metadata: "BSD-3-Clause,
     # Apache-2.0, dependency licenses" -- its own code dual BSD-3-Clause/
     # Apache-2.0, bundling Google's PDFium under the same) gives the
