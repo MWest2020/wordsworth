@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-09-19
+last_reviewed: 2026-10-31
 ---
 
 # Onderwerpen van een dossier
@@ -146,6 +146,49 @@ reveal-gate nooit kijkt. De tokens gaan eruit vóór het tokeniseren
 (`pseudonymizer.without_tokens`), niet erna: anders valt een token uiteen in
 "persoon" en "3fa9c2d1" en staat de helft er alsnog in. Bewaakt door
 `test_a_token_never_becomes_part_of_a_name`.
+
+### Alleen zelfstandige naamwoorden
+
+TF-IDF kiest een term op frequentie, niet op woordsoort. Op het 415-documenten
+pilotdossier zag Mark namen als `iedereen · ruil · steunt`, `overeen · recente
+· volgen` en `besloot · harte · nabijheid` — een voornaamwoord, werkwoorden,
+een bijvoeglijk naamwoord en de naamwoordhelft van een vaste uitdrukking ("van
+harte"), geen van alle een onderwerp.
+
+Gemeten op die 33 woorden, 2026-10-31:
+
+- **Een algemeen-Nederlandse frequentiedrempel (wordfreq Zipf) scheidt ze
+  niet.** "harte" (4,42) is gangbaarder dan "duurzaamheid" (4,14), maar
+  "veiligheid" (4,96) is gangbaarder dan allebei.
+- **Een los woord taggen is fout.** spaCy `nl_core_news_sm` tagt
+  "vergadertijd" los als ADJ en "rondvraag" los als ADV.
+- **Getagd in hun eigen zin, matchen zelfstandige naamwoorden die geen deel
+  zijn van een vaste uitdrukking elk oordeel dat Mark gaf.**
+
+Daarom benoemt een term alleen mee waar hij in zijn zin een zelfstandig
+naamwoord is (`NOUN` of `PROPN`) én niet de afhankelijkheid `fixed` heeft (de
+vaste-uitdrukking-relatie — "harte" in "van harte"). De tagging draait op de
+documenttekst met de pseudonym-tokens er al uit (`without_tokens`), tot
+hoogstens de eerste 20.000 tekens per document: een onderwerp komt uit wat een
+groep deelt, en een afkap per document verandert niet welke termen een groep
+gemeen heeft.
+
+Het model is de Nederlandse spaCy-pipeline `nl_core_news_sm`, gepind op versie
+3.8.0 en geïnstalleerd in het image — de cluster haalt er tijdens het draaien
+niets bij op. spaCy zelf is MIT; het model is CC BY-SA 4.0 (getraind op
+Universal Dependencies Dutch Alpino en LassySmall), ongewijzigd gebruikt en
+niet opnieuw verspreid. Attributie staat in `NOTICE`.
+
+### Geen twee onderwerpen met dezelfde naam
+
+Twee groepen kunnen hetzelfde topdrietal scoren — `zaal · vergadertijd ·
+rondvraag` kwam in het pilotdossier voor twee verschillende onderwerpen voor.
+Na het berekenen van elke naam wijkt de latere in weergavevolgorde uit: de
+laatste term van zijn naam wordt vervangen door de volgende scorende term die
+nog niet in de naam zit, zodat de eerste twee termen blijven staan. Is er geen
+volgende term meer, dan komt er " (2)" achter — want twee groepen zonder enig
+verschil in hun termen zijn ook geen onderscheiden onderwerp, en dat mag niet
+onzichtbaar blijven.
 
 Hernoemen:
 

@@ -1,0 +1,14 @@
+This project uses the following third-party model, unmodified:
+
+nl_core_news_sm 3.8.0
+  https://github.com/explosion/spacy-models
+  Copyright (c) Explosion and contributors
+  Licensed under the Creative Commons Attribution-ShareAlike 4.0
+  International License (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
+  Trained on: UD Dutch LassySmall v2.8 (Bouma & van Noord, CC BY-SA 4.0),
+  UD Dutch Alpino v2.8 (Zeman, Žabokrtský, Bouma & van Noord, CC BY-SA 4.0),
+  and Dutch NER Annotations for UD LassySmall (NLP Town, CC BY-SA 4.0).
+
+  Used in src/wordsworth/topics.py to tag part-of-speech and dependency
+  labels so a computed topic name draws only on nouns. The model itself is
+  not redistributed in modified form.

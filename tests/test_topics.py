@@ -8,11 +8,20 @@ blijven.
 from __future__ import annotations
 
 import pytest
+import spacy
 
 from wordsworth import topics as tp
 from wordsworth.dossiers import ensure
 from wordsworth.models import Topic
 from wordsworth.search_index import InMemoryIndex
+
+
+@pytest.fixture(scope="module")
+def nlp():
+    """Eén keer geladen voor de hele module -- de tests zelf toetsen niet hóe
+    vaak `compute` laadt, dat doet `test_the_pipeline_loads_once_per_compute_call`
+    via een eigen telling."""
+    return spacy.load("nl_core_news_sm", exclude=["ner", "lemmatizer"])
 
 
 def _index_doc(index, doc_id, text, vector, dossiers):
@@ -323,3 +332,76 @@ def test_the_share_still_binds_once_the_dossier_is_big_enough(session_factory):
         uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
         grootste = max(t.document_count for t in uitkomst.topics)
         assert grootste <= 0.25 * uitkomst.with_vector
+
+
+# --- topic-terms-nouns -------------------------------------------------------
+
+def test_terms_of_keeps_only_nouns_not_in_a_fixed_expression(nlp):
+    """De spec-eis: alleen een zelfstandig naamwoord in zijn zin benoemt, niet
+    als het de naamwoordhelft van een vaste uitdrukking is ("van harte").
+
+    Het voornaamwoord-/werkwoord-/bijvoeglijk-naamwoord-geval uit de taak komt
+    letterlijk uit proposal.md. Voor de vaste uitdrukking is de zin hier niet
+    letterlijk "Wij feliciteren u van harte." zoals in tasks.md: dát exemplaar
+    tagt `nl_core_news_sm` 3.8.0 zélf (gemeten, geen aanname) "harte" als
+    `obl`/niet-`fixed` zodra de zin direct na "harte" eindigt -- een kenmerk
+    van déze parser, niet van de implementatie. Met een paar woorden erna in
+    dezelfde zin geeft het model wél `fixed`, en dat is wat hier getoetst
+    wordt.
+    """
+    assert tp.terms_of("Iedereen steunt de duurzaamheid van het plan.", nlp) == [
+        "duurzaamheid", "plan"]
+    assert tp.terms_of(
+        "De concentraties lood zijn te hoog volgens de recente meting.", nlp
+    ) == ["concentraties", "lood", "meting"]
+    termen = tp.terms_of("Wij feliciteren u van harte voor dit resultaat.", nlp)
+    assert "harte" not in termen
+    assert "resultaat" in termen
+
+
+def test_tagging_is_capped_at_20000_characters(nlp):
+    """Een document kan onbegrensd lang zijn; de tagging niet. Een term die
+    pas ná de grens staat, mag het document niet laten meetellen."""
+    lang = "De gemeente onderzoekt de situatie. " * 1000  # > 20.000 tekens
+    assert len(lang) > tp._MAX_CHARS
+    tekst = lang + " uniekemarkeerterm."
+    assert "uniekemarkeerterm" not in tp.terms_of(tekst, nlp)
+    assert "gemeente" in tp.terms_of(tekst, nlp)
+
+
+def test_the_pipeline_loads_once_per_compute_call(session_factory, monkeypatch):
+    """Design: 'nlp ... wordt één keer geladen per aanroep van compute, niet
+    per document' -- hier geteld, niet aangenomen."""
+    ladingen = []
+    origineel = tp.spacy.load
+
+    def tellend(*args, **kwargs):
+        ladingen.append(1)
+        return origineel(*args, **kwargs)
+
+    monkeypatch.setattr(tp.spacy, "load", tellend)
+    with session_factory() as s:
+        d = _dossier(s, "telling")
+        index = InMemoryIndex()
+        _twee_groepen(index, str(d.id))  # 8 documenten
+        tp.compute(s, index, d.id)
+    assert len(ladingen) == 1
+
+
+def test_two_topics_never_get_the_same_computed_name(session_factory):
+    """Design-scenario: twee groepen die exact dezelfde tekst gebruiken (en
+    dus hetzelfde top-drietal) scoren zonder deze regel letterlijk dezelfde
+    naam. De tweede moet uitwijken naar zijn volgende onderscheidende term."""
+    with session_factory() as s:
+        d = _dossier(s, "dubbele-naam")
+        index = InMemoryIndex()
+        tekst = ("De agenda bevat de zaal de vergadertijd en de rondvraag voor "
+                 "de vergadering.")
+        for i in range(4):
+            _index_doc(index, f"a{i}", tekst, [1.0, 0.0, 0.0], [str(d.id)])
+        for i in range(4):
+            _index_doc(index, f"b{i}", tekst, [0.0, 1.0, 0.0], [str(d.id)])
+        uitkomst = tp.compute(s, index, d.id)
+        namen = [t.computed_name for t in uitkomst.topics]
+        assert len(namen) == 2
+        assert len(namen) == len(set(namen)), f"namen niet uniek: {namen}"
