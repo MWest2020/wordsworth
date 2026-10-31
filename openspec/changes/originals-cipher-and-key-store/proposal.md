@@ -34,6 +34,11 @@ no ingest or read path yet: nothing is sealed in production after this build.
   `ObjectStore.get`: an object
   that carries the sealed header is refused with `SealedObjectError`, so no
   caller can ever receive ciphertext as if it were a PDF.
+- A MODIFIED `object-storage` requirement: "bytes put and fetched are
+  identical" now holds for unsealed objects, and a sealed object fetched through
+  plain `get` fails loudly with `SealedObjectError`.
+- `OriginalsKeyUnavailable` and `kek_name_for` live in `document_keys.py`;
+  `SealedObjectError` stays in `object_store.py`.
 - A downgrade guard in `get_original`: an object whose key has a
   `document_keys` row but carries no header is refused.
 - The unwrap cache rule (design.md), configuration of the KEK per

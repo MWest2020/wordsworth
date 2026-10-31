@@ -27,7 +27,14 @@ failed for every reviewer.
       - `unwrap(session, object_key)` uses `transit_for(row.kek_ref)`
         (design.md "KEK per domain").
 
-      Proved by: a round-trip test against the name-keyed `FakeTransit`
+      `OriginalsKeyUnavailable` and `kek_name_for` are defined in the same
+      module (design.md "Files and known drift"); `SealedObjectError` stays in
+      `object_store.py`. If the module passes 200 lines, lift the unwrap cache
+      onto `cache.LruCache` and keep the model reachable from `db.py`'s import.
+      Proved by: `wc -l` at most 200 for `document_keys.py` (checked in
+      review), a test that `from wordsworth.document_keys import
+      OriginalsKeyUnavailable, kek_name_for` works and that `object_store.py`
+      does not import `originals_envelope` (grep in review), a round-trip test against the name-keyed `FakeTransit`
       factory, a test that the row never holds the clear DEK, and three
       negative tests: a tampered `wrapped_material`, a row whose `kek_ref`
       names another KEK than the one that wrapped it, and a Transit that
@@ -105,7 +112,10 @@ failed for every reviewer.
       S3 driver's `get` path with a sealed object, one that a header-less
       object is still returned as before, and one that `get_raw` returns the
       sealed bytes unchanged on both drivers, and the existing `isinstance`
-      test passing against the extended protocol.
+      test passing against the extended protocol. The `object-storage` delta
+      is proved by two tests: unsealed bytes put and fetched are identical, and
+      a sealed object fetched through plain `get` raises `SealedObjectError`
+      and returns no bytes, on both drivers.
 - [ ] 3.4 Downgrade refused: `get_original` on an object whose key row has
       `sealed_at` set but which carries no header raises; a legacy object (no
       key row, no header) and an object whose row has `sealed_at` NULL are
@@ -122,6 +132,10 @@ failed for every reviewer.
       row (listed, removed on apply), a sealed object with its row
       (untouched), a young orphan (untouched), a legacy object (untouched).
 
+Task 4.1 is the only slice that may split off into a follow-up change. If it
+does, that change is named in the PR and in this file, and keeps its tests and
+its how-to; the task is never dropped (design.md §3a depends on the sweep).
+
 ## 5. Logs
 - [ ] 5.1 Clear DEK bytes never reach logs or exception messages. Proved by: a
       test that captures logs during seal, open and every failure above and
@@ -132,7 +146,12 @@ failed for every reviewer.
       `document_keys`, the plain-`get` guard, and that nothing is sealed yet
       until `originals-encrypted-ingest`. ADR-0008 linked. A short how-to
       section for `wordsworth-sealed-orphans` (in `docs/how-to/` where the
-      other CLIs are described). Proved by: the docs gate and grep in review.
+      other CLIs are described). `docs/reference/cli.md` lists the new
+      `wordsworth-sealed-orphans` entry point and its `--apply` flag. The
+      three new settings of design.md "Files and known drift" are described in
+      the reference docs next to the other settings. Proved by:
+      the docs gate and grep in review for `sealed-orphans` in
+      `docs/reference/cli.md` and `docs/how-to/`.
 
 ## 7. Sibling changes
 - [ ] 7.1 `originals-encrypted-ingest` and `originals-ocr-sealed` code

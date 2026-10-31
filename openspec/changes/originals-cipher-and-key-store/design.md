@@ -249,6 +249,20 @@ left to the sweep.
   `originals_envelope`, never the reverse. The class name `OriginalsStore` is
   the public import. Rejected: one module for both, which would not stay under
   200 lines.
+- **Placement of the errors and the name function.** `OriginalsKeyUnavailable`
+  and `kek_name_for` live in `document_keys.py`, next to the model, `mint`,
+  `unwrap` and the cache. `SealedObjectError` stays in `object_store.py`, so
+  the lower layer never imports `originals_envelope`. If `document_keys.py`
+  goes over 200 lines, the cache is lifted out onto `cache.LruCache` (adding
+  the TTL there or in a thin wrapper), and the model stays importable from
+  `db.py`'s import.
+- **One build.** This stays one change and one build. Only task 4.1 (the sweep
+  and its how-to) may split off, and then as a named follow-up change, never a
+  dropped task: the crash analysis in §3a relies on the sweep.
+- **Plain `get` narrows an existing promise.** The `object-storage` scenario
+  "bytes put and fetched are identical" holds for unsealed objects only, since
+  plain `get` now raises on a sealed object (§2). The delta spec
+  `object-storage` says so and adds the loud-failure scenario.
 - The `document_keys` model lives in `document_keys.py`, outside `models.py`.
   A model class in a module nobody imports is absent from `Base.metadata`, so
   `init_schema`/`wordsworth-init` would create every table except this one
