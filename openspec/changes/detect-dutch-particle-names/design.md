@@ -51,12 +51,17 @@
   names scores itself. The result is labelled circular in
   `docs/reference/evaluation.md`, and recall is also reported on a gold set not
   derived from the gazetteer's own first names.
-- **Replacement stays unchanged.** `winner` in `pseudonymizer.py:251-256` is keyed
-  by text, so when GLiNER returns the bare first name next to the full-name span
-  the per-layer aggregate counts one person twice. Only the aggregate is at
-  stake; what is replaced is not touched.
-- **Fixed particle list.** `van`, `de`, `ter`, `ten`, `van der`. A particle of
-  two words is one particle. Further particles are a later change.
+- **The audit aggregate is deduplicated.** `winner` in
+  `pseudonymizer.py:251-256` is keyed by text, so when GLiNER returns the bare
+  first name next to the full-name span the per-layer aggregate counts one
+  person twice. The aggregate absorbs the shorter span into the longer one, so
+  the person is counted once. Only the aggregate changes; what is replaced is
+  not touched. (Stating and testing the overcount instead was considered and
+  rejected: an audit count that says two people for one is wrong.)
+- **Scope: part (a) only.** Re-anonymising document `1c87f856` with a
+  count-only check is not part of this change.
+- **Fixed particle list.** `van`, `van der`, `van den`, `de`, `ter`, `ten`. A
+  particle of two words is one particle. Further particles are a later change.
 - **Proof by shape, not by value.** The tests use synthetic names, one example
   per particle.
 
@@ -76,6 +81,6 @@
 
 ## Left open
 
-The initial gazetteer entries and their source, particles beyond the five, and
-whether the double count in the aggregates is deduplicated or stated and tested:
-see the proposal's open questions. They are not requirements.
+The initial gazetteer entries and their source, particles beyond the six, and
+re-anonymisation of the affected document: see the proposal's open questions.
+They are not requirements.

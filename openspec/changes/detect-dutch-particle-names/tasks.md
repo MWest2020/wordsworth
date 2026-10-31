@@ -2,12 +2,12 @@
 
 ## 1. Detection
 - [ ] New module (e.g. `src/wordsworth/particle_names.py`, ≤200 lines) with a
-      deterministic pattern: gazetteer first name, particle (`van`, `de`, `ter`,
-      `ten`, `van der`), capitalised last name, as ONE `PERSON` span, layer
-      `dutch_particle_name`. Proved by: a new test file
-      `tests/test_particle_names.py` with synthetic names, one example per
-      particle, asserting one `PERSON` detection covering the whole name and
-      layer `dutch_particle_name`.
+      deterministic pattern: gazetteer first name, particle (`van`, `van der`,
+      `van den`, `de`, `ter`, `ten`), capitalised last name, as ONE `PERSON`
+      span, layer `dutch_particle_name`. Proved by: a new test file
+      `tests/test_particle_names.py` with a parametrised test, one synthetic
+      name per particle (six cases), asserting one `PERSON` detection covering
+      the whole name and layer `dutch_particle_name`.
 - [ ] The rule runs in anonymisation. Proved by: a test in the same file that
       runs `ReversibleAnonymizer.anonymize` on a text with such a name and
       asserts neither first name, particle nor last name is in the output.
@@ -61,16 +61,14 @@
 
 ## 4. Aggregates
 
-- [ ] Per-layer aggregates and the bare first name. `winner` in
+- [ ] Dedupe the audit aggregate. `winner` in
       `src/wordsworth/pseudonymizer.py:251-256` is keyed by text, so a person is
       counted twice when GLiNER returns the bare first name next to the
-      full-name span. Either dedupe the audit aggregate so the shorter span is
-      absorbed into the longer one, or state the overcount in the spec and test
-      it (the choice is an open question in the proposal). Replacement stays
-      unchanged. Proved by: a test with a text where a stub entity layer returns
-      the bare first name and the full name, asserting the aggregate counts for
-      that person (one, or the stated overcount), and that the anonymised output
-      is identical either way.
+      full-name span. The aggregate absorbs the shorter span into the longer
+      one. Replacement stays unchanged. Proved by: a test with a text where a
+      stub entity layer returns the bare first name and the full name,
+      asserting the aggregate counts that person once, and that the anonymised
+      output is identical to the output without the dedupe.
 
 ## 5. Measured
 - [ ] Run the PII eval on the generated evaluation corpus before and after
