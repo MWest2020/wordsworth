@@ -15,8 +15,8 @@ from wordsworth.db import init_schema, make_engine, make_session_factory
 from wordsworth.models import Base
 
 _PG_IMAGE = "postgres:16-alpine"
-_CONTAINER = "wordsworth-test-pg"
-_URL = "postgresql+psycopg://postgres:postgres@localhost:55432/wordsworth"
+# Unique per run: two CI jobs on one runner must not remove each other's database.
+_CONTAINER = f"wordsworth-test-pg-{os.getpid()}"
 
 
 def _docker_ok() -> bool:
@@ -36,10 +36,13 @@ def database_url() -> str:
     subprocess.run(
         ["docker", "run", "-d", "--name", _CONTAINER,
          "-e", "POSTGRES_PASSWORD=postgres", "-e", "POSTGRES_DB=wordsworth",
-         "-p", "55432:5432", _PG_IMAGE],
+         "-p", "127.0.0.1::5432", _PG_IMAGE],
         check=True, capture_output=True,
     )
-    engine = make_engine(_URL)
+    port = subprocess.run(["docker", "port", _CONTAINER, "5432/tcp"], check=True,
+                          capture_output=True, text=True).stdout.split()[0].rsplit(":", 1)[1]
+    url = f"postgresql+psycopg://postgres:postgres@localhost:{port}/wordsworth"
+    engine = make_engine(url)
     try:
         for _ in range(60):
             try:
@@ -52,7 +55,7 @@ def database_url() -> str:
             pytest.fail("postgres did not become ready")
     finally:
         engine.dispose()
-    yield _URL
+    yield url
     subprocess.run(["docker", "rm", "-f", _CONTAINER], capture_output=True)
 
 
