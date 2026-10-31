@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from wordsworth import topics as tp
+from wordsworth import reprocess, topics as tp
+from wordsworth.anonymizer import DeterministicAnonymizer
 from wordsworth.dossiers import ensure
 from wordsworth.models import Topic
+from wordsworth.pipeline import ingest, process, reanonymize
 from wordsworth.search_index import InMemoryIndex
+from wordsworth.states import State
 
 
 def _index_doc(index, doc_id, text, vector, dossiers):
@@ -323,3 +326,109 @@ def test_the_share_still_binds_once_the_dossier_is_big_enough(session_factory):
         uitkomst = tp.compute(s, index, d.id, max_share=0.25, min_size=3)
         grootste = max(t.document_count for t in uitkomst.topics)
         assert grootste <= 0.25 * uitkomst.with_vector
+
+
+# --- re-indexing keeps the topic (reindex-keeps-topics) ---------------------
+
+
+def test_index_stores_topics_given_and_none_without():
+    """`index()` zelf vervangt gewoon, net als `vector`/`dossiers`/`passages`:
+    meegegeven onderwerpen worden opgeslagen, weggelaten onderwerpen leveren
+    niets op -- zoals vóór deze change. Het is `reanonymize` dat straks de
+    bestaande onderwerpen leest en teruggeeft."""
+    index = InMemoryIndex()
+    index.index("a", "tekst", "key-a", topics=["topic-1", "topic-2"])
+    assert index.topics_of("a") == ["topic-1", "topic-2"]
+    index.index("a", "tekst", "key-a")
+    assert index.topics_of("a") == []
+
+
+def test_the_opensearch_driver_writes_topics_in_the_index_call():
+    """Het bewijs op de echte driver (nepclient, zoals `test_opensearch_scoping`):
+    `topics` hoort in dezelfde `index`-aanroep als de tekst en de vector, niet
+    in een losse stap erna."""
+    from wordsworth.opensearch_index import OpenSearchIndex
+
+    class Vangt:
+        def __init__(self):
+            self.bodies = []
+
+        def index(self, index, id, body, refresh=True):
+            self.bodies.append(body)
+
+    client = Vangt()
+    OpenSearchIndex(client, "ww", 64).index("a", "tekst", "key-a",
+                                            topics=["topic-1"])
+    assert client.bodies[0]["topics"] == ["topic-1"]
+
+
+def test_reanonymize_keeps_the_topic(session, mem_store, fake_embedder,
+                                     born_digital_pdf):
+    """De kern van de change: `reanonymize` (en dus `/reprocess`) mag een
+    document niet stilzwijgend uit zijn onderwerp laten vallen -- dat is
+    precies wat 408 documenten hun onderwerp kostte."""
+    index = InMemoryIndex()
+    doc = ingest(session, mem_store, born_digital_pdf)
+    session.commit()
+    process(session, doc.id, mem_store, anonymizer=DeterministicAnonymizer(),
+           search_index=index, embedder=fake_embedder)
+    session.commit()
+    index.set_topics(str(doc.id), ["topic-1"])
+
+    reanonymize(session, doc.id, mem_store, anonymizer=DeterministicAnonymizer(),
+               search_index=index, embedder=fake_embedder)
+    session.commit()
+
+    hits = index.search("document", topic="topic-1")
+    assert any(h.document_id == str(doc.id) for h in hits), (
+        "het onderwerp overleefde de herindexering niet")
+
+
+def test_reprocess_keeps_the_topic_end_to_end(session_factory, mem_store,
+                                              fake_embedder, born_digital_pdf):
+    """Van boven naar onder: een document in een onderwerp, `/reprocess` erover
+    heen, en een zoekvraag binnen dat onderwerp vindt het nog."""
+    index = InMemoryIndex()
+    with session_factory() as s:
+        doc_id = ingest(s, mem_store, born_digital_pdf).id
+        s.commit()
+        process(s, doc_id, mem_store, anonymizer=DeterministicAnonymizer(),
+               search_index=index, embedder=fake_embedder)
+        s.commit()
+    index.set_topics(str(doc_id), ["topic-1"])
+
+    outcome, _detail = reprocess.one(
+        session_factory, doc_id,
+        make_anonymizer=lambda _s, _domain: DeterministicAnonymizer(),
+        store=mem_store, search_index=index, embedder=fake_embedder)
+    assert outcome == "reanonymized"
+
+    hits = index.search("document", topic="topic-1")
+    assert any(h.document_id == str(doc_id) for h in hits)
+
+
+def test_reprocessing_before_the_first_index_has_no_topics_to_keep(
+        session_factory, mem_store, fake_embedder, born_digital_pdf):
+    """Een document dat nog nooit geïndexeerd is, heeft geen onderwerp om te
+    bewaren. De crash-tussen-anonymiseren-en-indexeren die dit oplevert is
+    precies het geval dat `process`'s eigen docstring als veilig beschrijft."""
+    class NooitKlaar:
+        def ensure_ready(self):
+            raise RuntimeError("nog nooit geïndexeerd")
+
+    with session_factory() as s:
+        doc_id = ingest(s, mem_store, born_digital_pdf).id
+        s.commit()
+        with pytest.raises(RuntimeError):
+            process(s, doc_id, mem_store, anonymizer=DeterministicAnonymizer(),
+                   search_index=NooitKlaar(), embedder=fake_embedder)
+        s.commit()  # het anonimiseren is al geflusht vóór de indexfout
+        from wordsworth.pipeline import current_state
+        assert current_state(s, doc_id) == State.ANONYMIZED
+
+    index = InMemoryIndex()
+    with session_factory() as s:
+        reanonymize(s, doc_id, mem_store, anonymizer=DeterministicAnonymizer(),
+                   search_index=index, embedder=fake_embedder)
+        s.commit()
+    assert index.topics_of(str(doc_id)) == []

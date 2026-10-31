@@ -68,6 +68,10 @@ curl "$API/search?q=dakkapel&dossier=gooise-meren-woo-2022&topic=<topic-uuid>"
 `topic` versmalt binnen de `dossier`-scope. De documenten die overblijven staan
 onderling in dezelfde volgorde als zonder het onderwerp.
 
+Dit blijft werken na een `/reprocess`: die herindexeert de tekst en de vector,
+maar geeft het onderwerp-lidmaatschap terug aan de nieuwe `index()`-aanroep, dus
+een document valt er niet stilzwijgend uit.
+
 ## Hoeveel groepen, en waarom niet een vast getal
 
 De eerste versie knipte op een vaste cosinusafstand van 0.45. Op het eerste
@@ -187,6 +191,8 @@ verzint.
 - Geen onderwerpen over dossiergrenzen heen.
 - Geen taalmodel in de naamgeving.
 - Geen invloed op de score.
-- Geen automatische herberekening. Een document dat opnieuw door de straat gaat
-  valt uit zijn onderwerp — daarom staat bij elk onderwerp wannéér het berekend
-  is.
+- Geen automatische herberekening. Een document dat opnieuw door de straat
+  gaat (`reanonymize`, dus ook `/reprocess`) houdt het onderwerp dat het had —
+  berekend over de tekst van vóór die stap. Daarom staat bij elk onderwerp
+  wannéér het berekend is: dat is het enige signaal dat een lid er sindsdien
+  doorheen is gegaan, tot een nieuwe berekening de indeling vervangt.
