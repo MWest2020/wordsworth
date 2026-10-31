@@ -18,12 +18,12 @@ no ingest or read path yet: nothing is sealed in production after this build.
 - A new `document_keys` table and `DocumentKeys` store
   (`src/wordsworth/document_keys.py`): one row per sealed **object**, holding
   the data key wrapped by the KEK (OpenBao Transit), never in clear.
-- `OriginalsStore` (same module as the envelope): `put_original(document_id,
-  object_key, data)` and `get_original(object_key)` over the existing
-  `ObjectStore`. Nothing calls it yet.
-- A guard in the plain `ObjectStore.get`: an object that carries the sealed
-  header is refused with `SealedObjectError`, so no caller can ever receive
-  ciphertext as if it were a PDF.
+- `OriginalsStore` (same module as the envelope): `put_original(session,
+  document_id, object_key, data)` and `get_original(session, object_key)` over
+  the existing `ObjectStore`. Nothing calls it yet.
+- `ObjectStore.get_raw`, and a guard in the plain `ObjectStore.get`: an object
+  that carries the sealed header is refused with `SealedObjectError`, so no
+  caller can ever receive ciphertext as if it were a PDF.
 - A downgrade guard in `get_original`: an object whose key has a
   `document_keys` row but carries no header is refused.
 - The unwrap cache rule (design.md), configuration of the KEK per

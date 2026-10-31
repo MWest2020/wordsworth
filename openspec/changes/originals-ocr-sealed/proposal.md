@@ -16,7 +16,7 @@ on #306. Fourth change of the chain, built right after
   anything. Another live document owns it: nothing is written and the scan is
   retired as a copy of it, as today (`supersede(..., as_object=new_key)`).
 - Otherwise the OCR'd PDF is written with
-  `put_original(doc.id, new_key, ocr_bytes)`: sealed, under its own key row
+  `put_original(session, doc.id, new_key, ocr_bytes)`: sealed, under its own key row
   for the recovered document. The scan object stays as it is, with its own key
   row (one row per object, `originals-cipher-and-key-store` design.md §5).
 - If `recover` fails after that write, it deletes the object it wrote.
