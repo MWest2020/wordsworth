@@ -76,7 +76,7 @@ It never mints a second key for an object, and never overwrites bytes that a
 document can still read:
 
 1. Key row for `object_key` exists, and the stored object carries the sealed
-   header with that row's `key_id`: **no write** (re-ingest does not re-seal).
+   header with that row's `key_id`: **no write**, return `PutResult.UNCHANGED` (re-ingest does not re-seal).
    If the row's `document_id` differs, it is updated to `document_id`. Callers
    guarantee `document_id` is the live owner of `object_key` (ingest through
    `register_live`, OCR recovery through its owner check), so this moves a key
@@ -90,7 +90,7 @@ document can still read:
    winner on a primary-key conflict, as `register_live` does), then write.
 4. The stored object is a legacy plaintext object (no sealed header), and
    there is **no key row, or a key row with `sealed_at` NULL**: **no write**,
-   return "legacy". The second case is the state `originals-encrypt-existing`
+   return `PutResult.LEGACY`. The second case is the state `originals-encrypt-existing`
    commits on purpose before it replaces a plaintext object. Replacing it is
    `originals-encrypt-existing`, which verifies before it removes plaintext;
    doing it here would put the only readable copy of a live document inside an
@@ -101,6 +101,19 @@ document can still read:
    loud beats quiet. This is the same state `get_original` refuses (task 3.4).
 
 Rule 2 writes regardless of `sealed_at`, and sets `sealed_at` when it writes.
+Rules 2 and 3 return `PutResult.WROTE`.
+
+**The result is an enum, not a bool.** `PutResult` has three members: `WROTE`,
+`UNCHANGED`, `LEGACY`. A bool cannot tell "legacy, left alone" from "wrote",
+and a `"legacy"` string is truthy, so `if wrote: delete(key)` would delete a
+live legacy object after a failed commit: the only readable copy of a
+document. Decided: callers delete only on `wrote is PutResult.WROTE`, and
+`PutResult.__bool__` raises `TypeError`, so `if wrote:` fails the first time
+it runs instead of being a quiet wrong delete. Rejected: a bool (loses the
+legacy case), a `"legacy"` string (truthy), a tuple (callers unpack and can
+still test the wrong element). The sibling changes `originals-encrypted-ingest`
+and `originals-ocr-sealed` code `wrote is PutResult.WROTE` in their design and
+tasks.
 
 **Sessions.** The session is a per-call parameter:
 - `put_original(session, document_id, object_key, data)`;
@@ -116,9 +129,10 @@ session**, so one process-lifetime instance (built once in `serve.py` by
 requests.
 
 A key service that is unreachable or refuses raises `OriginalsKeyUnavailable`
-at any step, before anything is written. `put_original` returns whether it
-wrote, so a caller whose transaction then fails deletes the object it wrote:
-by rules 2 and 3 that object was readable by nobody before the call.
+at any step, before anything is written. `put_original` returns a `PutResult`, so a caller whose transaction then fails
+deletes the object only when the result `is PutResult.WROTE`: by rules 2 and 3
+that object was readable by nobody before the call. On `LEGACY` and
+`UNCHANGED` the object was readable before and the caller never deletes it.
 Crash between the row and the object (the row is in the caller's transaction,
 the object write is not):
 
@@ -223,8 +237,18 @@ left to the sweep.
   `WORDSWORTH_DOCUMENT_KEY_CACHE_SIZE`) as earlier changes did. That is the
   precedent, not fresh drift, and the PR says so. Split `config.py` in its own
   change, not here.
-- `object_store.py` is 108 lines; `get_raw`, the guard and `iter_objects`
-  belong there.
+- `object_store.py` is 107 lines; `get_raw`, the guard and `iter_objects`
+  belong there. `get_raw` and `iter_objects` are added to the `ObjectStore`
+  protocol and to both drivers (S3 and in-memory) in the same commit. The
+  protocol check at `tests/test_object_store.py:33` (`isinstance(
+  InMemoryObjectStore(), ObjectStore)`) then covers both. The ad-hoc fake at
+  `tests/test_dossiers.py:21` only needs `put()` and needs no change.
+- **The split.** The 200-line limit decides it. `originals_envelope.py` holds
+  `seal`, `open` and the header. `originals_store.py` holds `OriginalsStore`,
+  `PutResult` and the `put_original` rules of §3a; it imports
+  `originals_envelope`, never the reverse. The class name `OriginalsStore` is
+  the public import. Rejected: one module for both, which would not stay under
+  200 lines.
 - The `document_keys` model lives in `document_keys.py`, outside `models.py`.
   A model class in a module nobody imports is absent from `Base.metadata`, so
   `init_schema`/`wordsworth-init` would create every table except this one

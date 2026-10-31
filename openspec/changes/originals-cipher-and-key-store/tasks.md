@@ -48,27 +48,38 @@ failed for every reviewer.
       name is needed to open.
 
 ## 3. OriginalsStore and the guards
+- [ ] 3.0 `OriginalsStore` and `PutResult` live in
+      `src/wordsworth/originals_store.py`; `originals_envelope.py` holds only
+      `seal`, `open` and the header (design.md "Files and known drift").
+      Proved by: a test that `from wordsworth.originals_store import
+      OriginalsStore` works, and `wc -l` showing both modules at most 200 lines
+      (checked in review).
 - [ ] 3.1 `OriginalsStore(objects, keys)` holds no session (design.md §3a
       "Sessions").
       - `put_original(session, document_id, object_key, data)` follows the
         five rules of design.md §3a, inspects the stored object through
-        `objects.get_raw`, and returns whether it wrote.
+        `objects.get_raw`, and returns a `PutResult` (`WROTE`, `UNCHANGED`,
+        `LEGACY`; design.md §3a), never a bool or a string.
       - `get_original(session, object_key)` reads the row, `get_raw`s the
         object and opens it.
       - The underlying store is exposed as `.objects`.
 
       Proved by:
       - one test per rule:
-        - 1: existing row and matching object: no write, row moved to the new
-          document id;
-        - 2: row and missing object: sealed with the row's key, opens;
-        - 2: row and an object with another `key_id`: rewritten, opens;
-        - 3: no row and an orphan: new row, opens;
-        - 4: legacy object with no row: untouched, "legacy" returned;
+        - 1: existing row and matching object: no write, `UNCHANGED`, row
+          moved to the new document id;
+        - 2: row and missing object: sealed with the row's key, opens,
+          `WROTE`;
+        - 2: row and an object with another `key_id`: rewritten, opens,
+          `WROTE`;
+        - 3: no row and an orphan: new row, opens, `WROTE`;
+        - 4: legacy object with no row: untouched, `LEGACY`;
         - 4: legacy object with a row whose `sealed_at` is NULL: untouched,
-          "legacy" returned;
+          `LEGACY`;
         - 5: header-less object with a row whose `sealed_at` is set: raises
           `SealedObjectError`, nothing written;
+      - a test that `bool()` of each `PutResult` member raises `TypeError`,
+        so `if wrote:` cannot compile into a wrong delete;
       - a round trip;
       - a test that two concurrent first writes of one object end with one
         row and an object that opens.
@@ -78,13 +89,23 @@ failed for every reviewer.
       `put_original` wrote, deleting the written object (the caller contract)
       leaves no row and no object, and a following `put_original` of the
       same bytes in a fresh transaction yields an object that opens. With an
-      unreachable key service nothing is written. Proved by: three tests.
-- [ ] 3.3 `ObjectStore.get_raw(key)` in the protocol and both drivers; plain
+      unreachable key service nothing is written. The caller contract is delete
+      only on `wrote is PutResult.WROTE`, proved both ways with a caller
+      written as `ingest` will be: a legacy object plus a failed caller commit
+      leaves the legacy object intact (`LEGACY`, no delete), and a `WROTE`
+      result plus a failed commit removes the written object. Proved by: five
+      tests.
+- [ ] 3.3 `ObjectStore.get_raw(key)` and `ObjectStore.iter_objects(prefix)`
+      are added to the `ObjectStore` protocol and to both drivers (S3 and
+      in-memory) in the same commit, so the `isinstance` check at
+      `tests/test_object_store.py:33` covers both; the ad-hoc fake at
+      `tests/test_dossiers.py:21` needs no change. Plain
       `get` is `get_raw` plus the sealed-magic guard and refuses a sealed
       object with `SealedObjectError` (design.md §2). Proved by: a test on the
       S3 driver's `get` path with a sealed object, one that a header-less
       object is still returned as before, and one that `get_raw` returns the
-      sealed bytes unchanged on both drivers.
+      sealed bytes unchanged on both drivers, and the existing `isinstance`
+      test passing against the extended protocol.
 - [ ] 3.4 Downgrade refused: `get_original` on an object whose key row has
       `sealed_at` set but which carries no header raises; a legacy object (no
       key row, no header) and an object whose row has `sealed_at` NULL are
@@ -92,9 +113,9 @@ failed for every reviewer.
 
 ## 4. Orphans
 - [ ] 4.1 `wordsworth-sealed-orphans [--apply]` (new module
-      `sealed_orphans.py`, entry point in `pyproject.toml`; adds
-      `ObjectStore.iter_objects(prefix)` yielding key and last-modified to the
-      S3 and in-memory drivers; reads headers through `get_raw`): lists sealed
+      `sealed_orphans.py`, entry point in `pyproject.toml`; uses
+      `iter_objects(prefix)` from task 3.3, yielding key and last-modified;
+      reads headers through `get_raw`): lists sealed
       objects under `documents/` that open under no key row (no row, or a row with another
       `key_id`) and are older than one hour; deletes only with `--apply`.
       Proved by: tests with an orphan without a row and one with a mismatched
@@ -112,3 +133,10 @@ failed for every reviewer.
       until `originals-encrypted-ingest`. ADR-0008 linked. A short how-to
       section for `wordsworth-sealed-orphans` (in `docs/how-to/` where the
       other CLIs are described). Proved by: the docs gate and grep in review.
+
+## 7. Sibling changes
+- [ ] 7.1 `originals-encrypted-ingest` and `originals-ocr-sealed` code
+      `wrote = put_original(...)` with `if wrote is PutResult.WROTE: delete`,
+      never `if wrote:`. Proved by: `grep -rn "if wrote"
+      openspec/changes/originals-*` finds nothing, and each of the two has the
+      legacy-plus-failed-commit test of task 3.2 for its own caller.
