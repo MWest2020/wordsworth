@@ -3,8 +3,8 @@
 ### Requirement: A name with a Dutch particle is one person
 
 Detection SHALL treat a first name, a Dutch particle and a last name as ONE
-`PERSON` span. The particles are `van`, `de`, `ter`, `ten` and `van der`; a
-particle of several words is one particle. The rule is its own deterministic
+`PERSON` span. The particles are `van`, `van der`, `van den`, `de`, `ter` and
+`ten`; a particle of several words is one particle. The rule is its own deterministic
 pattern, not a widening of spans another layer found, and its detections carry
 the layer name `dutch_particle_name`.
 
@@ -24,8 +24,8 @@ redacting it makes a decision unreadable without protecting anyone.
 
 #### Scenario: A name with each particle is one PERSON
 
-- **WHEN** a synthetic name is built with each of `van`, `de`, `ter`, `ten` and
-  `van der` between a first name and a last name
+- **WHEN** a synthetic name is built with each of `van`, `van der`, `van den`,
+  `de`, `ter` and `ten` between a first name and a last name
 - **THEN** each is detected as one `PERSON` span covering the whole name
 
 #### Scenario: The detection carries its own layer name
@@ -118,6 +118,25 @@ name that is also a common capitalised word at sentence start (`Ton`, `Wil`,
 
 - **WHEN** the shipped gazetteer is listed
 - **THEN** it holds none of `Ton`, `Wil` and `Bart`
+
+### Requirement: The audit aggregate counts a person once
+
+When a shorter detected span lies inside a longer one for the same person, such
+as the bare first name returned next to the full-name span, the per-layer audit
+aggregate SHALL absorb the shorter span into the longer one and count the person
+once. Only the aggregate is affected; what is replaced in the text SHALL NOT
+change.
+
+#### Scenario: A bare first name next to the full name is counted once
+
+- **WHEN** an entity layer returns the bare first name and the full name of the
+  same person
+- **THEN** the aggregate counts that person once, for the longer span
+
+#### Scenario: Replacement is unaffected by the deduplication
+
+- **WHEN** the same text is de-identified with and without the deduplication
+- **THEN** the output text is identical
 
 ### Requirement: The particle rule is not a deterministic detector
 

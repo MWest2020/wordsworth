@@ -44,7 +44,7 @@ more gaps, folded in below:
 
 1. **Detection**: a first name, a Dutch particle and a last name are detected
    as ONE `PERSON` span. The particle list is fixed in this change: `van`,
-   `de`, `ter`, `ten`, `van der`.
+   `van der`, `van den`, `de`, `ter`, `ten`, with a test per particle.
 2. **Mechanism**: the rule is its own deterministic pattern in a new module.
    It does not widen spans the entity layer already found, and it is not a row
    in `detectors.DETECTORS`. Its detections carry the layer name
@@ -68,37 +68,37 @@ more gaps, folded in below:
 7. **An honest measurement.** The PII measurement is labelled as circular where
    the gold names come from `eval/synthetic.py`, and recall is also reported on
    a gold set not derived from the gazetteer's own first names.
-8. **Aggregates tested for the double count** (see the open question below);
-   replacement itself stays unchanged.
+8. **Audit aggregate deduplicated.** When a shorter span (the bare first name)
+   lies inside a longer one (the full name), the shorter is absorbed into the
+   longer in the per-layer aggregate, so a person is counted once. Replacement
+   itself stays unchanged. A test pins it.
 9. **Docs** that describe the behaviour change with it.
 
-## Open questions
+## Scope
 
-- **Double count in the per-layer aggregates.** Either the audit aggregate is
-  deduplicated so the shorter span (the bare first name) is absorbed into the
-  longer one, or the overcount is stated in the spec and tested. Which of the
-  two is not decided. Either way replacement is unchanged, and `tasks.md` has a
-  test that pins whichever is chosen.
+This change is part (a) only: the gazetteer-anchored rule with a test per
+particle. Re-anonymising the affected document (`1c87f856`) with a count-only
+check is dropped from this change. It was part (b) of the split the breaker
+asked for and is not decided here.
+
+## Open questions
 
 - **The initial gazetteer entries.** The mechanism and the rule that each entry
   has a reason are decided; which first names the list starts with, and from
   what source, is not. The build needs a starting list to prove the scenarios;
   its coverage decides how many real names this misses, which the PII
   measurement in `tasks.md` reports.
-- **Particles beyond the five** (`van den`, `van de`, `von`, `op de`, ...) are
-  not in this change. Adding one is a later change to the fixed list.
-- **Re-running the affected document and the corpus.** Re-anonymising document
-  `1c87f856` and the count-only check on its anonymised text need the
-  deployed corpus; they are an operator step, not a build task, and are not in
-  `tasks.md`. Whether the rest of the corpus is reprocessed (`POST /reprocess`,
-  hours of work) is likewise not decided. Updating the pilot report with the
-  result of that re-check waits for it.
+- **Particles beyond the six** (`van de`, `von`, `op de`, ...) are not in this
+  change. Adding one is a later change to the fixed list.
+- **Re-anonymising the affected document and the corpus** is not in this
+  change (see Scope). Whether and how it happens, and whether the pilot report
+  is updated afterwards, is open and belongs to a separate change.
 
 ## Impact
 
-- Specs: `anonymization` (ADDED, four requirements).
+- Specs: `anonymization` (ADDED, five requirements).
 - Code: a new module for the particle rule and its gazetteer loader (not
   `src/wordsworth/detectors.py`'s `DETECTORS`); a gazetteer data file; new
-  tests, including the gazetteer brake. The aggregate in
-  `src/wordsworth/pseudonymizer.py` changes only if the dedupe option is chosen.
+  tests, including the gazetteer brake; the aggregate in
+  `src/wordsworth/pseudonymizer.py` absorbs a shorter span into a longer one.
 - Docs: `docs/reference/evaluation.md` and `docs/how-to/detection-lists.md`.
