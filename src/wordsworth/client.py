@@ -5,10 +5,10 @@ Stdlib only (no dependencies), so it runs anywhere with Python 3.12 — copy thi
 one file to a machine on the tailnet and run it, or use the installed
 ``wordsworthctl`` entrypoint.
 
-    wordsworthctl --url http://100.100.181.23:8000 health
-    wordsworthctl --url http://100.100.181.23:8000 ingest /path/to/corpus
-    wordsworthctl --url http://100.100.181.23:8000 search "vergunning" --dossier alle
-    wordsworthctl --url http://100.100.181.23:8000 state <document-id>
+    wordsworthctl --url https://wordsworth-api.tail8f7877.ts.net health
+    wordsworthctl --url https://wordsworth-api.tail8f7877.ts.net ingest /path/to/corpus
+    wordsworthctl --url https://wordsworth-api.tail8f7877.ts.net search "vergunning" --dossier alle
+    wordsworthctl --url https://wordsworth-api.tail8f7877.ts.net state <document-id>
 
 ``ingest`` takes a file or a directory (walked recursively; ``*.pdf`` by default,
 ``--all`` for every file) and uploads to ``POST /ingest`` in batches, printing a
@@ -507,7 +507,7 @@ def main(argv: list[str] | None = None) -> int:
         reason = getattr(e, "reason", e)
         print(f"error: cannot reach Wordsworth API at {args.url}: {reason}\n"
               f"       set --url or $WORDSWORTH_API_URL to the API "
-              f"(e.g. http://100.100.181.23:8000)", file=sys.stderr)
+              f"(e.g. https://wordsworth-api.tail8f7877.ts.net)", file=sys.stderr)
         return 1
 
 

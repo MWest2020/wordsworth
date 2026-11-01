@@ -279,9 +279,22 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     Done 2026-10-29 (homelab #29): `ProxyGroup` `wordsworth-ingress`, Ready
     and Available, pods on node-03 and node-02 (`ProxyClass` `wordsworth-ha`,
     required anti-affinity on hostname).
-  - [ ] 3.3.4 Move the remaining route(s) onto it, keeping their MagicDNS
+  - [x] 3.3.4 Move the remaining route(s) onto it, keeping their MagicDNS
     names; time the gap while a name passes from the old device to the
     group.
+
+    Done 2026-11-01 (homelab #36): `https://wordsworth-api.tail8f7877.ts.net`
+    is served by the `ProxyGroup` `wordsworth-ingress` as `svc:wordsworth-api`
+    (auto-approved on both pods, node-03 and node-02); the dedicated proxy and
+    its device are gone. **Gap: 6.7 s** (30 failed requests at 5/s from this
+    tailnet machine, then one single blip). What made the difference with
+    2026-10-29: the operator's OAuth client got the `services` scope; the group
+    path was proven first under a temporary name (`svc:wordsworth-api-ha`,
+    approved through the API, cert in 34 s, 200, then removed); and the
+    existing cert for `wordsworth-api` was put in the shared cert Secret
+    beforehand, so the switch did not wait for ACME. Rolling back now means
+    dropping the annotation **and** deleting the Secret
+    `wordsworth-api.tail8f7877.ts.net` (runbook).
 
     First attempt 2026-10-29 failed and was rolled back (homelab #30, revert
     e1d73da). The operator could not create `svc:wordsworth-api`: "error
@@ -295,8 +308,14 @@ no longer waits for step 1: the api mounts nothing tied to a node.
     machine; the Cloudflare console route stayed up). Before the next attempt:
     create the Service once by hand or by a dry run, so a 404 shows up before
     the old proxy goes.
-  - [ ] 3.3.5 Proof: probe each remaining name from a tailnet machine, five a
+  - [x] 3.3.5 Proof: probe each remaining name from a tailnet machine, five a
     second; evict one proxy pod; no failed request.
+
+    Done 2026-11-01: `wordsworth-ingress-1` deleted and recreated while the
+    probe ran; 326 requests over the eviction and recovery, **0 failed** (the
+    pod on node-03 carried the name alone). Not yet done: the http :8000
+    LoadBalancer (`wordsworth`, `100.100.181.23`) stays until every CLI points
+    at the https name (3.3.2); the docs and installer now say the https name.
 
 ## 4. Proof
 - [ ] 4.1 A node-shutdown test: one node out, the console keeps answering,
