@@ -329,6 +329,22 @@ answers, and a bare zero gives the reassuring one.
 
 Exit code 2 if the file declares no combinations.
 
+## `wordsworth-sealed-orphans`
+
+Lists sealed objects under `documents/` that open under no key row — there is
+no row for their key, or the row names another key id — and are older than
+one hour. See [the how-to](../how-to/sealed-orphans.md) for why these appear
+and when it is safe to remove them.
+
+```bash
+wordsworth-sealed-orphans            # dry run: what it would remove
+wordsworth-sealed-orphans --apply    # actually remove them
+```
+
+`--apply` removes exactly the objects the dry run listed. A sealed object with
+its own key row, a legacy plaintext object, and any object younger than one
+hour (a write still in flight) are never touched.
+
 ## Examples
 
 ```bash

@@ -10,7 +10,7 @@ if owner and owner.id != doc.id:
     return SUPERSEDED                  # nothing written
 wrote = originals.put_original(session, doc.id, new_key, ocr_bytes)
 try:   repoint object_key, transition to EXTRACTABLE (as today)
-except: if wrote: originals.objects.delete(new_key); raise
+except: wrote is PutResult.WROTE and originals.objects.delete(new_key); raise
 ```
 
 Why the owner's object needs no write: the owner is a live document, so its

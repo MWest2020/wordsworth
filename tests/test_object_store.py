@@ -9,9 +9,13 @@ from wordsworth.object_store import (
     ObjectStore,
     ObjectStoreError,
     S3ObjectStore,
+    SealedObjectError,
 )
+from wordsworth.originals_envelope import seal
 from wordsworth.pipeline import ingest, process
 from wordsworth.states import State
+
+SEALED = seal(b"k" * 32, "a" * 12, "documents/sealed", b"%PDF-1.4 secret")
 
 
 # --- In-memory double (task 1.3) -------------------------------------------
@@ -37,6 +41,36 @@ def test_missing_key_errors_clearly():
     store = InMemoryObjectStore()
     with pytest.raises(ObjectStoreError, match="get 'ghost' failed"):
         store.get("ghost")
+
+
+# --- the sealed-object guard (task 3.3) -------------------------------------
+
+def test_in_memory_get_refuses_a_sealed_object():
+    store = InMemoryObjectStore()
+    store.put("documents/sealed", SEALED)
+    with pytest.raises(SealedObjectError):
+        store.get("documents/sealed")
+
+
+def test_in_memory_get_still_returns_a_header_less_object():
+    store = InMemoryObjectStore()
+    store.put("documents/plain", b"%PDF-1.4 plain bytes")
+    assert store.get("documents/plain") == b"%PDF-1.4 plain bytes"
+
+
+def test_in_memory_get_raw_returns_sealed_bytes_unchanged():
+    store = InMemoryObjectStore()
+    store.put("documents/sealed", SEALED)
+    assert store.get_raw("documents/sealed") == SEALED
+
+
+def test_in_memory_iter_objects_yields_key_and_last_modified():
+    store = InMemoryObjectStore()
+    store.put("documents/a", b"x")
+    store.put("other/b", b"y")
+    found = dict(store.iter_objects("documents/"))
+    assert list(found) == ["documents/a"]
+    assert found["documents/a"].tzinfo is not None
 
 
 # --- Sovereign credentials (invariant): read from secret source, not code ---
@@ -92,6 +126,67 @@ def test_pipeline_missing_object_errors_clearly(session, born_digital_pdf,
     with pytest.raises(ObjectStoreError, match="failed"):
         process(session, doc.id, empty, search_index=mem_index,
                 embedder=fake_embedder)
+
+
+# --- S3 driver: get_raw, iter_objects, the sealed guard (task 3.3) ---------
+
+class _FakeBody:
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+
+class _FakeS3Client:
+    """Just enough of boto3's S3 client for get/get_raw/iter_objects."""
+
+    def __init__(self):
+        self._objects: dict[str, bytes] = {}
+
+    def put_object(self, Bucket, Key, Body):
+        self._objects[Key] = Body
+
+    def get_object(self, Bucket, Key):
+        return {"Body": _FakeBody(self._objects[Key])}
+
+    def get_paginator(self, name):
+        assert name == "list_objects_v2"
+        return self
+
+    def paginate(self, Bucket, Prefix):
+        import datetime as dt
+
+        contents = [{"Key": k, "LastModified": dt.datetime.now(dt.timezone.utc)}
+                    for k in self._objects if k.startswith(Prefix)]
+        yield {"Contents": contents}
+
+
+def test_s3_get_refuses_a_sealed_object():
+    store = S3ObjectStore(_FakeS3Client(), "bucket")
+    store.put("documents/sealed", SEALED)
+    with pytest.raises(SealedObjectError):
+        store.get("documents/sealed")
+
+
+def test_s3_get_still_returns_a_header_less_object():
+    store = S3ObjectStore(_FakeS3Client(), "bucket")
+    store.put("documents/plain", b"%PDF-1.4 plain bytes")
+    assert store.get("documents/plain") == b"%PDF-1.4 plain bytes"
+
+
+def test_s3_get_raw_returns_sealed_bytes_unchanged():
+    store = S3ObjectStore(_FakeS3Client(), "bucket")
+    store.put("documents/sealed", SEALED)
+    assert store.get_raw("documents/sealed") == SEALED
+
+
+def test_s3_iter_objects_yields_key_and_last_modified():
+    store = S3ObjectStore(_FakeS3Client(), "bucket")
+    store.put("documents/a", b"x")
+    store.put("other/b", b"y")
+    found = dict(store.iter_objects("documents/"))
+    assert list(found) == ["documents/a"]
 
 
 # --- Integration against a live SeaweedFS (task 3.1) -----------------------
