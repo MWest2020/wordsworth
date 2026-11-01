@@ -4,8 +4,10 @@
 
 Detection SHALL treat a first name, a Dutch particle and a last name as ONE
 `PERSON` span. The particles are `van`, `van der`, `van den`, `de`, `ter` and
-`ten`; a particle of several words is one particle. The rule is its own deterministic
-pattern, not a widening of spans another layer found, and its detections carry
+`ten`; a particle of several words is one particle. The rule applies in the
+reversible driver (`reversible_mode` on). The irreversible
+`OpenAnonymiserAnonymizer`, used when `reversible_mode` is off, is out of scope
+of this requirement. The rule is its own deterministic pattern, not a widening of spans another layer found, and its detections carry
 the layer name `dutch_particle_name`.
 
 What identifies a person is the whole name. Detecting the first name and the
@@ -27,6 +29,12 @@ redacting it makes a decision unreadable without protecting anyone.
 - **WHEN** a synthetic name is built with each of `van`, `van der`, `van den`,
   `de`, `ter` and `ten` between a first name and a last name
 - **THEN** each is detected as one `PERSON` span covering the whole name
+
+#### Scenario: The irreversible driver is out of scope
+
+- **WHEN** a document is de-identified by the irreversible
+  `OpenAnonymiserAnonymizer`
+- **THEN** this requirement does not apply and the rule does not run
 
 #### Scenario: The detection carries its own layer name
 
@@ -105,7 +113,10 @@ corpus, in the manner of the allow-list brake
 (`tests/test_allow_list_veiligheid.py`): an entry that turns ordinary text into a
 `PERSON` is a fact established before roll-out, not a matter of trust. A first
 name that is also a common capitalised word at sentence start (`Ton`, `Wil`,
-`Bart`) SHALL NOT be a gazetteer entry.
+`Bart`) SHALL NOT be a gazetteer entry. This costs recall on purpose: of the 14
+seeded first names in `eval/synthetic.py`, `Ton` and `Bart` stay unmatched, a
+known and accepted miss traded for precision. The gazetteer file is not part of
+`lists_hash`.
 
 #### Scenario: Every gazetteer entry is tested against the corpus
 
@@ -118,6 +129,16 @@ name that is also a common capitalised word at sentence start (`Ton`, `Wil`,
 
 - **WHEN** the shipped gazetteer is listed
 - **THEN** it holds none of `Ton`, `Wil` and `Bart`
+
+#### Scenario: The excluded names stay unmatched
+
+- **WHEN** `Ton` or `Bart` stands before a particle and a last name
+- **THEN** no `PERSON` is detected by this rule, a known and accepted miss
+
+#### Scenario: A gazetteer change does not alter lists_hash
+
+- **WHEN** the gazetteer file changes
+- **THEN** `lists_hash` is unchanged
 
 ### Requirement: The audit aggregate counts a person once
 
