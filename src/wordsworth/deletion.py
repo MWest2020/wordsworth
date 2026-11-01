@@ -30,6 +30,15 @@ needs it would make that document's reveal path try to decrypt nothing.
 Similarly `object_key` is content-addressed and a superseded copy keeps its
 former key (one-document-per-object), so the stored object is removed only
 when no other, still-existing document row claims the same key.
+
+Deleting also releases the object key itself (deleted-document-releases-
+object-key): a deleted document's row no longer counts as *the* live document
+for its bytes (`live_document_for`, the partial unique index), so the same
+bytes can be ingested again. In the same transaction as the `deleted` record,
+`object_key` becomes the placeholder `deleted/<document_id>` -- unique by
+construction, never equal to a content-addressed key -- and the former key is
+recorded in that record as `released_object_key` (an id, not a value). The
+object-removal check above runs against the former key, before the release.
 """
 from __future__ import annotations
 
@@ -46,6 +55,15 @@ from .object_store import ObjectStore
 from .pipeline import transition
 from .search_index import SearchIndex
 from .states import State
+
+DELETED_KEY_PREFIX = "deleted/"
+
+
+def released_object_key(document_id: UUID) -> str:
+    """The placeholder a deleted document's `object_key` becomes: unique by
+    construction (so the partial unique index never refuses it) and never
+    equal to a content-addressed key (`documents/<sha256>`)."""
+    return f"{DELETED_KEY_PREFIX}{document_id}"
 
 
 class DeletionError(ValueError):
@@ -109,18 +127,20 @@ def delete_document(
         raise DeletionError(f"unknown document: {document_id}")
 
     counts = DeletionCounts()
+    already_deleted = current_state(session, document_id) == State.DELETED
+    former_key = doc.object_key
 
     counts.index_entries = int(index.exists(str(document_id)))
     if not dry_run and counts.index_entries:
         index.delete(str(document_id))
 
     object_removable = (
-        store.exists(doc.object_key)
-        and not _object_claimed_elsewhere(session, document_id, doc.object_key)
+        store.exists(former_key)
+        and not _object_claimed_elsewhere(session, document_id, former_key)
     )
     counts.object = int(object_removable)
     if not dry_run and object_removable:
-        store.delete(doc.object_key)
+        store.delete(former_key)
 
     text_row = session.get(DocumentText, document_id)
     counts.text = int(text_row is not None)
@@ -163,6 +183,9 @@ def delete_document(
         return counts
 
     session.flush()
-    transition(session, document_id, State.DELETED, step="delete",
-              payload={"actor": actor, **counts.as_dict()})
+    payload: dict = {"actor": actor, **counts.as_dict()}
+    if not already_deleted:
+        payload["released_object_key"] = former_key
+        doc.object_key = released_object_key(document_id)
+    transition(session, document_id, State.DELETED, step="delete", payload=payload)
     return counts
