@@ -46,11 +46,36 @@
   are also common capitalised words at sentence start (`Ton`, `Wil`, `Bart`) are
   excluded from the gazetteer. `eval/overdetection_run.py` runs as a task and
   its result is recorded. The gazetteer-anchored design is unchanged.
+- **The brake takes non-corpus input.** The evaluation corpus is generated from
+  the same names a gazetteer would be seeded from, so it cannot show that an
+  entry misfires on ordinary Dutch. Besides the corpus, every gazetteer entry is
+  run over a fixed set of ordinary Dutch sentences, kept in a fixture file, each
+  with the entry as a sentence-initial capital followed by a particle and a
+  capitalised word used in its ordinary sense. The set holds at least one
+  sentence per particle. What this proves is narrow and the docs say so: no
+  `Ton`-shaped entry (a first name that is also an ordinary sentence-start word)
+  produces a `PERSON` on those sentences. It is not coverage: a word that
+  misfires in a sentence nobody wrote down passes.
+- **The measurement can see the rule.** `eval/pii_run.py` offers only the layers
+  `deterministic` and `openanonymiser`; neither runs `dutch_particle_name`, so a
+  before/after run over them gives the same number by construction. The rule is
+  added as an explicit third layer, `dutch_particle_name`, in `pii_run._LAYERS`
+  and in `overdetection_run.py`. It is opt-in: the default layers stay
+  `deterministic,openanonymiser`, so "before" is the default run and "after" is
+  the run with `dutch_particle_name` added, and the deterministic layer is still
+  unchanged. (Running the measurement through `ReversibleAnonymizer` instead was
+  considered and rejected: it mixes the rule with replacement and tokens, and
+  the PII eval scores detections, not output text.)
 - **The measurement says what it is.** The gold names of the generated corpus
   come from `eval/synthetic.py:18-21`; a gazetteer seeded from the same first
   names scores itself. The result is labelled circular in
-  `docs/reference/evaluation.md`, and recall is also reported on a gold set not
-  derived from the gazetteer's own first names.
+  `docs/reference/evaluation.md`, and a second PERSON number is reported on a
+  gold set not derived from the gazetteer's own first names.
+- **Recall is unknown.** This change builds the mechanism; it does not close the
+  Gooise Meren miss. Neither number measures recall on real government
+  documents: the circular one scores itself, the second one measures a
+  constructed set. The measurement file says plainly that recall on the real
+  corpus is unknown, and no document says the miss is fixed.
 - **The audit aggregate is deduplicated.** `winner` in
   `pseudonymizer.py:251-256` is keyed by text, so when GLiNER returns the bare
   first name next to the full-name span the per-layer aggregate counts one
@@ -58,6 +83,12 @@
   the person is counted once. Only the aggregate changes; what is replaced is
   not touched. (Stating and testing the overcount instead was considered and
   rejected: an audit count that says two people for one is wrong.)
+- **The dedupe is a pure helper module.** `pseudonymizer.py` has 507 lines
+  against the ≤200 rule. The dedupe goes into its own module (e.g.
+  `src/wordsworth/audit_dedupe.py`, ≤200 lines) as a pure function over the
+  entity list; `pseudonymizer.py` only calls it. `pseudonymizer.py` is not split
+  in this change: that is a refactor of its own, and mixing it in would hide the
+  dedupe in a large diff.
 - **The gazetteer file stays out of `lists_hash`.** `lists_hash` fingerprints
   the allow/deny lists recorded on a document, and `reprocess.outdated`
   compares it. Changing the gazetteer therefore does not mark any document
@@ -101,6 +132,12 @@
   outdated on each added name; versioning is the follow-up's job.
 - **A driver-neutral requirement.** The irreversible driver is not wired for
   this rule here; claiming it would promise what the change does not build.
+- **Splitting `pseudonymizer.py` in this change.** Out of scope; the dedupe only
+  needs a place outside it.
+- **Measuring with the existing layers only.** Identical before and after by
+  construction; it would report an instrument, not the rule.
+- **A brake on corpus text only.** The corpus shares its names with the
+  gazetteer; it cannot show an entry misfiring on ordinary sentences.
 - **Keeping `Ton` and `Bart` for recall.** They turn ordinary sentence starts
   into a `PERSON`; the miss is accepted instead.
 
