@@ -13,7 +13,7 @@ would protect nothing. Third change of the chain.
 ## What changes
 
 - `pipeline.ingest` registers the document first, then writes through
-  `put_original(doc.id, key, bytes)` (design.md §3a of
+  `put_original(session, doc.id, key, bytes)` (design.md §3a of
   `originals-cipher-and-key-store`); if anything inside `ingest` fails after the
   write, it deletes the object it wrote.
 - The five readers read through `get_original`: `pipeline.process`
@@ -24,10 +24,11 @@ would protect nothing. Third change of the chain.
   `store`, and every caller passes one (`api.py`, `ingest_corpus.py`,
   `ingest_manifest.py`, `reprocess.py`, `serve.py`).
 - `serve.py` builds one process-lifetime `OriginalsStore` (one unwrap cache)
-  over the existing `OpenBaoTransit`, in irreversible mode too.
+  over a factory of `OpenBaoTransit`s, one per KEK name, in irreversible mode
+  too.
 - Ingest fails closed when the key service is unreachable: a named error
-  (HTTP 503 at the API), nothing stored (Mark's call on #318; this is its
-  default).
+  (HTTP 503 at the API), nothing stored (#318, decided 2026-10-31: fail
+  closed).
 - Docs, including the deploy precondition: the `document_keys` backup and the
   KEK escrow exist before the first original is sealed.
 

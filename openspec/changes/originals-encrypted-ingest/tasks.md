@@ -44,9 +44,13 @@ and the in-memory store unless stated.
       routes and the failure cases above, the captured logs contain neither a
       marker string from the PDF nor the data key (raw, hex, base64). Proved
       by: a test.
-- [ ] 4.1 `serve.py` builds one `OriginalsStore` over `OpenBaoTransit` in both
-      modes and passes it to `create_app`. Proved by: a test of `build_app`
-      with a fake Transit.
+- [ ] 4.1 `serve.py` builds one process-lifetime `OriginalsStore` in both modes,
+      whose `DocumentKeys` gets a `transit_for(kek_name)` factory returning
+      one cached `OpenBaoTransit` per KEK name
+      (`originals-cipher-and-key-store` design.md "KEK per domain"), and
+      passes it to `create_app`. Proved by: a test of `build_app` with a
+      name-keyed fake factory, and a test that two documents in domains with
+      different KEKs are sealed under different `kek_ref`s.
 - [ ] 5.1 Docs: `docs/how-to/originals-encryption.md` (what is sealed, the
       deploy precondition from design.md, what an unreachable OpenBao does,
       `wordsworth-sealed-orphans`, the OCR gap until `originals-ocr-sealed`);

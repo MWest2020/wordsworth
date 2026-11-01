@@ -57,11 +57,16 @@ class SearchIndex(Protocol):
     def ensure_ready(self) -> None: ...
     #: Writes the whole document. ``passages`` are the vectors of its passages
     #: (`wordsworth.passages`); like ``vector``, leaving them out drops them, so
-    #: every indexing path computes them from the text it writes.
+    #: every indexing path computes them from the text it writes. Same for
+    #: ``topics``: a caller that wants to keep a document's onderwerp-
+    #: lidmaatschap through a re-index reads it first (`topics_of`) and passes
+    #: it back — `reanonymize` does this; `process`'s first index has nothing
+    #: to keep.
     def index(self, document_id: str, text: str, object_key: str,
               vector: list[float] | None = None,
               dossiers: list[str] | None = None,
-              passages: list[list[float]] | None = None) -> None: ...
+              passages: list[list[float]] | None = None,
+              topics: list[str] | None = None) -> None: ...
     # ``only`` is the scope: a list of dossier ids, or None for every dossier.
     # None means "all" ONLY here, where it arrives from a caller that said so —
     # the API refuses a missing scope before it ever gets this far.
@@ -100,6 +105,11 @@ class SearchIndex(Protocol):
     #: Same partial update, for topic membership. Returns whether the document
     #: was there.
     def set_topics(self, document_id: str, topics: list[str]) -> bool: ...
+    #: The topics this document currently carries, or [] if none (or not
+    #: indexed). The read half of keeping a membership through `index()`'s
+    #: full replace: a caller reads this before re-indexing and passes the
+    #: result back as `index(..., topics=...)`.
+    def topics_of(self, document_id: str) -> list[str]: ...
     #: Everything in one dossier, for computing topics over it. Over the index
     #: and not the database: a topic narrows searching, and the index is what is
     #: searchable.
@@ -141,10 +151,10 @@ class InMemoryIndex:
         pass
 
     def index(self, document_id, text, object_key, vector=None,
-              dossiers=None, passages=None) -> None:
+              dossiers=None, passages=None, topics=None) -> None:
         self._docs[document_id] = (text, object_key, vector)  # idempotent upsert
         self._dossiers[document_id] = set(dossiers or ())
-        self._topics.pop(document_id, None)   # zie OpenSearchIndex.index
+        self._topics[document_id] = set(topics or ())  # vervangt; caller geeft bestaande terug
         if passages:
             self._passages[document_id] = list(passages)
         else:
@@ -177,6 +187,9 @@ class InMemoryIndex:
             return False
         self._topics[document_id] = set(topics or ())
         return True
+
+    def topics_of(self, document_id) -> list[str]:
+        return sorted(self._topics.get(document_id, set()))
 
     def delete(self, document_id) -> bool:
         self._dossiers.pop(document_id, None)

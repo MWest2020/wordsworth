@@ -8,7 +8,7 @@ owner = live_document_for(session, new_key)
 if owner and owner.id != doc.id:
     supersede(session, doc.id, owner.id, actor="ocr", as_object=new_key)
     return SUPERSEDED                  # nothing written
-wrote = originals.put_original(doc.id, new_key, ocr_bytes)
+wrote = originals.put_original(session, doc.id, new_key, ocr_bytes)
 try:   repoint object_key, transition to EXTRACTABLE (as today)
 except: if wrote: originals.objects.delete(new_key); raise
 ```

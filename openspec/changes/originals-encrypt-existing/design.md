@@ -21,5 +21,12 @@ Two consequences of decisions in `originals-cipher-and-key-store` design.md:
   then set `sealed_at` and commit; then delete the temporary object. A crash
   before `sealed_at` is set leaves the plaintext readable (the downgrade guard
   only applies to rows with `sealed_at`), and the run resumes with the row it
-  finds. `put_original` is not used here: by its rule 4 it leaves legacy
-  objects alone.
+  finds.
+- `put_original` is not used here: it never replaces a legacy object. Its
+  rule 4 (`originals-cipher-and-key-store` §3a, as amended 2026-10-31) covers
+  exactly this run's mid-migration state: an object without a sealed header,
+  with no key row or with a row whose `sealed_at` is NULL, is "legacy", not
+  written. So an ingest of the same bytes while this run is between its two
+  commits leaves the plaintext alone, and `get_original` returns it. Once
+  `sealed_at` is set, a header-less object is a downgrade. Rule 5 then
+  refuses to write over it, and `get_original` refuses to return it.

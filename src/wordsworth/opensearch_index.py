@@ -282,15 +282,19 @@ class OpenSearchIndex:
         return result.get("count", 0) > 0
 
     def index(self, document_id, text, object_key, vector=None,
-              dossiers=None, passages=None) -> None:
-        """Schrijf het hele document. Let op: dit vervángt, dus het
-        onderwerp-lidmaatschap van dit document valt eraf. Dat is juist — een
-        opnieuw verwerkt document hoort niet stilzwijgend in een groep te
-        blijven die over de oude tekst is berekend — maar het betekent wel dat
-        het aantal bij een onderwerp achterloopt tot de volgende berekening.
-        Daarom staat bij elk onderwerp wannéér het berekend is."""
+              dossiers=None, passages=None, topics=None) -> None:
+        """Schrijf het hele document. Dit vervángt: wie `topics` weglaat, wist
+        het onderwerp-lidmaatschap, net zoals een weggelaten vector de
+        embedding wist (zie `set_dossiers` voor waarom dat gevaarlijk is).
+
+        Vroeger viel het onderwerp hier altijd af, ook als een document alleen
+        opnieuw geanonimiseerd werd — een zoekvraag binnen dat onderwerp vond
+        het daarna niet meer, zonder fout. `reanonymize` leest daarom nu eerst
+        de huidige onderwerpen (`topics_of`) en geeft ze hier terug mee, zodat
+        herindexeren het onderwerp-lidmaatschap houdt."""
         body = {"text": text, "object_key": object_key,
-                "dossiers": list(dossiers or ())}
+                "dossiers": list(dossiers or ()),
+                "topics": list(topics or ())}
         if vector is not None:
             body["vector"] = vector
         if passages:
@@ -350,6 +354,21 @@ class OpenSearchIndex:
                 raise
             return False
         return True
+
+    def topics_of(self, document_id) -> list[str]:
+        """De huidige onderwerpen van dit document, of `[]` zonder onderwerp
+        (of zonder dat het geïndexeerd is). Het leeshalfje van een
+        lidmaatschap dat door `index()`'s volledige vervanging heen moet:
+        `reanonymize` leest dit vóór het herindexeren en geeft het resultaat
+        terug als `index(..., topics=...)`."""
+        try:
+            doc = self._client.get(index=self._index, id=document_id,
+                                   _source=["topics"])
+        except Exception as exc:                 # opensearchpy NotFoundError
+            if getattr(exc, "status_code", None) != 404:
+                raise
+            return []
+        return list(doc.get("_source", {}).get("topics") or ())
 
     @_reads
     def documents_in(self, dossier: str, limit: int = 10000

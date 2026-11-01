@@ -467,11 +467,17 @@ def reanonymize(
     )
     # The new text's passages: the old ones describe text that is gone.
     passages = embed_passages(embed, result.text)
+    # Re-indexing replaces the whole entry (index() comment); a reprocessed
+    # document keeps the topic it was in, so read it before the overwrite and
+    # hand it straight back. Staleness (computed over the old text) is the
+    # open question this change leaves to the topic view, not to here.
+    topics = index.topics_of(str(document_id))
 
     def _index() -> None:
         index.ensure_ready()
         index.index(str(document_id), result.text, doc.object_key, vector=vector,
-                    dossiers=dossiers_of(session, document_id), passages=passages)
+                    dossiers=dossiers_of(session, document_id), passages=passages,
+                    topics=topics)
 
     retry_transient(_index, settings.retry_attempts, settings.retry_base_delay,
                     what="index")

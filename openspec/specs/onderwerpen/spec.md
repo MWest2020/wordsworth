@@ -33,6 +33,10 @@ chose.
 The stored result SHALL carry the moment it was computed and the number of
 documents it was computed over.
 
+A document that is re-indexed by `reanonymize` (and so by reprocess) SHALL keep
+the topics it had in the index. Searching within a topic SHALL find the same
+documents after a reprocess as before it.
+
 #### Scenario: A topic view says how old it is
 
 - **WHEN** a dossier has grown since its topics were computed
@@ -43,6 +47,11 @@ documents it was computed over.
 
 - **WHEN** a document is ingested into a dossier that already has topics
 - **THEN** the stored topics are unchanged and no clustering runs
+
+#### Scenario: A reprocessed document is still found within its topic
+
+- **WHEN** an indexed document belongs to a topic and is reprocessed
+- **THEN** a search within that topic still returns the document
 
 ### Requirement: Een onderwerpnaam bevat nooit een token en nooit een klaarwaarde
 

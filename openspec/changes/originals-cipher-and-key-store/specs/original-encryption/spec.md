@@ -51,7 +51,24 @@ cannot open, and no plaintext.
 
 - **WHEN** the same bytes are written again for an object that opens under its
   key row
-- **THEN** nothing is written and the object still opens
+- **THEN** nothing is written, the call returns `PutResult.UNCHANGED` and the
+  object still opens
+
+#### Scenario: A legacy object survives a failed commit
+
+- **WHEN** a write returns `PutResult.LEGACY` and the caller's commit then
+  fails
+- **THEN** the caller does not delete the object and it still reads
+
+#### Scenario: A written object is removed after a failed commit
+
+- **WHEN** a write returns `PutResult.WROTE` and the caller's commit then fails
+- **THEN** the caller deletes the object it wrote
+
+#### Scenario: The result has no truthiness
+
+- **WHEN** a `PutResult` is used as a boolean
+- **THEN** `TypeError` is raised
 
 #### Scenario: A rolled-back write is repaired, not compounded
 
@@ -62,8 +79,16 @@ cannot open, and no plaintext.
 #### Scenario: Legacy objects are left alone
 
 - **WHEN** an original is written for an object that is stored as legacy
-  plaintext
-- **THEN** the object is not overwritten and the call reports it as legacy
+  plaintext, with no key row or with a key row that does not yet record the
+  object as sealed
+- **THEN** the object is not overwritten and the call returns
+  `PutResult.LEGACY`
+
+#### Scenario: A downgraded object is not overwritten
+
+- **WHEN** an original is written for an object without a sealed header whose
+  key row records it as sealed
+- **THEN** the write raises and nothing is written
 
 ### Requirement: The unwrap cache is bounded in size and time
 
