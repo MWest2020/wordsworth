@@ -125,6 +125,14 @@ known and accepted miss traded for precision. The gazetteer file is not part of
   evaluation corpus, and an entry that produces a `PERSON` from ordinary text
   fails the test
 
+#### Scenario: Every entry is run over ordinary Dutch sentences
+
+- **WHEN** the brake test runs every gazetteer entry over a fixed set of
+  ordinary Dutch sentences with the entry as a sentence-initial capital
+- **THEN** no entry produces a `PERSON` from those sentences, and this proves
+  that no `Ton`-shaped entry is in the gazetteer, not that the gazetteer is
+  complete
+
 #### Scenario: A first name that is a common word is excluded
 
 - **WHEN** the shipped gazetteer is listed
@@ -186,3 +194,10 @@ dataset column of organisation names would be classified as holding `PERSON`.
 - **WHEN** the deterministic layer of the PII evaluation runs on a text holding
   such a name
 - **THEN** it predicts no entity for it
+
+#### Scenario: The rule is measurable as its own layer
+
+- **WHEN** the PII evaluation is run with the layer `dutch_particle_name` added
+  to its default layers
+- **THEN** that layer detects the name as `PERSON`, and the default layers,
+  run without it, give the results they gave before
