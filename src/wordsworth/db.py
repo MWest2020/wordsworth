@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .config import settings
 from .models import Base
+from . import document_keys  # noqa: F401 -- registers document_keys on Base.metadata
 
 log = logging.getLogger(__name__)
 

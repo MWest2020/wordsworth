@@ -10,7 +10,7 @@ digest = sha256(bytes); key = "documents/" + digest
 doc = register_live(session, key, ...)        # id first; flush
 wrote = originals.put_original(session, doc.id, key, bytes)
 try:   dossier membership, as today
-except: if wrote: store.delete(key); raise
+except: wrote is PutResult.WROTE and store.delete(key); raise
 ```
 
 Registering first is needed because the key row carries the document id. A

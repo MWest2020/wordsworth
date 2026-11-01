@@ -64,6 +64,33 @@ class Settings:
         on the hot path and rides out brief OpenBao blips)."""
         return int(os.environ.get("WORDSWORTH_KEY_CACHE_TTL", "300"))
 
+    # --- originals-cipher-and-key-store (ADR-0008) ---
+    @property
+    def originals_kek(self) -> str:
+        """Name of the Transit KEK that wraps original-document data keys, by
+        default the same KEK as the pseudonymisation keys."""
+        return os.environ.get("WORDSWORTH_ORIGINALS_KEK", self.transit_kek_name)
+
+    @property
+    def originals_kek_by_domain(self) -> dict[str, str]:
+        """Optional per-domain override of the originals KEK, from
+        ``WORDSWORTH_ORIGINALS_KEK_BY_DOMAIN`` as a JSON object (domain -> KEK
+        name). Empty (default) means every domain uses ``originals_kek`` --
+        the lever that makes a KEK-per-organisation (ADR-0008 option C) a
+        configuration change."""
+        raw = os.environ.get("WORDSWORTH_ORIGINALS_KEK_BY_DOMAIN", "")
+        if not raw:
+            return {}
+        import json
+        return json.loads(raw)
+
+    @property
+    def document_key_cache_size(self) -> int:
+        """Max entries in the unwrap cache for original-document data keys
+        (the size bound of the bounded LRU; see ``key_cache_ttl`` for the time
+        bound)."""
+        return int(os.environ.get("WORDSWORTH_DOCUMENT_KEY_CACHE_SIZE", "1024"))
+
     @property
     def reversible_mode(self) -> bool:
         """When true the deployed straat pseudonymises REVERSIBLY (durable keyed
