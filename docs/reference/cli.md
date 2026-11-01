@@ -256,6 +256,26 @@ carries the same `topics` count.
 See [deleting documents](../how-to/deleting-documents.md) for what goes, what
 stays, and `DELETE /documents/{id}` / `DELETE /dossiers/{id}` over the API.
 
+## `wordsworth-release-deleted-keys`
+
+Releases the `object_key` of documents deleted before
+`deleted-document-releases-object-key`: a deletion now does this itself, in
+the same transaction as the `deleted` record, but a document deleted before
+that change still carries its real key. **Run this once after deploying that
+change.**
+
+```bash
+wordsworth-release-deleted-keys            # dry run: what it would release
+wordsworth-release-deleted-keys --apply    # actually release them
+```
+
+`--apply` releases exactly the documents the dry run listed, one `release-key`
+audit record per document. Idempotent — a released document is not found
+again — and it never touches a document that is not, right now, `deleted`.
+See [deleting documents](../how-to/deleting-documents.md) for what releasing a
+key means and why re-ingesting the same bytes afterwards registers a new
+document.
+
 ## `wordsworth-backfill-passages`
 
 Gives every indexed document a vector per passage (200-word windows every 150

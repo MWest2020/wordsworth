@@ -88,13 +88,15 @@ def test_deletion_removes_the_six_kinds_and_keeps_the_row_and_the_trail(session)
     # the row and the earlier audit record stay
     assert session.get(Document, doc.id) is not None
     assert current_state(session, doc.id) == State.DELETED
+    # the key is released: the row carries the placeholder, not the former key
+    assert session.get(Document, doc.id).object_key == f"deleted/{doc.id}"
     steps = [r.step for r in session.execute(
         select(AuditRecord).where(AuditRecord.document_id == doc.id)
         .order_by(AuditRecord.seq)).scalars()]
     assert steps == ["register", "delete"]
 
 
-def test_deleted_audit_record_carries_ids_and_counts_only(session):
+def test_deleted_audit_record_carries_ids_and_counts_and_the_released_key(session):
     store, index = InMemoryObjectStore(), InMemoryIndex()
     doc = register(session, KEY)
     session.flush()
@@ -109,9 +111,11 @@ def test_deleted_audit_record_carries_ids_and_counts_only(session):
                                   AuditRecord.step == "delete")).scalar_one()
     assert rec.payload == {"actor": "tester", "object": 1, "text": 0,
                            "pseudonyms": 0, "mappings": 0, "index_entries": 0,
-                           "grants": 0}
-    # no value, text, token or filename -- the payload is ids and counts only
-    assert KEY not in json.dumps(rec.payload)
+                           "grants": 0, "released_object_key": KEY}
+    # the former key is recorded -- an id (a content hash), not a value, text,
+    # token or filename
+    without_key = {k: v for k, v in rec.payload.items() if k != "released_object_key"}
+    assert KEY not in json.dumps(without_key)
 
     ok, bad = verify_chain(session)
     assert ok and bad is None
@@ -158,18 +162,75 @@ def test_a_failed_removal_is_a_hard_error_and_a_rerun_finishes(session):
         select(AuditRecord).where(AuditRecord.document_id == doc.id,
                                   AuditRecord.step == "delete")).first() is None
     assert store.exists(KEY)  # nothing removed on the failed attempt
+    assert session.get(Document, doc.id).object_key == KEY  # the real key, unchanged
 
     index.fail = False
     delete_document(session, doc.id, store, index, actor="tester")
     session.commit()
     assert current_state(session, doc.id) == State.DELETED
     assert not store.exists(KEY)
+    assert session.get(Document, doc.id).object_key == f"deleted/{doc.id}"
+    rec = session.execute(
+        select(AuditRecord).where(AuditRecord.document_id == doc.id,
+                                  AuditRecord.step == "delete")).scalar_one()
+    assert rec.payload["released_object_key"] == KEY
 
 
 def test_unknown_document_is_refused(session):
     with pytest.raises(DeletionError):
         delete_document(session, uuid4(), InMemoryObjectStore(), InMemoryIndex(),
                         actor="tester")
+
+
+def test_dry_run_reports_the_release_and_changes_nothing(session):
+    store, index = InMemoryObjectStore(), InMemoryIndex()
+    doc = register(session, KEY)
+    session.flush()
+    store.put(KEY, b"bytes")
+    session.commit()
+
+    counts = delete_document(session, doc.id, store, index, actor="tester",
+                             dry_run=True)
+    session.commit()
+
+    assert counts.object == 1  # the key is reported as releasable
+    assert session.get(Document, doc.id).object_key == KEY  # unchanged
+    assert current_state(session, doc.id) != State.DELETED
+    assert session.execute(
+        select(AuditRecord).where(AuditRecord.document_id == doc.id,
+                                  AuditRecord.step == "delete")).first() is None
+    assert store.exists(KEY)
+
+
+def test_reingesting_a_deleted_documents_bytes_registers_a_new_document(session):
+    """live_document_for -- the register_live, uq_documents_live_object_key,
+    OCR-owner and already-indexed checks all share -- must see the key as
+    free once the document that held it is deleted (design.md "Release, not
+    a special case")."""
+    from wordsworth.pipeline import ingest, live_document_for
+
+    store, index = InMemoryObjectStore(), InMemoryIndex()
+    pdf_bytes = b"%PDF-1.4 whatever bytes this change does not parse"
+    doc = ingest(session, store, pdf_bytes)
+    session.commit()
+    key = doc.object_key
+
+    delete_document(session, doc.id, store, index, actor="tester")
+    session.commit()
+
+    new_doc = ingest(session, store, pdf_bytes)
+    session.commit()
+
+    assert new_doc.id != doc.id
+    assert current_state(session, doc.id) == State.DELETED
+    assert current_state(session, new_doc.id) == State.REGISTERED
+    live = live_document_for(session, key)
+    assert live is not None and live.id == new_doc.id
+    # the deleted row stays deleted, its trail unchanged
+    steps = [r.step for r in session.execute(
+        select(AuditRecord).where(AuditRecord.document_id == doc.id)
+        .order_by(AuditRecord.seq)).scalars()]
+    assert steps == ["register", "delete"]
 
 
 def test_the_object_stays_while_another_live_document_still_claims_the_key(
@@ -189,6 +250,10 @@ def test_the_object_stays_while_another_live_document_still_claims_the_key(
     assert store.exists(KEY)
     assert current_state(session, a.id) == State.DELETED
     assert current_state(session, b.id) != State.DELETED
+    # a's key is released regardless -- it no longer counts as the live
+    # document for these bytes -- while b, still live, keeps claiming it
+    assert session.get(Document, a.id).object_key == f"deleted/{a.id}"
+    assert session.get(Document, b.id).object_key == KEY
 
     # once b is gone too, nothing claims the key any more
     delete_document(session, b.id, store, index, actor="t")

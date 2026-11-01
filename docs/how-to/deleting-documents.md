@@ -40,6 +40,15 @@ it.
 One `deleted` audit record is written, holding the document id, the actor and
 how many of each kind were removed — never a filename, a token or a value.
 
+**Deleting releases the object key.** The row's `object_key` becomes the
+placeholder `deleted/<document-id>`, and the former key is recorded in the
+`deleted` record as `released_object_key`. A deleted document therefore no
+longer counts as *the* live document for its bytes: the same bytes can be
+ingested again afterwards, which registers a new document while the deleted
+one stays deleted with its trail unchanged. Documents deleted before this
+behaviour existed still carry their real key until `wordsworth-release-
+deleted-keys` (below) has run once.
+
 ## Who may
 
 Only a caller with role `beheerder`, or one carrying a label in
@@ -117,6 +126,20 @@ would do: which documents would be deleted, which would only lose their
 membership, and how many topics would be removed (a count, not a list of
 names — topic names are derived from document terms and the report keeps
 names out). Nothing changes and no record is written.
+
+## Releasing keys of documents deleted before this change
+
+```bash
+wordsworth-release-deleted-keys            # lists what it would release
+wordsworth-release-deleted-keys --apply    # releases them
+```
+
+Run this once after deploying `deleted-document-releases-object-key`. It
+finds every document that is, right now, `deleted` and still carries a real
+object key, and with `--apply` releases each the same way a deletion does:
+one `release-key` audit record per document, holding `released_object_key`.
+Idempotent — a released document is not found again — and it never touches a
+document that is not deleted.
 
 ## What is not here
 
