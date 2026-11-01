@@ -28,9 +28,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
+import spacy
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
-from zeef.similarity import tokenize
 
 from .models import Topic
 from .pseudonymizer import without_tokens
@@ -84,6 +84,21 @@ _MIN_CORPUS_DF_FLOOR = 3
 #: Hoe kort een term mag zijn om nog iets te benoemen.
 _MIN_TERM_LEN = 4
 
+#: Het model dat bepaalt of een woord een zelfstandig naamwoord is. CC BY-SA
+#: 4.0, ongewijzigd gebruikt; attributie in NOTICE. Gepind op versie en
+#: geïnstalleerd in het image, zie pyproject.toml — de cluster haalt niets op
+#: tijdens het draaien.
+_SPACY_MODEL = "nl_core_news_sm"
+
+#: NER is wordsworths eigen taak (pseudonimisering) en hoort hier niet in mee
+#: te lopen; de lemmatizer levert niets op voor pos_/dep_.
+_SPACY_EXCLUDE = ["ner", "lemmatizer"]
+
+#: Hoeveel tekens van één document getagd worden. Een onderwerp komt uit wat
+#: een groep deelt, dus een afkap per document verandert niet welke termen een
+#: groep gemeen heeft. Zie design.md.
+_MAX_CHARS = 20_000
+
 
 class TopicError(ValueError):
     """Een berekening die niet kan."""
@@ -124,18 +139,34 @@ def usable_name(term: str) -> bool:
             and term not in _STOP)
 
 
-def terms_of(text: str) -> list[str]:
+def _nlp() -> spacy.language.Language:
+    """Eén geladen pipeline, zonder NER — per aanroep van `compute`, niet per
+    document."""
+    return spacy.load(_SPACY_MODEL, exclude=_SPACY_EXCLUDE)
+
+
+def terms_of(text: str, nlp: spacy.language.Language) -> list[str]:
     """De termen van een document, zónder pseudonym-tokens.
 
-    De tokens gaan eruit vóór het tokeniseren, niet erna: `[PERSOON:3fa9c2d1]`
-    valt anders uiteen in "persoon" en "3fa9c2d1", en dan staat de helft van een
+    De tokens gaan eruit vóór het taggen, niet erna: `[PERSOON:3fa9c2d1]` valt
+    anders uiteen in "persoon" en "3fa9c2d1", en dan staat de helft van een
     token alsnog in een naam die op een scherm en in een URL belandt.
+
+    **Alleen een zelfstandig naamwoord benoemt.** TF-IDF weet niet wat voor
+    woord het kiest: een voornaamwoord, werkwoord, bijvoeglijk naamwoord of de
+    naamwoordhelft van een vaste uitdrukking ("van harte") kwam er zo in. Dat is
+    gemeten op het 415-documenten-dossier — zie proposal.md. Getagd in de zin
+    waarin het staat, niet los: spaCy tagt "vergadertijd" los als ADJ.
     """
-    return [t for t in tokenize(without_tokens(text)) if usable_name(t)]
+    return [
+        token.text.lower() for token in nlp(without_tokens(text)[:_MAX_CHARS])
+        if token.pos_ in {"NOUN", "PROPN"} and token.dep_ != "fixed"
+        and usable_name(token.text.lower())
+    ]
 
 
 def name_for(members: list[list[str]], document_frequency: Counter,
-             total: int) -> str:
+             total: int, *, skip: frozenset[str] = frozenset()) -> str:
     """Een naam uit de termen die deze groep onderscheiden van de rest.
 
     TF-IDF over het dossier: vaak in deze groep, zeldzaam daarbuiten. Dezelfde
@@ -157,6 +188,10 @@ def name_for(members: list[list[str]], document_frequency: Counter,
     wat er is. Met die twee drempels erbij gaf hetzelfde corpus namen als
     "avondperiode · bedrijfsduur · berekeningswijze" en
     "informatiebijeenkomst · nieuws · noodoproep".
+
+    `skip` houdt termen buiten de keus — gebruikt om een naam die al door een
+    ander onderwerp gebruikt is te laten uitwijken naar de volgende scorende
+    term. Leeg `skip` geeft hetzelfde antwoord als voorheen.
     """
     in_group: Counter = Counter()
     for terms in members:
@@ -167,10 +202,34 @@ def name_for(members: list[list[str]], document_frequency: Counter,
         (count * math.log(total / (1 + document_frequency[term])), term)
         for term, count in in_group.items()
         if count >= drempel and document_frequency[term] >= zeldzaam
+        and term not in skip
     ]
     scored.sort(key=lambda p: (-p[0], p[1]))
     best = [term for _score, term in scored[:_NAME_TERMS]]
     return " · ".join(best) if best else "zonder onderscheidende termen"
+
+
+def _unique_name(member_terms: list[list[str]], document_frequency: Counter,
+                  total: int, used: set[str]) -> str:
+    """De naam van `name_for`, maar nooit gelijk aan een naam die er al is.
+
+    Bij een botsing wijkt de láátste term uit naar de volgende scorende term
+    die nog niet in de naam zit — de eerste twee blijven staan. Is er geen
+    volgende term meer, dan blijft de botsing bestaan en komt er " (2)" achter,
+    want twee groepen die werkelijk niets onderscheidt mag geen onzichtbare
+    samenvoeging worden.
+    """
+    skip: set[str] = set()
+    name = name_for(member_terms, document_frequency, total)
+    while name in used:
+        laatste = name.split(" · ")[-1]
+        skip.add(laatste)
+        kandidaat = name_for(member_terms, document_frequency, total,
+                             skip=frozenset(skip))
+        if kandidaat == name:
+            return f"{name} (2)"
+        name = kandidaat
+    return name
 
 
 def _clusters(vectors: list[list[float]], max_share: float = DEFAULT_MAX_SHARE,
@@ -288,8 +347,10 @@ def compute(session: Session, index: SearchIndex, dossier_id: UUID, *,
     groups = [members for members in grouped.values() if len(members) >= min_size]
 
     # De noemer voor TF-IDF is het dossier zelf: onderscheidend betekent hier
-    # "vaker dan de buren", niet "zeldzaam in het Nederlands".
-    terms_by_doc = {d.document_id: terms_of(d.text) for d in docs}
+    # "vaker dan de buren", niet "zeldzaam in het Nederlands". De pipeline
+    # wordt hier één keer geladen, niet per document (zie design.md).
+    nlp = _nlp()
+    terms_by_doc = {d.document_id: terms_of(d.text, nlp) for d in docs}
     document_frequency: Counter = Counter()
     for terms in terms_by_doc.values():
         document_frequency.update(set(terms))
@@ -302,11 +363,14 @@ def compute(session: Session, index: SearchIndex, dossier_id: UUID, *,
     now = datetime.now(timezone.utc)
     made: list[Topic] = []
     assigned: dict[str, str] = {}
+    used_names: set[str] = set()
     for members in sorted(groups, key=len, reverse=True):
+        member_terms = [terms_by_doc[m.document_id] for m in members]
+        name = _unique_name(member_terms, document_frequency, total, used_names)
+        used_names.add(name)
         topic = Topic(
             dossier_id=dossier_id,
-            computed_name=name_for([terms_by_doc[m.document_id] for m in members],
-                                   document_frequency, total),
+            computed_name=name,
             computed_at=now,
             document_count=len(members),
         )

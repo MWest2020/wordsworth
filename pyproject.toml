@@ -36,6 +36,11 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "gunicorn>=23.0",
     "zeef",
+    "spacy>=3.8",
+    # Pinned by version, direct URL: `uv.lock` then records its hash and the
+    # cluster pulls nothing at runtime. CC BY-SA 4.0 (attribution in NOTICE),
+    # used unchanged -- see topics.py and docs/how-to/topics.md.
+    "nl-core-news-sm",
 ]
 
 [project.scripts]
@@ -74,6 +79,7 @@ addopts = "-ra"
 
 [tool.uv.sources]
 zeef = { git = "https://github.com/MWest2020/zeef" }
+nl-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/nl_core_news_sm-3.8.0/nl_core_news_sm-3.8.0-py3-none-any.whl" }
 # Architecture A: OpenAnonymiser is reached over HTTP (a deployed service), not
 # imported in-process — so no torch/spaCy/presidio/GLiNER pulled into Wordsworth.
 # The service URL is WORDSWORTH_OPENANONYMISER_URL (see config.py).
