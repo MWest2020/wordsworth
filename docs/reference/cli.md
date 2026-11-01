@@ -34,7 +34,7 @@ If the `wordsworth` package *is* installed (`uv sync` / `pip install`), the
 Set the API URL once, persistently, so you don't repeat `--url`:
 
 ```bash
-wordsworth config --url http://100.100.181.23:8000    # also --batch, --timeout
+wordsworth config --url https://wordsworth-api.tail8f7877.ts.net    # also --batch, --timeout
 wordsworth config --show                              # print current config
 ```
 
@@ -369,10 +369,10 @@ hour (a write still in flight) are never touched.
 
 ```bash
 # one-off, explicit URL
-wordsworth --url http://100.100.181.23:8000 health
+wordsworth --url https://wordsworth-api.tail8f7877.ts.net health
 
 # ingest a corpus directory in small batches
-wordsworth --url http://100.100.181.23:8000 ingest /data/corpus --batch 5
+wordsworth --url https://wordsworth-api.tail8f7877.ts.net ingest /data/corpus --batch 5
 
 # search and inspect
 wordsworth search "vergunning" --dossier zaak-a --size 5

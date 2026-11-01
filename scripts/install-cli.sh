@@ -6,7 +6,7 @@
 # talks to the API over the tailnet (e.g. to ingest a corpus).
 #
 #   scripts/install-cli.sh                         # -> ~/.local/bin/wordsworth
-#   scripts/install-cli.sh --url http://100.100.181.23:8000
+#   scripts/install-cli.sh --url https://wordsworth-api.tail8f7877.ts.net
 #   scripts/install-cli.sh --bin-dir /usr/local/bin --url http://...   # (sudo)
 #
 # --url bakes a default API base URL into the installed copy so `wordsworth
@@ -39,7 +39,7 @@ if [ -n "$URL" ]; then
   echo "default API URL: $URL  (saved to config; env/--url still override)"
 else
   echo "warning: no --url given → default is http://localhost:8000." >&2
-  echo "         On a remote client run e.g.:  wordsworth config --url http://100.100.181.23:8000" >&2
+  echo "         On a remote client run e.g.:  wordsworth config --url https://wordsworth-api.tail8f7877.ts.net" >&2
   echo "         (or pass --url / set WORDSWORTH_API_URL), else calls hit localhost." >&2
 fi
 case ":$PATH:" in
