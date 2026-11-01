@@ -49,13 +49,28 @@
 - **The brake takes non-corpus input.** The evaluation corpus is generated from
   the same names a gazetteer would be seeded from, so it cannot show that an
   entry misfires on ordinary Dutch. Besides the corpus, every gazetteer entry is
-  run over a fixed set of ordinary Dutch sentences, kept in a fixture file, each
-  with the entry as a sentence-initial capital followed by a particle and a
-  capitalised word used in its ordinary sense. The set holds at least one
-  sentence per particle. What this proves is narrow and the docs say so: no
-  `Ton`-shaped entry (a first name that is also an ordinary sentence-start word)
-  produces a `PERSON` on those sentences. It is not coverage: a word that
-  misfires in a sentence nobody wrote down passes.
+  run over a fixed set of Dutch sentences, kept in a fixture file, each with the
+  entry in the shape the rule matches (entry + particle + capitalised surname)
+  and a stated expectation per sentence. A "sentence-initial capital" alone is
+  not that shape, so the rule could never fire and the check would pass
+  vacuously; and "no `PERSON`" for an entry in the matching shape is
+  unsatisfiable. The set holds at least one sentence per particle that expects
+  a `PERSON`, and the test guards that those detections occur. What this proves
+  is narrow and the docs say so: the rule is exercised on every entry and no
+  `Ton`-shaped entry is shipped (that exclusion is its own check). It is not
+  coverage: a word that misfires in a sentence nobody wrote down passes.
+- **The corpus brake asserts occurrence.** For each shipped entry the test
+  asserts that the entry occurred in the generated corpus before a particle and
+  last name, before it asserts that no false `PERSON` came from it. Otherwise
+  an entry the generator never emits passes vacuously.
+- **Tests assert on the full name.** Replacement is by value, so an unrelated
+  `van` or `de` legitimately survives in the output. Tests assert that the
+  full-name substring is absent, never that the bare particle string is.
+- **The second PERSON number is full-pipeline recall.** With the gazetteer
+  seeded from `eval/synthetic.py` `VOORNAMEN`, the `dutch_particle_name` layer
+  alone is near zero on a gold set with other first names, which is identical
+  by construction again. The number is full-pipeline PERSON recall with the
+  `per_layer` breakdown.
 - **The measurement can see the rule.** `eval/pii_run.py` offers only the layers
   `deterministic` and `openanonymiser`; neither runs `dutch_particle_name`, so a
   before/after run over them gives the same number by construction. The rule is

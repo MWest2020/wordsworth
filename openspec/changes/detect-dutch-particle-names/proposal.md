@@ -40,6 +40,23 @@ more gaps, folded in below:
   `PERSON`, and `tests/test_allow_list_veiligheid.py` shows the pattern for
   stopping that.
 
+A fifth architect review (wordsworth#285) found four points, folded into
+`tasks.md` and the brake requirement:
+
+- **The non-corpus brake could not be implemented as written.** "Entry as a
+  sentence-initial capital" is not the shape the rule matches. The sentences now
+  put each entry in the shape entry + particle + surname with a stated
+  expectation per sentence, so the brake can be satisfied and cannot pass
+  vacuously.
+- **The second PERSON number** is reported as full-pipeline PERSON recall with
+  the `per_layer` breakdown, not as the `dutch_particle_name` layer alone, which
+  is near zero by construction when the gazetteer is seeded from
+  `eval/synthetic.py` `VOORNAMEN`.
+- **The corpus brake** asserts that each shipped entry actually occurred in the
+  generated corpus, not only that no false `PERSON` appeared.
+- **Tests assert on the full-name substring** in the anonymised output, never on
+  the bare particle string being absent: replacement is by value.
+
 A fourth architect review (wordsworth#285) failed the amended change on four
 points, settled below:
 

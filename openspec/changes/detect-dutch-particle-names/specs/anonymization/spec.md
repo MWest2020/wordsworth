@@ -44,8 +44,9 @@ redacting it makes a decision unreadable without protecting anyone.
 #### Scenario: No part of the name stays readable
 
 - **WHEN** a document containing such a name is de-identified
-- **THEN** neither the first name, the particle nor the last name appears in the
-  output
+- **THEN** the full name (first name, particle and last name together) does not
+  appear in the output; an unrelated `van` or `de` elsewhere in the text is
+  replaced by value and may remain
 
 #### Scenario: A lowercase particle in ordinary text is not a name
 
@@ -125,13 +126,23 @@ known and accepted miss traded for precision. The gazetteer file is not part of
   evaluation corpus, and an entry that produces a `PERSON` from ordinary text
   fails the test
 
-#### Scenario: Every entry is run over ordinary Dutch sentences
+#### Scenario: An entry the corpus never emits is not counted as passed
 
-- **WHEN** the brake test runs every gazetteer entry over a fixed set of
-  ordinary Dutch sentences with the entry as a sentence-initial capital
-- **THEN** no entry produces a `PERSON` from those sentences, and this proves
-  that no `Ton`-shaped entry is in the gazetteer, not that the gazetteer is
-  complete
+- **WHEN** the brake test runs and a shipped entry does not occur in the
+  generated corpus as a first name before a particle and last name
+- **THEN** the test fails and names that entry as not exercised, rather than
+  passing it for lack of a false `PERSON`
+
+#### Scenario: Every entry is run over sentences in the shape the rule matches
+
+- **WHEN** the brake test runs every gazetteer entry over a fixed set of Dutch
+  sentences in which the entry stands before a particle and a capitalised
+  surname, each sentence stating its expectation
+- **THEN** every entry gives the stated expectation on every sentence, at least
+  one sentence per particle expects a `PERSON` for the full name and gets it,
+  and a sentence without a stated expectation fails the test; this proves the
+  rule is exercised and that no `Ton`-shaped entry is shipped, not that the
+  gazetteer is complete
 
 #### Scenario: A first name that is a common word is excluded
 
