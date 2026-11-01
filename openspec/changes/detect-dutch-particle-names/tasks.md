@@ -11,6 +11,10 @@
 - [ ] The rule runs in anonymisation. Proved by: a test in the same file that
       runs `ReversibleAnonymizer.anonymize` on a text with such a name and
       asserts neither first name, particle nor last name is in the output.
+- [ ] Scoped to the reversible driver. Proved by: a test that
+      `OpenAnonymiserAnonymizer` (with a stub client) given a particle name
+      yields no `dutch_particle_name` detection, so the scope is pinned rather
+      than accidental.
 - [ ] The layer shows in the per-layer aggregates. Proved by: a test that the
       aggregates of that run hold a `dutch_particle_name` entry with a count
       and no value or offset.
@@ -43,6 +47,15 @@
       (`Ton`, `Wil`, `Bart`) are excluded. Proved by: a test that the shipped
       gazetteer holds none of them, and that `Ton van der <last name>` at
       sentence start with a word like `Ton` yields no `PERSON`.
+- [ ] The gazetteer stays out of `lists_hash`. Proved by: a test that the
+      lists hash is identical before and after the gazetteer file changes, and
+      `design.md` states the choice and names
+      `reanonymise-particle-name-documents` as owner of gazetteer versioning.
+- [ ] `Ton` and `Bart` are a known, accepted miss. Proved by: a test over the
+      `VOORNAMEN` of `eval/synthetic.py` that, with the shipped gazetteer,
+      exactly `Ton` and `Bart` (2 of 14) are left unmatched before a particle
+      and last name, asserted by name with a comment that this is the accepted
+      precision trade.
 - [ ] Run `python -m wordsworth.eval.overdetection_run gold.jsonl --out
       meting-overdetectie-<nn>.md` with the gazetteer rule in place and record
       the result in `docs/explanation/` with the date. Proved by: the
@@ -101,6 +114,13 @@
 - [ ] `docs/how-to/detection-lists.md` and `docs/reference/evaluation.md` also state
       the gazetteer brake (every entry tested against the corpus; `Ton`, `Wil`,
       `Bart` excluded). Proved by: the section exists and names the test file.
+
+- [ ] `docs/reference/evaluation.md` and `docs/how-to/detection-lists.md` state
+      that the rule applies in reversible mode only (the irreversible
+      `OpenAnonymiserAnonymizer` is out of scope), that the gazetteer is not in
+      `lists_hash`, and that `Ton` and `Bart` stay unmatched on purpose (about 2
+      of 14 seeded names, a known, accepted miss). Proved by: each section
+      exists and names the test that pins it.
 
 ## 7. Check
 - [ ] `openspec validate detect-dutch-particle-names --strict` passes.

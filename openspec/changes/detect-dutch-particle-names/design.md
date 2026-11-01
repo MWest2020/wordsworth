@@ -58,6 +58,25 @@
   the person is counted once. Only the aggregate changes; what is replaced is
   not touched. (Stating and testing the overcount instead was considered and
   rejected: an audit count that says two people for one is wrong.)
+- **The gazetteer file stays out of `lists_hash`.** `lists_hash` fingerprints
+  the allow/deny lists recorded on a document, and `reprocess.outdated`
+  compares it. Changing the gazetteer therefore does not mark any document
+  outdated. That is chosen: folding the gazetteer in would flag the whole
+  corpus outdated on every added name. Versioning the gazetteer for the
+  `only_outdated` selection belongs to the follow-up
+  `reanonymise-particle-name-documents`, not to this change.
+- **Scoped to the reversible driver.** The rule runs in the reversible
+  anonymiser path. The irreversible `OpenAnonymiserAnonymizer`, which
+  `serve.py:59-66` builds when `reversible_mode` is off, is explicitly out of
+  scope: the Gooise Meren pilot corpus runs in reversible mode, and that is
+  where the miss was found. The spec says so; it is not driver-neutral. A
+  deployment without `reversible_mode` does not get the rule from this change.
+- **`Ton` and `Bart` are a deliberate precision trade.** Both are seeded
+  first names in `eval/synthetic.py:18-21` and both are common capitalised
+  words at sentence start, so they are excluded and about 2 of the 14 seeded
+  names stay unmatched. This is a known, accepted miss, stated in the docs and
+  pinned by a test, not an oversight. The rule stays out of
+  `detectors.DETECTORS`.
 - **Scope: part (a) only.** Re-anonymising document `1c87f856` with a
   count-only check is not part of this change.
 - **Fixed particle list.** `van`, `van der`, `van den`, `de`, `ter`, `ten`. A
@@ -78,6 +97,12 @@
   institutions are scenarios, not the whole class; a list of them alone does not
   generalise to `Waterschap van ...` or `Stichting van ...`.
 - **Widening the spans the entity layer finds.** See Mechanism above.
+- **Folding the gazetteer into `lists_hash`.** It would mark every document
+  outdated on each added name; versioning is the follow-up's job.
+- **A driver-neutral requirement.** The irreversible driver is not wired for
+  this rule here; claiming it would promise what the change does not build.
+- **Keeping `Ton` and `Bart` for recall.** They turn ordinary sentence starts
+  into a `PERSON`; the miss is accepted instead.
 
 ## Left open
 

@@ -72,7 +72,25 @@ more gaps, folded in below:
    lies inside a longer one (the full name), the shorter is absorbed into the
    longer in the per-layer aggregate, so a person is counted once. Replacement
    itself stays unchanged. A test pins it.
-9. **Docs** that describe the behaviour change with it.
+9. **Scoped to the reversible driver.** The rule runs in the reversible
+   anonymiser path. The irreversible `OpenAnonymiserAnonymizer` is out of scope.
+10. **`Ton` and `Bart` stay unmatched, on purpose.** The docs and a required
+    test state this as a known, accepted miss (about 2 of 14 seeded names).
+11. **Docs** that describe the behaviour change with it.
+
+A third architect review (wordsworth#285) found three more points, settled here:
+
+- **`lists_hash` and the gazetteer.** The gazetteer file is not part of
+  `lists_hash`, so a change to the gazetteer does not make a document look
+  outdated. This is decided, not an oversight (see design).
+- **Which driver.** The irreversible `OpenAnonymiserAnonymizer` (built in
+  `serve.py:59-66` when `reversible_mode` is off) does not run the rule. The
+  Gooise Meren pilot corpus runs in reversible mode, so that is where the miss
+  was found and where the rule applies. The requirement is no longer
+  driver-neutral.
+- **`Ton` and `Bart` are a precision trade.** Both are seeded first names in
+  `eval/synthetic.py:18-21` and both are excluded from the gazetteer, so about 2
+  of the 14 seeded names stay unmatched. That is a known, accepted miss.
 
 ## Scope
 
@@ -92,11 +110,15 @@ asked for and is not decided here.
   change. Adding one is a later change to the fixed list.
 - **Re-anonymising the affected document and the corpus** is not in this
   change (see Scope). Whether and how it happens, and whether the pilot report
-  is updated afterwards, is open and belongs to a separate change.
+  is updated afterwards, is open and belongs to a separate change. The
+  follow-up `reanonymise-particle-name-documents` owns gazetteer versioning
+  for its `only_outdated` selection, since the gazetteer is not in
+  `lists_hash`.
 
 ## Impact
 
-- Specs: `anonymization` (ADDED, five requirements).
+- Specs: `anonymization` (ADDED, five requirements; the first is scoped to the reversible
+  driver).
 - Code: a new module for the particle rule and its gazetteer loader (not
   `src/wordsworth/detectors.py`'s `DETECTORS`); a gazetteer data file; new
   tests, including the gazetteer brake; the aggregate in
