@@ -10,7 +10,11 @@
       the whole name and layer `dutch_particle_name`.
 - [ ] The rule runs in anonymisation. Proved by: a test in the same file that
       runs `ReversibleAnonymizer.anonymize` on a text with such a name and
-      asserts neither first name, particle nor last name is in the output.
+      asserts the full-name substring (`<first name> <particle> <last name>`)
+      is absent from the output. It never asserts that the bare particle
+      string is absent: replacement is by value, so an unrelated `van` or `de`
+      elsewhere in the text legitimately survives, and a test may include one
+      to pin that.
 - [ ] Scoped to the reversible driver. Proved by: a test that
       `OpenAnonymiserAnonymizer` (with a stub client) given a particle name
       yields no `dutch_particle_name` detection, so the scope is pinned rather
@@ -56,16 +60,32 @@
       exactly `Ton` and `Bart` (2 of 14) are left unmatched before a particle
       and last name, asserted by name with a comment that this is the accepted
       precision trade.
-- [ ] The brake takes non-corpus input. Add a fixture of ordinary Dutch
-      sentences (e.g. `tests/fixtures/gewone_zinnen_nl.txt`), each with a slot
-      for a gazetteer entry as sentence-initial capital followed by a particle
-      and a capitalised word in its ordinary sense, at least one sentence per
-      particle, and run every shipped entry over all of them. Proved by: a test
-      in `tests/test_particle_names_veiligheid.py` that fails when any entry
-      yields a `PERSON` on any sentence, plus a negative control: a test that a
-      stub gazetteer holding `Ton` makes that test's check fail on the fixture.
-      The test's docstring and the docs say plainly that this proves no
-      `Ton`-shaped entry, not coverage.
+- [ ] The corpus brake proves each entry occurred. The test in
+      `tests/test_particle_names_veiligheid.py` generates the evaluation corpus
+      and asserts, per shipped entry, that the entry occurred in it as a first
+      name before a particle and last name (a count above zero), and only then
+      that no false `PERSON` came from it. Proved by: the test itself, plus a
+      negative control: a stub gazetteer holding an entry the generator never
+      emits (e.g. `Zzyzx`) makes the occurrence assertion fail rather than
+      pass silently. An entry the generator does not emit is reported by name
+      as not exercised by the corpus, never counted as passed.
+- [ ] The brake takes non-corpus input, in the shape the rule matches. Add a
+      fixture of Dutch sentences (e.g. `tests/fixtures/gewone_zinnen_nl.txt`)
+      in which a slot `{naam}` is followed by a particle and a capitalised
+      surname, i.e. entry + particle + surname, at least one sentence per
+      particle. Every sentence states its expectation in the fixture
+      (`PERSON` covering `{naam} <particle> <surname>`, or `GEEN`); a sentence
+      without a stated expectation fails the test. "Sentence-initial capital"
+      alone is not the shape and is not accepted. The test runs every shipped
+      entry over every sentence and asserts the stated expectation on the
+      full-name substring, in the detection and in the anonymised output.
+      Proved by: the test, with a guard that at least one sentence per
+      particle expects `PERSON` and that those detections occur (so the shape
+      is exercised and the test cannot pass vacuously), and a negative
+      control: a stub gazetteer holding `Ton` makes the `Ton`/`Wil`/`Bart`
+      exclusion check of the task above fail. The docstring and the docs say
+      plainly that this proves the rule is exercised and no `Ton`-shaped
+      entry is shipped, not coverage.
 - [ ] Run `python -m wordsworth.eval.overdetection_run gold.jsonl --out
       meting-overdetectie-<nn>.md` with the `dutch_particle_name` layer added
       (task in section 5) and record the result in `docs/explanation/` with the
@@ -127,11 +147,18 @@
       `eval/synthetic.py:18-21`, the same first names a gazetteer would be
       seeded from. Proved by: `docs/reference/evaluation.md` says so next to the
       numbers.
-- [ ] Report PERSON recall on a gold set not derived from the gazetteer's own
-      first names. Proved by: `docs/reference/evaluation.md` holds a second
-      PERSON recall number with the date, on names whose first names are not in
-      the shipped gazetteer's source, and says how that set was built and that
-      it is a constructed set.
+- [ ] Report the second PERSON number as full-pipeline PERSON recall, not as
+      the `dutch_particle_name` layer alone. With the gazetteer seeded from
+      `eval/synthetic.py` `VOORNAMEN`, that layer alone is near zero by
+      construction on a gold set whose first names are not in the gazetteer's
+      source: the "identical by construction" defect of the fourth review.
+      Proved by: `docs/reference/evaluation.md` holds the second PERSON recall
+      with the date, measured with the full layer set
+      (`deterministic,openanonymiser,dutch_particle_name`), together with the
+      `per_layer` breakdown from the run output, on names whose first names are
+      not in the gazetteer's source; it says how that set was built and that it
+      is a constructed set, and it does not present the
+      `dutch_particle_name` layer's own number as the recall.
 - [ ] State recall as unknown. The change builds the mechanism and does not
       close the Gooise Meren miss: document `1c87f856` is not re-run, and the
       gazetteer coverage is open. Proved by: the measurement file
