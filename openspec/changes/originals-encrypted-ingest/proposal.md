@@ -38,9 +38,30 @@ would protect nothing. Third change of the chain.
   used by `serve.py` and the three CLI modules; no hand-rolled copies.
 - The test suite gets a `mem_originals` fixture in `tests/conftest.py`, and
   the signature changes (`originals` positional, `store=` callers) are applied
-  across the ~22 test files first, as one mechanical commit.
-- Docs, including the deploy precondition: the `document_keys` backup and the
-  KEK escrow exist before the first original is sealed.
+  across the ~22 test files first, as one mechanical commit. This is the only
+  test work in this change: just enough to keep the existing suite green.
+
+## Split by budget
+
+The first build of this change failed at 194 turns having finished only the
+production half. This change is narrowed to that half (ingest write, the five
+readers, the transit helper, `create_app` wiring) plus the minimal test
+migration. The new proof-tests and the docs move to a separate change,
+`originals-encrypted-ingest-proofs`: fail closed and the batch stop, tampered
+or swapped objects at the routes, legacy reads, re-ingest and crash cases, no
+plaintext or key bytes in logs, the `build_app` wiring tests, and the docs
+including the deploy precondition (the `document_keys` backup and the KEK
+escrow exist before the first original is sealed). The requirements those
+tests and docs prove move with them. The partial work is on branch
+`habitat/builder/originals-encrypted-ingest-20261102-090002-12705` and may be
+reused as the starting point.
+
+## Open questions
+
+- This change touches code and carries no docs; the docs move to
+  `originals-encrypted-ingest-proofs`, so the docs gate may fail this change's
+  PR. Default: the proofs change is built right after this one and brings the
+  docs, and nothing is sealed on the homelab before both are deployed.
 
 ## Known gap until the next change
 
