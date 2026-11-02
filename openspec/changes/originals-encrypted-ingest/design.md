@@ -64,16 +64,16 @@ same way; `process` and `reanonymize` let it propagate (loud, retryable), as
 they do for a store outage. There is no setting that turns sealing off: if
 Mark decides otherwise on #318, a follow-up change adds one explicitly.
 
-## Deploy precondition
+## Scope of this change
 
-Sealing makes the key rows and the KEK as critical as the objects: lose
-either and the originals are lost. The how-to
-`docs/how-to/originals-encryption.md` states the precondition, and the deploy
-of this version on the homelab links its evidence:
-
-1. the Postgres backup includes `document_keys`, and one restore of it was
-   tested;
-2. an OpenBao snapshot that contains the Transit KEK exists off the node.
+Production half only, plus the minimal test migration that keeps the existing
+suite green. The new proof-tests and the docs (including the deploy
+precondition: tested `document_keys` backup and an off-node OpenBao snapshot
+with the KEK, before the first original is sealed) are in
+`originals-encrypted-ingest-proofs`. The partial builder branch
+`habitat/builder/originals-encrypted-ingest-20261102-090002-12705` may be the
+starting point. Rejected: one change for everything (the first build ran out of
+its budget at 194 turns with only this half done).
 
 ## One transit factory
 
