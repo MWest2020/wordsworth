@@ -26,6 +26,8 @@ is decided here.
 - A test that pins the known gap: OCR recovery still writes with the plain
   `put` until `originals-ocr-sealed`, and its legacy-plaintext result still
   reads.
+- Any test still on the old `store` signatures after the ingest build is
+  migrated here.
 - Docs: `docs/how-to/originals-encryption.md`, `docs/reference/ingest.md`,
   `docs/reference/architecture.md`, `docs/reference/cli.md` (see tasks.md).
 
@@ -34,9 +36,20 @@ defect, the fix is made in the smallest form and named in the PR.
 
 ## Depends on
 
-`originals-encrypted-ingest` merged. The tests exercise its `OriginalsStore`
-wiring, `mem_originals` fixture and the shared transit helper; none of them
-can run before it.
+`originals-encrypted-ingest` merged **and built** first. The tests exercise its
+`OriginalsStore` wiring, `mem_originals` fixture and the shared transit helper;
+none of them can run before it. Task 0 checks this and stops if it does not
+hold.
+
+The requirements for register-first, the batch stop with its per-file report,
+and OCR recovery reading through the originals store live only in
+`originals-encrypted-ingest`. This change adds one requirement of its own
+(rollback deletes only what the call wrote) and tests the others without
+restating them.
+
+The partial builder branch
+`habitat/builder/originals-encrypted-ingest-20261102-090002-12705` is the
+starting point of `originals-encrypted-ingest`, not of this change.
 
 ## Open questions
 
