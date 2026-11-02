@@ -31,6 +31,7 @@ from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .deletion import DeletionError, delete_document
+from .document_keys import OriginalsKeyUnavailable
 from .dossier_deletion import DossierDeletionError, delete_dossier
 from .embedder import Embedder
 from .generator import Generator
@@ -41,7 +42,7 @@ from .roles import ADMIN as ROLES_ADMIN
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from . import dossiers as dossiers_mod
 from .models import AuditRecord, Document, Dossier
-from .object_store import ObjectStore
+from .originals_store import OriginalsStore
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
@@ -67,6 +68,12 @@ API_DESCRIPTION = (
     "email + OpenAnonymiser GLiNER for entity PII) before they are indexed; no "
     "clear PII reaches the index."
 )
+
+#: The fixed 503 message when the key service (OpenBao Transit) is unreachable
+#: or refuses -- the same text whether sealing fails at ingest or an original
+#: cannot be unwrapped at read (design.md "Availability"). Never carries key
+#: material or which KEK/object was involved.
+KEY_SERVICE_UNAVAILABLE = "key service unavailable"
 
 
 class IngestResult(BaseModel):
@@ -367,7 +374,7 @@ def create_app(
     search_index: SearchIndex | None = None,
     embedder: Embedder | None = None,
     generator: Generator | None = None,
-    store: ObjectStore | None = None,
+    originals: OriginalsStore | None = None,
     anonymizer: Anonymizer | None = None,
     key_provider: KeyProvider | None = None,
     grant_store: GrantStore | None = None,
@@ -686,7 +693,7 @@ def create_app(
             return AnonymizedResponse(document_id=str(document_id),
                                       anonymized_text=anonymized_text)
 
-        if store is not None:
+        if originals is not None:
 
             @app.get("/documents/{document_id}/redacted.pdf",
                      summary="Redacted PDF: layout intact, PII gone from "
@@ -729,11 +736,15 @@ def create_app(
                         raise HTTPException(status_code=409, detail="stale")
                     cache_key = redacted_cache_key(document_id, RENDER_VERSION,
                                                    box_map.boxmap_hash)
-                    if store.exists(cache_key):
-                        pdf_bytes = store.get(cache_key)
+                    if originals.objects.exists(cache_key):
+                        pdf_bytes = originals.objects.get(cache_key)
                     else:
                         doc = session.get(Document, document_id)
-                        source = store.get(doc.object_key)
+                        try:
+                            source = originals.get_original(session, doc.object_key)
+                        except OriginalsKeyUnavailable:
+                            raise HTTPException(status_code=503,
+                                                detail=KEY_SERVICE_UNAVAILABLE)
                         anonymized = get_anonymized_text(session, document_id) or ""
                         _, legend = to_legible(anonymized)
                         labels = {token: placeholder
@@ -746,7 +757,7 @@ def create_app(
                             raise HTTPException(status_code=409, detail=(
                                 "box map unusable (a box has no surface); "
                                 "reanonymize to build one"))
-                        store.put(cache_key, pdf_bytes)
+                        originals.objects.put(cache_key, pdf_bytes)
                 return Response(content=pdf_bytes, media_type="application/pdf")
 
         @app.get("/metrics", summary="Prometheus metrics", tags=["ops"])
@@ -798,7 +809,7 @@ def create_app(
                 return {"document_id": str(document_id), "seq": rec.seq,
                         "recorded": payload}
 
-        if store is not None and search_index is not None:
+        if originals is not None and search_index is not None:
 
             @app.delete("/documents/{document_id}",
                        summary="Delete a document's content (irreversible)",
@@ -815,7 +826,7 @@ def create_app(
                     _guard_delete(request, session)
                     try:
                         counts = delete_document(
-                            session, document_id, store, search_index,
+                            session, document_id, originals.objects, search_index,
                             actor=_actor(request))
                     except DeletionError:
                         raise HTTPException(status_code=404,
@@ -838,7 +849,7 @@ def create_app(
                     _guard_delete(request, session)
                     try:
                         report = delete_dossier(
-                            session, dossier_id, store, search_index,
+                            session, dossier_id, originals.objects, search_index,
                             actor=_actor(request))
                     except DossierDeletionError:
                         raise HTTPException(status_code=404,
@@ -1022,7 +1033,7 @@ def create_app(
     # Write path: push documents through the full straat over HTTP. Needs the
     # object store + anonymizer in addition to the DB/index/embedder. Defaults to
     # the OpenAnonymiser (GLiNER) driver — the sovereign anonymize step.
-    if (session_factory is not None and store is not None
+    if (session_factory is not None and originals is not None
             and search_index is not None and embedder is not None):
         if anonymizer is None and anonymizer_factory is None:
             from .openanonymiser_driver import OpenAnonymiserAnonymizer
@@ -1106,17 +1117,17 @@ def create_app(
                 anon = _make_anonymizer(session, domain)
                 kp = _resolve_key_provider(session)
                 mstore = PostgresMappingStore(session) if kp is not None else None
-                doc = ingest(session, store, data, domain, filename, dossier,
+                doc = ingest(session, originals, data, domain, filename, dossier,
                             source_url=source_url, fetched_at=fetched_at)
                 session.commit()
                 document_id = doc.id
-                state = process(session, document_id, store, anonymizer=anon,
+                state = process(session, document_id, originals, anonymizer=anon,
                                 search_index=search_index, embedder=embedder,
                                 key_provider=kp, mapping_store=mstore)
                 session.commit()
                 if state == State.UNPROCESSABLE_OCR:
                     # Scanned page: OCR to a text layer, then resume the straat.
-                    state = recover(session, document_id, store)
+                    state = recover(session, document_id, originals)
                     session.commit()
                     if state == State.SUPERSEDED:
                         # Its OCR'd PDF is already a document; that one holds
@@ -1125,7 +1136,7 @@ def create_app(
                         search_index.set_dossiers(str(owner),
                                                   dossiers_of(session, owner))
                     else:
-                        state = process(session, document_id, store,
+                        state = process(session, document_id, originals,
                                         anonymizer=anon,
                                         search_index=search_index, embedder=embedder,
                                         key_provider=kp, mapping_store=mstore)
@@ -1197,6 +1208,21 @@ def create_app(
                         state=meta.get("state"),
                         duration_ms=meta.get("duration_ms"),
                         counts=meta.get("counts") or None))
+                except OriginalsKeyUnavailable:
+                    # Fail closed (#318): stop the batch at the first file the
+                    # key service refuses. Files before it are already ingested
+                    # and committed, sealed, and stay that way; this file and
+                    # every file after it are never stored. The fixed message
+                    # plus the per-file report of what already landed, so the
+                    # caller knows what to retry.
+                    indexed = sum(1 for r in results if r.state == "indexed")
+                    raise HTTPException(
+                        status_code=503,
+                        detail={"detail": KEY_SERVICE_UNAVAILABLE,
+                                "results": IngestResponse(
+                                    total=len(results), indexed=indexed,
+                                    results=results).model_dump()},
+                    )
                 except Exception as exc:  # fail-hard; carry no document text out
                     # A transient downstream outage (after in-pipeline retries)
                     # leaves the document resumable — not indexed, no clear PII —
@@ -1246,7 +1272,7 @@ def create_app(
                                 default_settings.detection_lists_dir).hash)
                 counts, problems = backfill.run(
                     session_factory, ids, make_anonymizer=_make_anonymizer,
-                    store=store, search_index=search_index, embedder=embedder,
+                    originals=originals, search_index=search_index, embedder=embedder,
                     resolve_key_provider=_resolve_key_provider)
                 return ReprocessResponse(total=len(ids), problems=problems,
                                          **counts)

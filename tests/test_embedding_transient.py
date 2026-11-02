@@ -88,12 +88,12 @@ class _OneInstanceGone:
 
 
 def test_a_lost_instance_no_longer_fails_the_document(
-        session, born_digital_pii_pdf, mem_index, fake_embedder, mem_store, monkeypatch):
+        session, born_digital_pii_pdf, mem_index, fake_embedder, mem_originals, monkeypatch):
     monkeypatch.setenv("WORDSWORTH_RETRY_BASE_DELAY", "0")
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
     embed = _OneInstanceGone(fake_embedder)
-    assert process(session, doc.id, mem_store, search_index=mem_index,
+    assert process(session, doc.id, mem_originals, search_index=mem_index,
                    embedder=embed) == State.INDEXED
     # The first call hit the lost instance and was retried; the rest are the
     # document's passages (#190), embedded after it.

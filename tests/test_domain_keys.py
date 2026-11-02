@@ -73,20 +73,20 @@ def test_grant_without_domain_is_default_only():
     assert authorize(gw, d, {"BSN"}, now) == set()
 
 
-def _client(session_factory, tmp_path, kp, gs, mem_store, mem_index, fake_embedder):
+def _client(session_factory, tmp_path, kp, gs, mem_originals, mem_index, fake_embedder):
     return TestClient(create_app(
         session_factory=session_factory, key_provider=kp, grant_store=gs,
-        store=mem_store, search_index=mem_index, embedder=fake_embedder,
+        originals=mem_originals, search_index=mem_index, embedder=fake_embedder,
         anonymizer_factory=lambda s, domain=DEFAULT_DOMAIN: ReversibleAnonymizer(
             kp, PostgresMappingStore(s), detect=lambda t: [], domain=domain),
         key_audit=JsonlKeyLifecycleAudit(tmp_path / "k.jsonl")))
 
 
 def test_ingest_binds_domain_and_reveal_is_domain_gated(
-        session_factory, tmp_path, mem_store, mem_index, fake_embedder,
+        session_factory, tmp_path, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     kp, gs = InMemoryKeyProvider(), InMemoryGrantStore()
-    c = _client(session_factory, tmp_path, kp, gs, mem_store, mem_index, fake_embedder)
+    c = _client(session_factory, tmp_path, kp, gs, mem_originals, mem_index, fake_embedder)
     r = c.post("/ingest", params={"domain": "wi", "dossier": "zaak"},
                files=[("files", ("a.pdf", born_digital_pii_pdf, "application/pdf"))])
     assert r.status_code == 200, r.text
@@ -114,11 +114,11 @@ def test_ingest_binds_domain_and_reveal_is_domain_gated(
 
 
 def test_legacy_one_arg_factory_still_works_for_default_domain(
-        session_factory, tmp_path, mem_store, mem_index, fake_embedder,
+        session_factory, tmp_path, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     kp = InMemoryKeyProvider()
     c = TestClient(create_app(
-        session_factory=session_factory, store=mem_store, search_index=mem_index,
+        session_factory=session_factory, originals=mem_originals, search_index=mem_index,
         embedder=fake_embedder,
         anonymizer_factory=lambda s: Pseudonymizer(kp, PostgresMappingStore(s))))
     ok = c.post("/ingest", params={"dossier": "zaak"},

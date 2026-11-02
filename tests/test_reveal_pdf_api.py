@@ -21,12 +21,12 @@ PII_BSN = "123456782"
 PII_EMAIL = "jan.jansen@haarlem.nl"
 
 
-def _prepare(session_factory, mem_store, mem_index, fake_embedder, pdf):
+def _prepare(session_factory, originals, mem_index, fake_embedder, pdf):
     kp = InMemoryKeyProvider()
     with session_factory() as s:
-        doc = ingest(s, mem_store, pdf)
+        doc = ingest(s, originals, pdf)
         s.commit()
-        process(s, doc.id, mem_store,
+        process(s, doc.id, originals,
                 anonymizer=Pseudonymizer(kp, PostgresMappingStore(s)),
                 search_index=mem_index, embedder=fake_embedder,
                 key_provider=kp, mapping_store=PostgresMappingStore(s))
@@ -34,20 +34,20 @@ def _prepare(session_factory, mem_store, mem_index, fake_embedder, pdf):
         return kp, doc.id
 
 
-def _client(session_factory, mem_store, kp, gs):
-    return TestClient(create_app(session_factory=session_factory, store=mem_store,
+def _client(session_factory, originals, kp, gs):
+    return TestClient(create_app(session_factory=session_factory, originals=originals,
                                  key_provider=kp, grant_store=gs))
 
 
 def test_granted_type_is_drawn_other_stays_labelled(
-    session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf,
+    session_factory, mem_originals, mem_index, fake_embedder, born_digital_pii_pdf,
 ):
-    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+    kp, doc_id = _prepare(session_factory, mem_originals, mem_index, fake_embedder,
                           born_digital_pii_pdf)
     gs = InMemoryGrantStore()
     grant = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=doc_id)
 
-    r = _client(session_factory, mem_store, kp, gs).post(
+    r = _client(session_factory, mem_originals, kp, gs).post(
         f"/documents/{doc_id}/reveal.pdf",
         json={"grant_id": grant.grant_id, "types": ["EMAIL", "BSN"]},
     )
@@ -59,25 +59,25 @@ def test_granted_type_is_drawn_other_stays_labelled(
     assert "[BSN 1]" in text or "[BSN" in text  # the label is still present
 
 
-def test_never_cached(session_factory, mem_store, mem_index, fake_embedder,
-                      born_digital_pii_pdf):
-    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+def test_never_cached(session_factory, mem_store, mem_originals, mem_index,
+                      fake_embedder, born_digital_pii_pdf):
+    kp, doc_id = _prepare(session_factory, mem_originals, mem_index, fake_embedder,
                           born_digital_pii_pdf)
     gs = InMemoryGrantStore()
     grant = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=doc_id)
-    _client(session_factory, mem_store, kp, gs).post(
+    _client(session_factory, mem_originals, kp, gs).post(
         f"/documents/{doc_id}/reveal.pdf", json={"grant_id": grant.grant_id})
     assert not any(k.startswith(f"redacted/{doc_id}/") for k in mem_store._data)
 
 
 def test_audited_as_deanonymize_view_pdf_no_clear_value(
-    session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf,
+    session_factory, mem_originals, mem_index, fake_embedder, born_digital_pii_pdf,
 ):
-    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+    kp, doc_id = _prepare(session_factory, mem_originals, mem_index, fake_embedder,
                           born_digital_pii_pdf)
     gs = InMemoryGrantStore()
     grant = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=doc_id)
-    _client(session_factory, mem_store, kp, gs).post(
+    _client(session_factory, mem_originals, kp, gs).post(
         f"/documents/{doc_id}/reveal.pdf", json={"grant_id": grant.grant_id})
 
     with session_factory() as s:
@@ -91,13 +91,13 @@ def test_audited_as_deanonymize_view_pdf_no_clear_value(
     assert PII_BSN not in str(rec.payload)
 
 
-def test_revoked_grant_forbidden(session_factory, mem_store, mem_index, fake_embedder,
+def test_revoked_grant_forbidden(session_factory, mem_originals, mem_index, fake_embedder,
                                  born_digital_pii_pdf):
-    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+    kp, doc_id = _prepare(session_factory, mem_originals, mem_index, fake_embedder,
                           born_digital_pii_pdf)
     gs = InMemoryGrantStore()
     grant = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=doc_id)
     gs.revoke(grant.grant_id, "mark")
-    r = _client(session_factory, mem_store, kp, gs).post(
+    r = _client(session_factory, mem_originals, kp, gs).post(
         f"/documents/{doc_id}/reveal.pdf", json={"grant_id": grant.grant_id})
     assert r.status_code == 403

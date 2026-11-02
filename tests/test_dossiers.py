@@ -12,22 +12,11 @@ PDF = b"%PDF-1.4 een besluit"
 ANDER = b"%PDF-1.4 een ander besluit"
 
 
-class Store:
-    """Object store stand-in: ingest only needs put()."""
-
-    def __init__(self):
-        self.objects = {}
-
-    def put(self, key, data):
-        self.objects[key] = data
-
-
 # --- membership ------------------------------------------------------------
 
-def test_the_same_bytes_in_two_dossiers_stay_one_document(session):
-    store = Store()
-    a = ingest(session, store, PDF, dossier="zaak-a")
-    b = ingest(session, store, PDF, dossier="zaak-b")
+def test_the_same_bytes_in_two_dossiers_stay_one_document(session, mem_originals):
+    a = ingest(session, mem_originals, PDF, dossier="zaak-a")
+    b = ingest(session, mem_originals, PDF, dossier="zaak-b")
     session.commit()
     assert a.id == b.id
     assert len(session.execute(select(Document)).scalars().all()) == 1
@@ -36,10 +25,9 @@ def test_the_same_bytes_in_two_dossiers_stay_one_document(session):
                          dossiers.ensure(session, "zaak-b").id])
 
 
-def test_ingesting_into_the_same_dossier_twice_changes_nothing(session):
-    store = Store()
-    a = ingest(session, store, PDF, dossier="zaak-a")
-    ingest(session, store, PDF, dossier="zaak-a")
+def test_ingesting_into_the_same_dossier_twice_changes_nothing(session, mem_originals):
+    a = ingest(session, mem_originals, PDF, dossier="zaak-a")
+    ingest(session, mem_originals, PDF, dossier="zaak-a")
     session.commit()
     rows = session.execute(select(DossierDocument).where(
         DossierDocument.document_id == a.id)).scalars().all()

@@ -21,10 +21,10 @@ def _anonymize_payload(session, document_id):
 
 
 def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf,
-                                                mem_index, fake_embedder, mem_store):
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+                                                mem_index, fake_embedder, mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    final = process(session, doc.id, mem_store, search_index=mem_index,
+    final = process(session, doc.id, mem_originals, search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()
 
@@ -47,14 +47,14 @@ def test_pii_document_ends_pii_free_and_indexed(session, born_digital_pii_pdf,
 
 
 def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index,
-                                     fake_embedder, mem_store):
+                                     fake_embedder, mem_originals):
     class MarkerAnonymizer:
         def anonymize(self, text):
             return AnonymizationResult(text="MARKER", counts={"custom": 7})
 
-    doc = ingest(session, mem_store, born_digital_pdf)
+    doc = ingest(session, mem_originals, born_digital_pdf)
     session.commit()
-    process(session, doc.id, mem_store, anonymizer=MarkerAnonymizer(),
+    process(session, doc.id, mem_originals, anonymizer=MarkerAnonymizer(),
             search_index=mem_index, embedder=fake_embedder)
     session.commit()
 
@@ -66,10 +66,10 @@ def test_injected_anonymizer_is_used(session, born_digital_pdf, mem_index,
 
 
 def test_only_anonymized_text_is_stored(session, born_digital_pii_pdf, mem_index,
-                                        fake_embedder, mem_store):
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+                                        fake_embedder, mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    process(session, doc.id, mem_store, search_index=mem_index,
+    process(session, doc.id, mem_originals, search_index=mem_index,
             embedder=fake_embedder)
     session.commit()
     rows = session.execute(select(DocumentText)).scalars().all()

@@ -11,9 +11,12 @@ from wordsworth.object_store import (
     S3ObjectStore,
     SealedObjectError,
 )
+from wordsworth.document_keys import DocumentKeys
 from wordsworth.originals_envelope import seal
+from wordsworth.originals_store import OriginalsStore
 from wordsworth.pipeline import ingest, process
 from wordsworth.states import State
+from wordsworth.transit import FakeTransit
 
 SEALED = seal(b"k" * 32, "a" * 12, "documents/sealed", b"%PDF-1.4 secret")
 
@@ -108,21 +111,22 @@ def test_s3_from_config_reads_credentials_from_env(monkeypatch):
 # --- Pipeline fetch-by-key (task 2.2) --------------------------------------
 
 def test_pipeline_reads_bytes_from_store(session, born_digital_pdf, mem_index,
-                                         fake_embedder, mem_store):
-    doc = ingest(session, mem_store, born_digital_pdf)
+                                         fake_embedder, mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pdf)
     session.commit()
     # process receives no bytes; it must fetch them from the store by object_key.
-    final = process(session, doc.id, mem_store, search_index=mem_index,
+    final = process(session, doc.id, mem_originals, search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()
     assert final == State.INDEXED
 
 
 def test_pipeline_missing_object_errors_clearly(session, born_digital_pdf,
-                                                mem_index, fake_embedder, mem_store):
-    doc = ingest(session, mem_store, born_digital_pdf)
+                                                mem_index, fake_embedder, mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pdf)
     session.commit()
-    empty = InMemoryObjectStore()  # the recorded key is absent here
+    # the recorded key is absent here
+    empty = OriginalsStore(InMemoryObjectStore(), DocumentKeys(lambda n: FakeTransit()))
     with pytest.raises(ObjectStoreError, match="failed"):
         process(session, doc.id, empty, search_index=mem_index,
                 embedder=fake_embedder)

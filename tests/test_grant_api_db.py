@@ -15,13 +15,13 @@ from wordsworth.pipeline import ingest, process
 from wordsworth.pseudonymizer import Pseudonymizer
 
 
-def test_issue_then_revoke_gates_reveal(session_factory, mem_store, mem_index,
+def test_issue_then_revoke_gates_reveal(session_factory, mem_originals, mem_index,
                                         fake_embedder, born_digital_pii_pdf, tmp_path):
     kp = InMemoryKeyProvider()
     with session_factory() as s:
-        doc = ingest(s, mem_store, born_digital_pii_pdf)
+        doc = ingest(s, mem_originals, born_digital_pii_pdf)
         s.commit()
-        process(s, doc.id, mem_store,
+        process(s, doc.id, mem_originals,
                 anonymizer=Pseudonymizer(kp, PostgresMappingStore(s)),
                 search_index=mem_index, embedder=fake_embedder)
         s.commit()

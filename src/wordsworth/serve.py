@@ -21,10 +21,13 @@ from fastapi import FastAPI
 from .api import create_app
 from .config import settings
 from .db import make_engine, make_session_factory
+from .document_keys import DocumentKeys
 from .embedder import OllamaEmbedder
 from .generator import OllamaGenerator
 from .opensearch_index import OpenSearchIndex
+from .originals_store import OriginalsStore
 from .structured_log import configure_logging
+from .transit import transit_factory
 
 
 def build_app() -> FastAPI:
@@ -42,12 +45,21 @@ def build_app() -> FastAPI:
     configure_logging()
     engine = make_engine()
     session_factory = make_session_factory(engine)
+    # One shared factory, cached per KEK name (design.md "One transit factory"):
+    # both the originals KEK(s) below and the pseudonymisation KEK in reversible
+    # mode draw from it, so a KEK never gets more than one client.
+    transit_for = transit_factory(settings.openbao_url, settings.openbao_token)
     store = None
+    originals = None
     anonymizer = None
     if settings.s3_access_key and settings.s3_secret_key:
         from .object_store import S3ObjectStore
 
         store = S3ObjectStore.from_config()
+        # One process-lifetime OriginalsStore (one unwrap cache), in irreversible
+        # mode too: every original is sealed regardless of the pseudonymisation
+        # mode (ADR-0008).
+        originals = OriginalsStore(store, DocumentKeys(transit_for))
 
     # Reversible mode (ADR-0002): pseudonymise with durable keyed tokens and mount
     # the key-gated reveal route. The durable key provider is ONE process-lifetime
@@ -57,7 +69,7 @@ def build_app() -> FastAPI:
     # Default (off) keeps the irreversible OpenAnonymiser driver and no reveal.
     reversible: dict = {}
     if settings.reversible_mode:
-        reversible = _reversible_wiring(session_factory)
+        reversible = _reversible_wiring(session_factory, transit_for)
     elif store is not None:
         from .detection_lists import DetectionLists
         from .openanonymiser_driver import OpenAnonymiserAnonymizer
@@ -75,30 +87,30 @@ def build_app() -> FastAPI:
         search_index=OpenSearchIndex.from_config(),
         embedder=OllamaEmbedder.from_config(),
         generator=OllamaGenerator.from_config(),
-        store=store,
+        originals=originals,
         anonymizer=anonymizer,
         **reversible,
     )
 
 
-def _reversible_wiring(session_factory) -> dict:
-    """`create_app` kwargs for reversible mode. One shared OpenBao Transit client
-    and ONE process-lifetime `DurableKeyProvider` over a session-factory-backed
-    vault — the unwrap cache persists across requests and the single-active-key
-    invariant is enforced by one provider. Only the mapping/grant stores stay
-    per-request (session-bound). No OpenBao call happens here — only per request."""
+def _reversible_wiring(session_factory, transit_for) -> dict:
+    """`create_app` kwargs for reversible mode. ONE process-lifetime
+    `DurableKeyProvider` over a session-factory-backed vault — the unwrap cache
+    persists across requests and the single-active-key invariant is enforced by
+    one provider. Only the mapping/grant stores stay per-request (session-bound).
+    No OpenBao call happens here — only per request. The Transit client for the
+    pseudonymisation KEK comes from the shared ``transit_for`` factory, so it is
+    never built twice for the same KEK name."""
     from .detection_lists import DetectionLists
     from .grants import PostgresGrantStore
     from .keys import DEFAULT_DOMAIN, DurableKeyProvider
     from .mapping_store import PostgresMappingStore
     from .pseudonymizer import ReversibleAnonymizer
-    from .transit import OpenBaoTransit, SessionFactoryKeyVaultStore
+    from .transit import SessionFactoryKeyVaultStore
 
-    transit = OpenBaoTransit(
-        settings.openbao_url, settings.openbao_token, settings.transit_kek_name
-    )
     key_provider = DurableKeyProvider(
-        SessionFactoryKeyVaultStore(session_factory), transit, settings.key_cache_ttl
+        SessionFactoryKeyVaultStore(session_factory), transit_for(settings.transit_kek_name),
+        settings.key_cache_ttl
     )
 
     lists = DetectionLists.load(settings.detection_lists_dir)  # hash-pinned lists

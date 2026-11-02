@@ -66,12 +66,12 @@ def test_without_a_database_search_keeps_working_unscoped(session_factory):
     assert c.get("/search", params={"q": "vergunning"}).status_code == 200
 
 
-def test_ingesting_without_a_dossier_is_refused(session_factory, mem_store,
+def test_ingesting_without_a_dossier_is_refused(session_factory, mem_originals,
                                                 fake_embedder,
                                                 born_digital_pii_pdf):
     """A document that belongs to no dossier is invisible to every scoped
     search, so letting it be optional would quietly make unfindable documents."""
-    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+    c = TestClient(create_app(session_factory=session_factory, originals=mem_originals,
                               search_index=InMemoryIndex(),
                               embedder=fake_embedder,
                               anonymizer=DeterministicAnonymizer()))
@@ -81,11 +81,11 @@ def test_ingesting_without_a_dossier_is_refused(session_factory, mem_store,
 
 
 def test_ingesting_known_bytes_into_another_dossier_adds_the_membership(
-        session_factory, mem_store, fake_embedder, born_digital_pii_pdf):
+        session_factory, mem_originals, fake_embedder, born_digital_pii_pdf):
     """The idempotent skip is about not re-processing. Swallowing the membership
     would make the skip eat the one thing the request was asking for."""
     index = InMemoryIndex()
-    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+    c = TestClient(create_app(session_factory=session_factory, originals=mem_originals,
                               search_index=index, embedder=fake_embedder,
                               anonymizer=DeterministicAnonymizer()))
     files = {"files": ("a.pdf", born_digital_pii_pdf, "application/pdf")}
@@ -300,7 +300,7 @@ def test_a_field_with_the_wrong_type_is_a_hard_error():
     assert "dossiers" in str(exc.value) and "reindex" in str(exc.value)
 
 
-def test_known_bytes_join_the_live_document_not_a_retired_copy(legacy_copies, session_factory, mem_store, fake_embedder, born_digital_pii_pdf):
+def test_known_bytes_join_the_live_document_not_a_retired_copy(legacy_copies, session_factory, mem_originals, fake_embedder, born_digital_pii_pdf):
     """one-document-per-object: the skip path looked up "the first document
     with this key". With a retired copy as the older row, that is the copy --
     and a membership on it would be refused. It has to be the live one."""
@@ -323,7 +323,7 @@ def test_known_bytes_join_the_live_document_not_a_retired_copy(legacy_copies, se
         s.commit()
         live_id = live.id
     index.index(str(live_id), "tekst", key)
-    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+    c = TestClient(create_app(session_factory=session_factory, originals=mem_originals,
                               search_index=index, embedder=fake_embedder,
                               anonymizer=DeterministicAnonymizer()))
     r = c.post("/ingest", params={"dossier": "zaak-b"},

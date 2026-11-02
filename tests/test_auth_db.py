@@ -17,12 +17,12 @@ PII_EMAIL = "jan.jansen@haarlem.nl"
 
 
 def test_reveal_requires_key_and_records_caller(
-        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+        session_factory, mem_originals, mem_index, fake_embedder, born_digital_pii_pdf):
     kp = InMemoryKeyProvider()
     with session_factory() as s:
-        doc = ingest(s, mem_store, born_digital_pii_pdf)
+        doc = ingest(s, mem_originals, born_digital_pii_pdf)
         s.commit()
-        process(s, doc.id, mem_store,
+        process(s, doc.id, mem_originals,
                 anonymizer=Pseudonymizer(kp, PostgresMappingStore(s)),
                 search_index=mem_index, embedder=fake_embedder)
         s.commit()

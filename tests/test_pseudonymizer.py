@@ -106,10 +106,10 @@ def test_selective_reveal_by_type_and_audit(session):
 
 
 def test_injectable_into_pipeline(session, born_digital_pii_pdf, mem_index,
-                                  fake_embedder, mem_store):
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+                                  fake_embedder, mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    final = process(session, doc.id, mem_store,
+    final = process(session, doc.id, mem_originals,
                     anonymizer=_pseudo(session), search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()

@@ -3,12 +3,12 @@ from wordsworth.report import run_report
 
 
 def test_report_includes_throughput_and_stage_timing(
-    session, born_digital_pdf, scanned_pdf, mem_store, mem_index, fake_embedder,
+    session, born_digital_pdf, scanned_pdf, mem_originals, mem_index, fake_embedder,
 ):
     for data in [born_digital_pdf, scanned_pdf]:
-        doc = ingest(session, mem_store, data)
+        doc = ingest(session, mem_originals, data)
         session.commit()
-        process(session, doc.id, mem_store, search_index=mem_index,
+        process(session, doc.id, mem_originals, search_index=mem_index,
                 embedder=fake_embedder)
         session.commit()
 

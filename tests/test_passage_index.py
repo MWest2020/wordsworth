@@ -62,24 +62,24 @@ def test_a_document_has_one_vector_per_passage():
 
 
 def test_indexing_writes_the_passages_of_the_indexed_text(
-        session, born_digital_pii_pdf, mem_store, fake_embedder):
+        session, born_digital_pii_pdf, mem_originals, fake_embedder):
     index = InMemoryIndex()
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    process(session, doc.id, mem_store, search_index=index, embedder=fake_embedder)
+    process(session, doc.id, mem_originals, search_index=index, embedder=fake_embedder)
     text = index._docs[str(doc.id)][0]
     assert len(index._passages[str(doc.id)]) == len(split(text)) >= 1
 
 
 def test_reanonymizing_rewrites_the_passages_too(
-        session, born_digital_pii_pdf, mem_store, fake_embedder):
+        session, born_digital_pii_pdf, mem_originals, fake_embedder):
     index = InMemoryIndex()
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    process(session, doc.id, mem_store, search_index=index, embedder=fake_embedder)
+    process(session, doc.id, mem_originals, search_index=index, embedder=fake_embedder)
     session.commit()
     index._passages.pop(str(doc.id))          # as if indexed before passages existed
-    reanonymize(session, doc.id, mem_store, search_index=index, embedder=fake_embedder)
+    reanonymize(session, doc.id, mem_originals, search_index=index, embedder=fake_embedder)
     assert index._passages[str(doc.id)]
 
 

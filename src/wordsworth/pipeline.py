@@ -33,7 +33,7 @@ from .extraction import ExtractionError, extract_text
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
-from .object_store import ObjectStore
+from .originals_store import OriginalsStore, PutResult
 from .pdf_text import TEXT_SOURCE
 from .profiling import ProfilingError, profile_pdf
 from .passages import embed_passages
@@ -124,29 +124,40 @@ def document_domain(session: Session, document_id: UUID) -> str:
     return payload.get("domain") or DEFAULT_DOMAIN
 
 
-def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
+def ingest(session: Session, originals: OriginalsStore, pdf_bytes: bytes,
            domain: str = DEFAULT_DOMAIN, filename: str | None = None,
            dossier: str | None = None, source_url: str | None = None,
            fetched_at: datetime | None = None) -> Document:
-    """Store the PDF in object storage under a content-addressed key, then register
-    the document against that key. `process` later fetches the bytes back by key —
-    this closes the PoC shortcut of passing raw bytes across the pipeline seam.
+    """Register the document first, then seal the PDF through ``OriginalsStore``
+    under a content-addressed key (design.md "Ingest order") -- registering first
+    is needed because the key row carries the document id. `process` later fetches
+    the bytes back by key -- this closes the PoC shortcut of passing raw bytes
+    across the pipeline seam.
 
     Content-addressing (sha256) makes the key deterministic, so re-ingesting the
     same bytes is idempotent at the object layer. The same digest is recorded as
     `source_sha256` -- wordsworth's own hash of the bytes it just received,
-    never one a client could supply (ingest-records-source)."""
+    never one a client could supply (ingest-records-source).
+
+    If anything after the write fails (here: adding the dossier membership), the
+    object this call just wrote is deleted -- never an object another ingest
+    found and left (`PutResult.UNCHANGED`/`LEGACY`) touches this cleanup."""
     digest = hashlib.sha256(pdf_bytes).hexdigest()
     key = "documents/" + digest
-    store.put(key, pdf_bytes)
     # Content already ingested is one document, not a second. Delivering it into
     # another dossier adds a membership; that is the normal case, not an error.
     doc = register_live(session, key, domain, filename, source_url=source_url,
                         fetched_at=fetched_at, source_sha256=digest)
-    if dossier:
-        # Arriving in a case is an act too; "ingest" is who did it.
-        dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
-                     actor="ingest")
+    wrote = originals.put_original(session, doc.id, key, pdf_bytes)
+    try:
+        if dossier:
+            # Arriving in a case is an act too; "ingest" is who did it.
+            dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
+                        actor="ingest")
+    except Exception:
+        if wrote is PutResult.WROTE:
+            originals.objects.delete(key)
+        raise
     return doc
 
 
@@ -235,7 +246,7 @@ def _default_embedder() -> Embedder:
 def process(
     session: Session,
     document_id: UUID,
-    store: ObjectStore,
+    originals: OriginalsStore,
     threshold: int | None = None,
     anonymizer: Anonymizer | None = None,
     search_index: SearchIndex | None = None,
@@ -269,7 +280,7 @@ def process(
         # (a terminal document does no work and never touches the store).
         nonlocal raw
         if raw is None:
-            raw = store.get(doc.object_key)
+            raw = originals.get_original(session, doc.object_key)
         return raw
 
     if state == State.REGISTERED:
@@ -414,7 +425,7 @@ def _orphaned_tokens(before: set[str], after_text: str) -> dict[str, int]:
 def reanonymize(
     session: Session,
     document_id: UUID,
-    store: ObjectStore,
+    originals: OriginalsStore,
     anonymizer: Anonymizer | None = None,
     search_index: SearchIndex | None = None,
     embedder: Embedder | None = None,
@@ -452,7 +463,7 @@ def reanonymize(
     registered_before = pseudonym_registry.registered(session, document_id)
 
     # Re-derive the source text from the stored bytes (never a clear-text store).
-    raw = store.get(doc.object_key)
+    raw = originals.get_original(session, doc.object_key)
     text = extract_text(raw)
 
     # Compute + embed + re-index the NEW de-identified text first; a transient

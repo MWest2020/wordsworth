@@ -19,15 +19,19 @@ from typing import NamedTuple
 from sqlalchemy import select
 
 from .audit import current_state
+from .config import settings
 from .db import make_engine, make_session_factory
+from .document_keys import DocumentKeys
 from .embedder import OllamaEmbedder
 from .manifest import ManifestEntry, load_check, read_manifest
 from .models import AuditRecord
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
+from .originals_store import OriginalsStore
 from .pipeline import ingest, process
 from .states import State
+from .transit import transit_factory
 
 
 class ManifestRunError(RuntimeError):
@@ -86,14 +90,14 @@ def _read_back(session, document_id, entry: ManifestEntry) -> str | None:
     return None
 
 
-def _advance(session_factory, store, anonymizer, index, embedder, filename,
+def _advance(session_factory, originals, anonymizer, index, embedder, filename,
              data, dossier, entry: ManifestEntry) -> ManifestOutcome:
     with session_factory() as session:
-        doc = ingest(session, store, data, filename=filename, dossier=dossier,
+        doc = ingest(session, originals, data, filename=filename, dossier=dossier,
                       source_url=entry.url, fetched_at=entry.fetched_at)
         session.commit()
         try:
-            state = process(session, doc.id, store, anonymizer=anonymizer,
+            state = process(session, doc.id, originals, anonymizer=anonymizer,
                              search_index=index, embedder=embedder)
             session.commit()
         except Exception as exc:
@@ -121,7 +125,7 @@ def _advance(session_factory, store, anonymizer, index, embedder, filename,
 
 def ingest_manifest_corpus(
     corpus_dir: Path, dossier: str, manifest_path: Path, *,
-    session_factory=None, store=None, anonymizer=None, search_index=None,
+    session_factory=None, originals=None, anonymizer=None, search_index=None,
     embedder=None,
 ) -> list[ManifestOutcome]:
     """Ingest every ``*.pdf`` in ``corpus_dir`` against ``manifest_path``,
@@ -148,14 +152,17 @@ def ingest_manifest_corpus(
         raise Sha256MismatchError(f"sha256 mismatch, aborting: {mismatches}")
 
     session_factory = session_factory or make_session_factory(make_engine())
-    store = store or S3ObjectStore.from_config()
+    if originals is None:
+        store = S3ObjectStore.from_config()
+        originals = OriginalsStore(
+            store, DocumentKeys(transit_factory(settings.openbao_url, settings.openbao_token)))
     anonymizer = anonymizer or OpenAnonymiserAnonymizer()
     index = search_index or OpenSearchIndex.from_config()
     embedder = embedder or OllamaEmbedder.from_config()
     index.ensure_ready()
 
     return [
-        _advance(session_factory, store, anonymizer, index, embedder, name,
+        _advance(session_factory, originals, anonymizer, index, embedder, name,
                  contents[name], dossier, manifest[name])
         for name in sorted(contents)
     ]

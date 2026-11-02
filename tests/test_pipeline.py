@@ -37,14 +37,14 @@ def test_atomic_no_partial_persist(session_factory):
 
 
 def test_process_resumes_from_current_state(session, born_digital_pdf, mem_index,
-                                            fake_embedder, mem_store):
-    doc = ingest(session, mem_store, born_digital_pdf)
+                                            fake_embedder, mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pdf)
     # Simulate a prior partial run that already profiled the document.
     transition(session, doc.id, State.EXTRACTABLE, step="profile",
                payload={"chars": 50, "pages": 1, "bytes": 10})
     session.commit()
     # Resume: bytes are re-fetched from the object store by key (no clear-text store).
-    final = process(session, doc.id, mem_store, search_index=mem_index,
+    final = process(session, doc.id, mem_originals, search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()
     assert final == State.INDEXED

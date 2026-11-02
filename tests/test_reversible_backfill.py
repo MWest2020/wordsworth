@@ -18,7 +18,7 @@ def _paths(app):
 
 def _deps():
     return dict(session_factory=make_session_factory(make_engine()),
-                store=object(), search_index=InMemoryIndex(), embedder=object())
+                originals=object(), search_index=InMemoryIndex(), embedder=object())
 
 
 def test_reprocess_absent_without_reversible_factory():

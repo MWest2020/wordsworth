@@ -6,7 +6,7 @@ from wordsworth.states import State
 
 def test_end_to_end_three_terminal_states(session, born_digital_pdf,
                                           scanned_pdf, corrupt_pdf, mem_index,
-                                          fake_embedder, mem_store):
+                                          fake_embedder, mem_originals):
     fixtures = {
         "born": born_digital_pdf,
         "scan": scanned_pdf,
@@ -14,13 +14,13 @@ def test_end_to_end_three_terminal_states(session, born_digital_pdf,
     }
     ids = {}
     for name, data in fixtures.items():
-        doc = ingest(session, mem_store, data)
+        doc = ingest(session, mem_originals, data)
         session.commit()
         ids[name] = doc.id
 
     finals = {}
     for name, did in ids.items():
-        finals[name] = process(session, did, mem_store, search_index=mem_index,
+        finals[name] = process(session, did, mem_originals, search_index=mem_index,
                                embedder=fake_embedder)
         session.commit()
 

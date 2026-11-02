@@ -10,7 +10,7 @@ import base64
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 import httpx
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -83,6 +83,24 @@ class OpenBaoTransit:
         )
         resp.raise_for_status()
         return base64.b64decode(resp.json()["data"]["plaintext"])
+
+
+def transit_factory(url: str, token: str, timeout: float = 10.0) -> Callable[[str], Transit]:
+    """The one place an ``OpenBaoTransit`` is built: returns ``transit_for(kek_name)``,
+    caching one client per KEK name under this ``(url, token)`` pair (design.md "One
+    transit factory"). Every module that needs a KEK-keyed ``Transit`` -- serve.py's
+    two wiring paths and the CLI modules -- calls through this instead of
+    constructing its own, so a KEK never ends up with more than one client."""
+    cache: dict[str, OpenBaoTransit] = {}
+
+    def transit_for(kek_name: str) -> Transit:
+        transit = cache.get(kek_name)
+        if transit is None:
+            transit = OpenBaoTransit(url, token, kek_name, timeout=timeout)
+            cache[kek_name] = transit
+        return transit
+
+    return transit_for
 
 
 class ActiveKeyExists(Exception):

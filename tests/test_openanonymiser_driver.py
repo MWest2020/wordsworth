@@ -56,10 +56,10 @@ def test_satisfies_anonymizer_protocol():
 
 
 def test_injectable_into_process(session, born_digital_pii_pdf, mem_index,
-                                 fake_embedder, mem_store, real_driver):
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+                                 fake_embedder, mem_originals, real_driver):
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    final = process(session, doc.id, mem_store, anonymizer=real_driver,
+    final = process(session, doc.id, mem_originals, anonymizer=real_driver,
                     search_index=mem_index, embedder=fake_embedder)
     session.commit()
 
@@ -121,11 +121,11 @@ def test_engine_failure_raises_and_carries_no_text():
 
 def test_engine_failure_stores_and_indexes_nothing(session, born_digital_pii_pdf,
                                                    mem_index, fake_embedder,
-                                                   mem_store):
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+                                                   mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
     with pytest.raises(AnonymizationEngineError):
-        process(session, doc.id, mem_store,
+        process(session, doc.id, mem_originals,
                 anonymizer=OpenAnonymiserAnonymizer(engine=_broken_engine),
                 search_index=mem_index, embedder=fake_embedder)
     session.rollback()

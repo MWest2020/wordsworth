@@ -444,20 +444,20 @@ def test_the_opensearch_driver_writes_topics_in_the_index_call():
     assert client.bodies[0]["topics"] == ["topic-1"]
 
 
-def test_reanonymize_keeps_the_topic(session, mem_store, fake_embedder,
+def test_reanonymize_keeps_the_topic(session, mem_originals, fake_embedder,
                                      born_digital_pdf):
     """De kern van de change: `reanonymize` (en dus `/reprocess`) mag een
     document niet stilzwijgend uit zijn onderwerp laten vallen -- dat is
     precies wat 408 documenten hun onderwerp kostte."""
     index = InMemoryIndex()
-    doc = ingest(session, mem_store, born_digital_pdf)
+    doc = ingest(session, mem_originals, born_digital_pdf)
     session.commit()
-    process(session, doc.id, mem_store, anonymizer=DeterministicAnonymizer(),
+    process(session, doc.id, mem_originals, anonymizer=DeterministicAnonymizer(),
            search_index=index, embedder=fake_embedder)
     session.commit()
     index.set_topics(str(doc.id), ["topic-1"])
 
-    reanonymize(session, doc.id, mem_store, anonymizer=DeterministicAnonymizer(),
+    reanonymize(session, doc.id, mem_originals, anonymizer=DeterministicAnonymizer(),
                search_index=index, embedder=fake_embedder)
     session.commit()
 
@@ -466,15 +466,15 @@ def test_reanonymize_keeps_the_topic(session, mem_store, fake_embedder,
         "het onderwerp overleefde de herindexering niet")
 
 
-def test_reprocess_keeps_the_topic_end_to_end(session_factory, mem_store,
+def test_reprocess_keeps_the_topic_end_to_end(session_factory, mem_originals,
                                               fake_embedder, born_digital_pdf):
     """Van boven naar onder: een document in een onderwerp, `/reprocess` erover
     heen, en een zoekvraag binnen dat onderwerp vindt het nog."""
     index = InMemoryIndex()
     with session_factory() as s:
-        doc_id = ingest(s, mem_store, born_digital_pdf).id
+        doc_id = ingest(s, mem_originals, born_digital_pdf).id
         s.commit()
-        process(s, doc_id, mem_store, anonymizer=DeterministicAnonymizer(),
+        process(s, doc_id, mem_originals, anonymizer=DeterministicAnonymizer(),
                search_index=index, embedder=fake_embedder)
         s.commit()
     index.set_topics(str(doc_id), ["topic-1"])
@@ -482,7 +482,7 @@ def test_reprocess_keeps_the_topic_end_to_end(session_factory, mem_store,
     outcome, _detail = reprocess.one(
         session_factory, doc_id,
         make_anonymizer=lambda _s, _domain: DeterministicAnonymizer(),
-        store=mem_store, search_index=index, embedder=fake_embedder)
+        originals=mem_originals, search_index=index, embedder=fake_embedder)
     assert outcome == "reanonymized"
 
     hits = index.search("document", topic="topic-1")
@@ -490,7 +490,7 @@ def test_reprocess_keeps_the_topic_end_to_end(session_factory, mem_store,
 
 
 def test_reprocessing_before_the_first_index_has_no_topics_to_keep(
-        session_factory, mem_store, fake_embedder, born_digital_pdf):
+        session_factory, mem_originals, fake_embedder, born_digital_pdf):
     """Een document dat nog nooit geïndexeerd is, heeft geen onderwerp om te
     bewaren. De crash-tussen-anonymiseren-en-indexeren die dit oplevert is
     precies het geval dat `process`'s eigen docstring als veilig beschrijft."""
@@ -499,10 +499,10 @@ def test_reprocessing_before_the_first_index_has_no_topics_to_keep(
             raise RuntimeError("nog nooit geïndexeerd")
 
     with session_factory() as s:
-        doc_id = ingest(s, mem_store, born_digital_pdf).id
+        doc_id = ingest(s, mem_originals, born_digital_pdf).id
         s.commit()
         with pytest.raises(RuntimeError):
-            process(s, doc_id, mem_store, anonymizer=DeterministicAnonymizer(),
+            process(s, doc_id, mem_originals, anonymizer=DeterministicAnonymizer(),
                    search_index=NooitKlaar(), embedder=fake_embedder)
         s.commit()  # het anonimiseren is al geflusht vóór de indexfout
         from wordsworth.pipeline import current_state
@@ -510,7 +510,7 @@ def test_reprocessing_before_the_first_index_has_no_topics_to_keep(
 
     index = InMemoryIndex()
     with session_factory() as s:
-        reanonymize(s, doc_id, mem_store, anonymizer=DeterministicAnonymizer(),
+        reanonymize(s, doc_id, mem_originals, anonymizer=DeterministicAnonymizer(),
                    search_index=index, embedder=fake_embedder)
         s.commit()
     assert index.topics_of(str(doc_id)) == []

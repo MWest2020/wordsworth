@@ -27,7 +27,7 @@ def test_ingest_registered_when_store_and_deps_present():
         session_factory=object(),
         search_index=object(),
         embedder=object(),
-        store=object(),
+        originals=object(),
         anonymizer=object(),   # avoid constructing the real driver
         rate_limiters={},
     )
@@ -56,7 +56,7 @@ def _wired_app():
         session_factory=object(),
         search_index=object(),
         embedder=object(),
-        store=object(),
+        originals=object(),
         anonymizer=object(),   # avoid constructing the real driver
         rate_limiters={},
     )

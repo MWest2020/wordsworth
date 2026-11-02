@@ -28,31 +28,31 @@ def _write_lists(tmp_path, deny_rule_count: int) -> str:
     return str(tmp_path)
 
 
-def _client(session_factory, mem_store, kp):
-    return TestClient(create_app(session_factory=session_factory, store=mem_store,
+def _client(session_factory, originals, kp):
+    return TestClient(create_app(session_factory=session_factory, originals=originals,
                                  key_provider=kp))
 
 
-def _ingest_and_process(session_factory, mem_store, mem_index, fake_embedder, pdf,
+def _ingest_and_process(session_factory, originals, mem_index, fake_embedder, pdf,
                         kp, anonymizer_factory=None):
     with session_factory() as s:
-        doc = ingest(s, mem_store, pdf)
+        doc = ingest(s, originals, pdf)
         s.commit()
         anon = (anonymizer_factory(s) if anonymizer_factory
                 else Pseudonymizer(kp, PostgresMappingStore(s)))
-        process(s, doc.id, mem_store, anonymizer=anon,
+        process(s, doc.id, originals, anonymizer=anon,
                 search_index=mem_index, embedder=fake_embedder,
                 key_provider=kp, mapping_store=PostgresMappingStore(s))
         s.commit()
         return doc.id
 
 
-def test_redacted_pdf_served_and_cached(session_factory, mem_store, mem_index,
-                                        fake_embedder, born_digital_pii_pdf):
+def test_redacted_pdf_served_and_cached(session_factory, mem_store, mem_originals,
+                                        mem_index, fake_embedder, born_digital_pii_pdf):
     kp = InMemoryKeyProvider()
-    doc_id = _ingest_and_process(session_factory, mem_store, mem_index,
+    doc_id = _ingest_and_process(session_factory, mem_originals, mem_index,
                                  fake_embedder, born_digital_pii_pdf, kp)
-    client = _client(session_factory, mem_store, kp)
+    client = _client(session_factory, mem_originals, kp)
 
     r = client.get(f"/documents/{doc_id}/redacted.pdf")
     assert r.status_code == 200
@@ -72,15 +72,15 @@ def test_redacted_pdf_served_and_cached(session_factory, mem_store, mem_index,
     assert calls == []  # the second call read the cached object, not a re-render
 
 
-def test_render_version_change_misses_cache(session_factory, mem_store, mem_index,
-                                             fake_embedder, born_digital_pii_pdf,
-                                             monkeypatch):
+def test_render_version_change_misses_cache(session_factory, mem_store, mem_originals,
+                                             mem_index, fake_embedder,
+                                             born_digital_pii_pdf, monkeypatch):
     import wordsworth.pdf_render as pdf_render
 
     kp = InMemoryKeyProvider()
-    doc_id = _ingest_and_process(session_factory, mem_store, mem_index,
+    doc_id = _ingest_and_process(session_factory, mem_originals, mem_index,
                                  fake_embedder, born_digital_pii_pdf, kp)
-    client = _client(session_factory, mem_store, kp)
+    client = _client(session_factory, mem_originals, kp)
 
     r1 = client.get(f"/documents/{doc_id}/redacted.pdf")
     assert r1.status_code == 200
@@ -102,29 +102,29 @@ def test_render_version_change_misses_cache(session_factory, mem_store, mem_inde
     assert parts == ["redacted", str(doc_id), str(new_version), parts[3]]
 
 
-def test_unknown_document_is_404(session_factory, mem_store):
-    client = _client(session_factory, mem_store, InMemoryKeyProvider())
+def test_unknown_document_is_404(session_factory, mem_originals):
+    client = _client(session_factory, mem_originals, InMemoryKeyProvider())
     assert client.get(f"/documents/{uuid4()}/redacted.pdf").status_code == 404
 
 
-def test_no_box_map_yet_is_409(session_factory, mem_store, mem_index, fake_embedder,
+def test_no_box_map_yet_is_409(session_factory, mem_originals, mem_index, fake_embedder,
                                born_digital_pii_pdf):
     kp = InMemoryKeyProvider()
     with session_factory() as s:
-        doc = ingest(s, mem_store, born_digital_pii_pdf)
+        doc = ingest(s, mem_originals, born_digital_pii_pdf)
         s.commit()
         # No key_provider/mapping_store passed -> irreversible-equivalent path,
         # no box map is ever computed.
-        process(s, doc.id, mem_store,
+        process(s, doc.id, mem_originals,
                 anonymizer=Pseudonymizer(kp, PostgresMappingStore(s)),
                 search_index=mem_index, embedder=fake_embedder)
         s.commit()
         doc_id = doc.id
-    client = _client(session_factory, mem_store, kp)
+    client = _client(session_factory, mem_originals, kp)
     assert client.get(f"/documents/{doc_id}/redacted.pdf").status_code == 409
 
 
-def test_stale_lists_then_reanonymize(session_factory, mem_store, mem_index,
+def test_stale_lists_then_reanonymize(session_factory, mem_originals, mem_index,
                                       fake_embedder, born_digital_pii_pdf,
                                       tmp_path, monkeypatch):
     lists_dir = _write_lists(tmp_path, deny_rule_count=0)
@@ -132,9 +132,9 @@ def test_stale_lists_then_reanonymize(session_factory, mem_store, mem_index,
 
     kp = InMemoryKeyProvider()
     with session_factory() as s:
-        doc = ingest(s, mem_store, born_digital_pii_pdf)
+        doc = ingest(s, mem_originals, born_digital_pii_pdf)
         s.commit()
-        process(s, doc.id, mem_store,
+        process(s, doc.id, mem_originals,
                 anonymizer=ReversibleAnonymizer(
                     kp, PostgresMappingStore(s), detect=lambda t: [],
                     lists=DetectionLists.load(lists_dir)),
@@ -143,7 +143,7 @@ def test_stale_lists_then_reanonymize(session_factory, mem_store, mem_index,
         s.commit()
         doc_id = doc.id
 
-    client = _client(session_factory, mem_store, kp)
+    client = _client(session_factory, mem_originals, kp)
     assert client.get(f"/documents/{doc_id}/redacted.pdf").status_code == 200
 
     # The lists change on disk (git deploy) -- same directory, new content, new hash.
@@ -153,7 +153,7 @@ def test_stale_lists_then_reanonymize(session_factory, mem_store, mem_index,
     assert r.json()["detail"] == "stale"
 
     with session_factory() as s:
-        reanonymize(s, doc_id, mem_store,
+        reanonymize(s, doc_id, mem_originals,
                    anonymizer=ReversibleAnonymizer(
                        kp, PostgresMappingStore(s), detect=lambda t: [],
                        lists=DetectionLists.load(lists_dir)),

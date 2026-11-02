@@ -19,13 +19,16 @@ from wordsworth import roles
 from wordsworth.api import create_app
 from wordsworth.audit import current_state, verify_chain
 from wordsworth.deletion import DeletionError, delete_document
+from wordsworth.document_keys import DocumentKeys
 from wordsworth.models import (
     AuditRecord, Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping,
 )
 from wordsworth.object_store import InMemoryObjectStore
+from wordsworth.originals_store import OriginalsStore
 from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
 from wordsworth.states import State
+from wordsworth.transit import FakeTransit
 
 KEY = "documents/" + "de" * 32
 
@@ -295,7 +298,8 @@ def _app(session_factory, **kw):
            "grant_issuer_labels": ["issuer-caller"]}
     opts.update(kw)
     return TestClient(create_app(
-        session_factory=session_factory, store=InMemoryObjectStore(),
+        session_factory=session_factory,
+        originals=OriginalsStore(InMemoryObjectStore(), DocumentKeys(lambda name: FakeTransit())),
         search_index=InMemoryIndex(), **opts))
 
 

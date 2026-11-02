@@ -44,12 +44,12 @@ class TestRegistratie:
 
 
 class TestReveal:
-    def test_een_eigen_token_lost_gewoon_op(self, session, mem_store, mem_index,
+    def test_een_eigen_token_lost_gewoon_op(self, session, mem_originals, mem_index,
                                             fake_embedder, born_digital_pii_pdf):
         kp = InMemoryKeyProvider()          # dezelfde sleutels bij anonimiseren én onthullen
-        doc = ingest(session, mem_store, born_digital_pii_pdf)
+        doc = ingest(session, mem_originals, born_digital_pii_pdf)
         session.commit()
-        process(session, doc.id, mem_store,
+        process(session, doc.id, mem_originals,
                 anonymizer=Pseudonymizer(kp, PostgresMappingStore(session)),
                 search_index=mem_index, embedder=fake_embedder)
         session.commit()
@@ -98,7 +98,7 @@ class TestHerkomst:
         assert pseudonym_registry.register(session, doc, "[BSN:ab12cd34]") == 0
 
 
-def test_het_lek_end_to_end(session, mem_store, mem_index, fake_embedder,
+def test_het_lek_end_to_end(session, mem_originals, mem_index, fake_embedder,
                             born_digital_pii_pdf):
     """Twee documenten, één geoogst token.
 
@@ -112,9 +112,9 @@ def test_het_lek_end_to_end(session, mem_store, mem_index, fake_embedder,
     opgeslagen tekst komt, mag hij niet oplossen.
     """
     kp = InMemoryKeyProvider()
-    slachtoffer = ingest(session, mem_store, born_digital_pii_pdf)
+    slachtoffer = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    process(session, slachtoffer.id, mem_store,
+    process(session, slachtoffer.id, mem_originals,
             anonymizer=Pseudonymizer(kp, PostgresMappingStore(session)),
             search_index=mem_index, embedder=fake_embedder)
     session.commit()
@@ -136,7 +136,7 @@ def test_het_lek_end_to_end(session, mem_store, mem_index, fake_embedder,
     assert geoogst[0] in restored          # het token blijft staan, stil
 
 
-def test_backfill_registreert_bestaande_documenten(session, mem_store, mem_index,
+def test_backfill_registreert_bestaande_documenten(session, mem_originals, mem_index,
                                                    fake_embedder, born_digital_pii_pdf):
     """Zonder backfill onthult elk bestaand document niets meer.
 
@@ -148,9 +148,9 @@ def test_backfill_registreert_bestaande_documenten(session, mem_store, mem_index
     from wordsworth.models import DocumentPseudonym
 
     kp = InMemoryKeyProvider()
-    doc = ingest(session, mem_store, born_digital_pii_pdf)
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)
     session.commit()
-    process(session, doc.id, mem_store,
+    process(session, doc.id, mem_originals,
             anonymizer=Pseudonymizer(kp, PostgresMappingStore(session)),
             search_index=mem_index, embedder=fake_embedder)
     session.commit()
