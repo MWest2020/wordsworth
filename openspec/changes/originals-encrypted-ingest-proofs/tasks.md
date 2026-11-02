@@ -1,7 +1,18 @@
 # Tasks
 
 A skipped test counts as failed for every reviewer. Tests use `FakeTransit`
-and the in-memory store. Depends on `originals-encrypted-ingest` being merged.
+and the in-memory store. Depends on `originals-encrypted-ingest` being merged
+and built.
+
+- [ ] 0.1 Verify the ingest change is on main, else stop. Proved by:
+      `git log main` shows the `originals-encrypted-ingest` build merged, and
+      `mem_originals` exists in `tests/conftest.py` and a shared
+      `transit_for` helper exists in `src/`. If not, do nothing further and
+      report that the dependency is missing.
+- [ ] 0.2 Migrate any test still on the old `store` signatures. Proved by:
+      `grep -rn "store=" tests/` finds no caller of `process`, `reanonymize`,
+      `recover`, `ingest` or `create_app`, and the suite passes with no skips
+      added.
 
 - [ ] 1.1 Register-first ordering. Proved by: a test with a spy store that the
       document row is flushed before `put_original` is called, and that the key
