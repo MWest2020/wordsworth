@@ -27,8 +27,18 @@ would protect nothing. Third change of the chain.
   over a factory of `OpenBaoTransit`s, one per KEK name, in irreversible mode
   too.
 - Ingest fails closed when the key service is unreachable: a named error
-  (HTTP 503 at the API), nothing stored (#318, decided 2026-10-31: fail
-  closed).
+  (HTTP 503 at the API), the failing file not stored (#318, decided
+  2026-10-31: fail closed). A batch to `POST /ingest` stops at the first
+  `OriginalsKeyUnavailable`: files already ingested and committed earlier in
+  that request stay stored, sealed; the failing file and every file after it
+  are not stored. The 503 body keeps the fixed message `key service
+  unavailable` and adds the per-file report of what already succeeded, so
+  nothing is lost silently.
+- One shared transit-factory helper (cached `OpenBaoTransit` per KEK name),
+  used by `serve.py` and the three CLI modules; no hand-rolled copies.
+- The test suite gets a `mem_originals` fixture in `tests/conftest.py`, and
+  the signature changes (`originals` positional, `store=` callers) are applied
+  across the ~22 test files first, as one mechanical commit.
 - Docs, including the deploy precondition: the `document_keys` backup and the
   KEK escrow exist before the first original is sealed.
 

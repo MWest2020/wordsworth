@@ -48,7 +48,18 @@ originals, and are read with the plain `get` as today.
 
 `OriginalsKeyUnavailable` at ingest maps to HTTP 503 with a fixed message
 (`"key service unavailable"`), in reversible and irreversible mode; the CLIs
-exit non-zero with the same message. At read, the PDF routes answer 503 the
+exit non-zero with the same message.
+
+A batch to `POST /ingest` stops at the first `OriginalsKeyUnavailable` (#318,
+fail closed, stays). Files before it were ingested and committed in that
+request and stay stored, sealed. The 503 body keeps the fixed message and adds
+the per-file report of those successes, so the caller knows what landed. The
+failing file and every file after it are not stored. Rejected: rolling back
+the earlier files (they are complete, sealed documents; undoing them adds
+writes and failure modes) and continuing past the failure (it would hide an
+outage behind partial success).
+
+At read, the PDF routes answer 503 the
 same way; `process` and `reanonymize` let it propagate (loud, retryable), as
 they do for a store outage. There is no setting that turns sealing off: if
 Mark decides otherwise on #318, a follow-up change adds one explicitly.
@@ -63,6 +74,23 @@ of this version on the homelab links its evidence:
 1. the Postgres backup includes `document_keys`, and one restore of it was
    tested;
 2. an OpenBao snapshot that contains the Transit KEK exists off the node.
+
+## One transit factory
+
+`serve.py` and the three CLI modules (`ingest_corpus.py`, `ingest_manifest.py`,
+`reprocess.py`) build their `DocumentKeys` through one helper that returns
+`transit_for(kek_name)` and caches one `OpenBaoTransit` per KEK name. Rejected:
+each module building its own factory (four copies that drift, and more than
+one client per KEK).
+
+## Order of work
+
+1. Test scaffolding: the `mem_originals` fixture in `tests/conftest.py` and the
+   positional and `store=` signature changes across ~22 test files. Mechanical,
+   one commit.
+2. The transit-factory helper.
+3. The five reader sites.
+4. Ingest write, then fail-closed.
 
 ## Files
 

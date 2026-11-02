@@ -38,6 +38,14 @@ clear as a fallback.
 - **THEN** the API answers 503 with `key service unavailable` and nothing is
   written to the object store
 
+#### Scenario: A batch stops at the first unavailable key
+
+- **WHEN** a batch is ingested and the key service becomes unavailable at the
+  second file
+- **THEN** the first file stays stored, sealed, and the API answers 503 with
+  `key service unavailable` and a per-file report of the first file; the
+  second file and every file after it are not stored
+
 #### Scenario: Irreversible mode needs the key service too
 
 - **WHEN** a document is ingested in irreversible mode while OpenBao cannot be
