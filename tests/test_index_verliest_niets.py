@@ -30,13 +30,13 @@ def test_changing_dossiers_keeps_text_and_vector():
     assert index._dossiers["a"] == {"d2"}
 
 
-def test_a_second_delivery_does_not_drop_the_embedding(session_factory, mem_store,
+def test_a_second_delivery_does_not_drop_the_embedding(session_factory, mem_originals,
                                                        fake_embedder,
                                                        born_digital_pii_pdf):
     """Reproduced by the review and confirmed in production: the second ingest
     reported success and silently removed the document from the kNN half."""
     index = InMemoryIndex()
-    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+    c = TestClient(create_app(session_factory=session_factory, originals=mem_originals,
                               search_index=index, embedder=fake_embedder,
                               anonymizer=DeterministicAnonymizer()))
     files = lambda: {"files": ("a.pdf", born_digital_pii_pdf, "application/pdf")}
@@ -51,7 +51,7 @@ def test_a_second_delivery_does_not_drop_the_embedding(session_factory, mem_stor
 
 
 def test_content_indexed_without_its_document_is_a_conflict(session_factory,
-                                                            mem_store,
+                                                            mem_originals,
                                                             fake_embedder,
                                                             born_digital_pii_pdf):
     """The index can know content the database does not — a restored index, or
@@ -68,7 +68,7 @@ def test_content_indexed_without_its_document_is_a_conflict(session_factory,
     key = "documents/" + hashlib.sha256(born_digital_pii_pdf).hexdigest()
     index.index("spook", "tekst van een document dat hier niet bestaat", key)
 
-    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+    c = TestClient(create_app(session_factory=session_factory, originals=mem_originals,
                               search_index=index, embedder=fake_embedder,
                               anonymizer=DeterministicAnonymizer()))
     body = c.post("/ingest", params={"dossier": "zaak-b"},

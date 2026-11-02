@@ -22,8 +22,8 @@ from sqlalchemy.orm import Session
 from . import audit
 from .config import settings
 from .models import Document
-from .object_store import ObjectStore
 from .ocr import OcrEngine
+from .originals_store import OriginalsStore
 from .pipeline import current_state, live_document_for, transition
 from .profiling import profile_pdf
 from .states import State
@@ -39,18 +39,24 @@ def _default_ocr_engine() -> OcrEngine:
 def recover(
     session: Session,
     document_id: UUID,
-    store: ObjectStore,
+    originals: OriginalsStore,
     threshold: int | None = None,
     engine: OcrEngine | None = None,
 ) -> State:
     """OCR one `unprocessable_ocr` document and re-classify it.
 
-    Fetch the scanned bytes by the document's key, OCR them into a text-layer
-    PDF, then re-apply the SAME characters-per-page threshold via profile_pdf on
-    that PDF. At/above: store the OCR'd PDF under its own content-addressed key,
-    repoint `object_key` (the original scan object is kept), and transition to
-    `extractable`. Below: the document stays `unprocessable_ocr` and the attempt
-    is appended as an access-style audit record — no attempt is a silent no-op.
+    Fetch the scanned bytes by the document's key through the originals
+    store (ADR-0008 -- sealed and legacy scans both open), OCR them into a
+    text-layer PDF, then re-apply the SAME characters-per-page threshold via
+    profile_pdf on that PDF. At/above: store the OCR'd PDF under its own
+    content-addressed key, repoint `object_key` (the original scan object is
+    kept), and transition to `extractable`. Below: the document stays
+    `unprocessable_ocr` and the attempt is appended as an access-style audit
+    record — no attempt is a silent no-op.
+
+    The OCR'd PDF itself is still written with the plain, unsealed `put`
+    (`originals-ocr-sealed` closes this gap): a recovered scan is stored as
+    legacy plaintext in between, and reads it as such.
     """
     threshold = threshold if threshold is not None else settings.born_digital_threshold
     engine = engine or _default_ocr_engine()
@@ -58,7 +64,7 @@ def recover(
     if state != State.UNPROCESSABLE_OCR:
         raise ValueError(f"OCR recovery only applies to unprocessable_ocr, not {state}")
     doc = session.get(Document, document_id)
-    pdf_bytes = store.get(doc.object_key)
+    pdf_bytes = originals.get_original(session, doc.object_key)
     ocr_bytes = engine.ocr(pdf_bytes)  # OcrError propagates: loud, retryable, no skip
     metric = profile_pdf(ocr_bytes, threshold)
     payload = {k: metric[k] for k in ("chars", "pages", "bytes")}
@@ -75,7 +81,7 @@ def recover(
         )
         return State.UNPROCESSABLE_OCR
     new_key = "documents/" + hashlib.sha256(ocr_bytes).hexdigest()
-    store.put(new_key, ocr_bytes)  # own content-addressed object; scan is kept
+    originals.objects.put(new_key, ocr_bytes)  # own content-addressed object; scan is kept
     owner = live_document_for(session, new_key)
     if owner is not None and owner.id != doc.id:
         # The OCR'd PDF is an object another document already is: this scan

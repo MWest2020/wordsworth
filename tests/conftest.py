@@ -107,6 +107,15 @@ def mem_store():
     return InMemoryObjectStore()
 
 
+@pytest.fixture
+def mem_originals(mem_store):
+    from wordsworth.document_keys import DocumentKeys
+    from wordsworth.originals_store import OriginalsStore
+    from wordsworth.transit import FakeTransit
+
+    return OriginalsStore(mem_store, DocumentKeys(lambda name: FakeTransit()))
+
+
 # --- PDF fixtures -----------------------------------------------------------
 
 def _pdf(draw) -> bytes:

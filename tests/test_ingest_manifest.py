@@ -191,7 +191,7 @@ def test_manifest_missing_a_required_field_is_refused(monkeypatch, tmp_path):
 # --- end-to-end through the real pipeline (design tests 1, 2, 5, 7) --------
 
 def test_provenance_reaches_the_audit_record(
-    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_store, mem_index,
+    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_originals, mem_index,
     fake_embedder,
 ):
     monkeypatch.setenv("WORDSWORTH_BACKEND_ENV", "homelab")
@@ -201,7 +201,7 @@ def test_provenance_reaches_the_audit_record(
 
     outcomes = ingest_manifest_corpus(
         tmp_path, "pilot-dossier", tmp_path / "manifest.jsonl",
-        session_factory=session_factory, store=mem_store,
+        session_factory=session_factory, originals=mem_originals,
         anonymizer=DeterministicAnonymizer(), search_index=mem_index,
         embedder=fake_embedder,
     )
@@ -220,7 +220,7 @@ def test_provenance_reaches_the_audit_record(
 
 
 def test_fetcher_written_manifest_line_is_ingested(
-    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_store, mem_index,
+    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_originals, mem_index,
     fake_embedder,
 ):
     """A line carrying the fetcher's OLD herkomst keys next to the shared
@@ -241,7 +241,7 @@ def test_fetcher_written_manifest_line_is_ingested(
 
     outcomes = ingest_manifest_corpus(
         tmp_path, "pilot-dossier", tmp_path / "manifest.jsonl",
-        session_factory=session_factory, store=mem_store,
+        session_factory=session_factory, originals=mem_originals,
         anonymizer=DeterministicAnonymizer(), search_index=mem_index,
         embedder=fake_embedder,
     )
@@ -249,12 +249,12 @@ def test_fetcher_written_manifest_line_is_ingested(
 
 
 def test_duplicate_key_fails_with_the_reason(
-    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_store, mem_index,
+    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_originals, mem_index,
     fake_embedder,
 ):
     monkeypatch.setenv("WORDSWORTH_BACKEND_ENV", "homelab")
     with session_factory() as session:
-        ingest(session, mem_store, born_digital_pdf, filename="dup.pdf",
+        ingest(session, mem_originals, born_digital_pdf, filename="dup.pdf",
                dossier="dossier-a")  # no provenance -- the existing-corpus case
         session.commit()
 
@@ -265,7 +265,7 @@ def test_duplicate_key_fails_with_the_reason(
     for dossier in ("dossier-a", "dossier-b"):  # same dossier, and another one
         outcomes = ingest_manifest_corpus(
             tmp_path, dossier, tmp_path / "manifest.jsonl",
-            session_factory=session_factory, store=mem_store,
+            session_factory=session_factory, originals=mem_originals,
             anonymizer=DeterministicAnonymizer(), search_index=mem_index,
             embedder=fake_embedder,
         )
@@ -274,7 +274,7 @@ def test_duplicate_key_fails_with_the_reason(
 
 
 def test_openanonymiser_down_fails_the_run_and_stays_registered(
-    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_store, mem_index,
+    monkeypatch, tmp_path, born_digital_pdf, session_factory, mem_originals, mem_index,
     fake_embedder,
 ):
     monkeypatch.setenv("WORDSWORTH_BACKEND_ENV", "homelab")
@@ -289,7 +289,7 @@ def test_openanonymiser_down_fails_the_run_and_stays_registered(
 
     outcomes = ingest_manifest_corpus(
         tmp_path, "pilot-dossier", tmp_path / "manifest.jsonl",
-        session_factory=session_factory, store=mem_store,
+        session_factory=session_factory, originals=mem_originals,
         anonymizer=_DownAnonymizer(), search_index=mem_index, embedder=fake_embedder,
     )
 

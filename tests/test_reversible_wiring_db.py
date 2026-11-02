@@ -22,7 +22,7 @@ PII_BSN = "123456782"
 PII_EMAIL = "jan.jansen@haarlem.nl"
 
 
-def test_reversible_wiring_end_to_end(session_factory, mem_store, mem_index,
+def test_reversible_wiring_end_to_end(session_factory, mem_originals, mem_index,
                                       fake_embedder, born_digital_pii_pdf):
     # Shared, durable-across-requests backends (stand-ins for OpenBao + DB vault).
     vault = InMemoryKeyVaultStore()
@@ -41,7 +41,7 @@ def test_reversible_wiring_end_to_end(session_factory, mem_store, mem_index,
         session_factory=session_factory,
         search_index=mem_index,
         embedder=fake_embedder,
-        store=mem_store,
+        originals=mem_originals,
         anonymizer_factory=anonymizer,
         key_provider_factory=key_provider,
         grant_store_factory=lambda s: PostgresGrantStore(s),

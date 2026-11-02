@@ -16,15 +16,19 @@ import argparse
 import sys
 from pathlib import Path
 
+from .config import settings
 from .db import make_engine, make_session_factory
+from .document_keys import DocumentKeys
 from .embedder import OllamaEmbedder
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
 from .models import Document
+from .originals_store import OriginalsStore
 from .pipeline import dossiers_of, ingest, process
 from .recovery import recover
 from .states import State
+from .transit_factory import cached_transit_factory
 
 
 def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
@@ -36,7 +40,8 @@ def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
     PII via the service)."""
     engine = make_engine()
     session_factory = make_session_factory(engine)
-    store = S3ObjectStore.from_config()
+    transit_for = cached_transit_factory(settings.openbao_url, settings.openbao_token)
+    originals = OriginalsStore(S3ObjectStore.from_config(), DocumentKeys(transit_for))
     anonymizer = OpenAnonymiserAnonymizer()
     index = OpenSearchIndex.from_config()
     embedder = OllamaEmbedder.from_config()
@@ -45,15 +50,15 @@ def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
     results: list[tuple[str, State]] = []
     for pdf in sorted(corpus_dir.glob("*.pdf")):
         with session_factory() as session:
-            doc = ingest(session, store, pdf.read_bytes(), filename=pdf.name,
+            doc = ingest(session, originals, pdf.read_bytes(), filename=pdf.name,
                          dossier=dossier)
             session.commit()
-            state = process(session, doc.id, store, anonymizer=anonymizer,
+            state = process(session, doc.id, originals, anonymizer=anonymizer,
                             search_index=index, embedder=embedder)
             session.commit()
             if state == State.UNPROCESSABLE_OCR:
                 # Scanned page: OCR to a text layer, then resume the straat.
-                state = recover(session, doc.id, store)
+                state = recover(session, doc.id, originals)
                 session.commit()
                 if state == State.SUPERSEDED:
                     # Its OCR'd PDF is already a document, which now holds the
@@ -61,7 +66,7 @@ def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
                     owner = session.get(Document, doc.id).superseded_by
                     index.set_dossiers(str(owner), dossiers_of(session, owner))
                 else:
-                    state = process(session, doc.id, store, anonymizer=anonymizer,
+                    state = process(session, doc.id, originals, anonymizer=anonymizer,
                                     search_index=index, embedder=embedder)
                     session.commit()
             results.append((pdf.name, state))

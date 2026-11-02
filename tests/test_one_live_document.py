@@ -98,14 +98,14 @@ def _parked_scan(session, store, scanned_pdf, dossier):
     return doc
 
 
-def test_an_ocr_landing_on_a_held_object_retires_itself(session, mem_store,
+def test_an_ocr_landing_on_a_held_object_retires_itself(session, mem_originals,
                                                         scanned_pdf):
     owner = register(session, OCR_KEY)
     session.commit()
-    scan = _parked_scan(session, mem_store, scanned_pdf, dossier="Z")
+    scan = _parked_scan(session, mem_originals, scanned_pdf, dossier="Z")
     scan_key = scan.object_key
 
-    assert recovery.recover(session, scan.id, mem_store, threshold=10,
+    assert recovery.recover(session, scan.id, mem_originals, threshold=10,
                             engine=_SameOcr()) == State.SUPERSEDED
     session.commit()
 
@@ -120,7 +120,7 @@ def test_an_ocr_landing_on_a_held_object_retires_itself(session, mem_store,
     assert str(owner.id) in {str(i) for i in dossiers.documents_in(session, [z["id"]])}
 
 
-def test_the_api_hands_a_retired_scans_dossier_to_the_index(session_factory, mem_store,
+def test_the_api_hands_a_retired_scans_dossier_to_the_index(session_factory, mem_originals,
                                                             scanned_pdf, fake_embedder,
                                                             monkeypatch):
     """The ingest endpoint must not process a retired document, and must tell
@@ -131,7 +131,7 @@ def test_the_api_hands_a_retired_scans_dossier_to_the_index(session_factory, mem
     index = InMemoryIndex()
     index.index(str(owner_id), "tekst", OCR_KEY)
     monkeypatch.setattr(recovery, "_default_ocr_engine", lambda: _SameOcr())
-    c = TestClient(create_app(session_factory=session_factory, store=mem_store,
+    c = TestClient(create_app(session_factory=session_factory, originals=mem_originals,
                               search_index=index, embedder=fake_embedder,
                               anonymizer=DeterministicAnonymizer()))
     r = c.post("/ingest", params={"dossier": "Z"},

@@ -22,10 +22,13 @@ from wordsworth.deletion import DeletionError, delete_document
 from wordsworth.models import (
     AuditRecord, Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping,
 )
+from wordsworth.document_keys import DocumentKeys
 from wordsworth.object_store import InMemoryObjectStore
+from wordsworth.originals_store import OriginalsStore
 from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
 from wordsworth.states import State
+from wordsworth.transit import FakeTransit
 
 KEY = "documents/" + "de" * 32
 
@@ -207,18 +210,22 @@ def test_reingesting_a_deleted_documents_bytes_registers_a_new_document(session)
     OCR-owner and already-indexed checks all share -- must see the key as
     free once the document that held it is deleted (design.md "Release, not
     a special case")."""
+    from wordsworth.document_keys import DocumentKeys
+    from wordsworth.originals_store import OriginalsStore
     from wordsworth.pipeline import ingest, live_document_for
+    from wordsworth.transit import FakeTransit
 
     store, index = InMemoryObjectStore(), InMemoryIndex()
+    originals = OriginalsStore(store, DocumentKeys(lambda name: FakeTransit()))
     pdf_bytes = b"%PDF-1.4 whatever bytes this change does not parse"
-    doc = ingest(session, store, pdf_bytes)
+    doc = ingest(session, originals, pdf_bytes)
     session.commit()
     key = doc.object_key
 
     delete_document(session, doc.id, store, index, actor="tester")
     session.commit()
 
-    new_doc = ingest(session, store, pdf_bytes)
+    new_doc = ingest(session, originals, pdf_bytes)
     session.commit()
 
     assert new_doc.id != doc.id
@@ -295,7 +302,8 @@ def _app(session_factory, **kw):
            "grant_issuer_labels": ["issuer-caller"]}
     opts.update(kw)
     return TestClient(create_app(
-        session_factory=session_factory, store=InMemoryObjectStore(),
+        session_factory=session_factory,
+        originals=OriginalsStore(InMemoryObjectStore(), DocumentKeys(lambda name: FakeTransit())),
         search_index=InMemoryIndex(), **opts))
 
 

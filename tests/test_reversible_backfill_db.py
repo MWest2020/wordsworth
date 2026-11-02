@@ -44,11 +44,11 @@ def _reversible(session):
     )
 
 
-def test_reanonymize_backfills_to_reversible(session, mem_store, mem_index,
+def test_reanonymize_backfills_to_reversible(session, mem_originals, mem_index,
                                              fake_embedder, born_digital_pii_pdf):
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
-    st = reanonymize(session, doc.id, mem_store, anonymizer=_reversible(session),
+    st = reanonymize(session, doc.id, mem_originals, anonymizer=_reversible(session),
                      search_index=mem_index, embedder=fake_embedder)
     session.commit()
     assert st == State.INDEXED
@@ -69,25 +69,25 @@ def test_reanonymize_backfills_to_reversible(session, mem_store, mem_index,
     assert ok is True and bad is None
 
 
-def test_reanonymize_is_idempotent(session, mem_store, mem_index, fake_embedder,
+def test_reanonymize_is_idempotent(session, mem_originals, mem_index, fake_embedder,
                                    born_digital_pii_pdf):
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
     drv = _reversible(session)
-    reanonymize(session, doc.id, mem_store, anonymizer=drv,
+    reanonymize(session, doc.id, mem_originals, anonymizer=drv,
                 search_index=mem_index, embedder=fake_embedder)
     session.commit()
     first = get_anonymized_text(session, doc.id)
-    reanonymize(session, doc.id, mem_store, anonymizer=drv,
+    reanonymize(session, doc.id, mem_originals, anonymizer=drv,
                 search_index=mem_index, embedder=fake_embedder)
     session.commit()
     assert get_anonymized_text(session, doc.id) == first     # stable pseudonyms
     assert len(mem_index._docs) == 1                         # upsert, one entry
 
 
-def test_reanonymize_failure_leaves_entry_intact(session, mem_store, mem_index,
+def test_reanonymize_failure_leaves_entry_intact(session, mem_originals, mem_index,
                                                  fake_embedder, born_digital_pii_pdf):
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
     before = get_anonymized_text(session, doc.id)
     before_index = mem_index._docs[str(doc.id)]
@@ -97,25 +97,25 @@ def test_reanonymize_failure_leaves_entry_intact(session, mem_store, mem_index,
             raise RuntimeError("engine down")   # permanent → not retried
 
     with pytest.raises(RuntimeError):
-        reanonymize(session, doc.id, mem_store, anonymizer=Boom(),
+        reanonymize(session, doc.id, mem_originals, anonymizer=Boom(),
                     search_index=mem_index, embedder=fake_embedder)
     session.rollback()
     assert get_anonymized_text(session, doc.id) == before        # text untouched
     assert mem_index._docs[str(doc.id)] == before_index          # index untouched
 
 
-def test_reanonymize_skips_non_indexed(session, mem_store, mem_index,
+def test_reanonymize_skips_non_indexed(session, mem_originals, mem_index,
                                        fake_embedder, born_digital_pii_pdf):
-    doc = ingest(session, mem_store, born_digital_pii_pdf)   # REGISTERED, not indexed
+    doc = ingest(session, mem_originals, born_digital_pii_pdf)   # REGISTERED, not indexed
     session.commit()
-    st = reanonymize(session, doc.id, mem_store, anonymizer=_reversible(session),
+    st = reanonymize(session, doc.id, mem_originals, anonymizer=_reversible(session),
                      search_index=mem_index, embedder=fake_embedder)
     assert st == State.REGISTERED                            # no-op skip
     assert str(doc.id) not in mem_index._docs
 
 
 def test_a_failing_document_is_named_and_left_in_the_audit(
-        session_factory, session, mem_store, mem_index, fake_embedder,
+        session_factory, session, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     """A backfill that cannot finish a document must say which one, and why.
 
@@ -129,7 +129,7 @@ def test_a_failing_document_is_named_and_left_in_the_audit(
 
     from wordsworth.api import create_app
 
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
     before = get_anonymized_text(session, doc.id)
 
@@ -139,7 +139,7 @@ def test_a_failing_document_is_named_and_left_in_the_audit(
     def breekt(_session):
         raise Kapot("engine weg")
 
-    app = create_app(session_factory=session_factory, store=mem_store,
+    app = create_app(session_factory=session_factory, originals=mem_originals,
                      search_index=mem_index, embedder=fake_embedder,
                      anonymizer_factory=breekt, rate_limiters={})
     uit = TestClient(app).post("/reprocess",
@@ -160,7 +160,7 @@ def test_a_failing_document_is_named_and_left_in_the_audit(
 
 
 def test_de_oorzaak_onder_de_wrapper_komt_mee(
-        session_factory, session, mem_store, mem_index, fake_embedder,
+        session_factory, session, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     """De buitenste klasse alleen is niet genoeg.
 
@@ -173,7 +173,7 @@ def test_de_oorzaak_onder_de_wrapper_komt_mee(
 
     from wordsworth.api import create_app
 
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
 
     class Onderliggend(Exception):
@@ -188,7 +188,7 @@ def test_de_oorzaak_onder_de_wrapper_komt_mee(
         except Onderliggend as oorzaak:
             raise Wikkel("motor weigerde") from oorzaak
 
-    app = create_app(session_factory=session_factory, store=mem_store,
+    app = create_app(session_factory=session_factory, originals=mem_originals,
                      search_index=mem_index, embedder=fake_embedder,
                      anonymizer_factory=breekt, rate_limiters={})
     uit = TestClient(app).post("/reprocess",
@@ -200,7 +200,7 @@ def test_de_oorzaak_onder_de_wrapper_komt_mee(
 
 
 def test_de_code_van_de_invariant_komt_mee_in_problems(
-        session_factory, session, mem_store, mem_index, fake_embedder,
+        session_factory, session, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     """`AnonymizationInvariantError[waarde-overleefde-vervanging]` — welke
     invariant brak, zonder ook maar een teken uit het document."""
@@ -209,14 +209,14 @@ def test_de_code_van_de_invariant_komt_mee_in_problems(
     from wordsworth.api import create_app
     from wordsworth.openanonymiser_driver import AnonymizationInvariantError
 
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
 
     def breekt(_session):
         raise AnonymizationInvariantError(
             "een waarde 'Jan Jansen' overleefde", code="waarde-overleefde-vervanging")
 
-    app = create_app(session_factory=session_factory, store=mem_store,
+    app = create_app(session_factory=session_factory, originals=mem_originals,
                      search_index=mem_index, embedder=fake_embedder,
                      anonymizer_factory=breekt, rate_limiters={})
     uit = TestClient(app).post("/reprocess",
@@ -229,7 +229,7 @@ def test_de_code_van_de_invariant_komt_mee_in_problems(
 
 
 def test_value_not_located_is_reported_in_reprocess_problems(
-        session_factory, session, mem_store, mem_index, fake_embedder,
+        session_factory, session, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     """POST /reprocess must not hide a value-not-located box-map outcome
     (pdf-redaction-locate) behind a plain 'reanonymized' count: the text/
@@ -243,7 +243,7 @@ def test_value_not_located_is_reported_in_reprocess_problems(
     from wordsworth.mapping_store import PostgresMappingStore
     from wordsworth.pseudonymizer import Pseudonymizer
 
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
     kp = InMemoryKeyProvider()
 
@@ -259,7 +259,7 @@ def test_value_not_located_is_reported_in_reprocess_problems(
             token = Pseudonymizer(kp, self._store).pseudonym("bsn", PII_BSN)
             return AnonymizationResult(text=f"{token} {token}", counts={"bsn": 2})
 
-    app = create_app(session_factory=session_factory, store=mem_store,
+    app = create_app(session_factory=session_factory, originals=mem_originals,
                      search_index=mem_index, embedder=fake_embedder,
                      anonymizer_factory=lambda s: TwiceBSN(s),
                      key_provider_factory=lambda s: kp, rate_limiters={})
@@ -275,7 +275,7 @@ def test_value_not_located_is_reported_in_reprocess_problems(
 
 
 def test_a_value_not_located_miss_is_in_the_report_and_still_fails_closed(
-        session_factory, session, mem_store, mem_index, fake_embedder,
+        session_factory, session, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     """redaction-locate-remaining: the count-by-type report names this
     document's type, and the redacted PDF is still refused (409) for it --
@@ -289,7 +289,7 @@ def test_a_value_not_located_miss_is_in_the_report_and_still_fails_closed(
     from wordsworth.pseudonymizer import Pseudonymizer
     from wordsworth.value_not_located_report import by_type
 
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
     kp = InMemoryKeyProvider()
 
@@ -301,7 +301,7 @@ def test_a_value_not_located_miss_is_in_the_report_and_still_fails_closed(
             token = Pseudonymizer(kp, self._store).pseudonym("bsn", PII_BSN)
             return AnonymizationResult(text=f"{token} {token}", counts={"bsn": 2})
 
-    app = create_app(session_factory=session_factory, store=mem_store,
+    app = create_app(session_factory=session_factory, originals=mem_originals,
                      search_index=mem_index, embedder=fake_embedder,
                      anonymizer_factory=lambda s: TwiceBSN(s),
                      key_provider_factory=lambda s: kp, rate_limiters={})
@@ -316,7 +316,7 @@ def test_a_value_not_located_miss_is_in_the_report_and_still_fails_closed(
 
 
 def test_de_kenmerken_van_de_invariant_komen_in_de_audit(
-        session_factory, session, mem_store, mem_index, fake_embedder,
+        session_factory, session, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     """Zonder kenmerken stond deze controle acht documenten tegen te houden en
     was van buitenaf niet te achterhalen wát er overleefde — twee
@@ -327,7 +327,7 @@ def test_de_kenmerken_van_de_invariant_komen_in_de_audit(
     from wordsworth.models import AuditRecord
     from wordsworth.openanonymiser_driver import AnonymizationInvariantError
 
-    doc = _indexed_irreversibly(session, mem_store, mem_index, fake_embedder,
+    doc = _indexed_irreversibly(session, mem_originals, mem_index, fake_embedder,
                                 born_digital_pii_pdf)
 
     def breekt(_session):
@@ -336,7 +336,7 @@ def test_de_kenmerken_van_de_invariant_komen_in_de_audit(
             kenmerken={"label": "PERSON", "lengte": 10, "in_bron": 2,
                        "na_vervanging": 1, "woorden": 2, "alnum": False})
 
-    app = create_app(session_factory=session_factory, store=mem_store,
+    app = create_app(session_factory=session_factory, originals=mem_originals,
                      search_index=mem_index, embedder=fake_embedder,
                      anonymizer_factory=breekt, rate_limiters={})
     TestClient(app).post("/reprocess", json={"document_ids": [str(doc.id)]})

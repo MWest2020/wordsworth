@@ -4,22 +4,21 @@ import pytest
 from sqlalchemy import select
 
 from wordsworth import dossiers
+from wordsworth.document_keys import DocumentKeys
 from wordsworth.models import Document, DossierDocument
+from wordsworth.object_store import InMemoryObjectStore
+from wordsworth.originals_store import OriginalsStore
 from wordsworth.pipeline import dossiers_of, ingest, register
 from wordsworth.search_index import InMemoryIndex
+from wordsworth.transit import FakeTransit
 
 PDF = b"%PDF-1.4 een besluit"
 ANDER = b"%PDF-1.4 een ander besluit"
 
 
-class Store:
-    """Object store stand-in: ingest only needs put()."""
-
-    def __init__(self):
-        self.objects = {}
-
-    def put(self, key, data):
-        self.objects[key] = data
+def Store():
+    """`OriginalsStore` stand-in over an in-memory object store."""
+    return OriginalsStore(InMemoryObjectStore(), DocumentKeys(lambda name: FakeTransit()))
 
 
 # --- membership ------------------------------------------------------------

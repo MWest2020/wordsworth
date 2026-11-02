@@ -90,7 +90,7 @@ def test_other_audit_steps_do_not_answer_this_question(session_factory):
 
 
 def test_reprocess_skips_what_is_already_current(session_factory, tmp_path,
-                                                 mem_store, mem_index,
+                                                 mem_originals, mem_index,
                                                  fake_embedder, monkeypatch):
     """De hele reden dat dit bestaat: een onderbroken run mag niet betekenen
     dat de volgende alles overdoet."""
@@ -126,7 +126,7 @@ def test_reprocess_skips_what_is_already_current(session_factory, tmp_path,
     kp = InMemoryKeyProvider()
 
     app = create_app(
-        session_factory=session_factory, store=mem_store,
+        session_factory=session_factory, originals=mem_originals,
         search_index=mem_index, embedder=fake_embedder,
         anonymizer_factory=lambda ses: ReversibleAnonymizer(
             kp, PostgresMappingStore(ses), detect=lambda t: []))
@@ -159,7 +159,8 @@ def test_value_not_located_detail_reads_located_of_in_text(session_factory):
 
 
 def test_a_failure_leaves_a_trace_in_the_trail(session_factory, mem_store,
-                                               mem_index, fake_embedder):
+                                               mem_originals, mem_index,
+                                               fake_embedder):
     """Dit is waarom de lus één plek heeft.
 
     Op 2026-09-20 bouwde ik hem na in een Job en liet deze registratie weg.
@@ -188,7 +189,7 @@ def test_a_failure_leaves_a_trace_in_the_trail(session_factory, mem_store,
     counts, problems = backfill.run(
         session_factory, [doc_id],
         make_anonymizer=lambda ses, domain: Weigert(),
-        store=mem_store, search_index=mem_index, embedder=fake_embedder)
+        originals=mem_originals, search_index=mem_index, embedder=fake_embedder)
 
     assert counts["failed"] + counts["retryable"] == 1
     assert problems, "de oorzaak hoort teruggegeven te worden"
@@ -207,7 +208,7 @@ def test_a_failure_leaves_a_trace_in_the_trail(session_factory, mem_store,
 
 
 def test_een_gebroken_invariant_telt_als_failed_niet_retryable(
-        session_factory, mem_store, mem_index, fake_embedder,
+        session_factory, mem_originals, mem_index, fake_embedder,
         born_digital_pii_pdf):
     """redaction-locate-remaining: `AnonymizationInvariantError` gaat niet
     vanzelf over -- een document dat hem opwerpt moet onder `failed` tellen,
@@ -227,9 +228,9 @@ def test_een_gebroken_invariant_telt_als_failed_niet_retryable(
                 code="waarde-overleefde-vervanging")
 
     with session_factory() as s:
-        doc = ingest(s, mem_store, born_digital_pii_pdf)
+        doc = ingest(s, mem_originals, born_digital_pii_pdf)
         s.commit()
-        st = process(s, doc.id, mem_store, anonymizer=DeterministicAnonymizer(),
+        st = process(s, doc.id, mem_originals, anonymizer=DeterministicAnonymizer(),
                     search_index=mem_index, embedder=fake_embedder)
         s.commit()
         assert st == State.INDEXED
@@ -238,7 +239,7 @@ def test_een_gebroken_invariant_telt_als_failed_niet_retryable(
     counts, problems = backfill.run(
         session_factory, [doc_id],
         make_anonymizer=lambda ses, domain: BreektOpEenOverlever(),
-        store=mem_store, search_index=mem_index, embedder=fake_embedder)
+        originals=mem_originals, search_index=mem_index, embedder=fake_embedder)
 
     assert counts["failed"] == 1 and counts["retryable"] == 0
     assert "AnonymizationInvariantError[waarde-overleefde-vervanging]" in \

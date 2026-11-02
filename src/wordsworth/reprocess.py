@@ -117,7 +117,7 @@ def _value_not_located_detail(session, document_id: UUID) -> str | None:
 
 
 def one(session_factory, document_id: UUID, *, make_anonymizer,
-        store, search_index=None, embedder=None,
+        originals, search_index=None, embedder=None,
         resolve_key_provider=None) -> tuple[str, str | None]:
     with session_factory() as session:
         state = current_state(session, document_id)
@@ -133,7 +133,7 @@ def one(session_factory, document_id: UUID, *, make_anonymizer,
             from .mapping_store import PostgresMappingStore
 
             mapping_store = PostgresMappingStore(session)
-        reanonymize(session, document_id, store, anonymizer=anon,
+        reanonymize(session, document_id, originals, anonymizer=anon,
                     search_index=search_index, embedder=embedder,
                     key_provider=key_provider, mapping_store=mapping_store)
         session.commit()
@@ -160,7 +160,7 @@ def indexed_ids(session) -> list[UUID]:
             if current_state(session, i) == State.INDEXED]
 
 
-def run(session_factory, ids, *, make_anonymizer, store, search_index=None,
+def run(session_factory, ids, *, make_anonymizer, originals, search_index=None,
         embedder=None, on_progress=None, resolve_key_provider=None) -> tuple[dict, dict]:
     """Verwerk `ids` en geef (tellingen, problemen).
 
@@ -172,7 +172,7 @@ def run(session_factory, ids, *, make_anonymizer, store, search_index=None,
     for n, document_id in enumerate(ids, 1):
         try:
             outcome, detail = one(session_factory, document_id,
-                       make_anonymizer=make_anonymizer, store=store,
+                       make_anonymizer=make_anonymizer, originals=originals,
                        search_index=search_index, embedder=embedder,
                        resolve_key_provider=resolve_key_provider)
             counts[outcome] += 1

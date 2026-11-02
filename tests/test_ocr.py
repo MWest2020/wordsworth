@@ -76,14 +76,14 @@ def _last_record(session, document_id) -> AuditRecord:
 
 
 def test_ocr_yields_usable_text_becomes_extractable_and_indexes_ocr_text(
-    session, scanned_pdf, mem_store, mem_index, fake_embedder,
+    session, scanned_pdf, mem_store, mem_originals, mem_index, fake_embedder,
 ):
-    doc = _park_as_unprocessable(session, mem_store, scanned_pdf)
+    doc = _park_as_unprocessable(session, mem_originals, scanned_pdf)
     scan_key = doc.object_key
     before = _audit_count(session, doc.id)
 
     # Injected LOCAL engine drives the text — no cloud call is made.
-    final = recover(session, doc.id, mem_store, threshold=10,
+    final = recover(session, doc.id, mem_originals, threshold=10,
                     engine=FixedOcrEngine("Herstelde tekst uit een scan. " * 3))
     session.commit()
 
@@ -103,7 +103,7 @@ def test_ocr_yields_usable_text_becomes_extractable_and_indexes_ocr_text(
 
     # The recovered document flows the FULL extract -> anonymize -> index path
     # and the indexed content is the OCR text layer, not the empty scan.
-    assert process(session, doc.id, mem_store, search_index=mem_index,
+    assert process(session, doc.id, mem_originals, search_index=mem_index,
                    embedder=fake_embedder) == State.INDEXED
     session.commit()
     hits = mem_index.search("Herstelde tekst")
@@ -113,13 +113,13 @@ def test_ocr_yields_usable_text_becomes_extractable_and_indexes_ocr_text(
 
 
 def test_ocr_yields_too_little_text_stays_unprocessable_but_is_audited(
-    session, scanned_pdf, mem_store,
+    session, mem_originals, scanned_pdf,
 ):
-    doc = _park_as_unprocessable(session, mem_store, scanned_pdf)
+    doc = _park_as_unprocessable(session, mem_originals, scanned_pdf)
     scan_key = doc.object_key
     before = _audit_count(session, doc.id)
 
-    final = recover(session, doc.id, mem_store, threshold=10,
+    final = recover(session, doc.id, mem_originals, threshold=10,
                     engine=FixedOcrEngine("kort"))  # < 10 chars for the 1 page
     session.commit()
 
@@ -135,9 +135,9 @@ def test_ocr_yields_too_little_text_stays_unprocessable_but_is_audited(
 
 
 def test_recovery_engine_failure_leaves_document_untouched(
-    session, scanned_pdf, mem_store,
+    session, mem_originals, scanned_pdf,
 ):
-    doc = _park_as_unprocessable(session, mem_store, scanned_pdf)
+    doc = _park_as_unprocessable(session, mem_originals, scanned_pdf)
     before = _audit_count(session, doc.id)
 
     class Boom:
@@ -147,7 +147,7 @@ def test_recovery_engine_failure_leaves_document_untouched(
             raise OcrError("tesseract crashed")
 
     with pytest.raises(OcrError):
-        recover(session, doc.id, mem_store, engine=Boom())
+        recover(session, doc.id, mem_originals, engine=Boom())
     session.rollback()
 
     assert current_state(session, doc.id) == State.UNPROCESSABLE_OCR
@@ -157,11 +157,11 @@ def test_recovery_engine_failure_leaves_document_untouched(
 # --- no text layer stays visible, never silently indexed (ingest-records-source) --
 
 def test_ocr_yields_no_text_stays_unprocessable_and_nothing_is_indexed(
-    session, scanned_pdf, mem_store, mem_index, fake_embedder,
+    session, scanned_pdf, mem_originals, mem_index, fake_embedder,
 ):
-    doc = _park_as_unprocessable(session, mem_store, scanned_pdf)
+    doc = _park_as_unprocessable(session, mem_originals, scanned_pdf)
 
-    final = recover(session, doc.id, mem_store, threshold=10,
+    final = recover(session, doc.id, mem_originals, threshold=10,
                     engine=FixedOcrEngine(""))
     session.commit()
 
@@ -175,15 +175,15 @@ def test_ocr_yields_no_text_stays_unprocessable_and_nothing_is_indexed(
     # ingest_corpus.ingest_corpus) calls process() again regardless of outcome;
     # on a document still parked at unprocessable_ocr that must stay a no-op —
     # never an empty text pushed into the index.
-    state = process(session, doc.id, mem_store, search_index=mem_index,
+    state = process(session, doc.id, mem_originals, search_index=mem_index,
                     embedder=fake_embedder)
     session.commit()
     assert state == State.UNPROCESSABLE_OCR
     assert str(doc.id) not in mem_index._docs
 
 
-def test_recover_only_applies_to_unprocessable(session, born_digital_pdf, mem_store):
-    doc = ingest(session, mem_store, born_digital_pdf)
+def test_recover_only_applies_to_unprocessable(session, born_digital_pdf, mem_originals):
+    doc = ingest(session, mem_originals, born_digital_pdf)
     session.commit()  # still REGISTERED
     with pytest.raises(ValueError):
-        recover(session, doc.id, mem_store, engine=FixedOcrEngine("x"))
+        recover(session, doc.id, mem_originals, engine=FixedOcrEngine("x"))
