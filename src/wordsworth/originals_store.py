@@ -7,6 +7,7 @@ sites move in ``originals-ingest-readers`` and ``originals-ingest-write``, and
 from __future__ import annotations
 
 import enum
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -50,6 +51,29 @@ class OriginalsStore:
     def __init__(self, objects: ObjectStore, keys: DocumentKeys):
         self.objects = objects
         self._keys = keys
+
+    # --- ObjectStore protocol: an OriginalsStore goes anywhere a plain store
+    # goes today (redacted-PDF cache, deletion, audit exports). `get` is the
+    # guarded plain read -- it refuses a sealed object exactly as before;
+    # callers that want the original open it with `get_original` instead. ---
+
+    def put(self, key: str, data: bytes) -> None:
+        self.objects.put(key, data)
+
+    def get(self, key: str) -> bytes:
+        return self.objects.get(key)
+
+    def get_raw(self, key: str) -> bytes:
+        return self.objects.get_raw(key)
+
+    def iter_objects(self, prefix: str) -> Iterator[tuple[str, datetime]]:
+        return self.objects.iter_objects(prefix)
+
+    def exists(self, key: str) -> bool:
+        return self.objects.exists(key)
+
+    def delete(self, key: str) -> bool:
+        return self.objects.delete(key)
 
     def _seal_and_write(self, session: Session, row: DocumentKeyRecord,
                         key: "DataKey", object_key: str, data: bytes) -> None:

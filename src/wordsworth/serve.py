@@ -83,22 +83,24 @@ def build_app() -> FastAPI:
 
 def _reversible_wiring(session_factory) -> dict:
     """`create_app` kwargs for reversible mode. One shared OpenBao Transit client
-    and ONE process-lifetime `DurableKeyProvider` over a session-factory-backed
-    vault — the unwrap cache persists across requests and the single-active-key
-    invariant is enforced by one provider. Only the mapping/grant stores stay
-    per-request (session-bound). No OpenBao call happens here — only per request."""
+    (via `transit_factory`, so it shares its KEK-per-name cache with any other
+    user of the same factory) and ONE process-lifetime `DurableKeyProvider` over
+    a session-factory-backed vault — the unwrap cache persists across requests
+    and the single-active-key invariant is enforced by one provider. Only the
+    mapping/grant stores stay per-request (session-bound). No OpenBao call
+    happens here — only per request."""
     from .detection_lists import DetectionLists
     from .grants import PostgresGrantStore
     from .keys import DEFAULT_DOMAIN, DurableKeyProvider
     from .mapping_store import PostgresMappingStore
     from .pseudonymizer import ReversibleAnonymizer
-    from .transit import OpenBaoTransit, SessionFactoryKeyVaultStore
+    from .transit import SessionFactoryKeyVaultStore, transit_factory
 
-    transit = OpenBaoTransit(
-        settings.openbao_url, settings.openbao_token, settings.transit_kek_name
-    )
+    transit_for = transit_factory(settings.openbao_url, settings.openbao_token)
     key_provider = DurableKeyProvider(
-        SessionFactoryKeyVaultStore(session_factory), transit, settings.key_cache_ttl
+        SessionFactoryKeyVaultStore(session_factory),
+        transit_for(settings.transit_kek_name),
+        settings.key_cache_ttl,
     )
 
     lists = DetectionLists.load(settings.detection_lists_dir)  # hash-pinned lists
