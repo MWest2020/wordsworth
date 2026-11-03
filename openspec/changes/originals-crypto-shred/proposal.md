@@ -21,5 +21,5 @@ document's data key does that (crypto-shredding).
 ## Depends on
 
 `originals-ocr-sealed` (the chain `originals-cipher-and-key-store` →
-`deleted-document-releases-object-key` → `originals-encrypted-ingest` →
+`deleted-document-releases-object-key` → `originals-ingest-seam` → `originals-ingest-readers` → `originals-ingest-write` → `originals-ingest-switch` →
 `originals-ocr-sealed`, which replaced `originals-envelope-encryption`).

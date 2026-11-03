@@ -2,7 +2,8 @@
 """``OriginalsStore``: the only way an original PDF is written or read
 (ADR-0008). ``put_original``'s five rules are design.md §3a; nothing else
 writes an original, and nothing calls this module yet -- ingest and the read
-sites move in ``originals-encrypted-ingest``."""
+sites move in ``originals-ingest-readers`` and ``originals-ingest-write``, and
+``originals-ingest-switch`` wires it into the running service."""
 from __future__ import annotations
 
 import enum

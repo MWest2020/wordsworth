@@ -49,7 +49,7 @@ already gone between the listing and the removal is not an error).
 - It lists under the `documents/` prefix only, via the object store's
   `iter_objects`, so it scales with the corpus, not with a directory listing
   outside the store.
-- Until `originals-encrypted-ingest` lands, nothing in production writes a
+- Until `originals-ingest-switch` lands, nothing in production writes a
   sealed object yet, so a dry run on a current deployment finds nothing. This
   command exists ahead of that change so it is in place and proven before
   anything depends on it.

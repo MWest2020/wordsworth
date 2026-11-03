@@ -98,7 +98,7 @@ can revoke its KEK and every one of its documents becomes unreadable at once.
   source hash. The plaintext object is removed only after its encrypted
   successor verifies. Replicated copies (SeaweedFS `001`) follow the object.
   Built as the chain `originals-cipher-and-key-store` →
-  `deleted-document-releases-object-key` → `originals-encrypted-ingest` →
+  `deleted-document-releases-object-key` → `originals-ingest-seam` → `originals-ingest-readers` → `originals-ingest-write` → `originals-ingest-switch` →
   `originals-ocr-sealed` → `originals-crypto-shred` →
   `originals-encrypt-existing` (the migration itself). The chain replaced
   `originals-envelope-encryption` (#306), which was too large to build at

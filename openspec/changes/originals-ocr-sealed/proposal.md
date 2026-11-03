@@ -2,13 +2,13 @@
 
 ## Why
 
-After `originals-encrypted-ingest`, OCR recovery is the last writer of an
+After `originals-ingest-switch`, OCR recovery is the last writer of an
 original that still writes plaintext (`recovery.py:78`, a plain `put`). It
 also writes **before** it checks whether another document already owns the
 OCR'd bytes (`recovery.py:79`): with sealed objects that order would let a
 recovery overwrite another document's sealed object. The architect named both
 on #306. Fourth change of the chain, built right after
-`originals-encrypted-ingest` to close the gap that change documents.
+`originals-ingest-switch` to close the gap that change documents.
 
 ## What changes
 
