@@ -16,7 +16,7 @@ miss is fixed for new documents and stays in the corpus for old ones.
 
 1. **Re-anonymise the affected documents** with the existing reprocess path
    (`wordsworth/reprocess.py`, `POST /reprocess`), once
-   `detect-dutch-particle-names` has merged. No new reprocess mechanism.
+   `particle-names-rule` has merged. No new reprocess mechanism.
 2. **A count-only check.** For each re-anonymised document, only the number of
    detected entities before and after is logged, per type. No value, no text, no
    offset.
@@ -24,7 +24,8 @@ miss is fixed for new documents and stays in the corpus for old ones.
 
 ## Depends on
 
-`detect-dutch-particle-names`. It is not built before that change is merged.
+`detect-dutch-particle-names`, since split into four steps (`particle-names-rule`
+first). It is not built before `particle-names-rule` is merged.
 
 ## Open questions
 

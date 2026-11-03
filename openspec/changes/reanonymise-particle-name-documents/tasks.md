@@ -1,6 +1,6 @@
 # Tasks
 
-Build only after `detect-dutch-particle-names` has merged.
+Build only after `particle-names-rule` has merged.
 
 ## 1. Count-only check
 - [ ] Log per document the entity counts per type before and after
