@@ -28,6 +28,11 @@ htmlcov/
 data/
 corpus/
 *.pdf
+# Exception: the package's own shipped data (particle-names-rule) is code,
+# not a local corpus -- it ships inside src/wordsworth and is a reviewed git
+# file like any other source.
+!src/wordsworth/data/
+!src/wordsworth/data/**
 
 # OS
 .DS_Store

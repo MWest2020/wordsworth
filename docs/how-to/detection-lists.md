@@ -62,6 +62,47 @@ als PII, dus op dát corpus telt deze regel als precisieverlies. Of een woonadre
 PII is, is een uitspraak over de zaak en niet iets wat uit een regex volgt — die
 vraag ligt bij de eigenaar van het corpus.
 
+## De particle-naamregel en zijn gazetteer
+
+Een naam als `Hendrik ter Braak` is één persoon, niet een los woord "ter"
+tussen twee andere: `src/wordsworth/particle_names.py` herkent de vorm
+`<voornaam> <partikel> <achternaam>` (`van`, `van der`, `van den`, `de`,
+`ter`, `ten`) als ÉÉN `PERSON`-span met laag `dutch_particle_name`, vóórdat
+de allow/deny-lijsten worden toegepast. Alleen in de **reversible** driver
+(`ReversibleAnonymizer`); de irreversible `OpenAnonymiserAnonymizer` draait
+deze regel niet.
+
+De regel matcht alleen als het woord vóór het partikel in een eigen
+gazetteer staat: `src/wordsworth/data/voornamen.json`, een lijst van
+`{"naam", "reden"}`. Zonder die ankering zou `Raad van State` of `Kamer van
+Koophandel` ook als persoon worden gezien — en die namen horen leesbaar te
+blijven. De lader (`particle_names.load_gazetteer`) weigert een entry zonder
+(of met een lege) `reden`, en een ontbrekend of onleesbaar bestand is een
+harde fout, nooit een lege lijst.
+
+**Een gemiste naam van deze vorm fix je door de voornaam hier toe te voegen,
+niet via `deny.json`**: `deny.json` werkt op het hele patroon, en een
+voornaam die ontbreekt in de gazetteer is precies waarom `Raad van State`
+geen persoon wordt. Toevoegen is een reviewed git-wijziging van
+`voornamen.json`, met een `reden`.
+
+Een allow-regel op `PERSON` kan een particle-naam net als elke andere
+`PERSON`-detectie onderdrukken: de regel voegt zijn treffers toe aan de
+entiteitslaag vóórdat `DetectionLists.apply` draait, en loopt dus door
+dezelfde onderdrukking.
+
+`Ton`, `Wil` en `Bart` staan **met opzet niet** in de gazetteer: het zijn ook
+gewone hoofdlettervolgorde-woorden aan het begin van een zin, en opnemen zou
+precisie kosten. Van de 14 voornamen in `eval/synthetic.py` blijven `Ton` en
+`Bart` daardoor gemist — een geaccepteerde, bewuste trade.
+
+De gazetteer telt **niet mee in `lists_hash`**: die hash is alleen over
+`allow.json`/`deny.json`, en de gazetteer heeft zijn eigen versiebeheer
+(losstaand, zie `reanonymise-particle-name-documents`).
+
+Zie `tests/test_particle_names.py` voor het gedrag, de gazetteer-weigeringen
+en de grens tussen wat wel en niet matcht.
+
 ## Waar de lijsten leven
 
 In de repo (`lists/`), mee in het image, **niet** in een ConfigMap. De

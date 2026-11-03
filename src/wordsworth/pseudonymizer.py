@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import audit, detectors
+from . import particle_names
 from . import pseudonym_registry
 from .anonymizer import AnonymizationResult
 from .config import settings
@@ -238,6 +239,9 @@ class ReversibleAnonymizer:
                 "entity detection failed; refusing to emit text with "
                 "un-pseudonymised entities"
             ) from exc
+        # Its own pattern (particle-names-rule), joined before the lists apply
+        # so an existing allow rule on PERSON can still suppress it.
+        entities = entities + particle_names.detect(body)
         # Allow/deny lists refine what the detectors found (typed; allow never
         # crosses types). Suppressions are counted, never silent.
         entities, suppressed = self._lists.apply(body, entities)
