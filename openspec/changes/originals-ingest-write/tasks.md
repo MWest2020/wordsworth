@@ -36,4 +36,4 @@ No existing test changes. A skipped test counts as failed. Tests use
       `ingest_manifest` with a refusing transit: non-zero exit, the message on
       stderr, and no second file attempted.
 - [ ] 4.1 Suite and lint. Proved by: the full suite passes with no new skips,
-      and `uvx ruff check src/ tests/` is clean.
+      and `uv run ruff check src/ tests/` is clean.

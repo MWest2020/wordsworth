@@ -54,9 +54,11 @@ auditable beats fast or clever — always name the "clever pitfall" when relevan
 ## Stack
 
 - Python 3.12+ managed with **`uv`** (never `pip`), FastAPI, pydantic v2.
-- `uvx ruff check src/ tests/` before a PR. Deliberately narrow (`F`, `E9`):
+- `uv run ruff check src/ tests/` before a PR. Deliberately narrow (`F`, `E9`):
   real errors only, no style — a linter that argues about taste gets switched
-  off. It is not in CI; that is Mark's file to change.
+  off. It is not in CI; that is Mark's file to change. ruff is a dev dependency
+  (`uv run`, not `uvx`): the habitat builder's cage refuses ephemeral tools, so
+  `uvx ruff` left builders unable to finish (2026-11-03, #352).
 - **Database tests without Docker.** `tests/conftest.py` starts a Postgres
   container, or skips when Docker cannot run containers (as on an LXC host).
   Point `WORDSWORTH_TEST_DATABASE_URL` at a reachable Postgres to run them

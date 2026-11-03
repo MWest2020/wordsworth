@@ -28,4 +28,4 @@ Tests use `FakeTransit` and the in-memory store.
       `OpenBaoTransit(` appears in `src/` only inside `transit.py`, and the
       existing suite passing unchanged.
 - [ ] 3.1 Suite and lint. Proved by: the full suite passes with no new skips,
-      and `uvx ruff check src/ tests/` is clean.
+      and `uv run ruff check src/ tests/` is clean.

@@ -25,4 +25,4 @@ test counts as failed.
       encrypted …" set to done, with this change as evidence. Proved by: the
       roadmap check in CI.
 - [ ] 4.1 Suite and lint. Proved by: the full suite passes with no new skips,
-      and `uvx ruff check src/ tests/` is clean.
+      and `uv run ruff check src/ tests/` is clean.

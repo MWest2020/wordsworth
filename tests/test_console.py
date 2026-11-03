@@ -138,12 +138,11 @@ def test_the_list_hides_deleted_and_superseded_documents_by_default(session_fact
     the notice that says so with one total -- and says nothing when there is
     nothing to hide."""
     from wordsworth.deletion import delete_document
-    from wordsworth.models import Document
     from wordsworth.object_store import InMemoryObjectStore
     from wordsworth.search_index import InMemoryIndex
 
     with session_factory() as s:
-        live_id = _seed(s, "live.pdf", "Een levend document.").id
+        _seed(s, "live.pdf", "Een levend document.")
         survivor_id = _seed(s, "survivor.pdf", "De overlevende.").id
         s.commit()
 
