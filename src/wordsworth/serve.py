@@ -92,11 +92,10 @@ def _reversible_wiring(session_factory) -> dict:
     from .keys import DEFAULT_DOMAIN, DurableKeyProvider
     from .mapping_store import PostgresMappingStore
     from .pseudonymizer import ReversibleAnonymizer
-    from .transit import OpenBaoTransit, SessionFactoryKeyVaultStore
+    from .transit import SessionFactoryKeyVaultStore, transit_factory
 
-    transit = OpenBaoTransit(
-        settings.openbao_url, settings.openbao_token, settings.transit_kek_name
-    )
+    transit_for = transit_factory(settings.openbao_url, settings.openbao_token)
+    transit = transit_for(settings.transit_kek_name)
     key_provider = DurableKeyProvider(
         SessionFactoryKeyVaultStore(session_factory), transit, settings.key_cache_ttl
     )
