@@ -215,7 +215,6 @@ def test_een_gebroken_invariant_telt_als_failed_niet_retryable(
     om tot dezelfde conclusie te komen, gemeten op 2026-09-14)."""
     from wordsworth.anonymizer import DeterministicAnonymizer
     from wordsworth import reprocess as backfill
-    from wordsworth.models import Document
     from wordsworth.openanonymiser_driver import AnonymizationInvariantError
     from wordsworth.pipeline import ingest, process
     from wordsworth.states import State

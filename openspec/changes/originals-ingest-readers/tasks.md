@@ -25,4 +25,4 @@ in-memory store, and an `OriginalsStore` built over them in the test.
       file) that greps `src/wordsworth/` for `.get(doc.object_key)` and
       `.get(document.object_key)` and finds none outside `originals_io.py`.
 - [ ] 2.1 Suite and lint. Proved by: the full suite passes with no new skips,
-      and `uvx ruff check src/ tests/` is clean.
+      and `uv run ruff check src/ tests/` is clean.

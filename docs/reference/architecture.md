@@ -133,7 +133,7 @@ object store ([ADR-0008](../explanation/adr/0008-envelope-encryption-of-original
 
 ## Working on this
 
-`uvx ruff check src/ tests/` before opening a PR. Deliberately narrow — `F` and
+`uv run ruff check src/ tests/` before opening a PR. Deliberately narrow — `F` and
 `E9`, real errors only, no style. A linter that argues about taste gets switched
 off, and then it never catches the things it is for: its first run found a
 protocol stub that had landed inside an implementation class and shadowed it,

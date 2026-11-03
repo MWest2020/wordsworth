@@ -17,5 +17,5 @@ Build only after `detect-dutch-particle-names` has merged.
 
 ## 3. Check
 - [ ] `openspec validate reanonymise-particle-name-documents --strict` passes.
-- [ ] `uvx ruff check src/ tests/` and the full test suite pass; skipped database
+- [ ] `uv run ruff check src/ tests/` and the full test suite pass; skipped database
       tests are listed in the report.

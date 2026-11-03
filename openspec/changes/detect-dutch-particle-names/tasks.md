@@ -196,5 +196,5 @@
 
 ## 7. Check
 - [ ] `openspec validate detect-dutch-particle-names --strict` passes.
-- [ ] `uvx ruff check src/ tests/` and the full test suite pass; skipped
+- [ ] `uv run ruff check src/ tests/` and the full test suite pass; skipped
       database tests are listed in the report.
