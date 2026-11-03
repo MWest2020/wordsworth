@@ -109,8 +109,10 @@ object store ([ADR-0008](../explanation/adr/0008-envelope-encryption-of-original
   see [the how-to](../how-to/sealed-orphans.md).
 - **Nothing is sealed in production yet.** This module builds the cipher and
   the key store only; ingest and every read site (`pipeline.py`, `recovery.py`,
-  `api.py`) still read and write plain objects until `originals-encrypted-ingest`
-  and `originals-ocr-sealed` wire them in.
+  `api.py`) still read and write plain objects. `originals-ingest-readers` and
+  `originals-ingest-write` move them onto the originals seam,
+  `originals-ingest-switch` turns it on in production, and `originals-ocr-sealed`
+  seals the OCR write.
 
 ## Configuration
 
