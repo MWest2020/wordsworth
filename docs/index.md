@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-11-03
 ---
 
 # wordsworth docs
@@ -21,6 +21,9 @@ under `openspec/`.
     id-matching precondition (`object_key` = qrels doc ids), runtime needs.
   - [cli](reference/cli.md) — the `wordsworth` API client: install, commands,
     ingesting a directory.
+  - [originals-ingest-seam](reference/originals-ingest-seam.md) —
+    `read_original`/`write_original`, the only way code reads or writes an
+    original, and `transit_factory`'s one client per KEK name.
 - [explanation/](explanation/nora-gap-analysis.md) — reasoning and decisions.
   - [Key-user review 2026-10-28](explanation/review-key-user-2026-10-28.md) — the
     console against four jobs: find topics, ask, judge relevance, share.

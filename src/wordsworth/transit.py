@@ -10,7 +10,7 @@ import base64
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 import httpx
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -83,6 +83,22 @@ class OpenBaoTransit:
         )
         resp.raise_for_status()
         return base64.b64decode(resp.json()["data"]["plaintext"])
+
+
+def transit_factory(url: str, token: str, timeout: float = 10.0) -> Callable[[str], Transit]:
+    """One ``OpenBaoTransit`` per KEK name, cached in the closure (no
+    module-level global) -- every caller asking for the same KEK name shares
+    one client; a different name gets its own."""
+    clients: dict[str, OpenBaoTransit] = {}
+
+    def transit_for(kek_name: str) -> Transit:
+        client = clients.get(kek_name)
+        if client is None:
+            client = OpenBaoTransit(url, token, kek_name, timeout=timeout)
+            clients[kek_name] = client
+        return client
+
+    return transit_for
 
 
 class ActiveKeyExists(Exception):
