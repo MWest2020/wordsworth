@@ -46,6 +46,10 @@ Each step leaves main green and changes nothing live until step 4.
   caches it in the closure (no module-level global).
 - `serve.py`'s `_reversible_wiring` takes its pseudonymisation `Transit` from
   that factory instead of building its own `OpenBaoTransit`.
+- Docs in the same PR: a reference page for the seam, linked from
+  `docs/index.md`, with front matter `status` and `last_reviewed`. The first
+  build's PR (#356) failed `gates / gates` for lack of it: the PR touches `src/`
+  and the drift check is set to fail.
 
 ## Depends on
 
