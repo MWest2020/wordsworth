@@ -24,6 +24,7 @@ from .config import settings
 from .models import Document
 from .object_store import ObjectStore
 from .ocr import OcrEngine
+from .originals_io import read_original
 from .pipeline import current_state, live_document_for, transition
 from .profiling import profile_pdf
 from .states import State
@@ -58,7 +59,7 @@ def recover(
     if state != State.UNPROCESSABLE_OCR:
         raise ValueError(f"OCR recovery only applies to unprocessable_ocr, not {state}")
     doc = session.get(Document, document_id)
-    pdf_bytes = store.get(doc.object_key)
+    pdf_bytes = read_original(session, store, doc.object_key)
     ocr_bytes = engine.ocr(pdf_bytes)  # OcrError propagates: loud, retryable, no skip
     metric = profile_pdf(ocr_bytes, threshold)
     payload = {k: metric[k] for k in ("chars", "pages", "bytes")}

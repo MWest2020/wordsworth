@@ -24,6 +24,10 @@ under `openspec/`.
   - [originals-ingest-seam](reference/originals-ingest-seam.md) —
     `read_original`/`write_original`, the only way code reads or writes an
     original, and `transit_factory`'s one client per KEK name.
+  - [originals-readers](reference/originals-readers.md) — the five readers
+    of an original moved onto `read_original`: what each reads, the 503
+    `key service unavailable` mapping on the two PDF routes, and the reads
+    that stay plain.
 - [explanation/](explanation/nora-gap-analysis.md) — reasoning and decisions.
   - [Key-user review 2026-10-28](explanation/review-key-user-2026-10-28.md) — the
     console against four jobs: find topics, ask, judge relevance, share.

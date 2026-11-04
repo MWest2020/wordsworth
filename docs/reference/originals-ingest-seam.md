@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-03
+last_reviewed: 2026-11-04
 ---
 
 # The originals seam: `read_original` / `write_original`
@@ -12,8 +12,11 @@ of store it was handed: `read_original` and `write_original`
 (`src/wordsworth/originals_io.py`) are the only way code reads or writes an
 original. This is step 1 of 4 (`originals-ingest-seam` →
 `originals-ingest-readers` → `originals-ingest-write` →
-`originals-ingest-switch`); nothing calls the seam yet, and nothing live
-changes until step 4.
+`originals-ingest-switch`). As of `originals-ingest-readers` (step 2), the
+five readers of an original call `read_original` — see
+[originals-readers](originals-readers.md); the writer side
+(`originals-ingest-write`) and wiring the running service onto it
+(`originals-ingest-switch`) are still ahead, so nothing live changes yet.
 
 ## `read_original(session, store, object_key) -> bytes`
 
