@@ -31,6 +31,7 @@ from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .deletion import DeletionError, delete_document
+from .document_keys import OriginalsKeyUnavailable
 from .dossier_deletion import DossierDeletionError, delete_dossier
 from .embedder import Embedder
 from .generator import Generator
@@ -42,6 +43,7 @@ from .keys import DEFAULT_DOMAIN, KeyProvider
 from . import dossiers as dossiers_mod
 from .models import AuditRecord, Document, Dossier
 from .object_store import ObjectStore
+from .originals_io import read_original
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
@@ -733,7 +735,11 @@ def create_app(
                         pdf_bytes = store.get(cache_key)
                     else:
                         doc = session.get(Document, document_id)
-                        source = store.get(doc.object_key)
+                        try:
+                            source = read_original(session, store, doc.object_key)
+                        except OriginalsKeyUnavailable:
+                            raise HTTPException(status_code=503,
+                                                detail="key service unavailable")
                         anonymized = get_anonymized_text(session, document_id) or ""
                         _, legend = to_legible(anonymized)
                         labels = {token: placeholder
@@ -1577,7 +1583,11 @@ def create_app(
                     _, legend = to_legible(pseudo_text)
                     labels = {token: placeholder for placeholder, token in legend.items()}
                     doc = session.get(Document, document_id)
-                    source = store.get(doc.object_key)
+                    try:
+                        source = read_original(session, store, doc.object_key)
+                    except OriginalsKeyUnavailable:
+                        raise HTTPException(status_code=503,
+                                            detail="key service unavailable")
                     try:
                         pdf_bytes = render_pdf(source, boxes, labels)
                     except DegenerateBoxError:
