@@ -31,7 +31,13 @@ a plain store until step 4.
   - At `POST /ingest`, the batch stops at the first `OriginalsKeyUnavailable`,
     whether raised by the write or by `process` reading back:
     - files completed earlier in the request stay stored and sealed;
-    - the failing file and every file after it are not stored.
+    - the failing file and every file after it are not stored, where the key
+      service refuses before the write (`mint` raises in `put_original`,
+      rule 3). If a write already committed and `process`'s read-back then
+      raises, the object stays: there is no compensating delete on the
+      `process` path, because that would destroy a resumable document, and
+      `wordsworth-sealed-orphans` already sweeps a sealed object with no
+      usable row.
   - The response is HTTP 503 with this body (decided here: the earlier change
     left the shape open, and the architect asked for it to be fixed):
     ```json
@@ -42,7 +48,11 @@ a plain store until step 4.
     ```
   - `detail` is the fixed string, so existing clients that read `detail` keep
     working. `results` has the same per-file shape as the 200 response.
-  - Every other per-file error still continues the batch, as today.
+  - Every other per-file error (parse, empty, unsupported) still continues
+    the batch, as today. This modifies the `deployment` requirement "HTTP
+    document ingestion endpoint", whose "A file that fails SHALL NOT abort the
+    batch" gains this one exception; the delta is worded no stronger than the
+    tested case.
   - The docstring of `ingest_documents` (`api.py:1145-1148`, "a failing file
     does not abort the batch") is corrected to name this one exception.
 - **CLIs.** `ingest_corpus.py` and `ingest_manifest.py` exit non-zero with
@@ -52,6 +62,13 @@ a plain store until step 4.
 ## Depends on
 
 `originals-ingest-readers`, so that nothing written sealed is unreadable.
+
+## Open questions
+
+None for this change. Noted for step 4: `client.py` `_post_batch_with_retry`
+retries 5xx and discards the 503 body, so `wordsworth ingest <dir>` against a
+down key service will not surface `results`. That goes into
+`originals-ingest-switch`'s docs or a separate issue.
 
 ## Out of scope
 

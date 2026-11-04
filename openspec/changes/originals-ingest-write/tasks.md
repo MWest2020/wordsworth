@@ -32,8 +32,19 @@ No existing test changes. A skipped test counts as failed. Tests use
       - files 2 and 3 are not in the store.
 - [ ] 2.3 Other errors still continue. Proved by: the existing batch tests
       passing unchanged, and the corrected `ingest_documents` docstring.
+- [ ] 2.4 Read-back refusal leaves the object. Proved by
+      `tests/test_ingest_fail_closed.py`: the write commits, then `process`'s
+      read-back raises `OriginalsKeyUnavailable`: 503, and the sealed object
+      is still stored (no delete is called on the `process` path).
 - [ ] 3.1 CLIs exit non-zero. Proved by: a test of each of `ingest_corpus` and
       `ingest_manifest` with a refusing transit: non-zero exit, the message on
       stderr, and no second file attempted.
 - [ ] 4.1 Suite and lint. Proved by: the full suite passes with no new skips,
       and `uv run ruff check src/ tests/` is clean.
+- [ ] 5.1 Docs change with the behaviour. Proved by `grep -n "key service
+      unavailable" docs/reference/ingest.md docs/reference/cli.md` finding
+      the new text in both:
+      - `docs/reference/ingest.md`: a section on the 503 body (`detail`,
+        `total`, `indexed`, `results`) and which files are stored;
+      - `docs/reference/cli.md` (line 87, "A file that fails does **not**
+        abort the batch"): names the key-service exception and the CLI exit.
