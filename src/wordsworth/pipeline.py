@@ -34,6 +34,7 @@ from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
 from .object_store import ObjectStore
+from .originals_io import read_original
 from .pdf_text import TEXT_SOURCE
 from .profiling import ProfilingError, profile_pdf
 from .passages import embed_passages
@@ -269,7 +270,7 @@ def process(
         # (a terminal document does no work and never touches the store).
         nonlocal raw
         if raw is None:
-            raw = store.get(doc.object_key)
+            raw = read_original(session, store, doc.object_key)
         return raw
 
     if state == State.REGISTERED:
@@ -452,7 +453,7 @@ def reanonymize(
     registered_before = pseudonym_registry.registered(session, document_id)
 
     # Re-derive the source text from the stored bytes (never a clear-text store).
-    raw = store.get(doc.object_key)
+    raw = read_original(session, store, doc.object_key)
     text = extract_text(raw)
 
     # Compute + embed + re-index the NEW de-identified text first; a transient

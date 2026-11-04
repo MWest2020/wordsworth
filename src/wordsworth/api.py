@@ -703,7 +703,9 @@ def create_app(
                 `reanonymize` refreshes it). 404 if the document is unknown."""
                 _guard_corpus_read(request)
                 from .detection_lists import DetectionLists
+                from .document_keys import OriginalsKeyUnavailable
                 from .models import BoxMap
+                from .originals_io import read_original
                 from .pdf_redaction import boxes_of, redacted_cache_key
                 from .pdf_render import DegenerateBoxError, RENDER_VERSION, render as render_pdf
 
@@ -733,7 +735,11 @@ def create_app(
                         pdf_bytes = store.get(cache_key)
                     else:
                         doc = session.get(Document, document_id)
-                        source = store.get(doc.object_key)
+                        try:
+                            source = read_original(session, store, doc.object_key)
+                        except OriginalsKeyUnavailable:
+                            raise HTTPException(
+                                status_code=503, detail="key service unavailable")
                         anonymized = get_anonymized_text(session, document_id) or ""
                         _, legend = to_legible(anonymized)
                         labels = {token: placeholder
@@ -1483,10 +1489,12 @@ def create_app(
                 `view=pdf` and no clear value in the audit trail. 409 if the
                 document has no box map yet; otherwise the same 404/403 as
                 `/reveal`."""
+                from .document_keys import OriginalsKeyUnavailable
                 from .grants import authorize, permitted_types
                 from . import roles as roles_mod
                 from .mapping_store import PostgresMappingStore
                 from .models import BoxMap
+                from .originals_io import read_original
                 from .pdf_redaction import boxes_of
                 from .pdf_render import DegenerateBoxError, render as render_pdf
                 from .pseudonymizer import deanonymize
@@ -1577,7 +1585,11 @@ def create_app(
                     _, legend = to_legible(pseudo_text)
                     labels = {token: placeholder for placeholder, token in legend.items()}
                     doc = session.get(Document, document_id)
-                    source = store.get(doc.object_key)
+                    try:
+                        source = read_original(session, store, doc.object_key)
+                    except OriginalsKeyUnavailable:
+                        raise HTTPException(
+                            status_code=503, detail="key service unavailable")
                     try:
                         pdf_bytes = render_pdf(source, boxes, labels)
                     except DegenerateBoxError:
