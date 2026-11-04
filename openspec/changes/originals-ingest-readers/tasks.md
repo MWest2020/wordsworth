@@ -24,5 +24,19 @@ in-memory store, and an `OriginalsStore` built over them in the test.
 - [ ] 1.4 No plain read of an original remains. Proved by: a test (in the same
       file) that greps `src/wordsworth/` for `.get(doc.object_key)` and
       `.get(document.object_key)` and finds none outside `originals_io.py`.
+- [ ] 1.5 Docs. PR #364 failed the docs-drift gate (`gates / gates`): code
+      under `src/` changed without anything under `docs/`. Write
+      `docs/reference/originals-readers.md` describing the five readers and the
+      sealed-document read path (what each reads through `read_original`, the
+      503 `key service unavailable` mapping on the two PDF routes, the loud
+      propagation in `process` and `reanonymize`, and the reads that stay
+      plain). Its front matter has `status` and `last_reviewed`, and no
+      `owner`. Link it from `docs/index.md` next to
+      `reference/originals-ingest-seam.md`. Update
+      `docs/reference/originals-ingest-seam.md`, which says nothing calls the
+      seam yet. Proved by: the PR changes files under `docs/`, the docs-drift
+      gate (`gates / gates`) passes, and `docs/index.md` links the new page.
+      If the gate still fails for another reason, stop with the question
+      instead of guessing.
 - [ ] 2.1 Suite and lint. Proved by: the full suite passes with no new skips,
       and `uv run ruff check src/ tests/` is clean.
