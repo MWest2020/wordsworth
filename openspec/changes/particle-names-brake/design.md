@@ -16,7 +16,24 @@ sentence states its own expectation**:
   `PERSON` from the rule.
 - A sentence without a stated expectation fails the test.
 
-Line format: `PERSON<TAB>sentence` or `GEEN<TAB>sentence`, `{naam}` as the slot.
+Line format: `PERSON<TAB>sentence<TAB>full name` or `GEEN<TAB>sentence`, with
+`{naam}` as the slot in the sentence and in the full name.
+
+## Amended
+
+- **The expected full name is data, not derived.** The third column of a
+  `PERSON` line holds the full name the detection must cover. Rejected: having
+  the test find the full name with a particle scan, because that scan mirrors the
+  rule and a bug in one would be copied into the other.
+- **A brake hit fails and names the entry; it never edits `voornamen.json`.**
+  Rejected: a removal branch that deletes the entry from the gazetteer when the
+  brake catches it. A test that rewrites shipped data hides the finding it
+  reports. The accepted misses `Ton` and `Bart` stay as the applied step 1
+  requirement fixes them.
+- **Two test files**, to stay under 200 lines:
+  `tests/test_particle_names_veiligheid.py` (corpus brake and the coverage guard)
+  and `tests/test_particle_names_zinnen.py` (fixture cross-product and the
+  negative controls).
 
 Guards against a vacuous pass:
 
