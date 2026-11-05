@@ -24,3 +24,7 @@ merged.
 - Code: `src/wordsworth/eval/pii_run.py`, `src/wordsworth/eval/overdetection_run.py`.
 - Tests: `tests/test_particle_names_eval.py` (new).
 - Docs: `docs/reference/evaluation.md`, `docs/explanation/meting-overdetectie-<nn>.md`.
+
+## Depends on
+
+`person-aggregate-dedupe`

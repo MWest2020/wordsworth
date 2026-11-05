@@ -28,3 +28,11 @@ main to be green).
   `ReversibleAnonymizer`.
 - Docs: `docs/reference/evaluation.md`, one paragraph on how the aggregate
   counts a person.
+
+## Depends on
+
+`particle-names-brake`
+
+## Next
+
+`particle-names-measured`
