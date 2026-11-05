@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from .db import make_engine, make_session_factory
+from .document_keys import OriginalsKeyUnavailable
 from .embedder import OllamaEmbedder
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
@@ -99,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             outcomes = ingest_manifest_corpus(args.corpus_dir, args.dossier,
                                               args.manifest)
+        except OriginalsKeyUnavailable:
+            print("key service unavailable", file=sys.stderr)
+            return 1
         except Exception as exc:
             print(f"manifest run refused: {exc}", file=sys.stderr)
             return 1
@@ -106,7 +110,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{ok}/{len(outcomes)} indexed with provenance confirmed")
         return 0 if outcomes and ok == len(outcomes) else 1
 
-    results = ingest_corpus(args.corpus_dir, args.dossier)
+    try:
+        results = ingest_corpus(args.corpus_dir, args.dossier)
+    except OriginalsKeyUnavailable:
+        print("key service unavailable", file=sys.stderr)
+        return 1
     indexed = sum(1 for _, s in results if s == State.INDEXED)
     print(f"\n{indexed}/{len(results)} indexed")
     return 0 if results and indexed == len(results) else 1

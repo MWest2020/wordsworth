@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from wordsworth import dossiers
 from wordsworth.models import Document, DossierDocument
+from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import dossiers_of, ingest, register
 from wordsworth.search_index import InMemoryIndex
 
@@ -12,20 +13,10 @@ PDF = b"%PDF-1.4 een besluit"
 ANDER = b"%PDF-1.4 een ander besluit"
 
 
-class Store:
-    """Object store stand-in: ingest only needs put()."""
-
-    def __init__(self):
-        self.objects = {}
-
-    def put(self, key, data):
-        self.objects[key] = data
-
-
 # --- membership ------------------------------------------------------------
 
 def test_the_same_bytes_in_two_dossiers_stay_one_document(session):
-    store = Store()
+    store = InMemoryObjectStore()
     a = ingest(session, store, PDF, dossier="zaak-a")
     b = ingest(session, store, PDF, dossier="zaak-b")
     session.commit()
@@ -37,7 +28,7 @@ def test_the_same_bytes_in_two_dossiers_stay_one_document(session):
 
 
 def test_ingesting_into_the_same_dossier_twice_changes_nothing(session):
-    store = Store()
+    store = InMemoryObjectStore()
     a = ingest(session, store, PDF, dossier="zaak-a")
     ingest(session, store, PDF, dossier="zaak-a")
     session.commit()

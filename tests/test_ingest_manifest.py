@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
 from sqlalchemy import select
 
 from wordsworth.anonymizer import DeterministicAnonymizer
@@ -304,3 +305,59 @@ def test_openanonymiser_down_fails_the_run_and_stays_registered(
         # after a step's audit record is written); the document stays at the
         # last state that DID commit.
         assert current_state(session, doc.id) == State.REGISTERED
+
+
+# --- task 3.1: a refusing key service stops the manifest run ---------------
+
+def _refusing_from(n: int):
+    """A transit factory sharing one counter and one working inner transit:
+    `wrap` (used by `mint`, once per new object) refuses from the n-th call
+    on; `unwrap` always succeeds, so a file minted before the refusal still
+    reads back fine."""
+    from wordsworth.transit import FakeTransit
+
+    inner = FakeTransit()
+    calls = [0]
+
+    class _Transit:
+        def wrap(self, plaintext: bytes) -> bytes:
+            calls[0] += 1
+            if calls[0] >= n:
+                raise RuntimeError("key service down")
+            return inner.wrap(plaintext)
+
+        def unwrap(self, ciphertext: bytes) -> bytes:
+            return inner.unwrap(ciphertext)
+
+    return lambda name: _Transit()
+
+
+def test_key_refusal_stops_the_manifest_run_before_the_next_file(
+    monkeypatch, tmp_path, session_factory, mem_index, fake_embedder,
+):
+    from wordsworth.document_keys import DocumentKeys, OriginalsKeyUnavailable
+    from wordsworth.object_store import InMemoryObjectStore
+    from wordsworth.originals_store import OriginalsStore
+
+    monkeypatch.setenv("WORDSWORTH_BACKEND_ENV", "homelab")
+    _write_check(tmp_path)
+    pdfs = [f"doc{i}.pdf" for i in range(1, 4)]
+    entries = [_put_pdf(tmp_path, name, f"bytes for {name}".encode())
+              for name in pdfs]
+    _write_manifest(tmp_path, entries)
+
+    store = OriginalsStore(InMemoryObjectStore(), DocumentKeys(_refusing_from(2)))
+
+    with pytest.raises(OriginalsKeyUnavailable):
+        ingest_manifest_corpus(
+            tmp_path, "pilot-dossier", tmp_path / "manifest.jsonl",
+            session_factory=session_factory, store=store,
+            anonymizer=DeterministicAnonymizer(), search_index=mem_index,
+            embedder=fake_embedder,
+        )
+
+    # doc1.pdf (processed first, alphabetically) is stored, sealed; doc2 and
+    # doc3 never attempted a write.
+    assert store.objects.exists("documents/" + entries[0]["sha256"])
+    assert not store.objects.exists("documents/" + entries[1]["sha256"])
+    assert not store.objects.exists("documents/" + entries[2]["sha256"])
