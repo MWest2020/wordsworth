@@ -103,6 +103,23 @@ De gazetteer telt **niet mee in `lists_hash`**: die hash is alleen over
 Zie `tests/test_particle_names.py` voor het gedrag, de gazetteer-weigeringen
 en de grens tussen wat wel en niet matcht.
 
+**De rem op de gazetteer.** `tests/test_particle_names_veiligheid.py` toetst
+elke gazetteer-entry tegen het evaluatiecorpus (zoals
+`test_allow_list_veiligheid.py` dat voor de allow-lijst doet): een entry die
+niet vóór een partikel en achternaam voorkomt telt niet mee als geslaagd en
+faalt met de naam van die entry, en alleen een geoefende entry wordt ook nog
+getoetst op valse `PERSON`-treffers. Hetzelfde bestand bewaakt dat elk
+partikel minstens één `PERSON`-zin heeft in de vaste zinnenlijst
+`tests/fixtures/gewone_zinnen_nl.txt` — kolommen `PERSON<TAB>zin<TAB>volledige
+naam` of `GEEN<TAB>zin`, met een `{naam}`-slot. `tests/test_particle_names_zinnen.py`
+loopt elke gazetteer-entry over elke zin: een `PERSON`-zin verwacht precies die
+volledige naam (en dat hij na anonimiseren niet meer leesbaar is), een
+`GEEN`-zin verwacht geen `PERSON`. Een treffer faalt de toets en noemt de
+entry; geen van beide bestanden schrijft naar `voornamen.json` — een gemiste
+naam herstel je zoals hierboven, met de hand. Dit bewijst dat de regel wordt
+geoefend en dat er geen `Ton`-achtige entry verscheept is, niet dat de
+gazetteer compleet is.
+
 ## Waar de lijsten leven
 
 In de repo (`lists/`), mee in het image, **niet** in een ConfigMap. De
