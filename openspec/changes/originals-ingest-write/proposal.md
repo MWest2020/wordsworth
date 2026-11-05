@@ -74,3 +74,7 @@ down key service will not surface `results`. That goes into
 
 Wiring an `OriginalsStore` into `serve.py` and the CLIs (step 4), the OCR
 write (`originals-ocr-sealed`), and the docs (step 4).
+
+## Next
+
+`originals-ingest-switch` (it has a deploy precondition, so the factory names it and a person starts it).

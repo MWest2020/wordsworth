@@ -24,3 +24,11 @@ has merged.
 - Tests: `tests/test_particle_names_veiligheid.py`, `tests/fixtures/gewone_zinnen_nl.txt` (new).
 - Data: `src/wordsworth/data/voornamen.json` only if the brake catches an entry.
 - Docs: `docs/how-to/detection-lists.md`.
+
+## Depends on
+
+`particle-names-rule` (merged 2026-11-03).
+
+## Next
+
+`person-aggregate-dedupe`
