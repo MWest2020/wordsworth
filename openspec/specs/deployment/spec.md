@@ -12,7 +12,9 @@ a place where two deployments would otherwise diverge.
 **Idempotent schema bootstrap** is the one that pays for itself: startup either
 brings the schema to where it should be or does nothing, so deploying twice is
 safe and a fresh environment is not a separate procedure.
+
 ## Requirements
+
 ### Requirement: Servable API composition root
 
 The system SHALL provide a module exposing an ASGI `app` wired to the real
@@ -79,7 +81,10 @@ PDFs (multipart field `files`) and driving each through the full pipeline —
 ingest, OCR recovery when the document is unprocessable without OCR, anonymize,
 store, index. The response SHALL report each file individually (filename,
 document id, terminal state, and on failure an error identifier), plus the total
-and indexed counts. A file that fails SHALL NOT abort the batch. The endpoint
+and indexed counts. A file that fails SHALL NOT abort the batch, with one
+exception: when the key service refuses while an original is being sealed, the
+batch SHALL stop, and the response SHALL be HTTP 503 whose body carries
+`results` for the files completed before it. The endpoint
 SHALL be registered only when the object store, database, search index and
 embedder are wired, and SHALL anonymize with the OpenAnonymiser driver by
 default. It SHALL fail-hard and leak no document text: a per-file failure carries
@@ -113,6 +118,13 @@ eligible for ingestion again, so a re-run rebuilds exactly what is missing.
 
 - **WHEN** the app is built without an object store wired
 - **THEN** `/ingest` is not registered (read-only surface only)
+
+#### Scenario: A key-service refusal stops the batch
+
+- **WHEN** a batch of three is POSTed and the key service refuses while sealing
+  the second file, before its write
+- **THEN** the response is 503, `results` lists the first file only, and the
+  second and third files are not stored
 
 ### Requirement: API client CLI
 
@@ -298,4 +310,3 @@ NOT require any key-store network I/O at process start.
 - **WHEN** a document is pseudonymised in one request and revealed in a later one
 - **THEN** a freshly built key provider resolves the durable keys and reveals the
   granted types
-
