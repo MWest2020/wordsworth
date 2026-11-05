@@ -43,6 +43,46 @@ written to:
 `GET /documents/{id}` returns all three top-level (`source_url`, `fetched_at`,
 `source_sha256`), and the full `register` payload under `steps`.
 
+## The key service is unreachable: the batch stops
+
+Sealing an original needs the key service (OpenBao Transit): minting a data
+key for a new object, or unwrapping one to read an original back. A refusal
+there says something about the service, not about the file in hand, so the
+batch stops at the first one instead of reporting every later file as its own
+failure.
+
+The response is `503`:
+
+```json
+{"detail": "key service unavailable",
+ "total": <files in the request>,
+ "indexed": <count of "indexed" among results>,
+ "results": [<the IngestResult of every file completed before the failing one>]}
+```
+
+`detail` is always the fixed string above — existing clients that only read
+`detail` keep working. `results` has the same per-file shape as the `200`
+response, one entry per file that finished before the batch stopped.
+
+Which files are stored:
+
+- every file reported in `results` is stored exactly as it would be in a
+  `200` response (sealed, indexed or otherwise terminal);
+- the file that hit the key refusal, and every file after it in the same
+  request, are **not** stored — *unless* the refusal came from `process`'s
+  read-back of an original that this same request just wrote: that write
+  already committed, and it is not rolled back (there is no compensating
+  delete on the read path; `wordsworth-sealed-orphans` sweeps a sealed object
+  that ends up with no usable row).
+
+This is the one exception to "a failing file does not abort the batch": every
+other per-file error (parse, empty upload, unsupported format, a downstream
+outage) still continues the batch, exactly as before.
+
+`wordsworth-ingest` and its `--manifest` form (below) fail the same way: they
+exit non-zero, print `key service unavailable` on stderr, and do not go on to
+the next file.
+
 ## A page with no text layer
 
 A document whose text extraction and OCR recovery together yield no text ends

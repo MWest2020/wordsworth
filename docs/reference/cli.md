@@ -84,8 +84,14 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
 - Prints a per-file line — `filename: state`, with the processing duration and
   non-zero PII counts on success (e.g. `2130276.pdf: indexed (1.8s, bsn=1
   person=2)`), or the error class on failure — and a final `X/Y indexed, Z failed`
-  summary. A file that fails does **not** abort the batch. Exit code is non-zero
-  if any file failed.
+  summary. A file that fails does **not** abort the batch, with one exception:
+  when the key service refuses while an original is being sealed, the API
+  stops that HTTP batch early and answers `503` with `detail` `key service
+  unavailable` (see `docs/reference/ingest.md`). This CLI reports every file
+  in that batch as failed and moves on to the next batch — it does not yet
+  stop the whole run on that signal (`results` is retried/discarded like any
+  other 5xx, a known gap tracked for `originals-ingest-switch`). Exit code is
+  non-zero if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
 ## `wordsworth-ingest`
@@ -103,6 +109,10 @@ whole run before anything is ingested, each document's provenance is read
 back from the audit record after it is ingested, `check.json` next to the
 manifest must pass, and `WORDSWORTH_BACKEND_ENV=homelab` is required. Without
 `--manifest`, behaviour is unchanged.
+
+Both forms exit non-zero and print `key service unavailable` on stderr when
+the key service refuses, and do not go on to the next file — unlike a parse
+or anonymize failure, which is reported per file while the run continues.
 
 ## `wordsworth-dossier-uit-herkomst` and `wordsworth-dossier-hernoem`
 

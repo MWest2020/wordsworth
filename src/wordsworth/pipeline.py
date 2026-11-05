@@ -34,7 +34,8 @@ from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
 from .object_store import ObjectStore
-from .originals_io import read_original
+from .originals_io import read_original, write_original
+from .originals_store import PutResult
 from .pdf_text import TEXT_SOURCE
 from .profiling import ProfilingError, profile_pdf
 from .passages import embed_passages
@@ -129,25 +130,37 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
            domain: str = DEFAULT_DOMAIN, filename: str | None = None,
            dossier: str | None = None, source_url: str | None = None,
            fetched_at: datetime | None = None) -> Document:
-    """Store the PDF in object storage under a content-addressed key, then register
-    the document against that key. `process` later fetches the bytes back by key —
-    this closes the PoC shortcut of passing raw bytes across the pipeline seam.
+    """Register the document under a content-addressed key, then write the PDF
+    through the originals seam (`write_original`) -- registering first because
+    the key row (`OriginalsStore.put_original`) carries the document id.
+    `process` later fetches the bytes back by key -- this closes the PoC
+    shortcut of passing raw bytes across the pipeline seam.
 
     Content-addressing (sha256) makes the key deterministic, so re-ingesting the
     same bytes is idempotent at the object layer. The same digest is recorded as
     `source_sha256` -- wordsworth's own hash of the bytes it just received,
-    never one a client could supply (ingest-records-source)."""
+    never one a client could supply (ingest-records-source).
+
+    If anything after the write fails, the object this call wrote
+    (`PutResult.WROTE`) is deleted; one it did not write (`UNCHANGED`, or
+    `LEGACY` for a live legacy document) is left alone -- the caller's
+    transaction rolls back the registered document row on the same failure."""
     digest = hashlib.sha256(pdf_bytes).hexdigest()
     key = "documents/" + digest
-    store.put(key, pdf_bytes)
     # Content already ingested is one document, not a second. Delivering it into
     # another dossier adds a membership; that is the normal case, not an error.
     doc = register_live(session, key, domain, filename, source_url=source_url,
                         fetched_at=fetched_at, source_sha256=digest)
-    if dossier:
-        # Arriving in a case is an act too; "ingest" is who did it.
-        dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
-                     actor="ingest")
+    wrote = write_original(session, store, doc.id, key, pdf_bytes)
+    try:
+        if dossier:
+            # Arriving in a case is an act too; "ingest" is who did it.
+            dossiers.add(session, dossiers.ensure(session, dossier).id, doc.id,
+                        actor="ingest")
+    except Exception:
+        if wrote is PutResult.WROTE:
+            store.delete(key)
+        raise
     return doc
 
 

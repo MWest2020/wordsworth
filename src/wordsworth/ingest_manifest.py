@@ -20,6 +20,7 @@ from sqlalchemy import select
 
 from .audit import current_state
 from .db import make_engine, make_session_factory
+from .document_keys import OriginalsKeyUnavailable
 from .embedder import OllamaEmbedder
 from .manifest import ManifestEntry, load_check, read_manifest
 from .models import AuditRecord
@@ -96,6 +97,12 @@ def _advance(session_factory, store, anonymizer, index, embedder, filename,
             state = process(session, doc.id, store, anonymizer=anonymizer,
                              search_index=index, embedder=embedder)
             session.commit()
+        except OriginalsKeyUnavailable:
+            # The key service is down for every file, not just this one: let
+            # it propagate and stop the run, rather than report it as this
+            # file's failure and move on to the next (fail closed, #318).
+            session.rollback()
+            raise
         except Exception as exc:
             session.rollback()
             # The real committed state, not a synthetic FAILED: a retry-

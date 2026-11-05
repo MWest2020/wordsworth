@@ -1151,7 +1151,10 @@ def create_app(
             """Upload one or more PDFs. Each is driven through
             ingest → OCR recovery (if scanned) → anonymize → store → index and
             reported individually. A failing file does not abort the batch and
-            never leaks document text (only its error class is returned).
+            never leaks document text (only its error class is returned) --
+            except when the key service refuses while an original is being
+            sealed: the batch stops there, and the response is 503 with the
+            results completed so far (see `OriginalsKeyUnavailable` below).
 
             Deliberately a sync (not async) path operation: the pipeline is
             CPU/IO-heavy (GLiNER over HTTP, embeddings, DB), so FastAPI runs it in
@@ -1187,6 +1190,9 @@ def create_app(
                     parsed_fetched_at = parse_fetched_at(fetched_at)
                 except ProvenanceError as exc:
                     raise HTTPException(status_code=400, detail=str(exc))
+            from .document_keys import OriginalsKeyUnavailable
+            from starlette.responses import JSONResponse
+
             results: list[IngestResult] = []
             for f in files:
                 data = f.file.read()
@@ -1203,6 +1209,19 @@ def create_app(
                         state=meta.get("state"),
                         duration_ms=meta.get("duration_ms"),
                         counts=meta.get("counts") or None))
+                except OriginalsKeyUnavailable:
+                    # A refusing key service says something about the service,
+                    # not the file: every later file would fail the same way, so
+                    # stop here instead of reporting N identical failures. The
+                    # fixed `detail` keeps existing clients that read it working;
+                    # `results` carries every file completed before this one.
+                    indexed = sum(1 for r in results if r.state == "indexed")
+                    return JSONResponse(status_code=503, content={
+                        "detail": "key service unavailable",
+                        "total": len(files),
+                        "indexed": indexed,
+                        "results": [r.model_dump() for r in results],
+                    })
                 except Exception as exc:  # fail-hard; carry no document text out
                     # A transient downstream outage (after in-pipeline retries)
                     # leaves the document resumable — not indexed, no clear PII —
