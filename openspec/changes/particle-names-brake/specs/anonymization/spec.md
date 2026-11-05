@@ -14,7 +14,7 @@ matter of trust. The brake proves that the rule is exercised and that no
 - **WHEN** the brake test runs
 - **THEN** each entry of the shipped gazetteer has been tested against the
   evaluation corpus, and an entry that produces a `PERSON` from ordinary text
-  fails the test
+  fails the test with a message naming that entry
 
 #### Scenario: An entry the corpus never emits is not counted as passed
 
@@ -27,9 +27,10 @@ matter of trust. The brake proves that the rule is exercised and that no
 
 - **WHEN** the brake test runs every gazetteer entry over a fixed set of Dutch
   sentences in which the entry stands before a particle and a capitalised
-  surname, each sentence stating its expectation
+  surname, each sentence stating its expectation and each `PERSON` sentence
+  stating its expected full name
 - **THEN** every entry gives the stated expectation on every sentence, at least
-  one sentence per particle expects a `PERSON` for the full name and gets it,
-  and a sentence without a stated expectation fails the test; this proves the
-  rule is exercised and that no `Ton`-shaped entry is shipped, not that the
+  one sentence per particle expects a `PERSON` for the stated full name and gets
+  it, and a sentence without a stated expectation fails the test; this proves
+  the rule is exercised and that no `Ton`-shaped entry is shipped, not that the
   gazetteer is complete
