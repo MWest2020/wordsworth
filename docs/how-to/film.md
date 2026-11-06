@@ -50,7 +50,8 @@ Each kind of check needs something different. If what it needs is missing, its c
 drop.
 
 - **pytest** checks need the integration tests to *pass*. A skipped test counts as not
-  proven. So the test database has to be there (`WORDSWORTH_TEST_DATABASE_URL`), along
+  proven. A parametrized test can be named without its `[case]`: it then counts as
+  passed only when every case passed. So the test database has to be there (`WORDSWORTH_TEST_DATABASE_URL`), along
   with OpenSearch.
 - **facts** checks need the live probe. It is
   [`tools/film/live_facts.py`](../../tools/film/live_facts.py), piped into the API pod

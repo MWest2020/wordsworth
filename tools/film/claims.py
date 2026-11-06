@@ -50,7 +50,17 @@ def run_pytest(nodes, cwd=ROOT, run=subprocess.run):
         for case in ET.parse(xml).getroot().iter("testcase"):
             node = case.get("classname", "").replace(".", "/") + ".py::" + case.get("name", "")
             seen[node] = not any(c.tag in ("failure", "error", "skipped") for c in case)
-    return {n: seen.get(n, False) for n in nodes}
+    return {n: passed(n, seen) for n in nodes}
+
+
+def passed(node, seen):
+    """A node id passes when its test case passed. A parametrized test is reported per
+    case (`test_x[a]`, `test_x[b]`): its plain node id passes only if every case ran and
+    passed, and at least one did."""
+    if node in seen:
+        return seen[node]
+    cases = [ok for n, ok in seen.items() if n.startswith(node + "[")]
+    return bool(cases) and all(cases)
 
 
 def names(sentences):
