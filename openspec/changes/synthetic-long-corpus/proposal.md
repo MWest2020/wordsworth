@@ -23,7 +23,7 @@ short-text corpus cannot test.
     the word `SYNTHETISCH`.
   - **scanned pages, mixed into otherwise born-digital documents.** `--scanned` is a
     fraction *per document*, rounded down, drawn from the seed, never page 1 (the
-    cover); default 0.1 = 3 pages of a 30-page document. Each chosen page is replaced
+    cover) and never the page holding the planted answer; default 0.1 = 3 pages of a 30-page document. Each chosen page is replaced
     by an image of itself, so it has no text layer. What this tests: such a document
     is still classified born-digital (`profile_pdf` counts characters per document),
     so it never reaches OCR and **those pages are lost without a trace**. It does not

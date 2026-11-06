@@ -23,6 +23,16 @@ is scored.
 - **WHEN** a page is rendered as an image
 - **THEN** it has no text layer, its gold is in `gold_scanned.jsonl`, and it has no line in `gold.jsonl`
 
+#### Scenario: The answer page is never scanned
+
+- **WHEN** the generator chooses scanned pages
+- **THEN** neither page 1 nor the page holding the document's planted answer is among them
+
+#### Scenario: Detections equal gold
+
+- **WHEN** the deterministic detectors run over a born-digital page's extracted text
+- **THEN** they find exactly that page's gold spans for BSN, IBAN, e-mail and postcode, no more and no fewer
+
 #### Scenario: Values cannot be anyone's
 
 - **WHEN** the generator plants a BSN or an IBAN
