@@ -42,13 +42,43 @@ def bsn(rng: random.Random) -> str:
 
 
 def iban(rng: random.Random) -> str:
-    """A Dutch IBAN passing mod-97, on a test bank code."""
+    """A Dutch IBAN passing mod-97, on the real bank code INGB."""
     account = f"{rng.randrange(10**9, 10**10):010d}"
     # mod-97 is computed over the rearranged form: bank + account + country + "00"
     rearranged = f"INGB{account}NL00"
     numeric = "".join(str(ord(c) - 55) if c.isalpha() else c for c in rearranged)
     check = 98 - (int(numeric) % 97)
     return f"NL{check:02d}INGB{account}"
+
+
+def bsn_test_range(rng: random.Random) -> str:
+    """A BSN in the published test range 999990000-999999999 (Logius), still
+    passing the elfproef.
+
+    The first five digits are fixed to 9 (weight 9+8+7+6+5 = 35, contributing
+    9*35 = 315 to the weighted sum): any value of the remaining four keeps the
+    number in range, so only those four need to be searched for validity.
+    """
+    while True:
+        digits = [9, 9, 9, 9, 9] + [rng.randint(0, 9) for _ in range(3)]
+        weighted = sum(d * w for d, w in zip(digits, range(9, 1, -1)))
+        last = weighted % 11
+        if last > 9:                     # no ninth digit makes this one work
+            continue
+        total = weighted - last
+        if total % 11 == 0:
+            return "".join(map(str, digits)) + str(last)
+
+
+def iban_fake_bank(rng: random.Random) -> str:
+    """A Dutch IBAN passing mod-97, on the bank code ZZZZ, which no Dutch bank
+    has — unlike `iban()`'s INGB, this one cannot be mistaken for a real
+    account."""
+    account = f"{rng.randrange(10**9, 10**10):010d}"
+    rearranged = f"ZZZZ{account}NL00"
+    numeric = "".join(str(ord(c) - 55) if c.isalpha() else c for c in rearranged)
+    check = 98 - (int(numeric) % 97)
+    return f"NL{check:02d}ZZZZ{account}"
 
 
 def postcode(rng: random.Random) -> str:

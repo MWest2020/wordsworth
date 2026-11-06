@@ -80,6 +80,58 @@ als FAILED in het rapport.
 De gegenereerde bestanden staan bewust niet in git — reproduceerbaar uit het
 script, nooit binair ingecheckt.
 
+## Lange synthetische collectie (30×30, synthetic-long-corpus)
+
+De smoke-collectie en de 500-documenten-collectie (`generate_ground_truth.py`)
+zijn korte tekstdocumenten. Echte Woo-publicaties zijn lange PDF's: dekblad,
+inhoudsopgave, brieven, e-mailwisselingen, notulen en tabellen, met een
+pagina-header/footer op elke pagina, en soms een pagina zonder tekstlaag
+(gescand). Dat genereert `generate_long_corpus.py`:
+
+```bash
+uv run python scripts/eval/generate_long_corpus.py /tmp/longcorp \
+    --docs 30 --pages 30 --seed 20261106 --scanned 0.1
+```
+
+Schrijft `documents/<doc-id>.pdf`, `gold.jsonl` (één regel per
+born-digital pagina, in `load_gold`'s formaat), `gold_scanned.jsonl` (dezelfde
+vorm voor de gescande pagina's), `queries.tsv`/`qrels.txt` (één query per
+document, met als enige antwoord een unieke zin op of na pagina 20) en
+`manifest.json` (seed, opties, aantallen per PII-type, de gescande pagina's
+per document, de queries en de kanttekening).
+
+**Het te citeren getal:**
+
+```bash
+uv run python -m wordsworth.eval.pii_run /tmp/longcorp/gold.jsonl --layers deterministic
+```
+
+Gemeten op de echte 30×30-run (seed 20261106, standaard `--scanned 0.1`):
+genereren duurde 10,5 s en de map beslaat 11,4 MB op schijf (30 PDF's, ~90
+gescande pagina's op 200 dpi). `pii_run` zag `documents=810` (900 pagina's
+minus de 90 gescande, precies zoals de proposal voorspelt) en op de
+deterministische laag alleen: BSN/IBAN/EMAIL/POSTCODE P=1,000 R=1,000 —
+PERSON/LOCATION/PHONE_NUMBER staan wel in de gold (voor de
+openanonymiser-laag) maar hebben per definitie R=0,000 zonder die laag erbij.
+
+**`gold_scanned.jsonl` hoort niet in dat getal.** `pii_run` detecteert over de
+gold-tekst en opent nooit een PDF — scoren over de gescande pagina's zou
+pagina's meetellen die de pijplijn niet kan zien, als was de extractie
+perfect. Het bestaat om te laten zien *wát* er onzichtbaar verdwijnt, niet om
+mee te scoren.
+
+**IR-ranking op het lange corpus** (long-documents-rank-fairly: blijft een
+lang document ranken als zijn enige antwoord diep erin verstopt zit):
+
+```bash
+uv run python -m wordsworth.eval.run \
+    --qrels /tmp/longcorp/qrels.txt --queries /tmp/longcorp/queries.tsv \
+    --config bm25,hybrid --k 10
+```
+
+Dat vereist een geïndexeerd corpus (zie `ingest_eval_corpus.py` hierboven) —
+dit script genereert alleen de PDF's en de queries/qrels, het indexeert niets.
+
 ## Een echt corpus ophalen (Woo-documenten)
 
 De synthetische mini-collectie bewijst de kéten; ze bewijst niet dat de straat
