@@ -29,6 +29,17 @@
       directories give identical files, and the PDFs' creation date is the invariant
       constant. Proved by: a test.
 ## 3. Docs and the real run
+- [ ] Document the generator for the docs drift gate. The gate (`gates / gates`) is
+      path-based (code_paths `src/,scripts/`, drift_mode fail): PR #396 touched code
+      there without touching `docs/` and was refused. Add
+      `docs/reference/synthetic-long-corpus.md` with front matter `status` and
+      `last_reviewed` (no `owner`), describing the generator, its options, its output
+      files and the per-page gold format (`gold.jsonl` and `gold_scanned.jsonl`: `id`,
+      `doc`, `page`, `text`, `entities`), and link it from `docs/index.md` under
+      `reference/`. The same PR contains this docs change; no `docs-drift-ok` label,
+      because this adds outward behaviour. Proved by: `gates / gates` green on the PR,
+      the page's front matter has the two keys and no `owner`, and `docs/index.md`
+      links to it.
 - [ ] `scripts/eval/README.md` (Dutch, like the rest of it): generating the long corpus,
       `pii_run` over `gold.jsonl` (the number to quote), why `gold_scanned.jsonl` is not
       quoted, and `run` over `queries.tsv`/`qrels.txt`.
