@@ -72,6 +72,22 @@ python -m wordsworth.eval.pii_run gold.jsonl [--layers deterministic,openanonymi
   service failure is a hard error, never an empty result. Read-only: nothing is
   ingested, indexed or audited.
 
+## How the audit aggregate counts a person
+
+Separate from the two evaluation CLIs above: how does the per-layer audit
+aggregate (`DetectionStats`, built by `stats.add` in `pseudonymizer.py`) count
+a `PERSON` detection? By value, never by offset — the same rule
+`_pseudonymize_entities` already applies to replacement. Normally each
+detection is one row. The exception is a bare first name detected next to the
+full name of the same person (GLiNER sometimes returns both spans): the
+full-name value's row is kept and the bare first name is dropped before the
+aggregate loop runs, via `wordsworth/person_spans.py`, so that one person is
+not counted twice. Two detections of the *same* value are still two separate
+rows, unchanged from before this helper existed. Replacement in the text is
+unaffected either way — `_pseudonymize_entities` keeps receiving every
+detection, bare name included, so the index is never missing a redaction. See
+`tests/test_person_spans.py`.
+
 ## Over-detection baseline (redaction-overdetection)
 
 Separate again: not "does detection find PII" but "does detection find things
