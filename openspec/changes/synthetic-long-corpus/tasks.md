@@ -8,7 +8,8 @@
       in range, pass `is_valid_bsn` / `is_valid_iban`, and that `bsn`/`iban` outputs for
       a fixed seed are unchanged.
 ## 2. Generator
-- [ ] `long_corpus.py`, `long_corpus_pdf.py` and the thin CLI
+- [ ] `long_corpus.py` (page assembly, per-page gold, queries), `long_corpus_parts.py`
+      (the six part builders), `long_corpus_pdf.py` and the thin CLI
       `scripts/eval/generate_long_corpus.py` write `documents/*.pdf`, `gold.jsonl`,
       `gold_scanned.jsonl`, `queries.tsv`, `qrels.txt` and `manifest.json` as in the
       proposal. Proved by: a test that generates `--docs 2 --pages 6` into a tmp dir and
@@ -18,8 +19,20 @@
       value of a born-digital page appears in that page's `page_text`; every scanned page
       has an empty text layer, appears in `gold_scanned.jsonl` and not in `gold.jsonl`;
       page 1 is never scanned. Proved by: tests over the small corpus.
-- [ ] No unplanned BSN or postcode. `find_deterministic` over every born-digital page
-      finds no BSN or postcode that is not in that page's gold. Proved by: a test.
+- [ ] The answer page is never scanned. Scanned pages are drawn from the pages other
+      than page 1 and the answer page, so the planted answer always has a text layer.
+      Proved by: a gate test that, for every document of the generated corpus and over
+      several seeds, asserts answer page ∉ scanned set (so the answer-phrase check in
+      the queries task is not seed-flaky).
+- [ ] Every file stays ≤ 200 lines. Proved by: a test (or the CI check) that counts the
+      lines of `long_corpus.py`, `long_corpus_parts.py`, `long_corpus_pdf.py`,
+      `synthetic.py` and `scripts/eval/generate_long_corpus.py`.
+- [ ] Detections equal gold, exactly. `find_deterministic` over every born-digital page
+      returns, for all four deterministic types (`bsn`, `iban`, `email`, `postcode`),
+      exactly the spans in that page's gold of that type: nothing missing, nothing extra,
+      not only BSN and postcode. The e-mail thread part plants every From/To address as
+      gold, or uses addresses `_EMAIL_RE` does not match. Proved by: a test comparing,
+      per page and per type, the detected `(type, start, end)` set with the gold set.
 - [ ] Queries. The manifest lists one query per document with `answer_page` ≥ 20, or
       the last page of a shorter document; the answer phrase is on that page's extracted
       text and in no other document; `load_queries` and `load_qrels` parse the files; qrels

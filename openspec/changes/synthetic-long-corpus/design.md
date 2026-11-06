@@ -17,9 +17,11 @@ keeps its values and stays comparable with earlier measurements.
 
 ## Layout (files ≤ 200 lines)
 
-- `src/wordsworth/eval/long_corpus.py`: the page and part builders (cover, table of
+- `src/wordsworth/eval/long_corpus_parts.py`: the six part builders (cover, table of
   contents, letter, e-mail thread, minutes, table), each returning a `Document` (text
-  plus gold spans); the per-page gold records; the queries with their planted answer.
+  plus gold spans). A split to keep every file ≤ 200 lines, not new scope.
+- `src/wordsworth/eval/long_corpus.py`: assembling pages from the parts; the per-page
+  gold records; the queries with their planted answer.
 - `src/wordsworth/eval/long_corpus_pdf.py`: writing the PDF and rasterising the scanned
   pages.
 - `scripts/eval/generate_long_corpus.py`: a thin CLI that parses arguments and writes
@@ -46,6 +48,13 @@ page must appear in that page's extracted text. Every scanned page must have an 
 text layer and no line in `gold.jsonl`.
 
 ## Scanned pages
+
+The scanned set is drawn from the pages other than page 1 and the answer page, so the
+planted answer always has a text layer; a gate test asserts it for every document.
+
+**E-mail threads:** every From/To address is planted as gold, or is an address
+`_EMAIL_RE` does not match; the detections-equal-gold test covers all four types
+(BSN, IBAN, e-mail, postcode).
 
 Two passes: write the text PDF, then rebuild it with the chosen pages replaced by their
 raster. Reuse the `pdf_render.py` path: `page.render(scale=dpi/72)` → `to_pil()
