@@ -40,6 +40,13 @@ claims:
              tests/test_detectors.py::test_valid_iban_passes_mod97]
     sentences:
       - "Persoonsgegevens worden gevonden: met vaste regels én met een taalmodel."
+  - id: particle-names
+    scene: straat
+    requires: [detect-two-layers]
+    pytest: [tests/test_particle_names.py::test_each_particle_is_one_person_span,
+             tests/test_particle_names.py::test_ordinary_text_with_a_lowercase_particle_yields_no_person]
+    sentences:
+      - "Ook namen met tussenvoegsels, zoals ‘van der’, worden als één naam herkend."
   - id: tokens-before-index
     scene: straat
     pytest: [tests/test_anonymization_pipeline.py::test_pii_document_ends_pii_free_and_indexed,
@@ -120,6 +127,12 @@ claims:
     sentences:
       - "De sleutels om persoonsgegevens te onthullen staan in een eigen sleutelkluis, op dezelfde hardware."
 
+  - id: key-backups
+    scene: autonomie
+    requires: [key-vault]
+    cmd: "tools/film/check_key_backups.sh"
+    sentences:
+      - "Elke nacht gaat er een backup van de sleutels naar opslag buiten de kluis."
   - id: audit-chain
     scene: controle
     facts: "audit_records > 0"

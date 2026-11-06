@@ -5,7 +5,7 @@ order of docs/reference/film-claims.yml; each visual fragment names the claim it
 `{name}` in a fragment takes a value from the claims' checks."""
 
 DOCS = "".join(
-    f'<div class="doc">' + "".join(f'<div class="ln w{(i + k) % 3}"></div>' for k in range(6))
+    '<div class="doc">' + "".join(f'<div class="ln w{(i + k) % 3}"></div>' for k in range(6))
     + '<span class="pii-bar" data-at="pii-found" data-dt="0.5"></span></div>' for i in range(6))
 
 SCENES = [
@@ -21,6 +21,7 @@ SCENES = [
                           '<div class="step" data-at="pipeline-read" data-dt="1.0">Tekst</div>'),
         ("detect-two-layers", '<div class="arrow" data-at="detect-two-layers">→</div>'
                               '<div class="step" data-at="detect-two-layers" data-dt="0.3">Persoons&shy;gegevens vinden</div>'),
+        ("particle-names", '<div class="step" data-at="particle-names">van der · de · ter → één naam</div>'),
         ("tokens-before-index", '<div class="arrow" data-at="tokens-before-index">→</div>'
                                 '<div class="step dark" data-at="tokens-before-index" data-dt="0.3">Vervangen door codes</div>'
                                 '<div class="arrow" data-at="tokens-before-index" data-dt="1.0">→</div>'
@@ -77,6 +78,7 @@ SCENES = [
                          '<div class="box" data-at="own-hardware" data-dt="0.8">Lokale taalmodellen</div>'
                          '<div class="box" data-at="own-hardware" data-dt="1.2">Zoekindex (alleen codes)</div>'),
         ("key-vault", '<div class="box" data-at="key-vault">Eigen sleutelkluis</div>'),
+        ("key-backups", '<div class="box" data-at="key-backups">Sleutelbackup elke nacht, buiten de kluis</div>'),
         (None, '</div>'),
         ("own-hardware", '<div class="nocloud" data-at="own-hardware" data-dt="2.0">✕ geen cloud in het pad</div>'),
         (None, '</div>'),

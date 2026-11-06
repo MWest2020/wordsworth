@@ -91,6 +91,14 @@ def test_run_pytest_counts_a_skip_as_not_passed(tmp_path):
                    "tests/test_a.py::test_gone": False}
 
 
+def test_a_parametrized_test_passes_only_if_every_case_passed():
+    seen = {"tests/t.py::test_p[a]": True, "tests/t.py::test_p[b]": True,
+            "tests/t.py::test_q[a]": True, "tests/t.py::test_q[b]": False}
+    assert claims.passed("tests/t.py::test_p", seen) is True
+    assert claims.passed("tests/t.py::test_q", seen) is False
+    assert claims.passed("tests/t.py::test_r", seen) is False  # never ran
+
+
 def test_the_plan_leaves_out_what_was_dropped():
     resolved = [
         {"id": "pilot-docs", "scene": "bewijs", "shown": True, "sentences": ["415 docs."],
