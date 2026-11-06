@@ -15,15 +15,19 @@
       proposal. Proved by: a test that generates `--docs 2 --pages 6` into a tmp dir and
       checks the files, the page counts, the header/footer (`pagina x van y`, the
       `WOO-` number) and `SYNTHETISCH` on every page's extracted text.
-- [ ] Gold `text` is the page text the detectors scan. The generator writes each page's
-      text once and uses that single string both to draw the page and as the gold `text`;
-      offsets are character offsets into it. Proved by: a test that `load_gold` accepts
-      every record of the small corpus (range check holds) and that, per page, the gold
-      `text` is the string passed to the drawing code.
+- [ ] Gold `text` is the page's extracted text. For a born-digital page the gold `text`
+      is `page_text` of that page, and each offset is computed by locating the gold value
+      in it; every value must be found exactly once, otherwise the generator fails.
+      Proved by: a test that `load_gold` accepts every record of the small corpus (range
+      check holds), that per page the gold `text` equals `page_text` of the PDF page, and
+      that every entity's slice of `text` equals its planted value and occurs once.
 - [ ] Gold is true. `load_gold` accepts `gold.jsonl` and `gold_scanned.jsonl`; every gold
-      value of a born-digital page appears in that page's `page_text`; every scanned page
-      has an empty text layer, appears in `gold_scanned.jsonl` and not in `gold.jsonl`;
-      page 1 is never scanned. Proved by: tests over the small corpus.
+      value of a born-digital page is found exactly once in that page's `page_text`; every
+      scanned page has an empty text layer, appears in `gold_scanned.jsonl` and not in
+      `gold.jsonl`; page 1 is never scanned. Proved by: tests over the small corpus,
+      generated with an explicit `--scanned 0.5` on `--docs 2 --pages 6`, which also
+      assert that at least one scanned page exists, so no scanned-page assertion passes
+      vacuously.
 - [ ] The answer page is never scanned. Scanned pages are drawn from the pages other
       than page 1 and the answer page, so the planted answer always has a text layer.
       Proved by: a gate test that, for every document of the generated corpus and over
@@ -36,8 +40,10 @@
       returns, for all four deterministic types (`bsn`, `iban`, `email`, `postcode`),
       exactly the spans in that page's gold of that type: nothing missing, nothing extra,
       not only BSN and postcode. The e-mail thread part plants every From/To address as
-      gold, or uses addresses `_EMAIL_RE` does not match. Proved by: a test comparing,
-      per page and per type, the detected `(type, start, end)` set with the gold set.
+      gold, or uses addresses `_EMAIL_RE` does not match. Offsets are
+      into the extracted text, which is the gold `text`, so this is offset-exact. Proved
+      by: a test comparing, per page and per type, the detected `(type, start, end)` set
+      over `page_text` with the pinned gold `(type, start, end)` set.
 - [ ] Queries. The query text in `queries.tsv` is the planted phrase verbatim, equal to
       `answer_phrase` in the manifest. The manifest lists one query per document with
       `answer_page` ≥ 20, or the last page of a shorter document; the answer phrase is on that page's extracted
@@ -48,9 +54,11 @@
       Creator set explicitly. Proved by: a test that the PDFs' creation date is the
       invariant constant, and a check that no `Canvas(` in the generator modules lacks
       `invariant=1`.
-- [ ] Scanned pages are built in one pass: each page drawn in place, the raster page
-      drawn directly on the canvas, no pdfium reassembly of a second PDF. Proved by: the
-      scanned-page tests over the small corpus (empty text layer, page count unchanged).
+- [ ] Scanned pixels come from pdfium: the chosen page is rasterised with pypdfium2 (as
+      `pdf_render.py` does), encoded by PIL and re-embedded as an image-only PDF page in
+      place of the text page. Proved by: the scanned-page tests over the small corpus
+      (explicit `--scanned 0.5`, at least one scanned page asserted, empty text layer,
+      page count unchanged, the page holds an image).
 - [ ] Reproducible. Two generations with the same seed and options into different
       directories give byte-identical files. Proved by: a test comparing the bytes of
       every file.
@@ -61,7 +69,7 @@
       `docs/reference/synthetic-long-corpus.md` with front matter `status` and
       `last_reviewed` (no `owner`), describing the generator, its options, its output
       files and the per-page gold format (`gold.jsonl` and `gold_scanned.jsonl`: `id`,
-      `doc`, `page`, `text` (the exact page text the detectors scan, offsets into it),
+      `doc`, `page`, `text` (the page's extracted text, which the detectors scan; offsets into it, each value located exactly once),
       `entities`), that the queries are the planted phrase verbatim (a phrase lookup), and
       link it from `docs/index.md` under
       `reference/`. The same PR contains this docs change; no `docs-drift-ok` label,

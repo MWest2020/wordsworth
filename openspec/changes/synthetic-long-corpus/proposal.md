@@ -23,24 +23,27 @@ short-text corpus cannot test.
     the word `SYNTHETISCH`.
   - **scanned pages, mixed into otherwise born-digital documents.** `--scanned` is a
     fraction *per document*, rounded down, drawn from the seed, never page 1 (the
-    cover) and never the page holding the planted answer; default 0.1 = 3 pages of a 30-page document. Each chosen page is drawn
-    in place as a raster image instead of its text, so it has no text layer; the PDF is
-    built in one pass. What this tests: such a document
+    cover) and never the page holding the planted answer; default 0.1 = 3 pages of a 30-page document. Each chosen page is
+    rendered by pdfium (pypdfium2, as in `pdf_render.py`) from its text and re-embedded
+    as an image-only page via Pillow, so it has no text layer. What this tests: such a document
     is still classified born-digital (`profile_pdf` counts characters per document),
     so it never reaches OCR and **those pages are lost without a trace**. It does not
     exercise OCR; whole scanned documents for OCR recovery are a later change.
   - `gold.jsonl`: **one line per born-digital page**, in exactly the format
     `wordsworth.eval.pii` `load_gold` reads, plus two keys it ignores:
     `{"id": "<doc-id>#p<NN>", "doc": "<doc-id>", "page": N, "text": "<that page's
-    text>", "entities": [{"start", "end", "type"}]}`. `text` is the exact page text
-    string the detectors scan, and the offsets are character offsets into that same
-    string. The generator writes the page text once and uses that one string both to
-    draw the page and as the gold `text`, so `load_gold`'s range check holds.
+    text>", "entities": [{"start", "end", "type"}]}`. `text` is the page's
+    extracted text (`wordsworth.pdf_text.page_text` over the pypdfium2 page), the exact
+    string the detectors scan, and the offsets are character offsets into it. For a
+    born-digital page the gold text IS the extracted text: the generator plants values,
+    then computes each offset by locating the value in the extracted text, and a value
+    not found exactly once fails the generator. So `load_gold`'s range check holds.
     Consequences, stated so a number is read right: `pii_run` reports
     `documents=<number of pages>` (about 900 for 30×30, minus scanned pages), and
     gold ids are not qrels ids: qrels use the PDF stem, the gold the page id, and the
     document is in the `doc` field.
-  - `gold_scanned.jsonl`: the same records for the scanned pages, kept apart. They
+  - `gold_scanned.jsonl`: the same records for the scanned pages, kept apart (their
+    `text` is the text that was rasterised, as there is no text layer to extract). They
     are **not** part of the score to quote: `pii_run` detects over gold text and never
     opens a PDF, so scoring them would count pages the pipeline cannot see as if
     extraction were perfect.
@@ -66,9 +69,10 @@ short-text corpus cannot test.
   - telephone numbers, e-mail addresses, street addresses, postcodes and dates of
     birth, generated as in `wordsworth.eval.synthetic`.
 - **Reproducible:** the same seed, options and environment give identical files. The
-  scanned pages go through pdfium's renderer and Pillow's JPEG encoder, so a different
-  pypdfium2 or Pillow build may change their bytes; the gold files are identical
-  regardless.
+  scanned pixels come from pdfium's rasteriser (pypdfium2) and Pillow's encoder, so a
+  different pypdfium2 or Pillow build may change their bytes. The gold of born-digital
+  pages is read from the extracted text, so it follows the pdfium build too;
+  `gold_scanned.jsonl` does not depend on pdfium.
 
 ## What the numbers mean
 
@@ -77,13 +81,6 @@ the pipeline reading the PDFs. The long-PDF form adds page-level localisation, t
 scanned-page split and a real long corpus for `ingest_eval_corpus.py`; it does not
 make the PII measurement end-to-end. That would be a separate change (detection over
 the generated PDFs' extracted text).
-
-## Open questions
-
-- How the raster of a scanned page is produced, given that the PDF is built in one pass
-  with the raster drawn directly on the canvas and no pdfium reassembly. Decided: one
-  pass, `drawImage` on the canvas. Not decided: where the pixels come from. The builder
-  records the choice in the docs page; it is not a requirement here.
 
 ## Out of scope
 
