@@ -11,7 +11,7 @@ is scored.
 #### Scenario: Gold is one record per page in the evaluation's format
 
 - **WHEN** the generator writes a corpus
-- **THEN** `gold.jsonl` holds one line per born-digital page with `id`, `doc`, `page`, `text` and `entities` (offsets in that page's text), and `load_gold` reads it
+- **THEN** `gold.jsonl` holds one line per born-digital page with `id`, `doc`, `page`, `text` and `entities` (`text` is the exact page text string the detectors scan, and offsets are character offsets into that string), and `load_gold` reads it without a range error
 
 #### Scenario: Gold matches the pages
 
@@ -41,9 +41,9 @@ is scored.
 #### Scenario: A late answer
 
 - **WHEN** the generator writes the queries
-- **THEN** each document's query is answered only by a phrase on a page at or after page 20 (or its last page), recorded in `manifest.json`
+- **THEN** each document's query is answered only by a phrase on a page at or after page 20 (or its last page), recorded in `manifest.json` as `answer_phrase`, and the query text is that phrase verbatim
 
 #### Scenario: Reproducible
 
 - **WHEN** the generator runs twice with the same seed, options and environment
-- **THEN** it writes identical files, and the gold files are identical in any environment
+- **THEN** it writes byte-identical files, and the gold files are identical in any environment

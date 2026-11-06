@@ -23,16 +23,20 @@ short-text corpus cannot test.
     the word `SYNTHETISCH`.
   - **scanned pages, mixed into otherwise born-digital documents.** `--scanned` is a
     fraction *per document*, rounded down, drawn from the seed, never page 1 (the
-    cover) and never the page holding the planted answer; default 0.1 = 3 pages of a 30-page document. Each chosen page is replaced
-    by an image of itself, so it has no text layer. What this tests: such a document
+    cover) and never the page holding the planted answer; default 0.1 = 3 pages of a 30-page document. Each chosen page is drawn
+    in place as a raster image instead of its text, so it has no text layer; the PDF is
+    built in one pass. What this tests: such a document
     is still classified born-digital (`profile_pdf` counts characters per document),
     so it never reaches OCR and **those pages are lost without a trace**. It does not
     exercise OCR; whole scanned documents for OCR recovery are a later change.
   - `gold.jsonl`: **one line per born-digital page**, in exactly the format
     `wordsworth.eval.pii` `load_gold` reads, plus two keys it ignores:
     `{"id": "<doc-id>#p<NN>", "doc": "<doc-id>", "page": N, "text": "<that page's
-    text>", "entities": [{"start", "end", "type"}]}`, offsets relative to the page's
-    own text. Consequences, stated so a number is read right: `pii_run` reports
+    text>", "entities": [{"start", "end", "type"}]}`. `text` is the exact page text
+    string the detectors scan, and the offsets are character offsets into that same
+    string. The generator writes the page text once and uses that one string both to
+    draw the page and as the gold `text`, so `load_gold`'s range check holds.
+    Consequences, stated so a number is read right: `pii_run` reports
     `documents=<number of pages>` (about 900 for 30×30, minus scanned pages), and
     gold ids are not qrels ids: qrels use the PDF stem, the gold the page id, and the
     document is in the `doc` field.
@@ -42,11 +46,13 @@ short-text corpus cannot test.
     extraction were perfect.
   - `queries.tsv` and `qrels.txt`: one query per document, whose only answer is a
     unique phrase planted on a page at or after page 20 (or the last page of a shorter
-    document). Every document is judged for every query, non-relevant as 0, as the
-    existing generator does. **What it is for:** long-document ranking fairness
+    document). The query text is that planted phrase verbatim. Every document is judged
+    for every query, non-relevant as 0, as the existing generator does. **What it is for:** long-document ranking fairness
     (`long-documents-rank-fairly`): a long document must still rank when its one
     matching passage is deep inside it. `wordsworth.eval.run` scores whole
-    documents, so this measures exactly that, not passage search.
+    documents and the query is the verbatim phrase, so this is a phrase lookup: it
+    measures whether a long document still ranks when its one matching passage is deep
+    inside it, not semantic or passage search.
   - `manifest.json`: seed, options, counts per type for each gold file, pages per
     document, the scanned pages per document, the queries as
     `{query_id, doc_id, answer_page, answer_phrase}`, and the synthetic caveat, worded
@@ -71,6 +77,13 @@ the pipeline reading the PDFs. The long-PDF form adds page-level localisation, t
 scanned-page split and a real long corpus for `ingest_eval_corpus.py`; it does not
 make the PII measurement end-to-end. That would be a separate change (detection over
 the generated PDFs' extracted text).
+
+## Open questions
+
+- How the raster of a scanned page is produced, given that the PDF is built in one pass
+  with the raster drawn directly on the canvas and no pdfium reassembly. Decided: one
+  pass, `drawImage` on the canvas. Not decided: where the pixels come from. The builder
+  records the choice in the docs page; it is not a requirement here.
 
 ## Out of scope
 
