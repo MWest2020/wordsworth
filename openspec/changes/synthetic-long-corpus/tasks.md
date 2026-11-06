@@ -15,6 +15,11 @@
       proposal. Proved by: a test that generates `--docs 2 --pages 6` into a tmp dir and
       checks the files, the page counts, the header/footer (`pagina x van y`, the
       `WOO-` number) and `SYNTHETISCH` on every page's extracted text.
+- [ ] Gold `text` is the page text the detectors scan. The generator writes each page's
+      text once and uses that single string both to draw the page and as the gold `text`;
+      offsets are character offsets into it. Proved by: a test that `load_gold` accepts
+      every record of the small corpus (range check holds) and that, per page, the gold
+      `text` is the string passed to the drawing code.
 - [ ] Gold is true. `load_gold` accepts `gold.jsonl` and `gold_scanned.jsonl`; every gold
       value of a born-digital page appears in that page's `page_text`; every scanned page
       has an empty text layer, appears in `gold_scanned.jsonl` and not in `gold.jsonl`;
@@ -33,14 +38,22 @@
       not only BSN and postcode. The e-mail thread part plants every From/To address as
       gold, or uses addresses `_EMAIL_RE` does not match. Proved by: a test comparing,
       per page and per type, the detected `(type, start, end)` set with the gold set.
-- [ ] Queries. The manifest lists one query per document with `answer_page` ≥ 20, or
-      the last page of a shorter document; the answer phrase is on that page's extracted
+- [ ] Queries. The query text in `queries.tsv` is the planted phrase verbatim, equal to
+      `answer_phrase` in the manifest. The manifest lists one query per document with
+      `answer_page` ≥ 20, or the last page of a shorter document; the answer phrase is on that page's extracted
       text and in no other document; `load_queries` and `load_qrels` parse the files; qrels
       judge every document for every query. Proved by: a test. Use `--pages 22` for the
       ≥ 20 case.
+- [ ] Every canvas is `Canvas(..., invariant=1)`, with Author, Title, Subject and
+      Creator set explicitly. Proved by: a test that the PDFs' creation date is the
+      invariant constant, and a check that no `Canvas(` in the generator modules lacks
+      `invariant=1`.
+- [ ] Scanned pages are built in one pass: each page drawn in place, the raster page
+      drawn directly on the canvas, no pdfium reassembly of a second PDF. Proved by: the
+      scanned-page tests over the small corpus (empty text layer, page count unchanged).
 - [ ] Reproducible. Two generations with the same seed and options into different
-      directories give identical files, and the PDFs' creation date is the invariant
-      constant. Proved by: a test.
+      directories give byte-identical files. Proved by: a test comparing the bytes of
+      every file.
 ## 3. Docs and the real run
 - [ ] Document the generator for the docs drift gate. The gate (`gates / gates`) is
       path-based (code_paths `src/,scripts/`, drift_mode fail): PR #396 touched code
@@ -48,7 +61,9 @@
       `docs/reference/synthetic-long-corpus.md` with front matter `status` and
       `last_reviewed` (no `owner`), describing the generator, its options, its output
       files and the per-page gold format (`gold.jsonl` and `gold_scanned.jsonl`: `id`,
-      `doc`, `page`, `text`, `entities`), and link it from `docs/index.md` under
+      `doc`, `page`, `text` (the exact page text the detectors scan, offsets into it),
+      `entities`), that the queries are the planted phrase verbatim (a phrase lookup), and
+      link it from `docs/index.md` under
       `reference/`. The same PR contains this docs change; no `docs-drift-ok` label,
       because this adds outward behaviour. Proved by: `gates / gates` green on the PR,
       the page's front matter has the two keys and no `owner`, and `docs/index.md`

@@ -30,8 +30,11 @@ keeps its values and stays comparable with earlier measurements.
 ## One Document per page
 
 Each page is built as a `Document`, so the gold carries the page without offset
-arithmetic. The PDF page's text is that page's `Document.text`, laid out with simple
-wrapping.
+arithmetic. The generator writes the page text once, as one string: that string is
+drawn onto the page (laid out with simple wrapping) and is the gold `text`. Gold
+offsets are character offsets into that same string, which is the string the detectors
+scan, so `load_gold`'s range check holds. The text is never rebuilt or re-joined between
+drawing and gold.
 
 **Every planted value is drawn as one `drawString` run**, never split across a line
 break, table columns or a justified gap. `page_text` inserts a virtual space where two
@@ -56,19 +59,27 @@ planted answer always has a text layer; a gate test asserts it for every documen
 `_EMAIL_RE` does not match; the detections-equal-gold test covers all four types
 (BSN, IBAN, e-mail, postcode).
 
-Two passes: write the text PDF, then rebuild it with the chosen pages replaced by their
-raster. Reuse the `pdf_render.py` path: `page.render(scale=dpi/72)` → `to_pil()
-.convert("RGB")` → JPEG (quality 80) through a `BytesIO` `ImageReader` → `drawImage` at
-the page size. A bare PIL image makes reportlab re-flate the pixels (that is how a
-document once came out at 151 MB). 200 dpi.
+One pass, no pdfium reassembly: the PDF is built once, each page drawn in place on the
+canvas, and a scanned page has its raster page drawn directly on the canvas (`drawImage`
+at the page size) instead of its text. The image is JPEG (quality 80) through a
+`BytesIO` `ImageReader`: a bare PIL image makes reportlab re-flate the pixels (that is
+how a document once came out at 151 MB). 200 dpi. Rejected: writing the text PDF and
+rebuilding it with the chosen pages replaced (two passes, pdfium reassembly).
 
 ## Determinism
 
 reportlab writes a wall-clock `/CreationDate` and a time-derived `/ID`. Build every
-canvas with `invariant=1` and set Author, Title, Subject and Creator explicitly, as
-`pdf_render.py` does. The reproducibility test must also assert that the embedded
-creation date is the invariant constant, not now: two generations within one second
-would otherwise match by luck.
+canvas with `Canvas(..., invariant=1)` and set Author, Title, Subject and Creator
+explicitly. The reproducibility test asserts byte-identical output for the same seed,
+and also that the embedded creation date is the invariant constant, not now: two
+generations within one second would otherwise match by luck.
+
+## Queries
+
+The query text is the planted answer phrase verbatim; the manifest keeps it as
+`answer_phrase`. The long-document ranking measurement is therefore a phrase lookup.
+Rejected: a paraphrased or question-form query, which would mix semantic retrieval into
+a length-fairness measurement.
 
 ## Headers and footers
 
