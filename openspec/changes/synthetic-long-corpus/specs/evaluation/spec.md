@@ -11,12 +11,12 @@ is scored.
 #### Scenario: Gold is one record per page in the evaluation's format
 
 - **WHEN** the generator writes a corpus
-- **THEN** `gold.jsonl` holds one line per born-digital page with `id`, `doc`, `page`, `text` and `entities` (`text` is the exact page text string the detectors scan, and offsets are character offsets into that string), and `load_gold` reads it without a range error
+- **THEN** `gold.jsonl` holds one line per born-digital page with `id`, `doc`, `page`, `text` and `entities` (`text` is the page's extracted text, the string the detectors scan, and offsets are character offsets into it, computed by locating each planted value in that text), and `load_gold` reads it without a range error
 
 #### Scenario: Gold matches the pages
 
 - **WHEN** the generator writes a corpus
-- **THEN** every planted value of a born-digital page appears in that page's extracted text
+- **THEN** every planted value of a born-digital page is found exactly once in that page's extracted text
 
 #### Scenario: Scanned pages are kept out of the scored gold
 
@@ -46,4 +46,4 @@ is scored.
 #### Scenario: Reproducible
 
 - **WHEN** the generator runs twice with the same seed, options and environment
-- **THEN** it writes byte-identical files, and the gold files are identical in any environment
+- **THEN** it writes byte-identical files

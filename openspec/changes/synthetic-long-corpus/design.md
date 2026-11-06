@@ -29,42 +29,49 @@ keeps its values and stays comparable with earlier measurements.
 
 ## One Document per page
 
-Each page is built as a `Document`, so the gold carries the page without offset
-arithmetic. The generator writes the page text once, as one string: that string is
-drawn onto the page (laid out with simple wrapping) and is the gold `text`. Gold
-offsets are character offsets into that same string, which is the string the detectors
-scan, so `load_gold`'s range check holds. The text is never rebuilt or re-joined between
-drawing and gold.
+Each page is built as a `Document` of planted values (type and string). The page is
+drawn (laid out with simple wrapping), then read back with `page_text` per page. For a
+born-digital page the gold `text` IS that extracted text, and each gold offset is
+computed by locating the planted value in it. The gate is that every planted value is
+found exactly once; zero or two hits fail the generator, so each value is planted once
+per page. Offsets are character offsets into the extracted text, which is the string the
+detectors scan, so `load_gold`'s range check holds and "detections equal gold" is
+offset-exact over extracted text. The drawn string is not the gold text. A scanned page
+has no text layer; its `gold_scanned.jsonl` text is the text that was rasterised.
 
 **Every planted value is drawn as one `drawString` run**, never split across a line
 break, table columns or a justified gap. `page_text` inserts a virtual space where two
 glyphs on a line are more than 0.4 character heights apart, and pdfium's reading order
-across table columns is not the order of writing. A value split that way would fail
-the gate on exactly the table pages. Table cells hold whole values, one per run.
+across table columns is not the order of writing. A value split that way would not be
+found on exactly the table pages. Table cells hold whole values, one per run.
 
 ## The extraction gate
 
 The test that proves the gold true opens each generated PDF with pypdfium2 and calls
 `wordsworth.pdf_text.page_text` **per page**, iterating pages as `profiling.py` does.
 `positioned_text` joins pages and loses the boundary. Every gold value of a born-digital
-page must appear in that page's extracted text. Every scanned page must have an empty
+page is found exactly once in that page's extracted text, and each gold offset slices
+back to its value. Every scanned page must have an empty
 text layer and no line in `gold.jsonl`.
 
 ## Scanned pages
 
 The scanned set is drawn from the pages other than page 1 and the answer page, so the
 planted answer always has a text layer; a gate test asserts it for every document.
+The tests pass an explicit `--scanned` (for example 0.5 on `--docs 2 --pages 6`) and
+assert that at least one scanned page exists: the default 0.1 rounds down to none on 6
+pages, and the scanned-page assertions would pass vacuously.
 
 **E-mail threads:** every From/To address is planted as gold, or is an address
 `_EMAIL_RE` does not match; the detections-equal-gold test covers all four types
 (BSN, IBAN, e-mail, postcode).
 
-One pass, no pdfium reassembly: the PDF is built once, each page drawn in place on the
-canvas, and a scanned page has its raster page drawn directly on the canvas (`drawImage`
-at the page size) instead of its text. The image is JPEG (quality 80) through a
-`BytesIO` `ImageReader`: a bare PIL image makes reportlab re-flate the pixels (that is
-how a document once came out at 151 MB). 200 dpi. Rejected: writing the text PDF and
-rebuilding it with the chosen pages replaced (two passes, pdfium reassembly).
+The pixels come from pdfium (pypdfium2, as `pdf_render.py` does): the chosen page is
+rasterised at 200 dpi, encoded as JPEG (quality 80) by PIL and re-embedded as an
+image-only PDF page of the same size, in place of the text page. JPEG, not raw pixels:
+a flate-compressed bitmap is how a document once came out at 151 MB. Rejected: drawing
+a raster on the reportlab canvas in one pass, because reportlab cannot rasterise its own
+page, so the pixels would need another source anyway.
 
 ## Determinism
 
