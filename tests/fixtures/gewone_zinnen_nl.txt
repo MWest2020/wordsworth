@@ -1,0 +1,10 @@
+PERSON	{naam} van der Linden ondertekende het verslag.	{naam} van der Linden
+PERSON	{naam} van den Berg nam deel aan de hoorzitting.	{naam} van den Berg
+PERSON	{naam} van Dijk diende het bezwaarschrift in.	{naam} van Dijk
+PERSON	{naam} de Groot las de brief voor aan de raad.	{naam} de Groot
+PERSON	{naam} ter Horst woonde de zitting bij namens de gemeente.	{naam} ter Horst
+PERSON	{naam} ten Berge gaf een toelichting op het besluit.	{naam} ten Berge
+GEEN	Dit besluit gaat over de van ouds bekende regeling, waarover {naam} destijds schreef.
+GEEN	De Raad van State wees het verzoek van {naam} af.
+GEEN	{naam} overlegde de notulen aan de commissie van toezicht.
+GEEN	Het ging niet om {naam}, maar om de Kamer van Koophandel.
