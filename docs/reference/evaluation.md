@@ -72,6 +72,61 @@ python -m wordsworth.eval.pii_run gold.jsonl [--layers deterministic,openanonymi
   service failure is a hard error, never an empty result. Read-only: nothing is
   ingested, indexed or audited.
 
+### The `dutch_particle_name` layer (particle-names-measured)
+
+Both `pii_run` and `overdetection_run` (above, and below for the latter) accept
+`dutch_particle_name` as an explicit, opt-in fourth layer
+(`src/wordsworth/particle_names.py`):
+`--layers deterministic,openanonymiser,dutch_particle_name`. Both CLIs'
+`--layers` default stays `deterministic,openanonymiser` — an existing
+invocation without the flag is unaffected.
+
+**Before/after on the generated corpus, and it is circular.** Attempted
+2026-11-06 on 500 documents from `scripts/eval/generate_ground_truth.py`
+(`python scripts/eval/generate_ground_truth.py /tmp/gt --count 500`), whose
+`VOORNAMEN` (`eval/synthetic.py`) are the same source `data/voornamen.json`
+draws its gazetteer from — so this comparison is circular, not a claim about
+real names:
+
+- before, `python -m wordsworth.eval.pii_run /tmp/gt/gold.jsonl --layers deterministic,openanonymiser`: **not run**
+- after, same command plus `,dutch_particle_name`: **not run**
+
+Both need `WORDSWORTH_OPENANONYMISER_URL`; in this build the service was
+unreachable (`httpx.ConnectError: [Errno 111] Connection refused` from the
+`openanonymiser` layer's own call, not from a reachability probe — `pii_run`
+has none, by design: a service failure is the documented hard error, never a
+silent fallback). No PERSON number is recorded standing in for either side.
+
+**Full-pipeline recall on names outside the gazetteer's source.** Ten
+documents, one `<first name> <particle> <last name>` PERSON span each, built
+so the first name is never one of the twelve entries in `data/voornamen.json`
+— checked against `particle_names.load_gazetteer()` before use:
+`Sanne`, `Daan`, `Noor`, `Milan`, `Eva`, `Sven`, `Iris`, `Thijs`, `Femke`,
+`Bram`, each as `"<name> <particle> <surname> nam deel aan het overleg."`
+(particles cycled through `van der`, `van den`, `van`, `de`, `ter`, `ten`).
+Measured 2026-11-06, `--layers deterministic,dutch_particle_name` (offline,
+the `openanonymiser` layer below could not run):
+
+```
+documents=10  gold_entities=10  leaks=10
+overall/span: P=0.000 R=0.000 F1=0.000
+  PERSON         P=0.000 R=0.000 F1=0.000  tp=0 fp=0 fn=10
+```
+
+The `per_layer` breakdown is empty: nothing was detected by any layer, so
+there is nothing to break down by layer. Zero recall is exactly what
+design.md predicted — the rule is anchored on the gazetteer and cannot match
+a first name outside it. The only layer on this seam that could find these
+names is `openanonymiser`, so the full-pipeline number (adding that layer) is
+**not run**, for the same unreachable-service reason as the before/after run
+above.
+
+Recall on real documents is unknown.
+
+The Gooise Meren miss is not closed by this change: document `1c87f856`
+(pilot report, wordsworth #284) keeps its readable name until
+`reanonymise-particle-name-documents` re-anonymises it.
+
 ## How the audit aggregate counts a person
 
 Separate from the two evaluation CLIs above: how does the per-layer audit
@@ -106,6 +161,10 @@ The first line measures with the current lists applied, the second without —
 same gold corpus, same detection pass, only the lists behind it differ (meting
 05's rule for isolating a list's effect). `gold.jsonl` is the same format as
 `pii_run` above; `tests/fixtures/pii_gold_synthetic.jsonl` works for both.
+`--layers` (default `deterministic,openanonymiser`, see above) selects the
+detection seam for both sides the same way as `pii_run`; adding
+`dutch_particle_name` and writing to a new `--out` is how
+[meting 08](../explanation/meting-overdetectie-08.md) measured that layer.
 
 - **Needs the service.** The baseline always calls OpenAnonymiser — the
   deterministic layer alone cannot even find these words; it has no

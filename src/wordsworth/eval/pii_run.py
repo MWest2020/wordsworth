@@ -6,7 +6,11 @@ Runs the deployed detection seam (deterministic detectors + the OpenAnonymiser
 service at ``WORDSWORTH_OPENANONYMISER_URL``) over the gold texts and prints
 precision/recall/F1 per type (span + token level), per layer, and the leak
 count. Read-only; nothing is ingested, indexed or audited. A service failure is
-a hard error, not an empty result."""
+a hard error, not an empty result.
+
+``dutch_particle_name`` is an opt-in fourth layer (particle-names-measured):
+the default stays ``deterministic,openanonymiser``; add it to ``--layers`` to
+measure the particle rule."""
 from __future__ import annotations
 
 import argparse
@@ -14,11 +18,21 @@ import json
 import sys
 from pathlib import Path
 
+from .. import particle_names
 from ..detection_lists import DetectionLists
 from ..openanonymiser_driver import Entity, detect_entities
 from .pii import deterministic_entities, evaluate_pii, load_gold
 
-_LAYERS = {"deterministic": deterministic_entities, "openanonymiser": detect_entities}
+_LAYERS = {
+    "deterministic": deterministic_entities,
+    "openanonymiser": detect_entities,
+    particle_names.LAYER: particle_names.detect,
+}
+
+# The opt-in layer is additive: both CLIs' --layers default stays this string
+# (particle-names-measured). overdetection_run imports this constant rather
+# than repeating the literal, so the two defaults cannot drift apart.
+DEFAULT_LAYERS = "deterministic,openanonymiser"
 
 
 def build_detect(layers: list[str]):
@@ -68,7 +82,7 @@ def format_report(report: dict) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m wordsworth.eval.pii_run")
     ap.add_argument("gold", help="gold JSONL: {id, text, entities:[{start,end,type}]}")
-    ap.add_argument("--layers", default="deterministic,openanonymiser")
+    ap.add_argument("--layers", default=DEFAULT_LAYERS)
     ap.add_argument("--lists", default="",
                     help="map met allow.json/deny.json; leeg = zonder lijsten meten")
     ap.add_argument("--json", action="store_true", help="machine-readable output")

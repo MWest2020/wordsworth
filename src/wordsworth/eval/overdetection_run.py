@@ -1,8 +1,12 @@
 """CLI: the over-detection baseline against the deployed detection seam.
 
     python -m wordsworth.eval.overdetection_run gold.jsonl [--lists DIR] [--out PATH]
+        [--layers deterministic,openanonymiser]
 
-Needs OpenAnonymiser (``WORDSWORTH_OPENANONYMISER_URL``). Unreachable is
+``--layers`` is opt-in; its default stays ``deterministic,openanonymiser``, so
+existing runs are unchanged. Add ``dutch_particle_name`` to measure that layer
+too (particle-names-measured). Needs OpenAnonymiser
+(``WORDSWORTH_OPENANONYMISER_URL``). Unreachable is
 reported as "not run", never silently as a deterministic-only baseline — see
 ``overdetection.py`` and the change's ``design.md``. This is the live-run step:
 Mark or the coding session runs it; the build does not."""
@@ -17,9 +21,10 @@ import httpx
 
 from ..config import settings
 from ..detection_lists import DetectionLists
-from ..openanonymiser_driver import Entity, detect_entities
+from ..openanonymiser_driver import Entity
 from .overdetection import build_report, format_report, word_sentences
-from .pii import deterministic_entities, load_gold
+from .pii import load_gold
+from .pii_run import DEFAULT_LAYERS, build_detect
 
 
 def reachable(timeout: float = 5.0) -> bool:
@@ -37,16 +42,14 @@ def reachable(timeout: float = 5.0) -> bool:
         return False
 
 
-def _detect(text: str) -> list[Entity]:
-    return deterministic_entities(text) + detect_entities(text)
-
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m wordsworth.eval.overdetection_run")
     ap.add_argument("gold", help="gold JSONL for the precision/recall/leaks/fp table")
     ap.add_argument("--lists", default="lists", help="allow/deny lists directory")
+    ap.add_argument("--layers", default=DEFAULT_LAYERS)
     ap.add_argument("--out", default="docs/explanation/meting-overdetectie-07.md")
     a = ap.parse_args(argv)
+    detect = build_detect([s.strip() for s in a.layers.split(",")])
 
     report = None
     if reachable():
@@ -54,11 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         lijsten = DetectionLists.load(a.lists)
 
         def with_lists(text: str) -> list[Entity]:
-            return lijsten.apply(text, _detect(text))[0]
+            return lijsten.apply(text, detect(text))[0]
 
-        report = build_report(docs, word_sentences(), _detect, with_lists,
+        report = build_report(docs, word_sentences(), detect, with_lists,
                                date=_date.today().isoformat())
-    out = format_report(report)
+    out = f"layers: {a.layers}\n\n" + format_report(report)
     Path(a.out).write_text(out, encoding="utf-8")
     print(out)
     return 0
