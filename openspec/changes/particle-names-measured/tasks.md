@@ -29,6 +29,17 @@ Step 4 of 4, split from `detect-dutch-particle-names` (#285). Build after
 - [ ] Both docs state in one sentence each that recall on real documents is
       unknown and that the Gooise Meren miss is not closed. Proved by: a grep
       finds both sentences, and no doc says the miss is fixed.
+- [ ] Reviewer finding: lines 66-70 of `docs/explanation/meting-overdetectie-08.md`
+      mix unquoted English and Dutch in one paragraph. Rewrite them so the page
+      keeps one language per paragraph. The disclosures "Recall on real
+      documents is unknown", "The Gooise Meren miss is not closed by this
+      change" and "not run" may appear only as quoted literal phrases inside
+      Dutch prose, or as their own fully English paragraphs, never mixed
+      mid-sentence. The phrases stay byte-exact. Proved by: a grep for each
+      of the three phrases still finds it in the page; and a check on the
+      page (a test, or a reviewed grep) finds no paragraph holding both
+      unquoted English disclosure text and Dutch text, in particular none
+      in the rewritten lines 66-70.
 
 ## 3. Docs
 - [ ] `docs/reference/evaluation.md` documents the opt-in layer and how to run
