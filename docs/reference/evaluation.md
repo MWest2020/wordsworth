@@ -235,6 +235,37 @@ And the limit, which also travels inside `manifest.json`: this text was written
 by us and is more regular than administrative reality. A score here is a lower
 bound for the machinery, not a prediction for production.
 
+## A long PDF corpus whose answer we know (synthetic-long-corpus)
+
+`scripts/eval/generate_long_corpus.py <outdir> --docs 30 --pages 30 --seed N
+--scanned 0.1` writes long Woo-style PDFs (cover, table of contents, letters,
+e-mail threads, minutes, tables; "pagina x van y", a `WOO-<year>-NNNN` number and
+`SYNTHETISCH` on every page) with page-level ground truth. How to run it is in
+`scripts/eval/README.md`; what its outputs mean:
+
+- **`gold.jsonl` is one record per born-digital page** in `load_gold`'s format
+  (`id` = `<doc-id>#p<NN>`, plus `doc` and `page`). `pii_run` therefore reports
+  pages, not documents, and gold ids are not qrels ids.
+- **`gold_scanned.jsonl` is not scored.** A scanned page has no text layer; in a
+  mixed document `profile_pdf` still says born-digital, so the page is lost
+  without a trace and never reaches OCR. `pii_run` reads gold text, not the PDF,
+  so scoring these pages would count what the pipeline cannot see as perfectly
+  extracted.
+- **Each query's only answer is a phrase on page 20 or later**, recorded in
+  `manifest.json`: it measures long-document ranking fairness, since
+  `wordsworth.eval.run` scores whole documents.
+- **Values cannot be anyone's:** BSNs from the published test range
+  999990000–999999999 (elfproef-valid), IBANs on the non-existent bank code
+  `ZZZZ` (mod-97 valid), fictional names.
+- **Reproducible** for the same seed, options and environment; the gold files are
+  identical in any environment.
+
+First real run (2026-11-06, seed 20261106, 30×30, `--scanned 0.1`): 10.5 s,
+11.4 MB, `documents=810` (900 pages minus 90 scanned). Deterministic layer:
+BSN/IBAN/EMAIL/POSTCODE P=1.000 R=1.000; PERSON, LOCATION and PHONE_NUMBER are in
+the gold for the model layer and score R=0 without it. The same limit as above
+applies: a score here is a lower bound for the machinery, not a prediction.
+
 ## A real corpus, and what it can and cannot settle
 
 The synthetic collections above settle the *machinery*: the state machine, the
