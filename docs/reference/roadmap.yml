@@ -36,5 +36,5 @@ done_means:
   - {item: "Console for the key user: deleted documents hidden, a dossier home", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/277"}
   - {item: "Readable topics (named by the language model) and search that shows the matching passage", status: open, evidence: "https://github.com/MWest2020/wordsworth/blob/main/docs/explanation/review-key-user-2026-10-28.md"}
   - {item: "Share from the console with layered anonymisation (a grant at a PPL, the redacted and reveal PDF)", status: open, evidence: "https://github.com/MWest2020/wordsworth/blob/main/docs/explanation/review-key-user-2026-10-28.md"}
-  - {item: "Documents survive a node (storage on two nodes, proven)", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/193"}
+  - {item: "Documents survive a node (storage on two nodes, proven)", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/193#issuecomment-6714219091"}
   - {item: "The tailnet ingress runs on two nodes and survives losing one proxy", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/192"}

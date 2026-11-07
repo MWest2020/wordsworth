@@ -12,6 +12,12 @@ no longer waits for step 1: the api mounts nothing tied to a node.
   is what 1.2 still has to prove.*
 - [ ] 1.2 Show it: a node goes away, objects stay readable and a
   retention-locked object stays locked.
+  *Partly shown 2026-11-08 (#193): migration to the HA shape (homelab #32: 3
+  Raft masters, 3 volume servers, filer metadata on Postgres). With node-01
+  cut off, all 423 objects read back intact and writes worked after a filer
+  restart. Still to show before this is ticked: a retention-locked object
+  stays locked while a node is gone. There is no locked object to test yet;
+  the 28 Oct COMPLIANCE probe ran on the old shape.*
 - [ ] 1.3 Move the `wordsworth` bucket onto it.
 - [ ] 1.4 Schedule both WORM exports (document chain and key-lifecycle
   stream). Parked until 1.1 by Mark, 2026-09-23.
