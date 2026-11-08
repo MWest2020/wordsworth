@@ -20,16 +20,21 @@ the docs.
   - It passes the `OriginalsStore` to `create_app` as `store`. The reversible
     wiring shares the same `transit_for` (step 1).
 - **`originals_io.originals_from_config(store)`** builds the same thing for
-  the CLIs. `ingest_corpus.py`, `ingest_manifest.py` and `reprocess.py` use it
-  where they now build a bare `S3ObjectStore`, and none builds a transit
-  itself.
+  the CLIs. `ingest_corpus.py` and `ingest_manifest.py` use it where they now
+  build a bare `S3ObjectStore`, and neither builds a transit itself.
+  - `reprocess.py` is not in this list: it builds no store and has no entry
+    point. Its store comes from `api.py` via `build_app`, and the k8s job only
+    POSTs `/reprocess`. So `build_app` covers it.
 - **The OCR gap is pinned.** A test asserts that recovery's OCR write is still
   plaintext (no sealed header) and still reads through `read_original`. Its
   docstring names `originals-ocr-sealed` as the change that inverts it.
 - **Docs.**
   - `docs/how-to/originals-encryption.md`, new:
     - ingest order and rollback;
-    - the 503 and the batch stop, with the body from `originals-ingest-write`;
+    - the 503 and the batch stop, with the body from `originals-ingest-write`.
+      An empty `openbao_token` or an unreachable OpenBao gives 503 on every
+      ingest, by design: there is no plaintext fallback. Rollback is the
+      previous wordsworth image digest in homelab;
     - the OCR gap until `originals-ocr-sealed`;
     - the deploy precondition below.
   - `docs/reference/ingest.md`: the 503 body.
@@ -44,7 +49,8 @@ the docs.
 
 Merging this change does not deploy it. Wordsworth images reach the cluster
 through a digest bump in homelab. Before that bump, both of these must exist,
-with the evidence in the homelab PR:
+with the evidence in the homelab PR. They are deploy preconditions in that PR,
+not build tasks in this change, and no task here produces them:
 - a restore-tested backup of the `document_keys` table;
 - an off-node OpenBao snapshot that holds the originals KEK.
 
