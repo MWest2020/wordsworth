@@ -43,7 +43,11 @@ the docs.
   - `docs/reference/cli.md`: the non-zero exit on an unavailable key.
 - **Roadmap.** `docs/reference/roadmap.yml`: the item "New originals stored
   encrypted … every reader opens them" becomes done, with this change as
-  evidence.
+  evidence. The item's wording does not claim that new originals are
+  encrypted yet: that is true only after the digest bump below.
+- **`docs/reference/cli.md`, the 503 gap.** The sentence that tracks the
+  CLI's missing stop on 503 for this change is corrected: the gap lives in
+  `client.py` and is not fixed here; it points at a follow-up issue.
 
 ## Deploy precondition (not a build task)
 
@@ -68,4 +72,5 @@ documents stay plaintext until it is.
 
 The OCR write (`originals-ocr-sealed`, next), destroying keys on deletion
 (`originals-crypto-shred`), sealing the existing corpus
-(`originals-encrypt-existing`).
+(`originals-encrypt-existing`), and the CLI's 503 handling in `client.py`
+(follow-up issue, linked from `docs/reference/cli.md`).
