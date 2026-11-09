@@ -27,6 +27,7 @@ from .models import AuditRecord
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
+from .originals_io import originals_from_config
 from .pipeline import ingest, process
 from .states import State
 
@@ -155,7 +156,7 @@ def ingest_manifest_corpus(
         raise Sha256MismatchError(f"sha256 mismatch, aborting: {mismatches}")
 
     session_factory = session_factory or make_session_factory(make_engine())
-    store = store or S3ObjectStore.from_config()
+    store = store or originals_from_config(S3ObjectStore.from_config())
     anonymizer = anonymizer or OpenAnonymiserAnonymizer()
     index = search_index or OpenSearchIndex.from_config()
     embedder = embedder or OllamaEmbedder.from_config()

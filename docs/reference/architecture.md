@@ -107,12 +107,24 @@ object store ([ADR-0008](../explanation/adr/0008-envelope-encryption-of-original
   of a database transaction that rolled back after the object was already
   written (S3 and Postgres cannot share one transaction). Dry-run by default;
   see [the how-to](../how-to/sealed-orphans.md).
-- **Nothing is sealed in production yet.** This module builds the cipher and
-  the key store only; ingest and every read site (`pipeline.py`, `recovery.py`,
-  `api.py`) still read and write plain objects. `originals-ingest-readers` and
-  `originals-ingest-write` move them onto the originals seam,
-  `originals-ingest-switch` turns it on in production, and `originals-ocr-sealed`
-  seals the OCR write.
+- **Ingest order and the running service.** `write_original` is called from
+  inside `pipeline.ingest`, after the document is registered: the row exists
+  before the object is sealed, so a rollback after a failed write deletes only
+  the object this call wrote (`originals-ingest-write`). Every reader --
+  `pipeline.process`, `pipeline.reanonymize`, OCR recovery's input read, and
+  the redacted/reveal PDF routes -- opens an original through `read_original`,
+  never a plain `store.get` (`originals-ingest-readers`). `serve.build_app`
+  wires one process-lifetime `OriginalsStore` as `store` for the API, in both
+  pseudonymisation modes, and the CLIs (`ingest_corpus.py`, `ingest_manifest.py`)
+  get the same thing from `originals_io.originals_from_config`
+  (`originals-ingest-switch`) -- so every new original is sealed. This is the
+  code path only: a wordsworth image reaches the cluster through a digest bump
+  in homelab, and new originals are sealed in production only after that bump
+  (see [the how-to](../how-to/originals-encryption.md) for the deploy
+  precondition). The OCR write (`recovery.recover`) is the one exception --
+  it still writes the OCR'd PDF as a plain object, read back through
+  `read_original`'s legacy-plaintext path -- until `originals-ocr-sealed`
+  seals it too.
 
 ## Configuration
 

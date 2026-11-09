@@ -22,6 +22,7 @@ from .embedder import OllamaEmbedder
 from .object_store import S3ObjectStore
 from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
+from .originals_io import originals_from_config
 from .models import Document
 from .pipeline import dossiers_of, ingest, process
 from .recovery import recover
@@ -37,7 +38,7 @@ def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
     PII via the service)."""
     engine = make_engine()
     session_factory = make_session_factory(engine)
-    store = S3ObjectStore.from_config()
+    store = originals_from_config(S3ObjectStore.from_config())
     anonymizer = OpenAnonymiserAnonymizer()
     index = OpenSearchIndex.from_config()
     embedder = OllamaEmbedder.from_config()
