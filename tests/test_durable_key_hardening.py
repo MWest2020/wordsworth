@@ -89,10 +89,13 @@ def test_current_key_adopts_winner_on_mint_race():
 
 def test_reversible_wiring_shares_one_provider(monkeypatch):
     monkeypatch.setenv("WORDSWORTH_REVERSIBLE", "true")
+    from wordsworth.config import settings
     from wordsworth.db import make_engine, make_session_factory
     from wordsworth.serve import _reversible_wiring
+    from wordsworth.transit import transit_factory
 
-    wiring = _reversible_wiring(make_session_factory(make_engine()))  # no I/O
+    transit_for = transit_factory(settings.openbao_url, settings.openbao_token)
+    wiring = _reversible_wiring(make_session_factory(make_engine()), transit_for)  # no I/O
     kp = wiring["key_provider"]
     assert isinstance(kp, DurableKeyProvider)
     anon = wiring["anonymizer_factory"](None)            # session unused for the provider

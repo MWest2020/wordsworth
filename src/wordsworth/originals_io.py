@@ -32,3 +32,15 @@ def write_original(session: Session, store: ObjectStore, document_id: UUID,
     existed = store.exists(object_key)
     store.put(object_key, data)
     return PutResult.UNCHANGED if existed else PutResult.WROTE
+
+
+def originals_from_config(store: ObjectStore) -> OriginalsStore:
+    """`OriginalsStore` over `store`, with `DocumentKeys` wired to the same
+    OpenBao Transit config `serve.build_app` uses (originals-ingest-switch) --
+    the CLIs' entry point onto the seam, so neither builds a transit itself."""
+    from .config import settings
+    from .document_keys import DocumentKeys
+    from .transit import transit_factory
+
+    transit_for = transit_factory(settings.openbao_url, settings.openbao_token)
+    return OriginalsStore(store, DocumentKeys(transit_for))

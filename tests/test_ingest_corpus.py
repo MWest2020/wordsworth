@@ -86,11 +86,15 @@ def _refusing_from(n: int):
 
 
 def _wire_fake_backends(monkeypatch, session_factory, store, mem_index, fake_embedder):
-    """Swap `ingest_corpus()`'s real backend constructors for test doubles --
-    `OriginalsStore` goes wherever a plain `ObjectStore` goes (ADR-0008), so
-    `S3ObjectStore.from_config` can be replaced by one wrapping a refusing
-    transit without touching `ingest_corpus()` itself."""
+    """Swap `ingest_corpus()`'s real backend constructors for test doubles.
+    originals-ingest-switch moved the CLI's store-building through
+    `originals_io.originals_from_config` (`ingest_corpus()` no longer uses the
+    bare `S3ObjectStore.from_config()` result directly), so that is the seam a
+    test stubs to hand `ingest_corpus()` an already-built `OriginalsStore`
+    (here, one wrapping a refusing transit) without touching `ingest_corpus()`
+    itself."""
     from wordsworth.anonymizer import DeterministicAnonymizer
+    from wordsworth.object_store import InMemoryObjectStore
 
     monkeypatch.setattr(ingest_corpus_mod, "make_engine", lambda: object())
     monkeypatch.setattr(ingest_corpus_mod, "make_session_factory",
@@ -99,7 +103,7 @@ def _wire_fake_backends(monkeypatch, session_factory, store, mem_index, fake_emb
     class _FakeS3:
         @classmethod
         def from_config(cls):
-            return store
+            return InMemoryObjectStore()  # discarded: originals_from_config is stubbed below
 
     class _FakeIndex:
         @classmethod
@@ -112,6 +116,7 @@ def _wire_fake_backends(monkeypatch, session_factory, store, mem_index, fake_emb
             return fake_embedder
 
     monkeypatch.setattr(ingest_corpus_mod, "S3ObjectStore", _FakeS3)
+    monkeypatch.setattr(ingest_corpus_mod, "originals_from_config", lambda raw_store: store)
     monkeypatch.setattr(ingest_corpus_mod, "OpenAnonymiserAnonymizer",
                         lambda: DeterministicAnonymizer())
     monkeypatch.setattr(ingest_corpus_mod, "OpenSearchIndex", _FakeIndex)

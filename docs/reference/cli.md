@@ -87,11 +87,12 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   summary. A file that fails does **not** abort the batch, with one exception:
   when the key service refuses while an original is being sealed, the API
   stops that HTTP batch early and answers `503` with `detail` `key service
-  unavailable` (see `docs/reference/ingest.md`). This CLI reports every file
-  in that batch as failed and moves on to the next batch — it does not yet
-  stop the whole run on that signal (`results` is retried/discarded like any
-  other 5xx, a known gap tracked for `originals-ingest-switch`). Exit code is
-  non-zero if any file failed.
+  unavailable` (see `docs/reference/ingest.md`). This CLI does not yet stop
+  the whole run on that signal: `client.py`'s retry handling
+  (`client.py:178-184`) treats a batch that still fails after retries as a
+  generic batch failure and moves on to the next batch, the same as any other
+  5xx. This is not fixed here. Follow-up issue: TODO (not yet filed). Exit
+  code is non-zero if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
 ## `wordsworth-ingest`

@@ -42,12 +42,25 @@ def build_app() -> FastAPI:
     configure_logging()
     engine = make_engine()
     session_factory = make_session_factory(engine)
+
+    # One process-lifetime `transit_for` (ADR-0008 + ADR-0002): building it does
+    # no OpenBao I/O (only a closure), so it is safe unconditionally and lets the
+    # originals seal/unwrap cache and the reversible key provider share one
+    # OpenBao Transit client per KEK name.
+    from .transit import transit_factory
+
+    transit_for = transit_factory(settings.openbao_url, settings.openbao_token)
+
     store = None
     anonymizer = None
     if settings.s3_access_key and settings.s3_secret_key:
+        from .document_keys import DocumentKeys
         from .object_store import S3ObjectStore
+        from .originals_store import OriginalsStore
 
-        store = S3ObjectStore.from_config()
+        # originals-ingest-switch: every new original is sealed (ADR-0008), in
+        # both pseudonymisation modes — one `OriginalsStore` for the write path.
+        store = OriginalsStore(S3ObjectStore.from_config(), DocumentKeys(transit_for))
 
     # Reversible mode (ADR-0002): pseudonymise with durable keyed tokens and mount
     # the key-gated reveal route. The durable key provider is ONE process-lifetime
@@ -57,7 +70,7 @@ def build_app() -> FastAPI:
     # Default (off) keeps the irreversible OpenAnonymiser driver and no reveal.
     reversible: dict = {}
     if settings.reversible_mode:
-        reversible = _reversible_wiring(session_factory)
+        reversible = _reversible_wiring(session_factory, transit_for)
     elif store is not None:
         from .detection_lists import DetectionLists
         from .openanonymiser_driver import OpenAnonymiserAnonymizer
@@ -69,7 +82,7 @@ def build_app() -> FastAPI:
     # buckets would hand every client one bucket per replica (hoge-beschikbaarheid).
     from .rate_limit import limiters_from_settings
 
-    return create_app(
+    app = create_app(
         session_factory=session_factory,
         rate_limiters=limiters_from_settings(settings, session_factory=session_factory),
         search_index=OpenSearchIndex.from_config(),
@@ -79,12 +92,18 @@ def build_app() -> FastAPI:
         anonymizer=anonymizer,
         **reversible,
     )
+    # The surface `tests/test_originals_switch.py` and the reviewer check against
+    # — no private attribute reaches outside this module for that proof.
+    app.state.store = store
+    app.state.transit_for = transit_for
+    return app
 
 
-def _reversible_wiring(session_factory) -> dict:
-    """`create_app` kwargs for reversible mode. One shared OpenBao Transit client
-    and ONE process-lifetime `DurableKeyProvider` over a session-factory-backed
-    vault — the unwrap cache persists across requests and the single-active-key
+def _reversible_wiring(session_factory, transit_for) -> dict:
+    """`create_app` kwargs for reversible mode. `transit_for` is the one shared
+    OpenBao Transit factory `build_app` built (originals-ingest-switch) — and ONE
+    process-lifetime `DurableKeyProvider` over a session-factory-backed vault —
+    the unwrap cache persists across requests and the single-active-key
     invariant is enforced by one provider. Only the mapping/grant stores stay
     per-request (session-bound). No OpenBao call happens here — only per request."""
     from .detection_lists import DetectionLists
@@ -92,9 +111,8 @@ def _reversible_wiring(session_factory) -> dict:
     from .keys import DEFAULT_DOMAIN, DurableKeyProvider
     from .mapping_store import PostgresMappingStore
     from .pseudonymizer import ReversibleAnonymizer
-    from .transit import SessionFactoryKeyVaultStore, transit_factory
+    from .transit import SessionFactoryKeyVaultStore
 
-    transit_for = transit_factory(settings.openbao_url, settings.openbao_token)
     transit = transit_for(settings.transit_kek_name)
     key_provider = DurableKeyProvider(
         SessionFactoryKeyVaultStore(session_factory), transit, settings.key_cache_ttl
