@@ -39,7 +39,7 @@ test counts as failed.
       only after the homelab digest bump and stay plaintext until then, as in
       the deploy precondition section of proposal.md. Proved by: the roadmap
       check in CI, and a grep of the item for the digest-bump statement.
-- [ ] 3.3 `docs/reference/cli.md` lines 88-94 (the "known gap tracked for
+- [x] 3.3 `docs/reference/cli.md` lines 88-94 (the "known gap tracked for
       `originals-ingest-switch`" sentence): say the gap, that the CLI does not
       stop the run on a 503 `key service unavailable`, lives in `client.py`
       (its retry handling, `client.py:178-184`), is not fixed in this change,
