@@ -91,7 +91,8 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   the whole run on that signal: `client.py`'s retry handling
   (`client.py:178-184`) treats a batch that still fails after retries as a
   generic batch failure and moves on to the next batch, the same as any other
-  5xx. This is not fixed here. Follow-up issue: TODO (not yet filed). Exit
+  5xx. This is not fixed here. Follow-up issue:
+  [#403](https://github.com/MWest2020/wordsworth/issues/403). Exit
   code is non-zero if any file failed.
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
