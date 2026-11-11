@@ -61,6 +61,10 @@ drop.
   - `licence_check.py` compares GitHub's licence, `LICENSE` and the SPDX headers.
   - `pilot_facts.py` reads the numbers from the pilot report.
   - `curl` fetches the public demo and the contact page.
+  - `check_key_backups.sh` reads when the two nightly key backups last succeeded.
+  - `check_sealed_originals.sh` checks in production that `document_keys` has a row,
+    that the newest sealed original starts with the `WWENC` header (5 bytes read), and
+    that `/health` answers. It prints counts and yes/no only.
 
 The build tools come from `uv run --with` with pinned versions: piper-tts, Playwright
 and imageio-ffmpeg. Set `FILM_CHROME` to use a Chromium other than the one Playwright

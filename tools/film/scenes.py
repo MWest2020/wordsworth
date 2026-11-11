@@ -78,6 +78,7 @@ SCENES = [
                          '<div class="box" data-at="own-hardware" data-dt="0.8">Lokale taalmodellen</div>'
                          '<div class="box" data-at="own-hardware" data-dt="1.2">Zoekindex (alleen codes)</div>'),
         ("key-vault", '<div class="box" data-at="key-vault">Eigen sleutelkluis</div>'),
+        ("sealed-originals", '<div class="box" data-at="sealed-originals">Originelen versleuteld, eigen sleutel per document</div>'),
         ("key-backups", '<div class="box" data-at="key-backups">Sleutelbackup elke nacht, buiten de kluis</div>'),
         (None, '</div>'),
         ("own-hardware", '<div class="nocloud" data-at="own-hardware" data-dt="2.0">✕ geen cloud in het pad</div>'),
