@@ -49,6 +49,10 @@ by the updated key and reads the OCR text layer); below, it remains
 `unprocessable_ocr`. Every OCR attempt SHALL be recorded in the audit trail —
 including one that does not recover — so no attempt is a silent no-op; a
 recovering attempt's audit record SHALL carry the old and new object keys.
+Before anything is written, recovery SHALL check whether another live document
+owns the new key; if so it SHALL write nothing and retire the scan's document
+as a copy of that owner. Otherwise the OCR'd PDF SHALL be stored sealed,
+through the originals store, under a key row of the recovered document.
 
 #### Scenario: OCR yields usable text and is actually extractable
 
@@ -65,3 +69,16 @@ recovering attempt's audit record SHALL carry the old and new object keys.
 - **WHEN** OCR produces text below the threshold
 - **THEN** the document remains `unprocessable_ocr` AND an audit record of the OCR
   attempt (with the metric) is written — not a silent no-op
+
+#### Scenario: The OCR'd PDF is stored sealed
+
+- **WHEN** a scanned document is recovered and no other live document owns the
+  OCR'd bytes
+- **THEN** the new object carries the sealed header, opens to the OCR'd bytes
+  and has a key row of the recovered document
+
+#### Scenario: Another document's object is never overwritten
+
+- **WHEN** the OCR'd bytes are already the object of another live document
+- **THEN** that object is unchanged, nothing is written, and the scan's
+  document is superseded by the owner
