@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-09
+last_reviewed: 2026-11-11
 ---
 
 # Runbook: originals encryption
@@ -50,14 +50,17 @@ on stderr, no further files attempted.
 previous wordsworth image digest in homelab. There is no in-place toggle back
 to plaintext ingest -- the previous image is the rollback.
 
-## The OCR gap
+## OCR recovery is sealed too
 
-OCR recovery (`recovery.recover`) writes the OCR'd PDF as a plain object, not
-through `write_original` -- the one write this change does not move onto the
-seam. It still reads the scan it OCRs through `read_original`, and the OCR'd
-object it writes still opens through `read_original` afterwards (the
-legacy-plaintext path). `originals-ocr-sealed` is the change that seals this
-write too.
+OCR recovery (`recovery.recover`) checks, before writing anything, whether
+another live document already owns the key the OCR'd bytes would get; if so,
+nothing is written and the scan's document is superseded by that owner
+(`originals-ocr-sealed`). Otherwise the OCR'd PDF is written through
+`write_original` like any other original: sealed, under its own
+content-addressed key, with a `document_keys` row for the recovered document.
+The scan object it was read from keeps its own key and row unchanged. If the
+repoint of `object_key` or the state transition fails after a fresh write, the
+written object is deleted so a retry starts clean.
 
 ## Deploy precondition
 
