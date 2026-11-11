@@ -138,3 +138,14 @@ def test_a_reworded_drop_reason_is_the_same_film(tmp_path):
     b.write_text(json.dumps(base + [{"id": "b", "scene": "x", "shown": False, "why": "timeout 4s"}]))
     c.write_text(json.dumps([{**base[0], "sentences": ["T."]}]))
     assert claims.same(a, b) and not claims.same(a, c)
+
+
+
+def test_sealed_originals_rests_on_the_key_vault_and_its_own_check():
+    import yaml
+
+    spec_ = yaml.safe_load(open(claims.CLAIMS, encoding="utf-8"))
+    c = next(c for c in spec_["claims"] if c["id"] == "sealed-originals")
+    assert c["scene"] == "autonomie"
+    assert c["requires"] == ["key-vault"]
+    assert c["cmd"] == "tools/film/check_sealed_originals.sh"

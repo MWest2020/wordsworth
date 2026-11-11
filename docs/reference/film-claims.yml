@@ -127,6 +127,13 @@ claims:
     sentences:
       - "De sleutels om persoonsgegevens te onthullen staan in een eigen sleutelkluis, op dezelfde hardware."
 
+  - id: sealed-originals
+    scene: autonomie
+    requires: [key-vault]
+    cmd: "tools/film/check_sealed_originals.sh"
+    sentences:
+      - "Elk nieuw origineel wordt versleuteld opgeslagen, met een eigen sleutel per document. Die sleutels staan in de kluis op eigen hardware."
+
   - id: key-backups
     scene: autonomie
     requires: [key-vault]
