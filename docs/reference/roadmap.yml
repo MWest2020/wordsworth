@@ -16,10 +16,10 @@ phases:
     # The next phase's done-means, open until built and verified (the overview
     # shows done_means for the current phase only).
     done_means:
-      - {item: "Sealed-original format and wrapped key store (nothing sealed yet)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-cipher-and-key-store"}
-      - {item: "A deleted document releases its object key (same bytes can be ingested again)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/deleted-document-releases-object-key"}
+      - {item: "Sealed-original format and wrapped key store", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/335"}
+      - {item: "A deleted document releases its object key (same bytes can be ingested again)", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/341"}
       - {item: "New originals are sealed at rest under a per-document key, and every reader opens them through the seam (in production since 2026-11-09; verified 2026-11-10 with a synthetic document)", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/379#issuecomment-6761871781"}
-      - {item: "OCR-recovered originals stored encrypted, never over another document", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-ocr-sealed"}
+      - {item: "OCR-recovered originals stored encrypted, never over another document (in production since 2026-11-11)", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/411"}
       - {item: "Deleting a document destroys its key (crypto-shredding)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-crypto-shred"}
       - {item: "The existing corpus sealed and verified", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-encrypt-existing"}
       - {item: "Rights per Keycloak group, managed as data", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/keycloak-groups-to-roles"}
