@@ -229,10 +229,11 @@ removing it, not retiring it — is `wordsworth-delete`, below.
 
 ## `wordsworth-delete`
 
-Removes a document's content: the stored object, its text, its pseudonyms,
-its mappings, its search-index entry and its grants. The `documents` row and
-its audit trail stay — the trail is append-only, the same reason a superseded
-copy keeps its row. There is **no undo**.
+Removes a document's content: the stored object, its text, its cached
+redacted PDFs and box map (`renders_removed`, `box_maps_removed`), its
+pseudonyms, its mappings, its search-index entry and its grants. The
+`documents` row and its audit trail stay — the trail is append-only, the same
+reason a superseded copy keeps its row. There is **no undo**.
 
 ```bash
 wordsworth-delete <document-id> [<document-id> ...] --actor <who> [--dry-run]

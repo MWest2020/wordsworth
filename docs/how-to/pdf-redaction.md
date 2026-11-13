@@ -41,6 +41,7 @@ Responses:
 |---|---|
 | 200 | the redacted PDF |
 | 404 | unknown document |
+| 410 `"document deleted"` | the document is deleted — checked before the cache; the deletion removed its renders and box map ([deleting documents](deleting-documents.md#the-redacted-pdf-of-a-deleted-document)) |
 | 409 `"no box map yet..."` | not processed in reversible mode, or the last run hit `value-not-located` |
 | 409 `"stale"` | the current detection lists differ from the ones the box map was made under |
 
@@ -58,7 +59,7 @@ curl -XPOST $API/documents/<doc>/reveal.pdf -H 'content-type: application/json' 
 ```
 
 The same grant and the same gates as [`/reveal`](grants.md) — a document that
-has no box map yet also answers 409 here. The granted type is drawn in clear,
+has no box map yet also answers 409 here, a deleted one 410. The granted type is drawn in clear,
 straight from the original page (nothing is decrypted to render it: the box
 for that type is simply left unpainted, so the original pixels and the
 original invisible text pass through); every other type keeps its box and
