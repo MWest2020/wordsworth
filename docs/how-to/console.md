@@ -76,15 +76,24 @@ links already do. The page shows:
 - a question box that searches this dossier (`/console/search?dossier=…`);
 - the dossier's topics, largest first, with their number of documents and a
   link that searches within the topic (`&topic=<id>`), plus one line saying how
-  many of the live documents fall in a topic at all. The count per topic is
-  from the last computation, so after deletions the two numbers can disagree;
-  a topic list that covers under half the dossier would otherwise read as the
-  whole dossier;
+  many of the live documents fall in a topic at all (a topic list that covers
+  under half the dossier would otherwise read as the whole dossier). The count
+  per topic is from the last computation. When the topics count more documents
+  than the dossier now holds, documents were deleted since; the page says so
+  and links the topics page to compute them again, rather than showing a
+  fraction above one or clamping it;
 - its live documents, most recently touched first, with the same 200-row cap,
   hidden-documents notice and `&alles=1` toggle as the full list below.
 
 An unknown name answers `404` with the list of dossiers that do exist, not an
-empty page: an empty page for a typo reads as "this dossier holds nothing".
+empty page: an empty page for a typo reads as "this dossier holds nothing". No
+name at all (`/console/dossier`, `?dossier=`) answers `303` to `/console`, where
+a dossier is chosen.
+
+A dossier name may contain a comma. A search scope (`/console/search?dossier=`
+and the API's `GET /search?dossier=`) is first tried as one whole name and only
+then read as a comma-separated list, so the dossier `a,b` searches itself and
+not `a` and `b`. With no dossier named `a,b`, `a,b` still means both.
 
 **`/console/documents`** ("alle documenten") is the full list that used to be
 the home page, kept for operators: every document across all dossiers, by the

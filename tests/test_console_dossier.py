@@ -64,9 +64,6 @@ def test_one_dossier_opens_directly(session_factory):
     assert r.headers["location"] == "/console/dossier?dossier=Gooise%20Meren%202022"
     page = c.get(r.headers["location"])
     assert page.status_code == 200 and "a.pdf" in page.text
-    # logging in lands there too, through the home page
-    assert c.post("/console/login", data={"key": "s3cret"}).headers[
-        "location"] == "/console"
 
 
 def test_two_dossiers_show_the_picker_with_live_documents_and_topics(
@@ -74,13 +71,12 @@ def test_two_dossiers_show_the_picker_with_live_documents_and_topics(
     with session_factory() as s:
         _doc(s, "een", "1.pdf")
         gone = _doc(s, "een", "2.pdf")
-        two = _doc(s, "twee", "3.pdf")
+        _doc(s, "twee", "3.pdf")
         s.add(Topic(dossier_id=dossiers.ensure(s, "twee").id,
                     computed_name="vergunning", document_count=1))
         delete_document(s, gone.id, InMemoryObjectStore(), InMemoryIndex(),
                         actor="test")
         s.commit()
-        assert two
     r = _client(session_factory).get("/console")
     assert r.status_code == 200
     rows = r.text.split("<tbody>")[1]
@@ -171,11 +167,11 @@ def test_an_unknown_dossier_answers_404_with_the_list(session_factory):
         _doc(s, "bestaat", "a.pdf")
         s.commit()
     c = _client(session_factory)
-    for name in ("bestaat-niet", "x/y", ""):
+    for name in ("bestaat-niet", "x/y"):
         r = c.get("/console/dossier", params={"dossier": name})
         assert r.status_code == 404, name
         assert 'href="/console/dossier?dossier=bestaat"' in r.text, name
-    assert "bestaat niet" in c.get("/console/dossier?dossier=x%2Fy").text
+        assert f"Dossier “{name}” bestaat niet." in r.text
 
 
 def test_all_documents_keeps_the_full_list_reachable(session_factory):

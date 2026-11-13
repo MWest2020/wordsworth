@@ -26,7 +26,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select
 
-from . import console_data, console_list
+from . import console_data, console_list, dossiers
 from . import topics as topics_mod
 from .models import Document, Dossier, DossierDocument, Topic
 
@@ -79,20 +79,20 @@ def coverage(topics: list[dict], live: int) -> dict:
 
     A topic list that covers under half the dossier reads as the whole dossier
     unless the page says how much it covers. ``x`` is the sum of the topics'
-    counts as they were computed; ``y`` is the live count now. The two can
-    disagree after documents were deleted since the computation, and the page
-    says the count is from the computation rather than hiding that.
+    counts as they were computed; ``y`` is the live count now. When documents
+    were deleted since the computation, ``x`` can exceed ``y``; then the page
+    says the topics are stale instead of a fraction above one, and the number
+    is not clamped (a clamped 3 van 3 would claim a coverage nobody measured).
     """
-    return {"in_topic": sum(t["count"] for t in topics), "live": live}
+    in_topic = sum(t["count"] for t in topics)
+    return {"in_topic": in_topic, "live": live, "stale": in_topic > live}
 
 
 def mount(router, session_factory, TEMPLATES, mag_lezen, caller) -> None:
-    def _picker(request, status_code=200, fout="", gevraagd=""):
-        with session_factory() as session:
-            found = choices(session)
+    def _picker(request, found, status_code=200, fout=""):
         return TEMPLATES.TemplateResponse(request, "dossiers.html", {
-            "dossiers": found, "fout": fout, "gevraagd": gevraagd,
-            "caller": caller(request)}, status_code=status_code)
+            "dossiers": found, "fout": fout, "caller": caller(request)},
+            status_code=status_code)
 
     @router.get("", response_class=HTMLResponse, include_in_schema=False)
     def home(request: Request):
@@ -102,21 +102,23 @@ def mount(router, session_factory, TEMPLATES, mag_lezen, caller) -> None:
             found = choices(session)
         if len(found) == 1:
             return RedirectResponse(found[0]["href"], status_code=303)
-        return _picker(request)
+        return _picker(request, found)
 
     @router.get("/dossier", response_class=HTMLResponse,
                 include_in_schema=False)
     def dossier_page(request: Request, dossier: str = "", alles: bool = False):
         mag_lezen(request)
+        if not dossier:
+            # No name is not an unknown name: the question "which dossier" is
+            # asked on one page, and that is where this goes.
+            return RedirectResponse("/console", status_code=303)
         with session_factory() as session:
-            found = session.execute(
-                select(Dossier).where(Dossier.name == dossier)).scalars().first()
+            found = dossiers.named(session, dossier)
             if found is None:
                 # Named, not empty: an empty page for a typo reads as "this
                 # dossier holds nothing", which is a different answer.
-                fout = (f"Dossier {dossier!r} bestaat niet." if dossier
-                        else "Geen dossier gekozen.")
-                return _picker(request, 404, fout, dossier)
+                return _picker(request, choices(session), 404,
+                               f"Dossier “{dossier}” bestaat niet.")
             listed = topics_mod.listing(session, found.id)
             topics = topic_rows(found, listed)
             docs = console_list.documents(session, alles, found.id)
@@ -126,6 +128,7 @@ def mount(router, session_factory, TEMPLATES, mag_lezen, caller) -> None:
         here = page_url(found.name)
         return TEMPLATES.TemplateResponse(request, "dossier.html", {
             **docs, **console_list.toggle(here), "alles": alles,
-            "dossier": found.name, "here": here, "topics": topics,
+            "dossier": found.name, "topics": topics,
+            "topics_url": f"/console/topics?dossier={quote(found.name, safe='')}",
             "coverage": coverage(topics, docs["live"]),
             "computed_at": computed_at, "caller": caller(request)})

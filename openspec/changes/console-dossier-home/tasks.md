@@ -17,7 +17,7 @@
       check that `wc -l` of `console.py` and `dossiers.py` is no higher than
       before the change and `console_dossier.py` is at most 200 lines.
       Done: console.py 267 → 232, dossiers.py 216 → 216, console_dossier.py
-      131, console_list.py 95 (the old list, moved). Proved by
+      134, console_list.py 95 (the old list, moved). Proved by
       `test_the_routes_live_in_their_own_module_under_the_limit`.
 - [x] `/console` lists dossiers (name, live documents, topics) and redirects to
       the dossier page when there is exactly one. Proved by: tests in
@@ -34,16 +34,22 @@
       Extra (review: topics cover under half the dossier): the page says
       "x van y documenten vallen in een onderwerp";
       `test_the_page_says_how_much_of_the_dossier_the_topics_cover`,
-      `test_without_topics_the_page_says_so`.
+      `test_without_topics_the_page_says_so`; topics counting more than the
+      live documents say they are stale and link the topics page
+      (`test_topics_counting_more_than_the_live_documents_say_they_are_stale`).
 - [x] A dossier name with a slash and one with a space resolve to their page.
       Proved by: a test with names `a/b` and `a b` (URL-encoded in the query),
       each answering 200 with its own documents; the home page links to them.
-      Done: `test_names_with_a_slash_and_a_space_resolve_to_their_own_page`.
+      Done: `test_names_with_a_slash_and_a_space_resolve_to_their_own_page`;
+      `&`, `#`, `%` and unicode in `test_console_dossier_edges.py`. A comma:
+      `dossiers.resolve` tries the whole scope as one name before splitting
+      (`test_a_dossier_with_a_comma_searches_itself_not_its_parts`).
 - [x] An unknown dossier name answers 404 with the list of dossiers, not an
       empty page. Proved by: a test, including an unknown name containing a
       slash.
-      Done: `test_an_unknown_dossier_answers_404_with_the_list` (also an
-      empty name).
+      Done: `test_an_unknown_dossier_answers_404_with_the_list`. No name at
+      all answers 303 to `/console`
+      (`test_no_dossier_named_goes_back_to_the_home_page`).
 - [x] "All documents" keeps the previous list reachable. Proved by: a test that
       the link resolves.
       Done: `/console/documents`; `test_all_documents_keeps_the_full_list_reachable`;

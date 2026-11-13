@@ -19,8 +19,15 @@ Stel een vraag, kies een onderwerp of open een document.</p>
  <div class="panel-head"><span class="dot"></span><h3>Onderwerpen</h3>
    <span class="badge">{{ topics|length }} onderwerp{{ '' if topics|length == 1 else 'en' }}{% if computed_at %} · berekend {{ computed_at }}{% endif %}</span></div>
  {% if topics %}
+ {% if coverage.stale %}
+ <p class="note" style="padding:10px 16px 0">De onderwerpen tellen {{ coverage.in_topic }}
+ documenten, het dossier heeft er nu {{ coverage.live }}: sinds de berekening zijn
+ documenten verwijderd.
+ <a href="{{ topics_url }}">Bereken de onderwerpen opnieuw</a>.</p>
+ {% else %}
  <p class="note" style="padding:10px 16px 0">{{ coverage.in_topic }} van {{ coverage.live }}
  documenten vallen in een onderwerp (het aantal per onderwerp is van de berekening).</p>
+ {% endif %}
  <table><thead><tr><th>onderwerp</th><th>documenten</th></tr></thead>
  <tbody>
  {% for t in topics %}
@@ -29,7 +36,7 @@ Stel een vraag, kies een onderwerp of open een document.</p>
  </tbody></table>
  {% else %}
  <p class="empty">Nog geen onderwerpen berekend. Dat kan op
- <a href="/console/topics?dossier={{ dossier|urlencode }}">de onderwerpenpagina</a>.</p>
+ <a href="{{ topics_url }}">de onderwerpenpagina</a>.</p>
  {% endif %}
 </div>
 
