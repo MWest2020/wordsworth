@@ -141,12 +141,13 @@ def one(session_factory, document_id: UUID, *, make_anonymizer,
         entity_counts = reprocess_counts.compare(  # the text about to be committed
             before, reprocess_counts.stored_text(session, document_id))
         session.commit()
-        # Only now: a line before the commit could report a rolled-back change.
-        reprocess_counts.log(document_id, entity_counts)
         # The text/embed/index work above succeeded regardless -- only the box
         # map may not have (pdf-redaction-locate): report it, do not hide a
         # reanonymized document behind a different counts bucket.
         detail = _value_not_located_detail(session, document_id)
+        # Last: not before the commit (a rolled-back change), not before the
+        # detail query (a document both logged and reported failed).
+        reprocess_counts.log(document_id, entity_counts)
     return "reanonymized", detail, entity_counts
 
 def outdated(session, ids, lists_hash: str | None):

@@ -232,15 +232,27 @@ opzet, anders zou elke gazetteerwijziging het hele corpus achterstallig maken.
 Na zo'n wijziging selecteert `only_outdated` dus niets. Geef de documenten dan
 expliciet mee als `document_ids`.
 
-De ids van een dossier haal je uit de database:
+De ids van een dossier haal je uit de productiedatabase, **alleen-lezen**
+(`default_transaction_read_only=on`), via de jumpy/kubectl-route en de
+verbinding van de api-pod zelf. De query geeft meteen de komma-gescheiden
+lijst:
 
-```sql
-SELECT dd.document_id FROM dossier_documents dd
-JOIN dossiers d ON d.id = dd.dossier_id
-WHERE d.name = '<dossiernaam>' ORDER BY dd.document_id;
+```sh
+ssh jumpy kubectl -n wordsworth exec -i deploy/wordsworth-api -- python3 - <<'EOF'
+import os
+from sqlalchemy import create_engine, text
+# Alleen-lezen voor elke transactie op deze verbinding.
+e = create_engine(os.environ["WORDSWORTH_DATABASE_URL"],
+                  connect_args={"options": "-c default_transaction_read_only=on"})
+with e.connect() as c:
+    print(c.execute(text(
+        "SELECT string_agg(dd.document_id::text, ',' ORDER BY dd.document_id) "
+        "FROM dossier_documents dd JOIN dossiers d ON d.id = dd.dossier_id "
+        "WHERE d.name = :naam"), {"naam": "<dossiernaam>"}).scalar())
+EOF
 ```
 
-Die lijst gaat, komma-gescheiden, in `WORDSWORTH_REPROCESS_IDS` van de Job
+Die lijst gaat in `WORDSWORTH_REPROCESS_IDS` van de Job
 (`deploy/k8s/45-reprocess-job.yaml`), of in `wordsworth reprocess --ids …`, of
 als body van het eindpunt:
 
@@ -272,7 +284,8 @@ hoeveel er bijkwamen en verdwenen (`wordsworth/reprocess_counts.py`):
   krimpt nooit, dus "erna" kon daar nooit lager zijn dan "ervoor".
 - **Waar je hem leest.** In het antwoord van `POST /reprocess`, veld
   `entity_counts` (document-id → type → de vier getallen); de Job print dat
-  antwoord, dus de getallen staan in `kubectl logs job/wordsworth-reprocess`.
+  antwoord, dus de getallen staan in
+  `kubectl -n wordsworth logs job/wordsworth-reprocess`.
   En als regel in de log van de service (logger `wordsworth.pipeline`). De
   regel wordt pas geschreven nadat de commit van dat document gelukt is.
 - **Een overgeslagen of mislukt document heeft geen telling.** Het staat niet

@@ -97,6 +97,33 @@ def test_a_failed_commit_logs_no_counts(
         assert get_anonymized_text(s, doc_id) == before   # nothing committed
 
 
+def test_a_failing_detail_query_logs_no_counts(
+        session_factory, mem_store, mem_index, fake_embedder, monkeypatch, logs):
+    """The count line comes after the `value-not-located` read too: a document
+    is never both logged as re-anonymised and reported as failed."""
+    kp = new_key_provider()
+    doc_id = anonymised_before_the_rule(session_factory, mem_store, mem_index,
+                                        fake_embedder, kp, monkeypatch)
+
+    class DetailWeigert(RuntimeError):
+        pass
+
+    def weigert(_session, _document_id):
+        raise DetailWeigert()
+
+    monkeypatch.setattr(reprocess, "_value_not_located_detail", weigert)
+    entity_counts: dict = {}
+    counts, problems = reprocess.run(
+        session_factory, [doc_id], make_anonymizer=with_the_rule(kp),
+        store=mem_store, search_index=mem_index, embedder=fake_embedder,
+        entity_counts=entity_counts)
+
+    assert counts["failed"] == 1
+    assert problems == {str(doc_id): "DetailWeigert"}
+    assert entity_counts == {}
+    assert count_lines(logs) == []
+
+
 def test_skipped_and_failed_documents_log_no_counts_and_keep_their_outcome(
         session_factory, mem_store, mem_index, fake_embedder, monkeypatch, logs):
     kp = new_key_provider()
