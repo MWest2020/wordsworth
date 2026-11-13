@@ -181,6 +181,12 @@ class TopicResponse(BaseModel):
     given_name: str | None
     computed_at: datetime
     document_count: int
+    #: Het label van het taalmodel, met wie en wanneer (topic-labels-llm):
+    #: `name` is dit label als er geen ``given_name`` is.
+    llm_label: str | None = None
+    llm_description: str | None = None
+    llm_model: str | None = None
+    llm_at: datetime | None = None
 
 
 class TopicsResponse(BaseModel):
@@ -923,7 +929,9 @@ def create_app(
                     id=str(t.id), dossier_id=str(t.dossier_id),
                     name=display_name(t), computed_name=t.computed_name,
                     given_name=t.given_name, computed_at=t.computed_at,
-                    document_count=t.document_count)
+                    document_count=t.document_count, llm_label=t.llm_label,
+                    llm_description=t.llm_description, llm_model=t.llm_model,
+                    llm_at=t.llm_at)
 
             @app.post("/dossiers/{dossier_id}/topics",
                       summary="Bereken de onderwerpen van een dossier",

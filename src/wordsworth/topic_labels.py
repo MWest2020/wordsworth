@@ -24,36 +24,33 @@ het model schrijft, en elk label dat af is, is af.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import ObjectDeletedError, StaleDataError
 
 from .generator import GenerationError, Generator
 from .models import Topic
 from .search_index import IndexedDocument, SearchIndex
 from .summaries import by_document
+from .topic_label_check import DESCRIPTION_CHARS, LABEL_WORDS, validate
 from .topics import TopicError, listing
 
 #: Hoeveel van de centraalste documenten het model te zien krijgt.
 CENTRAL = 8
-LABEL_WORDS = 6
-DESCRIPTION_CHARS = 200
+#: Eén label tegelijk, per proces (`concurrency.limiter`): de knop en de
+#: route delen dit slot. Over pods of workers heen telt het niet.
+LABEL_SLOT = "topic-label"
 
 LABELLED, REJECTED, NO_SUMMARIES = "labelled", "rejected", "no_summaries"
 
-#: Een pseudonym-token, met of zonder blokhaken: `[PERSON:3fa9c2d1]`,
-#: `PERSON:3fa9c2d1`. De acht tekens zijn de sleutel, ook zonder haken.
-_TOKEN = re.compile(r"[A-Z0-9_]+:[0-9a-f]{8}(?![0-9a-zA-Z])")
-#: Een kale id ("op locatie 9e9d0346"), zoals `summaries._KALE_ID`: acht
-#: hex-tekens met minstens één cijfer, zodat "adviseur" geen id is.
-_BARE_ID = re.compile(r"(?<![0-9a-zA-Z])(?=[0-9a-f]*\d)[0-9a-f]{8}(?![0-9a-zA-Z])")
-#: Wat een model schrijft als het een token nadoet: `[PERSOON]`, `[NAAM]`.
-_PLACEHOLDER = re.compile(r"\[[A-Z_]+\]")
-_URL = re.compile(r"(?i)https?://|www\.|\b[a-z0-9-]+\.(?:nl|com|org|net|eu|gov)\b")
 
+class TopicRecomputed(TopicError):
+    """Het onderwerp verdween terwijl het model schreef: het dossier is in
+    die twee minuten opnieuw berekend. Het label hoort bij een groep die niet
+    meer bestaat en wordt dus niet opgeslagen."""
 
 @dataclass
 class Labelled:
@@ -102,28 +99,6 @@ def prompt(terms: list[str], summaries: list[str]) -> str:
     )
 
 
-def _clean(text: str) -> bool:
-    return not (_TOKEN.search(text) or _BARE_ID.search(text)
-                or _PLACEHOLDER.search(text) or _URL.search(text))
-
-
-def validate(answer: object) -> tuple[str, str] | None:
-    """(label, beschrijving) als het antwoord deugt, anders None. Niets wordt
-    gerepareerd: een ingekort of opgeschoond label is een label dat het model
-    niet schreef."""
-    if not isinstance(answer, dict):
-        return None
-    label, description = answer.get("label"), answer.get("description")
-    if not isinstance(label, str) or not isinstance(description, str):
-        return None
-    label, description = label.strip(), description.strip()
-    if len(label.splitlines()) != 1 or not 1 <= len(label.split()) <= LABEL_WORDS:
-        return None
-    if len(description.splitlines()) != 1 or len(description) > DESCRIPTION_CHARS:
-        return None
-    return (label, description) if _clean(label) and _clean(description) else None
-
-
 def _label(session: Session, topic: Topic, docs: list[IndexedDocument],
            generator: Generator) -> str:
     model = generator.model     # wie het label schreef; vóór het werk, niet erna
@@ -137,17 +112,22 @@ def _label(session: Session, topic: Topic, docs: list[IndexedDocument],
     checked = validate(generator.label(vraag))   # GenerationError: naar boven
     if checked is None:
         return REJECTED
-    topic.llm_label, topic.llm_description = checked
-    topic.llm_model = model
-    topic.llm_at = datetime.now(timezone.utc)
-    session.commit()
+    try:
+        topic.llm_label, topic.llm_description = checked
+        topic.llm_model = model
+        topic.llm_at = datetime.now(timezone.utc)
+        session.commit()
+    except (StaleDataError, ObjectDeletedError) as exc:
+        session.rollback()
+        raise TopicRecomputed("topic recomputed while labelling") from exc
     return LABELLED
 
 
 def label_topic(session: Session, index: SearchIndex, topic_id: UUID,
                 generator: Generator) -> str:
     """Label één onderwerp. Geeft `labelled`, `rejected` of `no_summaries`;
-    `TopicError` voor een onbekend onderwerp, en `GenerationError` en
+    `TopicError` voor een onbekend onderwerp, `TopicRecomputed` als het
+    tijdens de aanroep verdween, en `GenerationError` en
     `SearchUnavailable` gaan ongewijzigd naar de aanroeper."""
     topic = session.get(Topic, topic_id)
     if topic is None:
@@ -160,7 +140,8 @@ def label_topics(session: Session, index: SearchIndex, dossier_id: UUID,
                  generator: Generator, *, again: bool = False) -> Labelled:
     """Label elk onderwerp van een dossier dat nog geen label heeft (`again`:
     allemaal). Een mislukte modelaanroep kost dat ene onderwerp, niet de run;
-    het telt als `failed` en het onderwerp houdt zijn naam."""
+    het telt als `failed` en het onderwerp houdt zijn naam. Een onderwerp dat
+    tijdens de aanroep verdween (herberekend) telt ook als `failed`."""
     docs = index.documents_in(str(dossier_id))    # SearchUnavailable: naar boven
     counts = Labelled()
     for topic in listing(session, dossier_id):
@@ -170,7 +151,7 @@ def label_topics(session: Session, index: SearchIndex, dossier_id: UUID,
             continue
         try:
             outcome = _label(session, topic, docs, generator)
-        except GenerationError:
+        except (GenerationError, TopicRecomputed):
             session.rollback()
             counts.failed += 1
             continue

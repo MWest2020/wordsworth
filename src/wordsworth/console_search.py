@@ -149,7 +149,7 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                             # samenvatting is een bewering van een model.
                             "samenvatting": _samenvatting(samenvattingen.get(doc_id)),
                         })
-        onderwerp = ""
+        onderwerp, onderwerp_claim = "", ""
         if topic:
             # De naam erbij, want een uuid in een badge zegt een lezer niets en
             # "binnen een onderwerp" zonder wélk onderwerp is misleidender dan
@@ -157,6 +157,7 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
             from uuid import UUID as _UUID
 
             from .models import Topic
+            from .topic_claim import claim
             from .topics import display_name
 
             with session_factory() as session:
@@ -165,9 +166,11 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                 except ValueError:
                     gevonden = None
             onderwerp = display_name(gevonden) if gevonden else "onbekend onderwerp"
+            onderwerp_claim = claim(gevonden) if gevonden else ""
         return TEMPLATES.TemplateResponse(request, "search.html", {
             "q": q, "hits": hits, "fout": fout, "dossier": dossier,
             "manier": manier,
             "dossiers": keuzes, "suggested": console_data.SUGGESTED,
             "topic": topic, "onderwerp": onderwerp,
+            "onderwerp_claim": onderwerp_claim,
             "searchable": search_index is not None})

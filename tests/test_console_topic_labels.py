@@ -2,12 +2,17 @@
 """Labels op de onderwerpenpagina, en de knop die niet wacht (topic-labels-llm).
 
 De knop-test praat rauw ASGI met de app in plaats van via TestClient: die
-geeft een antwoord pas terug als ook de achtergrondtaak klaar is, en dan valt
-niet te zien of de pagina terugkwam terwijl het model nog bezig was. Hier wel:
-`send` krijgt de pagina binnen, en pas dán laat de test het model los.
+geeft een antwoord pas terug als ook de achtergrondtaak klaar is. Wat de test
+bewijst is de volgorde binnen de app: de laatste bytes van de pagina komen in
+`send` aan vóórdat de achtergrondtaak start, dus vóórdat het model ook maar is
+aangeroepen; het slot is dan al bezet (de route nam het), dus een tweede klik
+vanuit die `send` start niets. Pas daarna roept de taak het model aan en wordt
+het label opgeslagen. Wat uvicorn, Cloudflare of oauth2-proxy met die bytes
+doen, bewijst deze test niet.
 """
 from __future__ import annotations
 
+import json
 import logging
 from urllib.parse import urlencode
 
@@ -111,6 +116,7 @@ def test_the_button_answers_before_the_model_and_a_second_click_starts_nothing(
     async def bij_antwoord(pagina):
         gezien["pagina"] = pagina
         gezien["model_al_klaar"] = model.beantwoord
+        gezien["aanroepen"] = len(model.prompts)
         gezien["tweede"] = await _post(app, f"/console/topics/{tweede}/label",
                                        {"dossier": "zaak-console"})
         model.los.set()
@@ -119,6 +125,7 @@ def test_the_button_answers_before_the_model_and_a_second_click_starts_nothing(
               {"dossier": "zaak-console"}, bij_antwoord)
 
     assert gezien["model_al_klaar"] is False, "de pagina wachtte op het model"
+    assert gezien["aanroepen"] == 0, "het model liep al voordat de pagina weg was"
     assert "bezig, ververs over ongeveer 2 minuten" in gezien["pagina"]
     assert "er loopt al een label-opdracht" in gezien["tweede"]
     assert len(model.prompts) == 1, "de tweede klik startte toch een label"
@@ -136,14 +143,16 @@ def test_a_rejected_label_is_logged_without_its_text(session_factory, caplog):
     model = Model({"label": "[PERSOON] Jansen-geheim", "description": "Goed."})
     app, (eerste, _) = _opzet(session_factory, model)
 
-    with caplog.at_level(logging.INFO, logger="wordsworth.console_topic_label"):
+    with caplog.at_level(logging.INFO, logger="wordsworth.pipeline"):
         r = _client(app).post(f"/console/topics/{eerste}/label",
                               data={"dossier": "zaak-console"})
 
     assert r.status_code == 200
-    regels = [rec.getMessage() for rec in caplog.records
-              if rec.name == "wordsworth.console_topic_label"]
-    assert regels == [f"topic label topic={eerste} outcome=rejected"]
+    regels = [json.loads(rec.getMessage()) for rec in caplog.records
+              if rec.name == "wordsworth.pipeline"
+              and '"topic_label"' in rec.getMessage()]
+    assert [(r["topic_id"], r["outcome"]) for r in regels] == [
+        (str(eerste), "rejected")]
     assert "geheim" not in caplog.text and "PERSOON" not in caplog.text
     with session_factory() as s:
         assert s.get(Topic, eerste).llm_label is None
@@ -157,13 +166,14 @@ def test_a_failed_model_call_is_logged_and_releases_the_button(session_factory,
     app, (eerste, _) = _opzet(session_factory, model)
     c = _client(app)
 
-    with caplog.at_level(logging.INFO, logger="wordsworth.console_topic_label"):
+    with caplog.at_level(logging.INFO, logger="wordsworth.pipeline"):
         c.post(f"/console/topics/{eerste}/label", data={"dossier": "zaak-console"})
         r = c.post(f"/console/topics/{eerste}/label",
                    data={"dossier": "zaak-console"})
 
     assert "bezig, ververs" in r.text, "het slot bleef vast na een fout"
-    assert "outcome=failed reason=GenerationError" in caplog.text
+    assert '"error": "GenerationError"' in caplog.text
+    assert '"outcome": "failed"' in caplog.text
     assert len(model.prompts) == 2
 
 

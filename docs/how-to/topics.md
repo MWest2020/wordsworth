@@ -224,14 +224,29 @@ staat in `topics.llm_label` en `llm_description`, met `llm_model` en `llm_at`,
 en de console toont het met "geschreven door `<model>` op `<datum>`" en de
 termen eronder. Het vervangt de berekende naam niet; die blijft staan. Wat
 een mens ziet: de naam die een mens gaf (`PATCH /topics/{id}`), anders het
-label, anders de termen (`topics.display_name`).
+label, anders de termen (`topics.display_name`). Overal waar die naam het
+label is, staat erachter "(taalmodel, geschreven door `<model>` op `<datum>`)":
+op de onderwerpenpagina, de dossierpagina en in het zoekfilter
+(`topic_claim.claim`). `GET /dossiers/{id}/topics` geeft `llm_label`,
+`llm_description`, `llm_model` en `llm_at` bij elk onderwerp.
 
-**Wat wordt afgewezen.** Een label van nul of meer dan zes woorden; een
-beschrijving die leeg is, meer dan één regel heeft of langer is dan 200 tekens;
-en in allebei: een pseudonym-token (`[PERSON:3fa9c2d1]`, ook zonder haken of
-alleen de acht tekens), een plaatshouder tussen haken (`[PERSOON]`, `[NAAM]`) of
-een webadres. Afwijzen is niet repareren: het onderwerp houdt wat het had en de
-telling zegt `rejected`.
+**Wat wordt afgewezen** (`topic_label_check.py`). Een label van nul of meer
+dan zes woorden of meer dan 80 tekens; een beschrijving die leeg is, meer dan
+één regel heeft of langer is dan 200 tekens; en in allebei:
+
+- tekst die verandert onder NFKC of door het weghalen van onzichtbare tekens
+  (Unicode-categorie Cf, zoals een zero-width space);
+- een pseudonym-token in welke vorm ook: hoofd- of kleine letters, met of
+  zonder haken, type en id aan elkaar of met spaties in de id
+  (`[person:deadbeef]`, `PERSON3fa9c2d1`, `PERSON: 3fa9 c2d1`), en een kale id
+  van acht hex-tekens met een cijfer erin;
+- een plaatshouder tussen `[]`, `<>` of `{}` (`[Persoon]`, `[PERSOON-1]`,
+  `<naam>`);
+- alles wat een adres kan zijn: `@`, `://`, `mailto:` en elk `woord.tld`.
+
+Afwijzen is niet repareren: het onderwerp houdt wat het had en de telling zegt
+`rejected`. Strenger dan strikt nodig, met opzet: een afgewezen label kost
+alleen dat de termen blijven staan.
 
 **De kwaliteit is niet getest.** Waar dit gebouwd is draait geen model; de
 tests bewijzen de leidingen en de controle. Of zes woorden van `llama3.2:3b`
@@ -263,7 +278,9 @@ onderwerp waar hij mee bezig was, en de volgende run slaat de rest over.
 `POST /topics/{topic_id}/label` labelt één onderwerp en geeft het label met
 model en datum terug, of `labelled: false` met `reason` (`rejected` of
 `no_summaries`). Achter de corpus-leespoort, dezelfde als de samenvattingen;
-404 voor een onbekend onderwerp; 503 met `language model ...` of
+404 voor een onbekend onderwerp; 409 `er loopt al een label-opdracht` als er
+al een label geschreven wordt; 409 `onderwerp is opnieuw berekend` als het
+onderwerp tijdens de aanroep verdween; 503 met `language model ...` of
 `search index ...` als het model of de index onbereikbaar is. De aanroep duurt
 ongeveer twee minuten, dus deze route is voor aanroepers in het cluster. Een
 route die een heel dossier labelt bestaat niet, met opzet.
@@ -274,18 +291,24 @@ oauth2-proxy, standaard na 30 seconden. Een knop die twee minuten wacht krijgt
 een foutpagina voor werk dat daarna wél lukt. Dus komt de pagina meteen terug
 met "bezig, ververs over ongeveer 2 minuten", en schrijft de server het label in
 een achtergrondtaak van dat verzoek. Er loopt er één tegelijk; een tweede klik
-zegt "er loopt al een label-opdracht" en start niets. Geen wachtrij en geen
+zegt "er loopt al een label-opdracht" en start niets. De route en de knop delen
+dat ene slot. **Het slot geldt per proces**: twee pods of twee workers kunnen
+elk een label tegelijk schrijven. Het commando gebruikt het slot niet; het
+draait als een eigen proces. Geen wachtrij en geen
 worker: herstart de pod midden in een aanroep, dan is het label er niet en kan
 de knop opnieuw.
 
-**Waar de uitkomst van een klik staat:** in het log van de API-pod, één regel
-van logger `wordsworth.console_topic_label`:
+**Waar de uitkomst van een klik staat:** in het log van de API-pod (stderr),
+één JSON-regel op de pipeline-logger `wordsworth.pipeline`, dezelfde die de
+statusovergangen schrijft en die `serve.build_app` aanzet:
 
-    topic label topic=<uuid> outcome=labelled|rejected|no_summaries|failed
+    {"error": null, "event": "topic_label", "level": "info", "outcome": "labelled", "topic_id": "<uuid>"}
 
-Bij `failed` staat de soort fout erachter (`reason=GenerationError` of
-`SearchUnavailable`). De tekst van een afgewezen label komt nooit in het log:
-wat afgewezen werd, kan een token bevatten.
+`outcome` is `labelled`, `rejected`, `no_summaries` of `failed`; bij `failed`
+staat in `error` alleen de klasse van de fout (`GenerationError`,
+`SearchUnavailable`, `TopicRecomputed`, ...). Nooit de tekst van een label:
+wat afgewezen werd, kan een token bevatten, en een databasefout draagt het
+label als parameter mee.
 
 ### Als het model of de index weg is
 
@@ -299,7 +322,10 @@ wat afgewezen werd, kan een token bevatten.
   nooit op.
 
 **Herberekenen gooit de labels weg**: het vervangt de onderwerpen, en een
-label hoort bij een groep die dan niet meer bestaat. De pagina zegt daarna
+label hoort bij een groep die dan niet meer bestaat. Gebeurt dat terwijl het
+model schrijft, dan wordt het label niet opgeslagen: het commando telt
+`failed` en gaat door met het volgende onderwerp, de route geeft 409 en de knop
+logt `failed`. De pagina zegt daarna
 welke labels ontbreken en noemt het commando.
 
 ## Meten

@@ -144,6 +144,13 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
         slot = concurrency.limiter(LABEL_SLOT, 1)
         if not slot.acquire(blocking=False):
             return _page(request, dossier, melding=LOOPT_AL)
-        achtergrond.add_task(in_background, session_factory, search_index,
-                             generator, topic_id, slot)
-        return _page(request, dossier, melding=BEZIG)
+        # Vanaf hier is het slot van dit verzoek. Alleen de achtergrondtaak geeft
+        # het vrij; komt het daar niet, dan zat de knop vast tot een herstart.
+        try:
+            pagina = _page(request, dossier, melding=BEZIG)
+            achtergrond.add_task(in_background, session_factory, search_index,
+                                 generator, topic_id, slot)
+        except BaseException:
+            slot.release()
+            raise
+        return pagina

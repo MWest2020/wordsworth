@@ -9,7 +9,8 @@ het cluster; een browser gaat door Cloudflare (100 s) en oauth2-proxy (30 s)
 en gebruikt de knop in de console, die niet wacht (`console_topics.py`).
 
 Achter de corpus-leespoort, dezelfde als die van de samenvattingen: een label
-wordt uit samenvattingen geschreven. Een onbereikbaar model of een
+wordt uit samenvattingen geschreven. Eén label tegelijk per proces, hetzelfde
+slot als de knop: een tweede aanroep krijgt 409. Een onbereikbaar model of een
 onbereikbare index is een 503 die zegt welke van de twee; `api.py` heeft
 daar geen algemene vertaling voor, dus die staat hier.
 """
@@ -25,7 +26,8 @@ from pydantic import BaseModel
 from .generator import GenerationError, Generator
 from .models import Topic
 from .search_index import SearchIndex, SearchUnavailable
-from .topic_labels import LABELLED, label_topic
+from .concurrency import limiter
+from .topic_labels import LABEL_SLOT, LABELLED, TopicRecomputed, label_topic
 from .topics import TopicError
 
 
@@ -58,20 +60,36 @@ def mount(app: FastAPI, session_factory, search_index: SearchIndex,
         if generator is None:
             raise HTTPException(status_code=503,
                                 detail="language model not configured")
-        with session_factory() as session:
-            try:
-                uitkomst = label_topic(session, search_index, topic_id, generator)
-            except TopicError:
-                raise HTTPException(status_code=404, detail="unknown topic")
-            except SearchUnavailable:
-                raise HTTPException(status_code=503,
-                                    detail="search index unreachable")
-            except GenerationError:
-                raise HTTPException(status_code=503,
-                                    detail="language model unreachable")
-            topic = session.get(Topic, topic_id)
-            return TopicLabelResponse(
-                topic_id=str(topic_id), labelled=uitkomst == LABELLED,
-                reason=None if uitkomst == LABELLED else uitkomst,
-                label=topic.llm_label, description=topic.llm_description,
-                model=topic.llm_model, at=topic.llm_at)
+        slot = limiter(LABEL_SLOT, 1)
+        if not slot.acquire(blocking=False):
+            raise HTTPException(status_code=409,
+                                detail="er loopt al een label-opdracht")
+        try:
+            with session_factory() as session:
+                return _label(session, topic_id)
+        finally:
+            slot.release()
+
+    def _label(session, topic_id: UUID) -> TopicLabelResponse:
+        try:
+            uitkomst = label_topic(session, search_index, topic_id, generator)
+        except TopicRecomputed:
+            raise HTTPException(status_code=409,
+                                detail="onderwerp is opnieuw berekend")
+        except TopicError:
+            raise HTTPException(status_code=404, detail="unknown topic")
+        except SearchUnavailable:
+            raise HTTPException(status_code=503, detail="search index unreachable")
+        except GenerationError:
+            raise HTTPException(status_code=503,
+                                detail="language model unreachable")
+        # Opnieuw lezen: het object in de sessie zegt niet of de rij er nog is.
+        topic = session.get(Topic, topic_id, populate_existing=True)
+        if topic is None:       # verdween na een afwijzing: ook herberekend
+            raise HTTPException(status_code=409,
+                                detail="onderwerp is opnieuw berekend")
+        return TopicLabelResponse(
+            topic_id=str(topic_id), labelled=uitkomst == LABELLED,
+            reason=None if uitkomst == LABELLED else uitkomst,
+            label=topic.llm_label, description=topic.llm_description,
+            model=topic.llm_model, at=topic.llm_at)
