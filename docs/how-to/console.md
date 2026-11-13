@@ -199,8 +199,9 @@ text.
 - A hit after the tenth (`size` comes from the URL): the fragment, no reason.
 - The number of stored passage vectors differs from the number of windows the
   stored text splits into (indexed under another passage size, or the text
-  changed without a reindex), or the document has no passage vectors: the
-  fragment, no reason.
+  changed without a reindex), the document has no passage vectors, or its
+  vectors have another dimension than the question's (indexed by another
+  embedder; logged): the fragment, no reason.
 - The index cannot be read for the passages (`SearchUnavailable`), or the
   second embedding of the question fails: every hit shows the fragment and the
   page says "De passages zijn nu niet beschikbaar". The results themselves stay:

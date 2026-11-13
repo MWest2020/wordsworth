@@ -95,11 +95,17 @@ def best(text: str, vectors: list[list[float]], query_vector: list[float],
 
     None when the number of stored vectors differs from the number of windows
     the text splits into (indexed under another passage size, or the text
-    changed without a reindex), and when there are no vectors at all: a vector
-    that belongs to another window would point at the wrong words.
+    changed without a reindex), when there are no vectors at all, and when the
+    vectors have another dimension than the question's: a vector that belongs
+    to another window, or another model, would point at the wrong words.
     """
     spans = split_spans(text or "")
     if not spans or len(vectors) != len(spans):
+        return None
+    if any(len(v) != len(query_vector) for v in vectors):
+        # Indexed by another embedder: a comparison would be meaningless, and
+        # `cosine` would raise. The same answer as a count mismatch, logged.
+        log.warning("passage vectors of another dimension than the question's")
         return None
     scores = [cosine(query_vector, v) for v in vectors]
     i = max(range(len(scores)), key=scores.__getitem__)

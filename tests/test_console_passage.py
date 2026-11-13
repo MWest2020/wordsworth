@@ -96,3 +96,8 @@ def test_a_count_mismatch_gives_no_passage():
     assert best(text, [NEAR, FAR, FAR], NEAR, "regel5") is None
     assert best(text, [], NEAR, "regel5") is None
     assert best("", [], NEAR, "regel5") is None
+
+
+def test_vectors_of_another_dimension_give_no_passage():
+    """Indexed by another embedder: no comparison, and no 500 from `cosine`."""
+    assert best("De aanvraag is afgewezen.", [[1.0, 0.0, 0.0]], NEAR, "aanvraag") is None
