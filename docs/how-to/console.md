@@ -155,9 +155,67 @@ Picking one is compulsory; "alle dossiers" is possible but has to be said. A
 forgotten scope must never mean the widest possible answer — that is the whole
 point of scoping.
 
-It shows per hit its score and a fragment **of the stored pseudonymised text**. A fragment taken from
-a source document would look identical and prove the opposite of what this page
-is for.
+It shows per hit a quotation **of the stored pseudonymised text**. A quotation
+taken from a source document would look identical and prove the opposite of what
+this page is for. The score is a tooltip on the document link (`title`), no
+longer a column: it is a fused rank value and invites comparisons it does not
+support.
+
+### Why a result matched
+
+For each of the **first ten hits** on the page, the console shows **the passage
+of the document closest to the question** (change search-matching-passage). It
+reads the stored passage vectors of those ten documents from the index
+(`SearchIndex.passages_of`, one `mget` on OpenSearch), embeds the question a
+second time with the same embedder, and takes the passage with the highest
+cosine. The passage is cut from the stored text by offset
+(`passages.split_spans`), so it is a substring of it, and trimmed for the row:
+a window around its first marked word, or its opening when nothing is marked,
+with "…" where it was cut. The order of the hits does not change, and nothing
+new is stored. See [why a result matched](../explanation/why-a-result-matched.md)
+for what "closest" does and does not mean.
+
+The reason under the passage says what can be checked on the page:
+
+- **"op woorden en betekenis"**: the passage is the closest in meaning and
+  holds at least one query word; those words are marked;
+- **"op betekenis"**: the passage is the closest in meaning and holds no query
+  word; nothing is marked;
+- **"op woorden"**: the search ran without an embedder (keyword search), so
+  there is no question vector; the hit shows the fragment around the first
+  query word, as before.
+
+**Which words are marked.** The words of the question (`\w+`), matched
+case-insensitively at a word start: "Vergunning" marks "vergunningen", while
+"gunning" never marks the inside of "vergunningen". The whole word is marked.
+Only words of **four characters or more** count, so "de" and "van" are neither
+marked nor turn every reason into "both". That is a rule of thumb, not a
+measurement. Marking is data, not markup: the template writes every piece of
+the stored text through autoescape, so a `<script>` in a document arrives as
+text.
+
+**When today's fragment is shown instead.**
+
+- A hit after the tenth (`size` comes from the URL): the fragment, no reason.
+- The number of stored passage vectors differs from the number of windows the
+  stored text splits into (indexed under another passage size, or the text
+  changed without a reindex), or the document has no passage vectors: the
+  fragment, no reason.
+- The index cannot be read for the passages (`SearchUnavailable`), or the
+  second embedding of the question fails: every hit shows the fragment and the
+  page says "De passages zijn nu niet beschikbaar". The results themselves stay:
+  the search succeeded.
+
+**The log line.** Every read logs one JSON line on the `wordsworth.search`
+logger: `{"event": "passages_read", "driver": …, "ids": …, "passages": …,
+"ms": …}`, with no id and no text. It is there to measure the payload. The
+**estimate** until then: a passage vector is 1024 numbers (bge-m3), about 10 kB
+as JSON; a 12,000-word document has about 80 passages (0.8 MB), so ten of them
+are about 8 MB per page. That is an estimate, not a measurement: the
+OpenSearch read has run in CI on a small index only, and the figure from the
+demo rehearsal on the real dossier replaces it here. If the read takes more
+than a second there, the server-side alternative (a nested kNN with inner
+hits) is reopened as a decision of its own.
 
 The offered terms are examples, not a promise: whether one matches depends on the
 corpus that happens to be loaded. A term with no hits says so; an index that is

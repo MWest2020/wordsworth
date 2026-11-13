@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-03
+last_reviewed: 2026-11-13
 ---
 
 # wordsworth docs
@@ -31,6 +31,9 @@ under `openspec/`.
 - [explanation/](explanation/nora-gap-analysis.md) — reasoning and decisions.
   - [Key-user review 2026-10-28](explanation/review-key-user-2026-10-28.md) — the
     console against four jobs: find topics, ask, judge relevance, share.
+  - [Why a result matched](explanation/why-a-result-matched.md) — the passage
+    closest to the question against the passage that ranked the document; why
+    nothing is stored; the limits.
   - [NORA gap analysis](explanation/nora-gap-analysis.md) — wordsworth tested
     against the "Anonimiseren & Pseudonimiseren bij de Bron" target architecture;
     verdict per requirement, build order.

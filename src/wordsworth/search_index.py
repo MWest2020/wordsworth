@@ -89,6 +89,11 @@ class SearchIndex(Protocol):
     #: update, for the same reason as `set_dossiers`. Returns whether it was
     #: there.
     def set_passages(self, document_id: str, passages: list[list[float]]) -> bool: ...
+    #: The passage vectors of these documents, for the console to show the
+    #: passage closest to the question (search-matching-passage). At most ten
+    #: ids (`passage_reads.MAX_IDS`), else ``ValueError``; a transport failure
+    #: is `SearchUnavailable`; an id without passages is absent or has [].
+    def passages_of(self, ids: list[str]) -> dict[str, list[list[float]]]: ...
     #: (document id, text) of indexed documents that have no passages yet, for
     #: the backfill to find what is left.
     def missing_passages(self, limit: int = 100) -> list[tuple[str, str]]: ...
@@ -165,6 +170,12 @@ class InMemoryIndex:
             return False
         self._passages[document_id] = list(passages)
         return True
+
+    def passages_of(self, ids) -> dict[str, list[list[float]]]:
+        from .passage_reads import read
+
+        return read(lambda ids: {d: list(self._passages[d]) for d in ids
+                                 if d in self._passages}, ids, "memory")
 
     def missing_passages(self, limit: int = 100) -> list[tuple[str, str]]:
         return [(d, t) for d, (t, _k, _v) in self._docs.items()
