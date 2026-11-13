@@ -27,7 +27,7 @@ index werkelijk bevat, niet van een brondocument.</p>
 </form>
 {% if topic %}
 <p class="note" style="margin-top:8px">Je zoekt binnen het onderwerp
-<b>{{ onderwerp }}</b>. Dat versmalt waar gezocht wordt en verandert de volgorde
+<b>{{ onderwerp }}</b>{% if onderwerp_claim %} <span title="{{ onderwerp_claim }}">(taalmodel, {{ onderwerp_claim }})</span>{% endif %}. Dat versmalt waar gezocht wordt en verandert de volgorde
 niet — wat overblijft staat onderling zoals het zonder onderwerp ook zou staan.
 <a href="/console/search?q={{ q|urlencode }}&amp;dossier={{ dossier|urlencode }}">Zoek in het hele dossier</a>.</p>
 {% endif %}

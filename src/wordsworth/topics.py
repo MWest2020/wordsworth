@@ -427,5 +427,6 @@ def rename(session: Session, topic_id: UUID, name: str) -> Topic:
 
 
 def display_name(topic: Topic) -> str:
-    """Wat een mens te zien krijgt: zijn eigen naam als die er is."""
-    return topic.given_name or topic.computed_name
+    """Wat een mens te zien krijgt: zijn eigen naam als die er is, dan het
+    label van het taalmodel (topic-labels-llm), dan de berekende termen."""
+    return topic.given_name or topic.llm_label or topic.computed_name

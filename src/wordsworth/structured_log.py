@@ -81,3 +81,26 @@ def log_retry(*, what: str, attempt: int, attempts: int, error: BaseException,
     )
     logger.log(logging.ERROR if exhausted else logging.WARNING, line)
     return line
+
+
+def log_topic_label(*, topic_id: UUID | str, outcome: str,
+                    error: BaseException | None = None) -> str:
+    """One JSON line per label the console button started (topic-labels-llm):
+    the topic and `labelled`, `rejected`, `no_summaries` or `failed`. Through
+    this logger because `configure_logging` is what production turns on; a
+    logger of its own stayed at WARNING and printed nothing. Never the label
+    text, and of an error only its CLASS: a database error carries the bound
+    parameters, and those are the label."""
+    line = json.dumps(
+        {
+            "event": "topic_label",
+            "topic_id": str(topic_id),
+            "outcome": outcome,
+            "error": type(error).__name__ if error is not None else None,
+            "level": "warning" if error is not None else "info",
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    logger.log(logging.WARNING if error is not None else logging.INFO, line)
+    return line
