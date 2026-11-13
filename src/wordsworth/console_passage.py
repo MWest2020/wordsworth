@@ -119,7 +119,9 @@ def best(text: str, vectors: list[list[float]], query_vector: list[float],
         "span": (s, e), "shown": (start, end),
         "segments": segments(text, start, end, pattern),
         "words": words, "reason": WORDS_AND_MEANING if words else MEANING,
-        "cut_before": start > 0, "cut_after": end < len(text),
+        # "…" only where words were left out, not where whitespace was.
+        "cut_before": bool(text[:start].strip()),
+        "cut_after": bool(text[end:].strip()),
     }
 
 

@@ -43,6 +43,8 @@ def test_a_passage_without_a_shared_word_matches_on_meaning():
     assert p["reason"] == MEANING
     assert _marked(p) == [] and p["words"] == []
     assert _shown(p) == text
+    padded = best("  " + text + " \n", [NEAR], NEAR, "afkeuring")
+    assert not padded["cut_before"] and not padded["cut_after"]
 
 
 def test_word_start_case_insensitive_and_four_characters():
