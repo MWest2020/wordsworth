@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi.responses import HTMLResponse
 from fastapi import Request
 
-from . import console_data
+from . import console_data, console_passage
 from .console_data import _Missing, label
 from .dossiers import DossierError
 from .pipeline import current_state
@@ -91,6 +91,7 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
         if mag_lezen is not None:
             mag_lezen(request)
         hits, fout, keuzes, manier = [], "", [], ""
+        teksten, passages_weg = [], False
         with session_factory() as session:
             keuzes = dossier_choices(session)
         if q and search_index is None:
@@ -138,6 +139,7 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                                 doc.superseded_by if doc else None):
                             continue
                         row = session.get(DocumentText, doc_id)
+                        teksten.append(row.anonymized_text if row else "")
                         hits.append({
                             "id": str(doc_id),
                             "key": label(doc or _Missing()),
@@ -149,6 +151,10 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
                             # samenvatting is een bewering van een model.
                             "samenvatting": _samenvatting(samenvattingen.get(doc_id)),
                         })
+                # Which passage is closest, for the first ten; the order of
+                # `hits` is the ranking's and stays it (search-matching-passage).
+                passages_weg = console_passage.annotate(search_index, embedder,
+                                                        q, hits, teksten)
         onderwerp, onderwerp_claim = "", ""
         if topic:
             # De naam erbij, want een uuid in een badge zegt een lezer niets en
@@ -169,7 +175,7 @@ def mount(router, session_factory, search_index, TEMPLATES, mag_lezen=None,
             onderwerp_claim = claim(gevonden) if gevonden else ""
         return TEMPLATES.TemplateResponse(request, "search.html", {
             "q": q, "hits": hits, "fout": fout, "dossier": dossier,
-            "manier": manier,
+            "manier": manier, "passages_weg": passages_weg,
             "dossiers": keuzes, "suggested": console_data.SUGGESTED,
             "topic": topic, "onderwerp": onderwerp,
             "onderwerp_claim": onderwerp_claim,

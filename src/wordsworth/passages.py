@@ -14,6 +14,8 @@ bge-m3's context. This is the setting that was measured (candidate 2a).
 """
 from __future__ import annotations
 
+import re
+
 from .config import settings
 from .embedder import Embedder
 from .retry import retry_transient
@@ -22,18 +24,38 @@ WORDS = 200
 STRIDE = 150
 
 
+def _windows(n: int, words: int, stride: int) -> list[tuple[int, int]]:
+    """The windows as token ranges [start, end) over ``n`` tokens -- the one
+    rule both `split` and `split_spans` follow, so they cannot drift apart."""
+    if not n:
+        return []
+    starts = range(0, max(n - words, 0) + 1, stride)
+    out = [(s, min(s + words, n)) for s in starts]
+    if starts[-1] + words < n:    # the tail the stride stepped over
+        out.append((n - words, n))
+    return out
+
+
 def split(text: str, words: int = WORDS, stride: int = STRIDE) -> list[str]:
     """Overlapping word windows covering the whole text; a text no longer than
     one window is one passage, and an empty text none."""
     tokens = text.split()
-    if not tokens:
-        return []
-    starts = range(0, max(len(tokens) - words, 0) + 1, stride)
-    out = [" ".join(tokens[s:s + words]) for s in starts]
-    last = starts[-1] + words
-    if last < len(tokens):        # the tail the stride stepped over
-        out.append(" ".join(tokens[-words:]))
-    return out
+    return [" ".join(tokens[s:e]) for s, e in _windows(len(tokens), words, stride)]
+
+
+def split_spans(text: str, words: int = WORDS,
+                stride: int = STRIDE) -> list[tuple[int, int]]:
+    """The windows of `split` as character offsets into ``text``.
+
+    `split` joins a window's words with single spaces, so a passage is not a
+    substring of the text; ``text[s:e]`` is, and ``" ".join(text[s:e].split())``
+    is the passage `split` gives at the same position (change
+    search-matching-passage: the console quotes the stored text, never a
+    re-joined copy of it). ``\\S+`` and `str.split` cut at the same whitespace.
+    """
+    tokens = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+    return [(tokens[s][0], tokens[e - 1][1])
+            for s, e in _windows(len(tokens), words, stride)]
 
 
 def embed_passages(embedder: Embedder, text: str) -> list[list[float]]:
