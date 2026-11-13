@@ -708,7 +708,10 @@ def create_app(
                 builds one, or refuses with a `value-not-located` audit record
                 if a value cannot be boxed) or if the current detection lists
                 differ from the ones the box map was made under (`stale`;
-                `reanonymize` refreshes it). 404 if the document is unknown."""
+                `reanonymize` refreshes it), or if the document is a
+                superseded copy (fetch the survivor). 404 if the document is
+                unknown, 410 if it is deleted -- checked before the cache, so a
+                render left behind is never served (#451)."""
                 _guard_corpus_read(request)
                 from .document_keys import OriginalsKeyUnavailable
                 from .originals_io import read_original
@@ -717,9 +720,19 @@ def create_app(
                 from .pdf_render import DegenerateBoxError, RENDER_VERSION, render as render_pdf
 
                 with session_factory() as session:
-                    if current_state(session, document_id) is None:
+                    state = current_state(session, document_id)
+                    if state is None:
                         raise HTTPException(status_code=404,
                                             detail="unknown document")
+                    if state == State.DELETED:
+                        raise HTTPException(status_code=410,
+                                            detail="document deleted")
+                    copy = session.get(Document, document_id)
+                    if copy.superseded_by is not None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"document is superseded by {copy.superseded_by}; "
+                                   "fetch that one")
                     # One check with the console's link (box_map_status).
                     box_map, why = box_map_status(session, document_id,
                                                   current_lists_hash())
@@ -735,9 +748,8 @@ def create_app(
                     if store.exists(cache_key):
                         pdf_bytes = store.get(cache_key)
                     else:
-                        doc = session.get(Document, document_id)
                         try:
-                            source = read_original(session, store, doc.object_key)
+                            source = read_original(session, store, copy.object_key)
                         except OriginalsKeyUnavailable:
                             raise HTTPException(
                                 status_code=503, detail="key service unavailable")
@@ -811,8 +823,9 @@ def create_app(
                        summary="Delete a document's content (irreversible)",
                        tags=["write"])
             def delete_document_endpoint(document_id: UUID, request: Request) -> dict:
-                """Remove the stored object, the stored text, the pseudonyms,
-                the mappings, the index entry and the grants of one document.
+                """Remove the stored object, the stored text, the cached
+                redacted PDFs and box map, the pseudonyms, the mappings, the
+                index entry and the grants of one document.
                 The ``documents`` row and its earlier audit records stay — the
                 audit trail is append-only and this is the same reason a
                 superseded copy keeps its row. Only role `beheerder` or an
@@ -1513,8 +1526,8 @@ def create_app(
                 keeps its box and label. Never cached or stored (a fresh
                 render every call); audited exactly like `/reveal`, with
                 `view=pdf` and no clear value in the audit trail. 409 if the
-                document has no box map yet; otherwise the same 404/403 as
-                `/reveal`."""
+                document has no box map yet, 410 if it is deleted; otherwise
+                the same 404/403 as `/reveal`."""
                 from .document_keys import OriginalsKeyUnavailable
                 from .grants import authorize, permitted_types
                 from . import roles as roles_mod
@@ -1527,13 +1540,19 @@ def create_app(
 
                 now = datetime.now(timezone.utc)
                 with session_factory() as session:
+                    # Before the grant: deleting a document removes its own
+                    # grants, so a grant lookup would answer 404 "unknown
+                    # grant" for exactly the grant the caller still holds.
+                    state = current_state(session, document_id)
+                    if state == State.DELETED:
+                        raise HTTPException(status_code=410, detail="document deleted")
                     gs = grant_store_factory(session) if grant_store_factory else grant_store
                     kp = _resolve_key_provider(session)
 
                     grant = gs.get(body.grant_id)
                     if grant is None:
                         raise HTTPException(status_code=404, detail="unknown grant")
-                    if current_state(session, document_id) is None:
+                    if state is None:
                         raise HTTPException(status_code=404, detail="unknown document")
                     copy = session.get(Document, document_id)
                     if copy is not None and copy.superseded_by is not None:

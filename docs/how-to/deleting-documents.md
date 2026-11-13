@@ -23,6 +23,8 @@ Deleting a document removes:
 - the stored object (unless another, not-yet-deleted document row still
   claims the same object key — a superseded copy keeps its former key)
 - the stored (de-identified) text
+- its cached redacted PDFs (every object under `redacted/<document-id>/`) and
+  its box map (the `box_maps` row they were drawn from)
 - its pseudonyms, and the shared encrypted mapping underneath each one
   *unless* another document's pseudonyms still reference it (the mapping
   store is global — see [grants](grants.md))
@@ -88,6 +90,72 @@ Each document commits on its own, like `wordsworth-dedupe` — a failure
 partway through a multi-document run leaves only the untouched ones for a
 rerun, and removing what a previous run already removed is a no-op (the state
 is already `deleted`, the content already gone).
+
+## The redacted PDF of a deleted document
+
+`GET /documents/{id}/redacted.pdf` caches each render in the object store
+under `redacted/<document-id>/<render-version>/<boxmap-hash>`. A deletion
+removes every object under that prefix and the `box_maps` row, and counts
+them as `renders_removed` and `box_maps_removed` — in the `deleted` record,
+the API answer and the CLI output (a dry run counts them and removes nothing).
+The renders are listed before anything irreversible happens: if listing
+fails (say the S3 identity lacks `ListObjectsV2`), the deletion fails with
+nothing removed and the document in its previous state.
+
+For a deleted document, `GET /documents/{id}/redacted.pdf` and
+`POST /documents/{id}/reveal.pdf` answer **410 Gone**, checked before the
+cache is looked at: a render left behind is never served. 410 rather than
+404 because the id is known and its absence is deliberate and permanent;
+404 stays "unknown id", 409 stays "not yet / stale, `reanonymize` fixes it".
+
+**Leftovers.** Documents deleted before #451 kept both, and a request that was
+rendering while the deletion committed can still write one object afterwards.
+To find them (read-only):
+
+```sql
+-- box_maps rows whose document is deleted
+SELECT b.document_id
+FROM box_maps b
+JOIN LATERAL (
+  SELECT a.to_state FROM audit_records a
+  WHERE a.document_id = b.document_id
+  ORDER BY a.seq DESC LIMIT 1
+) latest ON true
+WHERE latest.to_state = 'deleted'
+ORDER BY b.document_id;
+
+-- every deleted document id, to feed the dry run below
+SELECT d.id
+FROM documents d
+JOIN LATERAL (
+  SELECT a.to_state FROM audit_records a
+  WHERE a.document_id = d.id
+  ORDER BY a.seq DESC LIMIT 1
+) latest ON true
+WHERE latest.to_state = 'deleted'
+ORDER BY d.id;
+```
+
+The `redacted/` objects live in the object store, not in a table, so a query
+cannot list them; the dry run does, by the same prefix the deletion uses. Run
+it over the deleted ids — it removes nothing and writes no record — and every
+result with `renders_removed` or `box_maps_removed` above 0 is a leftover:
+
+```bash
+wordsworth-delete <deleted-id> [...] --actor <who> --dry-run
+```
+
+To clean them, run the same command without `--dry-run` on those ids. A rerun
+over an already-deleted document removes the leftover objects and row and
+appends one audit record `deleted` → `deleted` with step `remove-renders` and
+the payload `{actor, renders_removed, box_maps_removed}`; with nothing left it
+appends nothing.
+
+After a partial failure, the record the rerun writes (`deleted`, or
+`remove-renders` on an already-deleted document) counts only what was still
+there: renders, an index entry or an object the failed attempt already removed
+from outside the database are not counted again, so the counts can be lower
+than what the document once had.
 
 ## A failed removal is a hard error
 
