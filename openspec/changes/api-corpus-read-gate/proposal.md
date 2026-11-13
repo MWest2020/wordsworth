@@ -26,19 +26,35 @@ mounts. Beyond the seven routes of #442 the same caller also:
 The content is pseudonymised. It is still the corpus, and three of these are
 writes.
 
+Two routes of the write path belong here as well (security review of #446):
+
+- `POST /datasets/pseudonymize` turns a guessed value into its token, with
+  the corpus's own keys and in a domain the caller picks. Anyone who can see
+  tokens, as a share recipient will, could confirm the names behind them.
+- `POST /reprocess` answers with problems keyed by document id, tells an
+  existing id from an unknown one, and without a body re-runs the whole
+  corpus.
+
 ## What changes
 
 - Every route that returns corpus content or corpus metadata requires corpus
-  read: 11 API routes and 2 console routes are newly gated; the 14 that are
-  gated already keep their gate. The full inventory of 55 routes is in
-  design.md.
+  read: 12 API routes (`POST /reprocess` among them) and 2 console routes are
+  newly gated; the 14 that are gated already keep their gate. The full
+  inventory of 55 routes is in design.md.
+- `POST /datasets/pseudonymize` requires the grant-issue right: confirming a
+  guess is resolving a token, and that takes more than reading.
 - The check moves out of the route bodies into one reusable dependency, in a
   new module `read_gate.py`, declared on the route. `api.py` does not grow.
 - A refusal comes before any lookup: a caller without corpus read gets 403 for
   a known and for an unknown id, and nothing is written.
 - `GET /grants/{id}` admits a corpus reader or a grant issuer.
 - A test walks the application's routes and fails when a route is not in the
-  inventory, so a new route without a decision cannot be merged green.
+  inventory, so a new route without a decision cannot be merged green. It
+  also fails on a backend the test does not mount, a route object it does not
+  know, and a WebSocket route.
+- An OIDC token whose address is not marked verified names no caller.
+- A startup warning when authentication and grants are on and the read list
+  is empty.
 
 ## What does not change
 
@@ -48,9 +64,9 @@ writes.
 - `/health`, `/metrics`, the login page and its assets, logout, the root
   redirect and the API schema stay as open as they are (design.md says why,
   per route).
-- The write path: `POST /ingest`, `/reprocess` and `/datasets/pseudonymize`
-  stay open to any logged-in caller. Whether ingest needs its own label is
-  issue #431, and this change decides nothing there.
+- `POST /ingest` stays open to any logged-in caller. Whether ingest needs
+  its own label is issue #431, and this change decides nothing there;
+  design.md lists what a non-reader can still do through it.
 - Reveal, grant issue and revoke, roles, and delete keep their own gates.
 
 ## This is the deploy gate for sharing
@@ -58,7 +74,9 @@ writes.
 `share-recipient-read` (#439) and `console-share` (#440) create the first
 callers who are logged in and are not corpus readers. Neither is deployed, and
 no non-reader gets a key or a login (M4, #418), before this change is in
-production. Order and composition with #439 are in design.md.
+production and the read list is known not to be empty. They are deployed
+after this change; they can be built in either order. Composition with #439
+is in design.md.
 
 ## Out of scope
 
