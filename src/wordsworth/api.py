@@ -509,7 +509,8 @@ def create_app(
         # handeling met maar één spoor eronder is hoe een spoor gaten krijgt.
         app.include_router(build_router(session_factory, keys, search_index,
                                         _guard_corpus_read, _guard_grant_admin,
-                                        _resolve_audit, embedder, identity))
+                                        _resolve_audit, embedder, identity,
+                                        generator=generator))
         # Wat de browser van dit scherm mag maken: geen iframe (de Onthul-knop
         # is anders te clickjacken, met het auditspoor op naam van het
         # slachtoffer) en geen cross-site post (die kan het callerlabel van een
@@ -985,6 +986,10 @@ def create_app(
                     out = _topic_out(topic)
                     session.commit()
                 return out
+
+            from .topic_labels_api import mount as _mount_labels
+            _mount_labels(app, session_factory, search_index, generator,
+                          _guard_corpus_read)
 
         @app.get("/export/ranking.csv", summary="Export a ranking as CSV",
                  tags=["export"])

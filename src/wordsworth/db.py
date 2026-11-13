@@ -83,6 +83,10 @@ _COLUMNS = [
     ("documents", "source_url", "VARCHAR"),
     ("documents", "fetched_at", "TIMESTAMPTZ"),
     ("documents", "source_sha256", "VARCHAR"),
+    ("topics", "llm_label", "VARCHAR"),
+    ("topics", "llm_description", "VARCHAR"),
+    ("topics", "llm_model", "VARCHAR"),
+    ("topics", "llm_at", "TIMESTAMPTZ"),
 ]
 
 # (trigger, table) -> its CREATE statement, for the triggers that are not the

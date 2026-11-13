@@ -32,6 +32,9 @@ class GenerationError(Exception):
 
 @runtime_checkable
 class Generator(Protocol):
+    #: Welk model schrijft: de herkomst die bij een label wordt opgeslagen.
+    model: str
+
     def generate(self, query: str, sources: list[Source]) -> Answer: ...
 
     def summarise(self, text: str) -> str:
@@ -40,6 +43,14 @@ class Generator(Protocol):
         Een eigen methode en geen `generate()` met "vat dit samen" als vraag:
         die prompt vraagt om een ANTWOORD met bronvermeldingen, en dan krijg je
         antwoord-vormige tekst over een vraag die niemand stelde.
+        """
+        ...
+
+    def label(self, prompt: str) -> dict:
+        """Het JSON-antwoord op een label-prompt (`topic_labels.prompt`).
+
+        Geeft het object zoals het model het schreef; nakijken doet
+        `topic_labels.validate`. Geen JSON-object is een GenerationError.
         """
         ...
 
@@ -134,6 +145,24 @@ class OllamaGenerator:
             raise GenerationError(f"ollama summarise failed: {exc}") from exc
         return str(parsed.get("samenvatting", "")).strip()
 
+    def label(self, prompt: str) -> dict:
+        payload = json.dumps({
+            "model": self.model, "prompt": prompt, "stream": False,
+            "format": "json", "options": {"num_predict": self.num_predict},
+        }).encode()
+        req = urllib.request.Request(
+            f"{self.url}/api/generate", data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                parsed = json.loads(json.loads(resp.read())["response"])
+        except Exception as exc:  # network/timeout/HTTP/bad-JSON -> hard error
+            raise GenerationError(f"ollama label failed: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise GenerationError("ollama label failed: answer is not a JSON object")
+        return parsed
+
 
 class DeterministicGenerator:
     """Test double: echoes a fixed answer citing every given source id. No model,
@@ -141,6 +170,8 @@ class DeterministicGenerator:
 
     `extra_citations` lets a test inject ids that are NOT among the sources, so the
     guard's drop-invented-citation behaviour is exercisable."""
+
+    model = "deterministic"
 
     def __init__(self, extra_citations: list[str] | None = None):
         self.extra_citations = extra_citations or []
@@ -151,3 +182,10 @@ class DeterministicGenerator:
 
     def summarise(self, text: str) -> str:
         return f"Samenvatting van: {text[:40]}"
+
+    def label(self, prompt: str) -> dict:
+        """Een vast antwoord uit de TERMEN-regel van de prompt: herhaalbaar."""
+        regel = next((r for r in prompt.splitlines() if r.startswith("TERMEN:")), "")
+        termen = regel.removeprefix("TERMEN:").replace(",", " ").split()[:3]
+        return {"label": " ".join(["Over"] + (termen or ["niets"])),
+                "description": f"Vaste tekst uit {len(termen)} termen, geen model."}
