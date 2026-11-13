@@ -12,7 +12,7 @@ invites comparisons it doesn't support.
 
 ## What changes
 
-- For the hits on the page (ten at most), the console reads their passage
+- For the first ten hits on the page, the console reads their passage
   vectors from the index, compares each with the question's vector, and shows
   **the passage of the document closest to the question**, cut from the stored
   pseudonymised text.
