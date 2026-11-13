@@ -708,7 +708,9 @@ def create_app(
                 builds one, or refuses with a `value-not-located` audit record
                 if a value cannot be boxed) or if the current detection lists
                 differ from the ones the box map was made under (`stale`;
-                `reanonymize` refreshes it). 404 if the document is unknown."""
+                `reanonymize` refreshes it). 404 if the document is unknown,
+                410 if it is deleted -- checked before the cache, so a render
+                left behind is never served (#451)."""
                 _guard_corpus_read(request)
                 from .document_keys import OriginalsKeyUnavailable
                 from .originals_io import read_original
@@ -717,9 +719,13 @@ def create_app(
                 from .pdf_render import DegenerateBoxError, RENDER_VERSION, render as render_pdf
 
                 with session_factory() as session:
-                    if current_state(session, document_id) is None:
+                    state = current_state(session, document_id)
+                    if state is None:
                         raise HTTPException(status_code=404,
                                             detail="unknown document")
+                    if state == State.DELETED:
+                        raise HTTPException(status_code=410,
+                                            detail="document deleted")
                     # One check with the console's link (box_map_status).
                     box_map, why = box_map_status(session, document_id,
                                                   current_lists_hash())
@@ -1513,8 +1519,8 @@ def create_app(
                 keeps its box and label. Never cached or stored (a fresh
                 render every call); audited exactly like `/reveal`, with
                 `view=pdf` and no clear value in the audit trail. 409 if the
-                document has no box map yet; otherwise the same 404/403 as
-                `/reveal`."""
+                document has no box map yet, 410 if it is deleted; otherwise
+                the same 404/403 as `/reveal`."""
                 from .document_keys import OriginalsKeyUnavailable
                 from .grants import authorize, permitted_types
                 from . import roles as roles_mod
@@ -1533,8 +1539,11 @@ def create_app(
                     grant = gs.get(body.grant_id)
                     if grant is None:
                         raise HTTPException(status_code=404, detail="unknown grant")
-                    if current_state(session, document_id) is None:
+                    state = current_state(session, document_id)
+                    if state is None:
                         raise HTTPException(status_code=404, detail="unknown document")
+                    if state == State.DELETED:
+                        raise HTTPException(status_code=410, detail="document deleted")
                     copy = session.get(Document, document_id)
                     if copy is not None and copy.superseded_by is not None:
                         raise HTTPException(

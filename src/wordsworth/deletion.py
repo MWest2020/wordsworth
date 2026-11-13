@@ -2,14 +2,13 @@
 """Deleting a document (document-deletion).
 
 The row stays; the content goes. `audit_records.document_id` is a non-null
-foreign key and the audit table has no UPDATE/DELETE, so removing the
-`documents` row would either break the trail or require deleting audit
-records — the one thing this system never does (same reason a superseded copy
-keeps its row, see `supersession.py`). Deletion therefore removes everything
-*about the content* (the stored object, the stored text, the pseudonyms, the
-mappings, the index entry and the grants) and leaves the row and its audit
-records. The transition to `deleted` and its audit record are written in the
-same transaction as the removal, holding ids and counts only -- never a value.
+foreign key and the audit table has no UPDATE/DELETE, so removing the row would
+break the trail or require deleting audit records — the one thing this system
+never does (as a superseded copy keeps its row, `supersession.py`). Deletion
+removes everything *about the content* (object, text, pseudonyms, mappings,
+index entry, grants, and the cached redacted PDFs and box map, see
+`deletion_renders.py`) and keeps the row and its audit records. The `deleted`
+record is written in the same transaction: ids and counts, never a value.
 
 Order and failure: the index entry and the object bytes go first, in that
 order, exactly as `supersession.py` retires a copy "out of the index first" --
@@ -51,6 +50,7 @@ from sqlalchemy.orm import Session
 
 from .audit import current_state
 from .models import Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping
+from .deletion_renders import RenderCounts, remove_renders
 from .object_store import ObjectStore
 from .pipeline import transition
 from .search_index import SearchIndex
@@ -71,7 +71,7 @@ class DeletionError(ValueError):
 
 
 @dataclass
-class DeletionCounts:
+class DeletionCounts(RenderCounts):
     """How many of each kind a deletion removed (or, dry-run, would remove).
     Ids and counts only -- this is exactly what the `deleted` audit record
     carries, never a value, a filename or a token."""
@@ -84,7 +84,7 @@ class DeletionCounts:
     grants: int = 0
 
     def as_dict(self) -> dict[str, int]:
-        return {"object": self.object, "text": self.text,
+        return {"object": self.object, "text": self.text, **self.render_counts(),
                 "pseudonyms": self.pseudonyms, "mappings": self.mappings,
                 "index_entries": self.index_entries, "grants": self.grants}
 
@@ -141,6 +141,7 @@ def delete_document(
     counts.object = int(object_removable)
     if not dry_run and object_removable:
         store.delete(former_key)
+    remove_renders(session, document_id, store, counts, actor=actor, dry_run=dry_run)
 
     text_row = session.get(DocumentText, document_id)
     counts.text = int(text_row is not None)
