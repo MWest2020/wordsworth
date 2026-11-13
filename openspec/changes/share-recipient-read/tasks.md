@@ -17,15 +17,23 @@ grant). Every refusal below is asserted as `ontvanger` or `derde`, never as
       document, another recipient, a recipient differing in case, a recipient
       that is a prefix, a superseded copy, a deleted document, a role switched
       off, an unknown role, a role switched back on (true).
-- [ ] The recipient match agrees with `grants._is_recipient`. Proved by: a
-      test that runs the same caller and recipient pairs (surrounding
-      whitespace, case, prefix, empty) through both.
+- [ ] The recipient is decided by `grants._is_recipient` in Python, after the
+      SQL filters; no recipient comparison in SQL. Proved by: the rows above
+      for case and prefix (false), a row for a stored recipient with
+      surrounding whitespace (true), and the diff.
+- [ ] Several grants on one document. Proved by: a test that a revoked grant
+      plus a newer active one is true, and that two active grants are true and
+      one row in `listing`.
+- [ ] `now` is an argument everywhere; no `func.now()`. Proved by: the expiry
+      boundary test passing two times one second apart without sleeping, and
+      `grep -n "func.now" src/wordsworth/shared_documents.py` empty.
 
 ## 2. The two callers
 - [ ] `GET /documents/{id}/redacted.pdf` calls `_guard_document_read` inside
       its session, before the document is looked up. Proved by: API tests as
       `ontvanger`: 403 before the grant, 200 and `%PDF` after, 403 on a
-      neighbour in the same dossier, 403 after revoke, 403 after expiry, 403
+      neighbour in the same dossier, 403 after revoke, 200 after a new grant
+      is issued following that revoke, 403 after expiry, 403
       with only a global grant where `allow_global_grants=True`, 403 for an
       unknown id; and as `derde`: 403 on the shared document.
 - [ ] The console document page calls the same guard. Proved by: the same list
@@ -38,8 +46,10 @@ grant). Every refusal below is asserted as `ontvanger` or `derde`, never as
       `/console/feedback`, `/console/roles`, `GET /documents/{id}/anonymized`,
       `/export/anonymized.zip` and `POST /dossiers/{id}/summaries` answers 403.
 - [ ] A reader on the list is unaffected. Proved by: the existing suite
-      unchanged and green, plus a test that `lezer` gets 404 for an unknown
-      document and the full page for a document also shared with him.
+      unchanged and green, plus a test that `lezer` gets 404 from
+      `GET /documents/{id}/redacted.pdf` for an unknown id (the console
+      document page has no 404: it renders "Geen gepseudonimiseerde tekst opgeslagen" for a
+      reader, as today) and the full page for a document also shared with him.
 - [ ] `POST /documents/{id}/reveal.pdf` is untouched. Proved by: the diff, and
       `tests/test_reveal_pdf_api.py` unchanged and green.
 
@@ -53,6 +63,14 @@ grant). Every refusal below is asserted as `ontvanger` or `derde`, never as
       declared combinations, no feedback form. Proved by: a test with two
       recipients on one document asserting the other's label is absent from
       the HTML, and a test that the page of `lezer` still has all of it.
+- [ ] The recipient's own grants come from `shared_documents`, not from the
+      50-row `grants_for`. Proved by: a test with 60 grants to other
+      recipients issued after his: his page shows his grant and its reveal
+      button.
+- [ ] No filename for a recipient. Proved by: a test with a document whose
+      filename holds a seeded name: the string is absent from the recipient's
+      document page (title included) and from his "Gedeeld met mij", both show
+      `document <hash8>`, and the page of `lezer` still shows the filename.
 - [ ] No dead end. Proved by: a test that collects every `href` on the
       recipient's "Gedeeld met mij" and document page and requests each as
       `ontvanger`: all below 400.
@@ -69,12 +87,21 @@ grant). Every refusal below is asserted as `ontvanger` or `derde`, never as
       below. Front matter `status`, `last_reviewed`.
 
 ## 5. Local check
+
+Run after #437 is fixed (until then a real browser cannot post the console
+login form, and the walk below would be curl only) and after #442 is closed
+(until then `gast` also reaches `/search`, `/ask` and the other routes of
+#442, and the walk would show a narrower door than there is). Step 5 then
+also includes `GET /search`, `/hybrid` and `/ask` as `gast`: 403 each.
 - [ ] In the harness (`tools/demo/serve_local.py --reset`), with the printed
       keys, as a browser would (cookie from `/console/login`,
       `Accept: text/html`). Proved by: the status codes pasted in the PR.
+      0. The walk is done once with curl and once in a real browser with two
+         profiles (`mark`, `gast`).
       1. `gast`: `GET /documents/{D}/redacted.pdf` 403; `/console/documents/{D}` 403.
       2. `mark`: `POST /grants` `{recipient: "gast", ppl: 0, document_id: D}` 201.
-      3. `gast`: both 200 (`%PDF`); `/console/gedeeld` lists D and only D.
+      3. `gast`: both 200 (`%PDF`); `/console/gedeeld` lists D and only D,
+         as `document <hash8>` and not by its filename.
       4. `gast`: a neighbour of D in the demo dossier 403, PDF and page.
       5. `gast`: `/console/search` 403; `/console` 403 with a link to
          `/console/gedeeld`.

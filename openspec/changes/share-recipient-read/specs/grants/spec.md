@@ -8,9 +8,9 @@ without being on the corpus-read list. The grant SHALL open nothing else: no
 other document, no search, no list of documents, no dossier, no topic, no
 export, and not the de-identified text over the API.
 
-The recipient SHALL be matched by the same rule a reveal uses: the caller's
-label equals the grant's recipient exactly, ignoring only surrounding
-whitespace. The types a grant allows SHALL NOT matter: a grant at PPL 0 counts.
+The recipient SHALL be matched by the rule a reveal uses, and by that one
+implementation of it: the caller's label equals the grant's recipient exactly,
+ignoring only surrounding whitespace. The types a grant allows SHALL NOT matter: a grant at PPL 0 counts.
 
 The decision SHALL be made in one place, used by the redacted-PDF route and by
 the console document page. Every refusal SHALL be a 403 with the message the
@@ -59,13 +59,27 @@ list is empty (the scope is off) behaviour SHALL be unchanged.
 - **THEN** his request for any document's redacted PDF or console page answers
   403
 
+#### Scenario: A grant issued again after a revoke opens the document again
+
+- **WHEN** the grant on D is revoked and the issuer then issues the same
+  recipient a new grant on D
+- **THEN** the recipient's request for D answers 200, on the strength of the
+  new grant, while the revoked one stays revoked
+
+#### Scenario: Surrounding whitespace is not a different name
+
+- **WHEN** a grant's stored recipient differs from the caller's label only by
+  surrounding whitespace
+- **THEN** the caller is the recipient and his request for D answers 200, as a
+  reveal with that grant would be allowed
+
 #### Scenario: A similar label is not the recipient
 
 - **WHEN** a caller whose label differs from the recipient only in case, or
   only by a prefix, requests D
 - **THEN** the answer is 403
 
-#### Scenario: Search stays closed
+#### Scenario: Console search and the other corpus pages stay closed
 
 - **WHEN** the recipient of a grant on D requests `/console/search`,
   `/console`, `/console/documents`, `/console/dossier`, `/console/topics`,
@@ -83,8 +97,8 @@ list is empty (the scope is off) behaviour SHALL be unchanged.
 
 - **WHEN** a caller on the corpus-read list requests a document, with or
   without a grant on it
-- **THEN** he gets the answer he got before this change, including 404 for an
-  unknown document
+- **THEN** he gets the answer he got before this change, including 404 from
+  `GET /documents/{id}/redacted.pdf` for an unknown document
 
 ### Requirement: Only a grant that is in force on a live document counts as a share
 

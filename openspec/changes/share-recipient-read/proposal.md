@@ -26,6 +26,10 @@ search, no list". If Mark answers otherwise, this change is withdrawn and
   the corpus-read list.
 - A page "Gedeeld met mij" (`/console/gedeeld`) lists the documents shared with
   the caller, and only those.
+- A caller admitted by a share alone does not see the document's original
+  filename: he sees "document" and the first eight characters of its content
+  hash. Filenames of Woo files often hold names, and the filename is not
+  pseudonymised. A reader on the list sees filenames as today.
 - The 403 page links that page, so a recipient who logs in and lands on a
   refusal has somewhere to go.
 - The decision is one function, `auth.authorize_document_read`, next to
@@ -34,14 +38,31 @@ search, no list". If Mark answers otherwise, this change is withdrawn and
 
 ## What does not change
 
-- Search, the document list, dossiers, topics, the feedback overview, the
-  export and `GET /documents/{id}/anonymized` stay behind the corpus-read list.
-  A recipient gets 403 there as before.
+- Console search (`/console/search`), the console's document list, dossier
+  pages, topics and feedback overview, the export ZIP and
+  `GET /documents/{id}/anonymized` stay behind the corpus-read list. A
+  recipient gets 403 there as before.
+- This is a statement about the console and those two API routes, not about
+  the API as a whole: `GET /search`, `/hybrid`, `/ask` and several other
+  routes call no corpus-read check today, for any logged-in caller (#442; see
+  design.md, "Found and not changed"). This change neither opens nor closes
+  them.
 - A grant without a document scope (`document_id IS NULL`) is not a share and
   opens nothing here, whatever the deployment allows for reveals.
 - Revealing: `POST /documents/{id}/reveal` and `/reveal.pdf` are decided by the
   grant alone today and stay that way. Nothing is added to them.
 - A caller on the corpus-read list sees what he saw before.
+
+## Depends on
+
+- **#442 is a deploy gate.** No caller who is not a corpus reader gets a key or
+  a login before #442 is closed. Until then "that document only" is true of
+  what this change opens and false of what such a caller can reach over the
+  API. The change can be built and merged before #442; a recipient's login
+  cannot be handed out before it.
+- **#437** for the check in a real browser: until it is fixed a browser cannot
+  post the console's login form, so the local check would have to be done with
+  curl only.
 
 ## Out of scope
 
