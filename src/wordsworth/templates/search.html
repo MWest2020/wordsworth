@@ -27,7 +27,7 @@ index werkelijk bevat, niet van een brondocument.</p>
 </form>
 {% if topic %}
 <p class="note" style="margin-top:8px">Je zoekt binnen het onderwerp
-<b>{{ onderwerp }}</b>. Dat versmalt waar gezocht wordt en verandert de volgorde
+<b>{{ onderwerp }}</b>{% if onderwerp_claim %} <span title="{{ onderwerp_claim }}">(taalmodel, {{ onderwerp_claim }})</span>{% endif %}. Dat versmalt waar gezocht wordt en verandert de volgorde
 niet — wat overblijft staat onderling zoals het zonder onderwerp ook zou staan.
 <a href="/console/search?q={{ q|urlencode }}&amp;dossier={{ dossier|urlencode }}">Zoek in het hele dossier</a>.</p>
 {% endif %}
@@ -50,6 +50,12 @@ hier weinig — dat ligt dan aan de opstelling en niet aan het corpus.</p>
 
 {% if fout %}<p class="fout" style="margin-top:18px">{{ fout }}</p>{% endif %}
 
+{% if q and not fout and passages_weg %}
+<p class="note" style="margin-top:8px">De passages zijn nu niet beschikbaar: de
+zoekindex of de embedder gaf geen antwoord op de tweede vraag. De resultaten
+zelf staan er wel, in dezelfde volgorde; bij elk staat het fragment rond het
+eerste zoekwoord, zoals vóór deze pagina passages toonde.</p>
+{% endif %}
 {% if q and not fout %}
 <div class="card" style="margin-top:20px">
  <div class="panel-head"><span class="dot"></span><h3>Resultaten</h3>
@@ -58,8 +64,7 @@ hier weinig — dat ligt dan aan de opstelling en niet aan het corpus.</p>
  <table><tbody>
  {% for h in hits %}
  <tr>
-  <td style="width:4rem"><span class="state">{{ h.score }}</span></td>
-  <td><a href="/console/documents/{{ h.id }}">{{ h.key }}</a>
+  <td><a href="/console/documents/{{ h.id }}" title="score {{ h.score }}">{{ h.key }}</a>
       {% if h.samenvatting %}
       <div style="margin-top:5px">{{ h.samenvatting.tekst }}</div>
       {% if h.samenvatting.citaat %}
@@ -73,7 +78,12 @@ hier weinig — dat ligt dan aan de opstelling en niet aan het corpus.</p>
       {% else %}
       <div class="note" style="font-size:.72rem; margin-top:5px">nog geen samenvatting</div>
       {% endif %}
-      <div class="note" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem; margin-top:3px">{{ h.fragment }}</div></td>
+      {% if h.passage %}
+      <div class="note passage" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem; margin-top:3px">{% if h.passage.cut_before %}…{% endif %}{% for s in h.passage.segments %}{% if s.marked %}<mark>{{ s.text }}</mark>{% else %}{{ s.text }}{% endif %}{% endfor %}{% if h.passage.cut_after %}…{% endif %}</div>
+      {% else %}
+      <div class="note" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem; margin-top:3px">{{ h.fragment }}</div>
+      {% endif %}
+      {% if h.reden %}<div class="note reden" style="font-size:.72rem; margin-top:2px">komt overeen {{ h.reden }}{% if h.passage %} — de passage die qua betekenis het dichtst bij je vraag ligt{% endif %}</div>{% endif %}</td>
  </tr>
  {% endfor %}
  </tbody></table>

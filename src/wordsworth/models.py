@@ -316,6 +316,12 @@ class Topic(Base):
         DateTime(timezone=True), nullable=False,
         default=lambda: datetime.now(timezone.utc))
     document_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Een label van het taalmodel (topic-labels-llm): een bewering, dus met
+    # model en moment erbij, zoals een samenvatting. Zie topic_labels.py.
+    llm_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_description: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Role(Base):

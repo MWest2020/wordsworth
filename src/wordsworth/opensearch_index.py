@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import functools
 
+from . import passage_reads
 from .config import settings
 from .rrf import fuse_ranked_ids
 from .search_index import Hit, IndexedDocument, SearchUnavailable
@@ -313,6 +314,13 @@ class OpenSearchIndex:
                 raise
             return False
         return True
+
+    @_reads
+    def passages_of(self, ids) -> dict[str, list[list[float]]]:
+        """The passage vectors of these documents; body in `passage_reads`."""
+        return passage_reads.read(
+            lambda ids: passage_reads.mget(self._client, self._index, ids),
+            ids, "opensearch")
 
     def missing_passages(self, limit: int = 100) -> list[tuple[str, str]]:
         """Indexed documents without passages, with their text."""
