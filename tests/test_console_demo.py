@@ -411,7 +411,7 @@ def test_without_a_name_it_says_naamloos_and_not_a_hash(session_factory):
                        follow_redirects=False,
                       base_url="https://testserver")
         c.post("/console/login", data={"key": "s3cret"})
-        page = c.get("/console").text
+        page = c.get("/console/documents").text
     assert "naamloos (cdcdcdcd)" in page
     assert "cd" * 32 not in page        # the full hash never appears as a name
 

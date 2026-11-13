@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% block title %}dossiers — wordsworth{% endblock %}
+{% set page = 'dossiers' %}
+{% block who %}{{ caller }}{% endblock %}
+{% block body %}
+<p class="eyebrow">Dossiers</p>
+<h1>Kies een dossier</h1>
+<p class="lede">Zoeken en onderwerpen werken per dossier. Kies er een om te zien
+waar het over gaat, er een vraag aan te stellen en de documenten te openen.</p>
+
+{% if fout %}<p class="fout" style="margin-top:18px">{{ fout }}{% if dossiers %} Deze dossiers zijn er wel:{% endif %}</p>{% endif %}
+
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Dossiers</h3>
+   <span class="badge">{{ dossiers|length }} dossier{{ '' if dossiers|length == 1 else 's' }}</span></div>
+ {% if dossiers %}
+ <table><thead><tr><th>dossier</th><th>documenten</th><th>onderwerpen</th></tr></thead>
+ <tbody>
+ {% for d in dossiers %}
+ <tr>
+  <td><a href="{{ d.href }}">{{ d.name }}</a></td>
+  <td>{{ d.live }}</td>
+  <td>{{ d.topics }}</td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}
+ <p class="empty">Er zijn nog geen dossiers. Documenten die zonder dossier zijn
+ binnengekomen staan bij <a href="/console/documents">alle documenten</a>.</p>
+ {% endif %}
+</div>
+<p class="note" style="margin-top:14px">Documenten tellen hier alleen als ze niet
+verwijderd of vervangen zijn. Het hele corpus, over alle dossiers heen, staat bij
+<a href="/console/documents">alle documenten</a>.</p>
+{% endblock %}

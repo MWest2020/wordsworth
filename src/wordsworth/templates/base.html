@@ -122,7 +122,8 @@ input:focus-visible,textarea:focus-visible{outline:2px solid var(--brass); outli
 <header class="topbar"><div class="wrap">
   <span class="brand">words<span class="mark">worth</span></span>
   <nav>
-    <a href="/console" {% if page == 'documents' %}aria-current="page"{% endif %}>documenten</a>
+    <a href="/console" {% if page == 'dossiers' %}aria-current="page"{% endif %}>dossiers</a>
+    <a href="/console/documents" {% if page == 'documents' %}aria-current="page"{% endif %}>alle documenten</a>
     <a href="/console/search" {% if page == 'search' %}aria-current="page"{% endif %}>zoeken</a>
     <a href="/console/topics" {% if page == 'topics' %}aria-current="page"{% endif %}>onderwerpen</a>
     <a href="/console/feedback" {% if page == 'feedback' %}aria-current="page"{% endif %}>meldingen</a>
