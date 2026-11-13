@@ -4,15 +4,28 @@
 
 When documents are re-anonymised because of a detection change, the system SHALL
 log, per document, the number of distinct pseudonyms per type in its stored
-text before and after, and how many were added and removed. The check SHALL NOT
-log, print or write a detected value, a pseudonym token, the text around it, or
-an offset.
+text before and after, and how many were added and removed, and SHALL return
+the same numbers per document in the answer of the reprocess call. The line
+SHALL be written only after the document's re-anonymisation is committed. The
+check SHALL NOT log, print, return or write a detected value, a pseudonym
+token, the text around it, or an offset.
 
 #### Scenario: Counts before and after are logged
 
 - **WHEN** a document is re-anonymised through the reprocess path
 - **THEN** the number of distinct pseudonyms per type before and after is
   logged for that document
+
+#### Scenario: The counts are in the answer
+
+- **WHEN** a reprocess call re-anonymises a document
+- **THEN** its answer holds, for that document, the counts per type before,
+  after, added and removed, and no token or value
+
+#### Scenario: A failed commit logs nothing
+
+- **WHEN** the re-anonymisation of a document is not committed
+- **THEN** no counts are logged or returned for it
 
 #### Scenario: A replaced token is visible
 

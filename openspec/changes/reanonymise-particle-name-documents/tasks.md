@@ -9,10 +9,19 @@
       while one token is replaced (added 1, removed 1), and where a token
       occurs five times and counts once.
 - [ ] `reprocess.one` logs one line per re-anonymised document with the
-      document id and those numbers per type. Proved by: a test that
-      re-anonymises a document with a detector that finds one more name the
-      second time, and asserts the captured log holds the id and the four
-      numbers per type.
+      document id and those numbers per type, after the commit. Proved by: a
+      test that re-anonymises a document with a detector that finds one more
+      name the second time, and asserts the captured log holds the id and the
+      four numbers per type; and a test with a session whose `commit` raises:
+      no count line was logged.
+- [ ] `POST /reprocess` returns the same numbers per document in
+      `ReprocessResponse.entity_counts`, and `reprocess.run` still returns
+      `(counts, problems)`. Proved by: an API test on the answer for two
+      documents, one re-anonymised and one skipped (absent from
+      `entity_counts`), asserting the answer holds no token and no value.
+- [ ] The counting lives in `reprocess_counts.py`. Proved by: `wc -l
+      src/wordsworth/reprocess.py` is under 200 and `grep -n "tokens_in"
+      src/wordsworth/reprocess.py` finds nothing.
 - [ ] The check holds no value. Proved by: a test that runs it on a document
       with a detected name and asserts the captured logs and output contain
       neither the name, a pseudonym token, the surrounding text nor an offset.
@@ -25,10 +34,15 @@
       bijwerken": that a rule or gazetteer change does not move `lists_hash`,
       so `only_outdated` selects nothing and the ids are passed explicitly;
       how to list a dossier's ids; the count line and how to read it
-      (distinct pseudonyms, added and removed); that it does not prove a name
-      is gone. Proved by: `grep -n "document_ids"
-      docs/how-to/detection-lists.md` finds the section, and the section names
-      the check.
+      (distinct pseudonyms, added and removed); where to read it (the
+      `entity_counts` of the answer, which the Job prints, and the service's
+      log line); that it does not prove a name is gone; that after a change of
+      the domain key or of the profile every token is a new one, so added and
+      removed both equal the whole count and say nothing about detection; and
+      that in irreversible mode there are no pseudonym tokens, so the check
+      finds nothing (and `/reprocess` is not offered there). Proved by: `grep
+      -n "document_ids\|entity_counts" docs/how-to/detection-lists.md` finds
+      the section, and the section names the check and both notes.
 
 ## 3. Check
 - [ ] `openspec validate reanonymise-particle-name-documents --strict` passes.

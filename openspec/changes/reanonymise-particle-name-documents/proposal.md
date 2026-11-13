@@ -17,7 +17,10 @@ miss is fixed for new documents and stays in the corpus for old ones.
 1. **A count-only check in the reprocess path.** For each re-anonymised
    document, one log line gives, per type, the number of distinct pseudonyms in
    the stored text before and after, and how many were added and removed. No
-   value, no token, no text, no offset.
+   value, no token, no text, no offset. The same numbers come back per
+   document in the answer of `POST /reprocess` (`ReprocessResponse`), so a Job
+   that prints the answer has them in its own log and nobody has to find the
+   service's log.
 2. **Docs** that describe re-running after a detection change change with it:
    how to select the documents, how to read the line.
 3. **The run itself is not part of the build.** Re-anonymising the dossier uses
@@ -49,7 +52,7 @@ working assumptions; Mark can overrule each.
   removes a token (`pseudonym_registry.py:43`), so a registry count can only
   grow and would report tokens the text no longer holds. The text is what the
   reader sees; `pseudonym_registry.tokens_in` reads the tokens off it and
-  `label_of` gives the type.
+  `label_of` (`pseudonymizer.py:61`) gives the type.
 - **Who runs it and when: an operator, after the build, once production is
   reachable.** The build ships the count-only line and the docs. The run over
   the Gooise Meren dossier is an operator step, as a Job and not as one HTTP
@@ -65,7 +68,13 @@ working assumptions; Mark can overrule each.
   (#285) does not close on this build or on the run alone. Default: extend the
   gazetteer through the existing brake with an open list of common Dutch first
   names (licence checked, each entry with its source), and Mark adds the one
-  known name himself; then the run.
+  known name himself; then the run. That default costs more than a list: the
+  brake (`tests/test_particle_names_veiligheid.py`) fails any shipped entry
+  that the generated evaluation corpus never uses as a first name before a
+  particle and a last name, so every added name must also be seeded in
+  `src/wordsworth/eval/synthetic.py`. Extending the generator is part of the
+  work, and a list of a few hundred names is a change of its own, not a file
+  drop.
 - **M5.** The run needs the deployed corpus, which cannot be reached while
   jumpy is offline. Default: the build merges on green CI plus the local
   check; the run waits.
@@ -73,7 +82,8 @@ working assumptions; Mark can overrule each.
 ## Impact
 
 - Specs: `anonymization` (ADDED, one requirement).
-- Code: a pure function in a new `reprocess_counts.py`; one log line per
-  document from `reprocess.one`.
+- Code: a new helper module `reprocess_counts.py` (the pure comparison, the
+  read of the stored text, the log line); `reprocess.one` and `reprocess.run`
+  call it; one new field on `ReprocessResponse`.
 - Docs: `docs/how-to/detection-lists.md` (section "Het bestaande corpus
   bijwerken").
