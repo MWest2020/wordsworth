@@ -14,39 +14,66 @@ miss is fixed for new documents and stays in the corpus for old ones.
 
 ## What changes
 
-1. **Re-anonymise the affected documents** with the existing reprocess path
-   (`wordsworth/reprocess.py`, `POST /reprocess`), once
-   `particle-names-rule` has merged. No new reprocess mechanism.
-2. **A count-only check.** For each re-anonymised document, only the number of
-   detected entities before and after is logged, per type. No value, no text, no
-   offset.
-3. **Docs** that describe re-running after a detection change change with it.
+1. **A count-only check in the reprocess path.** For each re-anonymised
+   document, one log line gives, per type, the number of distinct pseudonyms in
+   the stored text before and after, and how many were added and removed. No
+   value, no token, no text, no offset.
+2. **Docs** that describe re-running after a detection change change with it:
+   how to select the documents, how to read the line.
+3. **The run itself is not part of the build.** Re-anonymising the dossier uses
+   the existing reprocess path (`wordsworth/reprocess.py`, `POST /reprocess`
+   with `document_ids`). No new reprocess mechanism and no new command.
 
 ## Depends on
 
-`detect-dutch-particle-names`, since split into four steps (`particle-names-rule`
-first). It is not built before `particle-names-rule` is merged.
+`particle-names-rule` (merged, archived 2026-11-03), `particle-names-brake`
+(built in #381) and `particle-names-measured` (archived 2026-11-06). Nothing
+blocks the build.
 
-## Open questions
+## Decisions (amended 2026-11-13)
 
-- **Which documents count as affected.** `only_outdated` compares the lists hash
-  in the audit trail (`reprocess.outdated`). The particle rule is code plus a
-  gazetteer file, and it is not decided whether that moves the hash. If it does
-  not, `only_outdated` selects nothing for this change. Not decided: widen the
-  hash, select by an explicit id list, or reprocess the whole corpus (hours of
-  work, see `docs/how-to/detection-lists.md`).
-- **Where the "before" count comes from.** The `detections` payload of the
-  earlier `anonymize` audit record may be enough; not checked against stored
-  records. Not decided.
-- **Who runs it and when.** It needs the deployed corpus, so it is an operator
-  step as a Job, not an HTTP request. Not decided whether the build includes a
-  command for it.
-- **Updating the pilot report** with the result waits for the run.
+The first version listed these as open questions. They are settled here as
+working assumptions; Mark can overrule each.
+
+- **Which documents: an explicit list of ids.** The gazetteer is deliberately
+  outside `lists_hash` (requirement "The gazetteer leaves out common words and
+  stays out of lists_hash"), so `only_outdated` selects nothing after a
+  gazetteer or rule change. The run passes the `document_ids` of the dossier
+  (`POST /reprocess` already takes them, `api.py:1256`). Not chosen: widening
+  the hash (it would mark the whole corpus outdated on every gazetteer edit)
+  and reprocessing every dossier.
+- **Where the counts come from: the stored pseudonymised text, before and
+  after.** Not the `detections` payload of the earlier audit record (never
+  checked against stored records). And not the pseudonym registry as a total,
+  which the plan for this amendment named: `pseudonym_registry.register` never
+  removes a token (`pseudonym_registry.py:43`), so a registry count can only
+  grow and would report tokens the text no longer holds. The text is what the
+  reader sees; `pseudonym_registry.tokens_in` reads the tokens off it and
+  `label_of` gives the type.
+- **Who runs it and when: an operator, after the build, once production is
+  reachable.** The build ships the count-only line and the docs. The run over
+  the Gooise Meren dossier is an operator step, as a Job and not as one HTTP
+  request (it takes hours, see `docs/how-to/detection-lists.md`).
+- **The pilot report is updated by that run, not by the build.** The build
+  changes no figure in `docs/explanation/pilot-report-gooise-meren-2022.md`.
+
+## Questions for Mark that this change does not settle
+
+- **M6.** The gazetteer holds 12 first names, all from the synthetic corpus;
+  the real name in `1c87f856` was never recorded. The run may therefore leave
+  that document as it is, and the roadmap item "No untokenised names left"
+  (#285) does not close on this build or on the run alone. Default: extend the
+  gazetteer through the existing brake with an open list of common Dutch first
+  names (licence checked, each entry with its source), and Mark adds the one
+  known name himself; then the run.
+- **M5.** The run needs the deployed corpus, which cannot be reached while
+  jumpy is offline. Default: the build merges on green CI plus the local
+  check; the run waits.
 
 ## Impact
 
 - Specs: `anonymization` (ADDED, one requirement).
-- Code: the count-only before/after line in the reprocess path; the selection
-  depends on the open question above.
+- Code: a pure function in a new `reprocess_counts.py`; one log line per
+  document from `reprocess.one`.
 - Docs: `docs/how-to/detection-lists.md` (section "Het bestaande corpus
   bijwerken").
