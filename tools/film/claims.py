@@ -121,14 +121,25 @@ def resolve(spec, facts, facts_err, pytest_results, cmd_runner=run_cmd):
     return out
 
 
+def unreachable(returncode, err):
+    """ssh itself could not connect (exit 255 with an ssh: message): the installation
+    was not asked. A probe that ran and failed is a bug, and drops its claims loudly."""
+    return returncode == 255 and "ssh:" in err
+
+
 def live_facts(cmd):
-    p = subprocess.run(cmd, shell=True, cwd=ROOT, capture_output=True, text=True, timeout=600)
-    if p.returncode != 0:
-        return None, (p.stderr or p.stdout).strip()[-200:]
+    """(facts, error, unreachable)."""
     try:
-        return json.loads(p.stdout.strip().splitlines()[-1]), None
+        p = subprocess.run(cmd, shell=True, cwd=ROOT, capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        return None, "probe timed out after 600 s", True
+    if p.returncode != 0:
+        err = (p.stderr or p.stdout).strip()[-200:]
+        return None, err, unreachable(p.returncode, err)
+    try:
+        return json.loads(p.stdout.strip().splitlines()[-1]), None, False
     except (ValueError, IndexError):
-        return None, "probe printed no JSON"
+        return None, "probe printed no JSON", False
 
 
 def film_says(results):
@@ -142,17 +153,29 @@ def same(a, b):
     return load(a) == load(b)
 
 
-def main(path):
+# The live installation could not be asked (ssh could not connect, or the probe
+# hung). That is "not checked today", not "disproved": the build keeps the last
+# film instead of publishing one without every live claim (2026-11-13, when the
+# jump host was offline and 16 of 27 claims dropped for that reason alone). A probe
+# that runs and breaks still drops its claims, so a bug shows in the film.
+UNREACHABLE = 3
+
+
+def main(path, probe=None):
     spec = yaml.safe_load(open(CLAIMS, encoding="utf-8"))
-    facts, err = live_facts(spec["live_facts_cmd"])
+    facts, err, gone = (probe or live_facts)(spec["live_facts_cmd"])
+    if gone:
+        print(f"live installation unreachable ({err}): keeping the last film")
+        return UNREACHABLE
     nodes = {n for c in spec["claims"] for n in c.get("pytest", [])}
     results = resolve(spec, facts, err, run_pytest(nodes))
     json.dump(results, open(path, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     for r in results:
         print(("shown  " if r["shown"] else "DROPPED") + f" {r['id']}" + ("" if r["shown"] else f": {r['why']}"))
+    return 0
 
 
 if __name__ == "__main__":
     if sys.argv[1] == "--same":
         sys.exit(0 if same(sys.argv[2], sys.argv[3]) else 1)
-    main(sys.argv[1])
+    sys.exit(main(sys.argv[1]))

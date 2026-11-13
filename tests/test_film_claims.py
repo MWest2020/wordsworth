@@ -149,3 +149,17 @@ def test_sealed_originals_rests_on_the_key_vault_and_its_own_check():
     assert c["scene"] == "autonomie"
     assert c["requires"] == ["key-vault"]
     assert c["cmd"] == "tools/film/check_sealed_originals.sh"
+
+
+def test_only_an_ssh_connection_failure_counts_as_unreachable():
+    assert claims.unreachable(255, "ssh: connect to host 100.110.242.128 port 22: Connection timed out")
+    assert not claims.unreachable(1, "Traceback (most recent call last): KeyError")
+    assert not claims.unreachable(255, "error: deployment wordsworth-api not found")
+
+
+def test_an_unreachable_installation_keeps_the_last_film(tmp_path):
+    # not checked today is not disproved: main stops before any check and writes nothing
+    out = tmp_path / "claims.json"
+    code = claims.main(str(out), probe=lambda cmd: (None, "ssh: connect timed out", True))
+    assert code == claims.UNREACHABLE
+    assert not out.exists()
