@@ -5,8 +5,8 @@
 Deleting a document SHALL remove its stored object, its stored text, its
 pseudonyms, its mappings, its index entries and its grants. The `documents` row
 and the document's earlier audit records SHALL remain. For an encrypted
-original, deleting SHALL also destroy the data key of every object the deletion
-removes, in the same transaction.
+original, deleting SHALL also destroy the data key of every object whose last
+claim the deletion ends, in the same transaction.
 
 #### Scenario: Nothing of the content is left
 
@@ -22,14 +22,16 @@ removes, in the same transaction.
 
 #### Scenario: A surviving copy is unreadable
 
-- **WHEN** an encrypted document is deleted and a copy of its object made
-  before the deletion still exists
+- **WHEN** an encrypted document is deleted, a copy of its object made before
+  the deletion still exists, and no other document that is not deleted points
+  at its object
 - **THEN** that copy can no longer be decrypted, and the document's key is gone
 
 #### Scenario: Another replica cannot open it after the delete
 
-- **WHEN** one replica deletes an encrypted document while another replica
-  still holds its unwrapped key in memory
+- **WHEN** one replica deletes an encrypted document whose object no other
+  document that is not deleted points at, while another replica still holds
+  its unwrapped key in memory
 - **THEN** the other replica can no longer open a copy of that object, without
   waiting for its cache to expire
 
@@ -40,9 +42,11 @@ removes, in the same transaction.
 A deletion SHALL destroy a data key exactly when it ends the last claim on that
 key's object: when no other document that is not deleted still points at the
 same object key. A document with more than one sealed object SHALL lose the key
-of each. The `deleted` record and the dry run SHALL carry the number of keys
-destroyed and SHALL NOT carry key material. A failure to destroy a key SHALL be
-a hard error as any other failed removal: no `deleted` record, the document in
+of each. Every caller of a deletion SHALL destroy keys in the same way, whether
+or not it has a key service. The `deleted` record and the dry run SHALL carry
+the number of keys destroyed, a dossier deletion SHALL report their sum, and
+none of them SHALL carry key material. A failure to destroy a key SHALL be a
+hard error as any other failed removal: no `deleted` record, the document in
 its previous state. An original that was never encrypted has no key, and its
 deletion SHALL behave as before.
 
@@ -59,11 +63,23 @@ deletion SHALL behave as before.
 - **THEN** the object and its key are kept after the first deletion and are
   both gone after the second
 
+#### Scenario: A copy and its survivor are deleted at the same moment
+
+- **WHEN** two deletions run at once, one for a superseded copy and one for its
+  survivor on the same object key
+- **THEN** after both have finished the object and its key are gone
+
 #### Scenario: A scan and its OCR'd PDF
 
 - **WHEN** a document recovered by OCR is deleted
 - **THEN** the key of the scan and the key of the OCR'd PDF are both gone and
   the record counts two keys
+
+#### Scenario: The command-line deletion has no key service
+
+- **WHEN** `wordsworth-delete` deletes an encrypted document without a key
+  service configured
+- **THEN** the document's key is gone, as after a deletion through the API
 
 #### Scenario: The key cannot be destroyed
 
@@ -77,7 +93,33 @@ deletion SHALL behave as before.
 - **THEN** it reports the number of keys that would be destroyed, and every key
   still exists
 
+#### Scenario: A dossier reports the sum
+
+- **WHEN** a dossier is deleted, or its deletion is run with `--dry-run`
+- **THEN** the report carries the number of keys destroyed, or that would be,
+  over the documents the deletion deletes
+
 #### Scenario: An original that was never encrypted
 
 - **WHEN** a document whose original is stored as legacy plaintext is deleted
 - **THEN** the deletion completes as before and the record counts zero keys
+
+### Requirement: A key destroyed after the deletion is recorded
+
+When a document that is already deleted is deleted again and still has a data
+key that no other document that is not deleted needs, the system SHALL destroy
+that key and SHALL append one audit record `deleted` to `deleted` carrying the
+caller and the number of keys destroyed, and no key material. A repeated
+deletion that destroys nothing SHALL append nothing.
+
+#### Scenario: A document deleted before keys were destroyed
+
+- **WHEN** a document that was deleted while its key row was left in place is
+  deleted again
+- **THEN** its key is gone, one new audit record says so with the count, and
+  the hash chain still verifies
+
+#### Scenario: Nothing left to destroy
+
+- **WHEN** a deleted document without a key row is deleted again
+- **THEN** no audit record is appended

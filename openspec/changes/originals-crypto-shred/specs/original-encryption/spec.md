@@ -5,7 +5,9 @@
 Before using an unwrapped data key from its cache, the key store SHALL confirm
 that the key row for that object still exists and names the same key. When it
 does not, the cached key SHALL be dropped and SHALL NOT be used. The check
-SHALL NOT call the key service.
+SHALL NOT call the key service. Every unwrap, with or without a cached key,
+SHALL read the key row from the database as committed at that moment, never
+from a copy the caller already holds in memory.
 
 #### Scenario: The row was destroyed by another process
 
@@ -13,6 +15,13 @@ SHALL NOT call the key service.
   destroys that key's row
 - **THEN** the first process's next unwrap for that object raises
   `OriginalsKeyUnavailable` and returns no key
+
+#### Scenario: The row was loaded earlier in the same session
+
+- **WHEN** a session has loaded a key row, another process destroys that row,
+  and the first session then unwraps that object with nothing in the cache
+- **THEN** the unwrap raises `OriginalsKeyUnavailable` and the key service is
+  not called
 
 #### Scenario: The key was destroyed and minted again
 
