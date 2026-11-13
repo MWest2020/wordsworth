@@ -8,9 +8,9 @@
  * weigering wordt getoond, niet verstopt.
  *
  * De PDF wordt nergens bewaard. Het eindpunt rendert hem bij elke aanroep vers
- * en cachet niets; hier leeft hij als blob in het geheugen van deze pagina,
- * zonder download-attribuut, tot de volgende onthulling of tot de pagina dicht
- * gaat.
+ * en zegt `Cache-Control: no-store`; hier leeft hij als blob in het geheugen
+ * van deze pagina, zonder download-attribuut, tot de volgende poging of tot de
+ * pagina dicht gaat.
  */
 if (typeof document !== "undefined") (function () {
   var panel = document.getElementById("reveal");
@@ -18,13 +18,18 @@ if (typeof document !== "undefined") (function () {
   var status = document.getElementById("reveal-pdf-status");
   var current = null;   // de blob-URL van de laatste onthulling
 
+  function forget() {
+    if (current) URL.revokeObjectURL(current);
+    current = null;
+  }
+
   function say(text, bad, link) {
     status.hidden = false;
     status.textContent = text;
     status.className = bad ? "fout" : "empty";
     if (link) {
       var a = document.createElement("a");
-      a.href = link; a.target = "_blank";
+      a.href = link; a.target = "_blank"; a.rel = "noopener";
       a.textContent = "Open de onthulde PDF";
       status.appendChild(document.createTextNode(" "));
       status.appendChild(a);
@@ -32,18 +37,32 @@ if (typeof document !== "undefined") (function () {
   }
 
   function checked(grant) {
+    var sel = 'input[name="type"][data-grant="' + CSS.escape(grant) + '"]';
     return Array.prototype.filter
-      .call(panel.querySelectorAll('input[name="type"][data-grant="' + grant + '"]'),
-            function (b) { return b.checked; })
+      .call(panel.querySelectorAll(sel), function (b) { return b.checked; })
       .map(function (b) { return b.value; });
   }
 
+  // FastAPI geeft `detail` als tekst, of bij een ongeldig verzoek (422) als
+  // lijst van {loc, msg}. Nooit "[object Object]" op het scherm.
+  function reason(detail) {
+    if (!detail) return "geen reden gegeven";
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail.map(function (d) { return (d && d.msg) || JSON.stringify(d); })
+        .join("; ");
+    }
+    return JSON.stringify(detail);
+  }
+
   function refusal(r) {
-    // Een weigering komt als JSON met een `detail`; lukt dat niet, dan de code.
-    return r.json().then(function (body) { return body.detail; },
+    forget();
+    return r.json().then(function (body) { return body && body.detail; },
                          function () { return null; })
       .then(function (detail) {
-        say("Geweigerd (" + r.status + "): " + (detail || "geen reden gegeven")
+        // Alleen 401/403 is een weigering; 404, 409 en 503 zijn "lukt nu niet".
+        var word = (r.status === 401 || r.status === 403) ? "Geweigerd" : "Niet gelukt";
+        say(word + " (" + r.status + "): " + reason(detail)
             + " — er is geen PDF gemaakt.", true);
       });
   }
@@ -57,7 +76,7 @@ if (typeof document !== "undefined") (function () {
 
     btn.disabled = true;
     say("PDF wordt gemaakt…", false);
-    fetch("/documents/" + panel.getAttribute("data-doc") + "/reveal.pdf", {
+    return fetch("/documents/" + panel.getAttribute("data-doc") + "/reveal.pdf", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
@@ -66,9 +85,12 @@ if (typeof document !== "undefined") (function () {
       btn.disabled = false;
       if (!r.ok) return refusal(r);
       return r.blob().then(function (blob) {
-        if (current) URL.revokeObjectURL(current);
+        forget();
         current = URL.createObjectURL(blob);
-        window.open(current, "_blank");
+        // Een poging. Na het renderen is de klik vaak "verbruikt" en houdt een
+        // popupblokker dit tegen; de link in de statusregel hieronder is de
+        // betrouwbare weg en staat er altijd.
+        window.open(current, "_blank", "noopener");
         // De PDF zegt niet welke types de grant werkelijk toestond: wat niet
         // mocht, blijft gelakt. Dus "gevraagd", niet "onthuld"; het spoor
         // noemt wat er werkelijk uitkwam.
@@ -78,6 +100,7 @@ if (typeof document !== "undefined") (function () {
       });
     }).catch(function (err) {
       btn.disabled = false;
+      forget();
       say("Verzoek mislukt: " + err, true);
     });
   });

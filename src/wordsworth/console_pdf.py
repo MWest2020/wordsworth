@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""Whether the document page can link the redacted PDF (console-pdf-views).
+"""Whether the document page can offer the PDF views (console-pdf-views).
 
 The page links ``GET /documents/{id}/redacted.pdf`` when that route would
 serve it, and otherwise says why not in words. A link that leads to a 409 is a
@@ -10,49 +10,47 @@ with a grant, is decided by the API routes the browser calls with the console
 cookie: the same ``_guard_corpus_read``, the same ``authorize()``. Nothing here
 is a second door.
 
-The two reasons are the two the route itself checks before rendering
-(``api.py``, ``redacted_pdf``): no box map, or a box map made under detection
-lists other than the ones currently configured. The comparison is the same one:
-the stored ``lists_hash`` against the lists as configured now, not against the
-document's own audit trail.
+The box-map check is the route's own (``pdf_redaction.box_map_status``), so the
+link and the route cannot disagree about it. What only a render can tell (a
+degenerate box map, 409; the key service, 503) the route still refuses, and the
+page shows that refusal.
 """
 from __future__ import annotations
 
 from uuid import UUID
 
-from .models import BoxMap
+from .models import Document
+from .pdf_redaction import NO_BOX_MAP, STALE, box_map_status, current_lists_hash
 
+__all__ = ["NO_BOX_MAP", "NO_STORE", "STALE", "current_lists_hash", "state"]
+
+#: No object store: the PDF routes are not mounted on this installation.
+NO_STORE = "no-store"
 #: Reason codes and the sentence the page shows for each.
-NO_BOX_MAP = "no-box-map"
-STALE = "stale"
 REASONS = {
+    NO_STORE: "PDF's zijn op deze installatie niet beschikbaar.",
     NO_BOX_MAP: ("Nog geen boxmap voor dit document: de gelakte PDF bestaat "
                  "pas na pseudonimisering in omkeerbare modus (reanonymize "
                  "bouwt er een)."),
     STALE: ("De boxmap is verouderd: de detectielijsten zijn veranderd sinds "
-            "hij is gemaakt. Reanonymize ververst hem; tot dan wordt de "
-            "gelakte PDF niet geleverd."),
+            "hij is gemaakt. Reanonymize ververst hem; tot dan worden de "
+            "gelakte PDF en de onthulling als PDF niet aangeboden."),
 }
 
 
-def lists_hash() -> str:
-    """The hash of the detection lists as currently configured: the value the
-    redacted-PDF route compares a box map against."""
-    from .config import settings
-    from .detection_lists import DetectionLists
-
-    return DetectionLists.load(settings.detection_lists_dir).hash
-
-
-def state(session, document_id: UUID, current_lists_hash: str) -> dict:
-    """``{"available": True}``, or ``{"available": False, "reason": code,
-    "why": sentence}`` with ``code`` one of ``NO_BOX_MAP`` and ``STALE``."""
-    box_map = session.get(BoxMap, document_id)
-    if box_map is None:
-        return _not(NO_BOX_MAP)
-    if box_map.lists_hash != current_lists_hash:
-        return _not(STALE)
-    return {"available": True}
+def state(session, document_id: UUID, lists_hash: str | None, *,
+          pdf_views: bool = True) -> dict | None:
+    """``None`` for an unknown document (no PDF block at all);
+    ``{"available": True}``; or ``{"available": False, "reason": code,
+    "why": sentence}`` with ``code`` one of ``NO_STORE``, ``NO_BOX_MAP`` and
+    ``STALE``. ``pdf_views`` is whether the PDF routes exist (an object store
+    is configured)."""
+    if session.get(Document, document_id) is None:
+        return None
+    if not pdf_views:
+        return _not(NO_STORE)
+    _, why = box_map_status(session, document_id, lists_hash)
+    return _not(why) if why else {"available": True}
 
 
 def _not(code: str) -> dict:

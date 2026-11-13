@@ -34,6 +34,7 @@
 </div>
 {% endif %}
 
+{% if pdf %}
 <div class="card pad" id="pdf" style="margin-top:20px">
  <p class="eyebrow">Als PDF</p>
  {% if pdf.available %}
@@ -46,6 +47,7 @@
  PDF. {{ pdf.why }}</p>
  {% endif %}
 </div>
+{% endif %}
 
 {% if carried %}
 <h2>Draagt deze combinaties volledig</h2>
@@ -91,12 +93,18 @@ gewoon bij en wordt geweigerd — dát is de demonstratie.</p>
   <td style="width:15rem; text-align:right">
     <button class="btn" type="button" data-reveal="{{ g.grant_id }}"
             {% if g.status != 'active' %}disabled{% endif %}>Onthul</button>
+    {% if pdf and pdf.reason != 'no-store' %}
     <button class="btn" type="button" data-reveal-pdf="{{ g.grant_id }}"
-            {% if g.status != 'active' %}disabled{% endif %}>Onthul als PDF</button></td>
+            {% if not pdf.available %}disabled title="{{ pdf.why }}"
+            {% elif g.status != 'active' %}disabled{% endif %}>Onthul als PDF</button>
+    {% endif %}</td>
  </tr>
  {% endfor %}
  </tbody></table>
  <div id="reveal-status" class="empty" hidden></div>
+ {% if pdf and not pdf.available and pdf.reason != 'no-store' %}
+ <p class="note" style="padding:8px 16px" data-pdf-reveal-reason="{{ pdf.reason }}">Onthullen
+ als PDF kan nu niet. {{ pdf.why }}</p>{% endif %}
  <div id="reveal-pdf-status" class="empty" aria-live="polite" hidden></div>
 </div>
 {% else %}

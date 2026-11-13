@@ -11,5 +11,6 @@
   audited; the page holds it as an in-memory blob only.
 - **Availability, not permission, on the page.** `console_pdf.state` reads
   whether the redacted PDF would be served (a box map, made under the current
-  detection lists: the same comparison as the route) so the page links it or
-  names the reason. It never decides who may fetch it.
+  detection lists: `pdf_redaction.box_map_status`, the one function the route
+  also calls; and an object store, without which the routes do not exist) so
+  the page links it or names the reason. It never decides who may fetch it.

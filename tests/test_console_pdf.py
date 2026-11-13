@@ -70,28 +70,45 @@ def test_state_with_a_box_map_from_other_lists_is_stale(session_factory):
 
 # --- the document page ------------------------------------------------------
 
-def test_the_page_links_the_redacted_pdf_when_there_is_a_box_map(session_factory):
-    doc_id = _seed(session_factory, lists_hash=console_pdf.lists_hash())
-    page = _client(session_factory).get(f"/console/documents/{doc_id}").text
+def test_the_page_links_the_redacted_pdf_when_there_is_a_box_map(session_factory, mem_store):
+    doc_id = _seed(session_factory, lists_hash=console_pdf.current_lists_hash())
+    page = _client(session_factory, store=mem_store).get(f"/console/documents/{doc_id}").text
     assert f'href="/documents/{doc_id}/redacted.pdf"' in page
     assert "Gelakte PDF" in page and "data-pdf-reason" not in page
 
 
-def test_the_page_says_why_not_without_a_box_map(session_factory):
+def test_the_page_says_why_not_without_a_box_map(session_factory, mem_store):
     doc_id = _seed(session_factory)
-    page = _client(session_factory).get(f"/console/documents/{doc_id}").text
+    page = _client(session_factory, store=mem_store).get(f"/console/documents/{doc_id}").text
     assert "redacted.pdf" not in page
     assert 'data-pdf-reason="no-box-map"' in page and "Nog geen boxmap" in page
 
 
-def test_the_page_says_why_not_with_a_stale_box_map(session_factory):
+def test_the_page_says_why_not_with_a_stale_box_map(session_factory, mem_store):
     doc_id = _seed(session_factory, lists_hash="lists-of-last-month")
-    page = _client(session_factory).get(f"/console/documents/{doc_id}").text
+    page = _client(session_factory, store=mem_store).get(f"/console/documents/{doc_id}").text
     assert "redacted.pdf" not in page
     assert 'data-pdf-reason="stale"' in page and "verouderd" in page
 
 
-def test_every_active_grant_offers_a_reveal_pdf(session_factory):
+def test_a_stale_box_map_disables_the_reveal_pdf(session_factory, mem_store):
+    """The API does not yet refuse a stale box map on reveal.pdf (#438); the
+    page does not offer what the link already says is out of date."""
+    doc_id = _seed(session_factory, lists_hash="lists-of-last-month")
+    with session_factory() as s:
+        s.add(GrantRecord(grant_id="g-mark", recipient="mark", allowed_types=["PERSON"],
+                          actor="mark", document_id=doc_id, status="active",
+                          created_at=datetime.now(timezone.utc)))
+        s.commit()
+    page = _client(session_factory, store=mem_store).get(
+        f"/console/documents/{doc_id}").text
+    button = page[page.index('data-reveal-pdf="g-mark"'):]
+    button = button[:button.index("</button>")]
+    assert "disabled" in button and "verouderd" in button
+    assert 'data-pdf-reveal-reason="stale"' in page
+
+
+def test_every_active_grant_offers_a_reveal_pdf(session_factory, mem_store):
     """Offered for others' grants too: the screen offers, the door decides."""
     doc_id = _seed(session_factory)
     with session_factory() as s:
@@ -100,10 +117,12 @@ def test_every_active_grant_offers_a_reveal_pdf(session_factory):
                               actor="mark", document_id=doc_id, status="active",
                               created_at=datetime.now(timezone.utc)))
         s.commit()
-    c = _client(session_factory)
+    c = _client(session_factory, store=mem_store)
     page = c.get(f"/console/documents/{doc_id}").text
     assert 'data-reveal-pdf="g-mark"' in page and 'data-reveal-pdf="g-hr"' in page
     assert page.count("Onthul als PDF") == 2
+    # no box map here: offered, but not clickable, with the reason beside it
+    assert 'data-pdf-reveal-reason="no-box-map"' in page
     assert "/console/static/console_pdf.js" in page
     script = c.get("/console/static/console_pdf.js")
     assert script.status_code == 200 and "/reveal.pdf" in script.text
@@ -144,5 +163,6 @@ def test_the_link_and_the_reveal_go_through_the_api_gates(
     r = mark.post(f"/documents/{doc_id}/reveal.pdf", json=body)
     assert r.status_code == 200 and r.content.startswith(b"%PDF")
     assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["cache-control"] == "no-store"
     r = gast.post(f"/documents/{doc_id}/reveal.pdf", json=body)
     assert r.status_code == 403 and r.json()["detail"] == "grant not applicable"

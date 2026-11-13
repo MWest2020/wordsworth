@@ -516,7 +516,8 @@ def create_app(
         app.include_router(build_router(session_factory, keys, search_index,
                                         _guard_corpus_read, _guard_grant_admin,
                                         _resolve_audit, embedder, identity,
-                                        generator=generator))
+                                        generator=generator,
+                                        pdf_views=store is not None))
         # Wat de browser van dit scherm mag maken: geen iframe (de Onthul-knop
         # is anders te clickjacken, met het auditspoor op naam van het
         # slachtoffer) en geen cross-site post (die kan het callerlabel van een
@@ -709,32 +710,25 @@ def create_app(
                 differ from the ones the box map was made under (`stale`;
                 `reanonymize` refreshes it). 404 if the document is unknown."""
                 _guard_corpus_read(request)
-                from .detection_lists import DetectionLists
                 from .document_keys import OriginalsKeyUnavailable
-                from .models import BoxMap
                 from .originals_io import read_original
-                from .pdf_redaction import boxes_of, redacted_cache_key
+                from .pdf_redaction import (NO_BOX_MAP, box_map_status, boxes_of,
+                                            current_lists_hash, redacted_cache_key)
                 from .pdf_render import DegenerateBoxError, RENDER_VERSION, render as render_pdf
 
                 with session_factory() as session:
                     if current_state(session, document_id) is None:
                         raise HTTPException(status_code=404,
                                             detail="unknown document")
-                    box_map = session.get(BoxMap, document_id)
-                    if box_map is None:
+                    # One check with the console's link (box_map_status).
+                    box_map, why = box_map_status(session, document_id,
+                                                  current_lists_hash())
+                    if why == NO_BOX_MAP:
                         raise HTTPException(
                             status_code=409,
                             detail="no box map yet (reversible mode required; "
                                    "reanonymize to build one)")
-                    # Compared against the lists AS CURRENTLY CONFIGURED, not
-                    # against the document's own audit trail: those two are
-                    # the same number right after `reanonymize` runs, by
-                    # construction, so comparing a document to itself could
-                    # never detect staleness. Staleness is the lists having
-                    # moved on git/deploy since the box map was made.
-                    current_hash = DetectionLists.load(
-                        default_settings.detection_lists_dir).hash
-                    if box_map.lists_hash != current_hash:
+                    if why is not None:
                         raise HTTPException(status_code=409, detail="stale")
                     cache_key = redacted_cache_key(document_id, RENDER_VERSION,
                                                    box_map.boxmap_hash)
@@ -1629,7 +1623,9 @@ def create_app(
                             "box map unusable (a box has no surface); "
                             "reanonymize to build one"))
                     session.commit()
-                return Response(content=pdf_bytes, media_type="application/pdf")
+                # Never cached, by a proxy or the browser either.
+                return Response(content=pdf_bytes, media_type="application/pdf",
+                                headers={"Cache-Control": "no-store"})
 
     if session_factory is not None and generator is not None:
 
