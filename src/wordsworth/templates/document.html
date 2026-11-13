@@ -34,6 +34,19 @@
 </div>
 {% endif %}
 
+<div class="card pad" id="pdf" style="margin-top:20px">
+ <p class="eyebrow">Als PDF</p>
+ {% if pdf.available %}
+ <p style="margin:0"><a class="btn" href="/documents/{{ id }}/redacted.pdf"
+   target="_blank" rel="noopener">Gelakte PDF</a>
+ <span class="note">de opmaak van het origineel, elke gevonden waarde
+ weggeschilderd en gelabeld. Onthullen als PDF gaat per grant, hieronder.</span></p>
+ {% else %}
+ <p class="note" style="margin:0" data-pdf-reason="{{ pdf.reason }}">Geen gelakte
+ PDF. {{ pdf.why }}</p>
+ {% endif %}
+</div>
+
 {% if carried %}
 <h2>Draagt deze combinaties volledig</h2>
 <div class="card">
@@ -75,13 +88,16 @@ gewoon bij en wordt geweigerd — dát is de demonstratie.</p>
       <input type="checkbox" name="type" value="{{ t }}" checked
              data-grant="{{ g.grant_id }}"> {{ t }}</label>{% endfor %}
   </td>
-  <td style="width:8rem; text-align:right">
+  <td style="width:15rem; text-align:right">
     <button class="btn" type="button" data-reveal="{{ g.grant_id }}"
-            {% if g.status != 'active' %}disabled{% endif %}>Onthul</button></td>
+            {% if g.status != 'active' %}disabled{% endif %}>Onthul</button>
+    <button class="btn" type="button" data-reveal-pdf="{{ g.grant_id }}"
+            {% if g.status != 'active' %}disabled{% endif %}>Onthul als PDF</button></td>
  </tr>
  {% endfor %}
  </tbody></table>
  <div id="reveal-status" class="empty" hidden></div>
+ <div id="reveal-pdf-status" class="empty" aria-live="polite" hidden></div>
 </div>
 {% else %}
 <p class="empty">Geen actieve grants voor dit document{% if revoked %}
@@ -113,10 +129,11 @@ uitgeven — dat recht ligt bij de issuer-labels. Uitgeven gaat via
 <div class="card pad sovereign">
   <p class="eyebrow">Waar dit scherm géén deur is</p>
   <p class="note" style="margin:0">Onthullen gebeurt via het bestaande
-  <code>reveal</code>-eindpunt, met jouw eigen cookie, dezelfde
+  <code>reveal</code>- of <code>reveal.pdf</code>-eindpunt, met jouw eigen cookie, dezelfde
   <code>authorize()</code> en hetzelfde auditrecord. Er staat hier geen regel
   autorisatiecode, geen sleutel en geen eigen spoor. De regel die telt is niet
   "de console mag niet onthullen" maar "de console mag geen tweede deur hebben".</p>
 </div>
 <script src="/console/static/console.js"></script>
+<script src="/console/static/console_pdf.js"></script>
 {% endblock %}

@@ -39,6 +39,7 @@ from . import combinations as _combinations
 from . import console_data
 from . import console_dossier
 from . import console_list
+from . import console_pdf
 from . import console_search
 from . import console_feedback
 from . import console_roles
@@ -173,6 +174,7 @@ def build_router(session_factory, keys: dict[str, str],
                        if {t.upper() for t in d["types"]} <= present]
             grants, revoked = console_data.grants_for(session, document_id)
             history = console_data.reveal_history(session, document_id)
+            pdf = console_pdf.state(session, document_id, console_pdf.lists_hash())
         from .pii_categories import known_types
 
         return TEMPLATES.TemplateResponse(request, "document.html", {
@@ -186,7 +188,7 @@ def build_router(session_factory, keys: dict[str, str],
             "missing": row is None, "counts": sorted(counts.items()),
             "unbroken": unbroken, "carried": carried,
             "grants": grants, "revoked": revoked, "history": history,
-            "caller": _caller(request)})
+            "caller": _caller(request), "pdf": pdf})
 
     @router.get("/combinations", response_class=HTMLResponse,
                 include_in_schema=False)

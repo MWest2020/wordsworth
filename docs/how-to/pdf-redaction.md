@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-10-25
+last_reviewed: 2026-11-13
 ---
 
 # Runbook: the redacted PDF
@@ -155,8 +155,22 @@ Scanned documents use the existing OCR text layer
 (`object_key` repointed by the OCR recovery step) — there is no separate OCR
 path for redaction.
 
-## Not decided here
+## In the console
 
-Whether and how the console embeds these two views is a separate, undecided
-question (see the `pdf-redaction` proposal's open questions) — this runbook
-covers the two HTTP endpoints only.
+The console document page (`/console/documents/{id}`) links both views
+(change `console-pdf-views`); it embeds no viewer, the browser opens the PDF.
+
+- **Gelakte PDF** links `GET /documents/{id}/redacted.pdf` when the document
+  has a box map made under the current detection lists. Otherwise the page
+  says why not: no box map yet, or a stale one (`console_pdf.state`, the same
+  two checks the route makes before rendering).
+- **Onthul als PDF**, on every active grant row, posts
+  `{"grant_id": ..., "types": [the checked types]}` to
+  `POST /documents/{id}/reveal.pdf` (`static/console_pdf.js`) and opens the
+  returned PDF from an in-memory blob. A refusal (403, 409) is shown on the
+  page, not hidden.
+
+Both requests go to the API routes above with the console cookie: the
+redacted PDF through the corpus-read check, the reveal PDF through the grant's
+`authorize()` and its audit record (`view=pdf`). The console adds no
+authorisation code, and nothing caches or stores the reveal PDF.
