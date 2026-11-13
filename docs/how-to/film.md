@@ -23,10 +23,14 @@ What it does:
 
 1. It runs every check and writes the resolved claims: the shown claims with their
    filled sentences, and the dropped claims with the reason.
-2. It compares the result with `<outdir>/claims.json` from the last build. If the film
+2. If the live installation cannot be asked at all (the probe fails, for example
+   because the jump host is down), it prints `unreachable` and stops without
+   changing anything: a claim that could not be checked today is not disproved, so
+   the last film stays.
+3. It compares the result with `<outdir>/claims.json` from the last build. If the film
    would say the same thing, it prints `unchanged` and stops. A drop reason worded
    differently does not count as a change.
-3. Otherwise it narrates, renders and assembles the film. It prints the path of the
+4. Otherwise it narrates, renders and assembles the film. It prints the path of the
    mp4, and only then writes `claims.json`, so a build that failed is tried again on
    the next run.
 

@@ -5,6 +5,7 @@
 #
 # 1. runs every check in docs/reference/film-claims.yml and writes the resolved claims;
 # 2. same claims as the last build in <outdir> -> prints "unchanged", exit 0;
+#    the live installation unreachable -> prints "unreachable", exit 0, nothing changes;
 # 3. otherwise narrates, renders and assembles the film into <outdir> and prints the mp4.
 # claims.json is written last, so a failed build is retried the next day.
 set -euo pipefail
@@ -16,7 +17,14 @@ cd "$ROOT"
 
 NEW=$(mktemp "${TMPDIR:-/tmp}/film-claims.XXXXXX.json")
 trap 'rm -f "$NEW"' EXIT
-uv run -q python tools/film/claims.py "$NEW" >&2
+rc=0
+uv run -q python tools/film/claims.py "$NEW" >&2 || rc=$?
+if [ "$rc" -eq 3 ]; then
+  # the live installation could not be asked: not checked is not disproved, keep the last film
+  echo "unreachable"
+  exit 0
+fi
+[ "$rc" -eq 0 ] || exit "$rc"
 
 if [ -f "$OUT/claims.json" ] && uv run -q python tools/film/claims.py --same "$NEW" "$OUT/claims.json"; then
   echo "unchanged"

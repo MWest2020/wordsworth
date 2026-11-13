@@ -142,6 +142,17 @@ def same(a, b):
     return load(a) == load(b)
 
 
+# The live installation could not be asked (the probe failed: host down, tunnel
+# gone). That is "not checked today", not "disproved": the build keeps the last
+# film instead of publishing one without every live claim (2026-11-13, when the
+# jump host was offline and 16 of 27 claims dropped for that reason alone).
+UNREACHABLE = 3
+
+
+def exit_code(facts):
+    return UNREACHABLE if facts is None else 0
+
+
 def main(path):
     spec = yaml.safe_load(open(CLAIMS, encoding="utf-8"))
     facts, err = live_facts(spec["live_facts_cmd"])
@@ -150,9 +161,12 @@ def main(path):
     json.dump(results, open(path, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     for r in results:
         print(("shown  " if r["shown"] else "DROPPED") + f" {r['id']}" + ("" if r["shown"] else f": {r['why']}"))
+    if facts is None:
+        print(f"live installation unreachable ({err}): keeping the last film")
+    return exit_code(facts)
 
 
 if __name__ == "__main__":
     if sys.argv[1] == "--same":
         sys.exit(0 if same(sys.argv[2], sys.argv[3]) else 1)
-    main(sys.argv[1])
+    sys.exit(main(sys.argv[1]))

@@ -149,3 +149,9 @@ def test_sealed_originals_rests_on_the_key_vault_and_its_own_check():
     assert c["scene"] == "autonomie"
     assert c["requires"] == ["key-vault"]
     assert c["cmd"] == "tools/film/check_sealed_originals.sh"
+
+
+def test_an_unreachable_installation_keeps_the_last_film():
+    # not checked today is not disproved: the build stops instead of dropping every live claim
+    assert claims.exit_code(None) == claims.UNREACHABLE
+    assert claims.exit_code({"documents": 415}) == 0
