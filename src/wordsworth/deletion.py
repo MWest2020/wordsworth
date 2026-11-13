@@ -10,15 +10,14 @@ index entry, grants, and the cached redacted PDFs and box map, see
 `deletion_renders.py`) and keeps the row and its audit records. The `deleted`
 record is written in the same transaction: ids and counts, never a value.
 
-Order and failure: the index entry and the object bytes go first, in that
-order, exactly as `supersession.py` retires a copy "out of the index first" --
-each is an external side effect the database transaction cannot roll back, and
-leaving either behind would mean a `deleted` record over content that is still
-searchable or still stored. The database-only work (text, pseudonyms, mappings,
-grants, the audit record) follows inside the caller's transaction. Every step
-is idempotent (deleting what is already gone is a no-op), so a failure at any
-point leaves a state a rerun finishes -- it never writes the `deleted` record
-over a removal that did not complete.
+Order and failure: the cached renders are listed first (`deletion_renders`), so
+a listing failure removes nothing; then the index entry and the object bytes go,
+in that order, as `supersession.py` retires a copy "out of the index first" --
+side effects the transaction cannot roll back, and leaving either behind would
+mean a `deleted` record over content still searchable or stored. The DB-only
+work (text, pseudonyms, mappings, grants, the record) follows in the caller's
+transaction. Every step is idempotent, so a failure at any point leaves a state
+a rerun finishes, never a `deleted` record over an incomplete removal.
 
 The mapping store is global (`mapping_store.py`: "one value must yield one
 token everywhere"), so a pseudonym can be shared by more than one document. A
@@ -50,7 +49,7 @@ from sqlalchemy.orm import Session
 
 from .audit import current_state
 from .models import Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping
-from .deletion_renders import RenderCounts, remove_renders
+from .deletion_renders import RenderCounts, plan_renders
 from .object_store import ObjectStore
 from .pipeline import transition
 from .search_index import SearchIndex
@@ -131,6 +130,7 @@ def delete_document(
     former_key = doc.object_key
 
     counts.index_entries = int(index.exists(str(document_id)))
+    renders = plan_renders(session, document_id, store, counts)  # reads only
     if not dry_run and counts.index_entries:
         index.delete(str(document_id))
 
@@ -141,7 +141,7 @@ def delete_document(
     counts.object = int(object_removable)
     if not dry_run and object_removable:
         store.delete(former_key)
-    remove_renders(session, document_id, store, counts, actor=actor, dry_run=dry_run)
+    renders.apply(session, store, counts, actor=actor, dry_run=dry_run)
 
     text_row = session.get(DocumentText, document_id)
     counts.text = int(text_row is not None)

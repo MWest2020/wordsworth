@@ -98,6 +98,9 @@ under `redacted/<document-id>/<render-version>/<boxmap-hash>`. A deletion
 removes every object under that prefix and the `box_maps` row, and counts
 them as `renders_removed` and `box_maps_removed` — in the `deleted` record,
 the API answer and the CLI output (a dry run counts them and removes nothing).
+The renders are listed before anything irreversible happens: if listing
+fails (say the S3 identity lacks `ListObjectsV2`), the deletion fails with
+nothing removed and the document in its previous state.
 
 For a deleted document, `GET /documents/{id}/redacted.pdf` and
 `POST /documents/{id}/reveal.pdf` answer **410 Gone**, checked before the
@@ -147,6 +150,12 @@ over an already-deleted document removes the leftover objects and row and
 appends one audit record `deleted` → `deleted` with step `remove-renders` and
 the payload `{actor, renders_removed, box_maps_removed}`; with nothing left it
 appends nothing.
+
+After a partial failure, the record the rerun writes (`deleted`, or
+`remove-renders` on an already-deleted document) counts only what was still
+there: renders, an index entry or an object the failed attempt already removed
+from outside the database are not counted again, so the counts can be lower
+than what the document once had.
 
 ## A failed removal is a hard error
 

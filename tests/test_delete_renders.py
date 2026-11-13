@@ -17,7 +17,7 @@ from wordsworth.audit import current_state, verify_chain
 from wordsworth.delete_cli import main
 from wordsworth.deletion import delete_document
 from wordsworth.dossier_deletion import delete_dossier
-from wordsworth.grants import InMemoryGrantStore
+from wordsworth.grants import PostgresGrantStore
 from wordsworth.keys import InMemoryKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord, BoxMap, GrantRecord
@@ -60,14 +60,18 @@ def test_delete_after_a_render_removes_it_and_the_routes_answer_410(
                 anonymizer=Pseudonymizer(kp, PostgresMappingStore(s)),
                 search_index=mem_index, embedder=fake_embedder,
                 key_provider=kp, mapping_store=PostgresMappingStore(s))
+        grant = PostgresGrantStore(s).issue("agent-x", ["EMAIL"], actor="mark",
+                                            document_id=doc.id)
         s.commit()
         doc_id = doc.id
-    gs = InMemoryGrantStore()
-    grant = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=doc_id)
+    # The production wiring (serve.py): grants live in Postgres, so deleting
+    # the document removes this very grant.
     client = TestClient(create_app(
         session_factory=session_factory, store=mem_store, search_index=mem_index,
-        key_provider=kp, grant_store=gs))
+        key_provider=kp, grant_store_factory=PostgresGrantStore))
+    reveal = {"grant_id": grant.grant_id}
 
+    assert client.post(f"/documents/{doc_id}/reveal.pdf", json=reveal).status_code == 200
     assert client.get(f"/documents/{doc_id}/redacted.pdf").status_code == 200
     assert len(_renders(mem_store, doc_id)) == 1
 
@@ -84,13 +88,15 @@ def test_delete_after_a_render_removes_it_and_the_routes_answer_410(
         ).scalar_one()
         assert rec.payload["renders_removed"] == 1
         assert rec.payload["box_maps_removed"] == 1
+        assert s.get(GrantRecord, grant.grant_id) is None
 
     got = client.get(f"/documents/{doc_id}/redacted.pdf")
     assert got.status_code == 410
     assert _renders(mem_store, doc_id) == []  # refused before any re-render
-    revealed = client.post(f"/documents/{doc_id}/reveal.pdf",
-                           json={"grant_id": grant.grant_id})
-    assert revealed.status_code == 410
+    # 410 whatever the grant -- not 404 "unknown grant" for the removed one
+    assert client.post(f"/documents/{doc_id}/reveal.pdf", json=reveal).status_code == 410
+    assert client.post(f"/documents/{doc_id}/reveal.pdf",
+                       json={"grant_id": "no-such-grant"}).status_code == 410
 
 
 def test_a_render_left_in_the_cache_is_not_served(session_factory, mem_store):

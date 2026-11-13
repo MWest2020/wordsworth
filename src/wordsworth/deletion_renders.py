@@ -9,9 +9,13 @@ prefix, and its `box_maps` row. Counted as `renders_removed` and
 `box_maps_removed` in `DeletionCounts`, and so in the `deleted` record, the
 API answer and the CLI output -- counts only, never a key's hash part.
 
-Same order as the rest of `deletion.py`: the objects are an external side
-effect the transaction cannot roll back and go first; the row goes inside the
-caller's transaction. Removing what is already gone is a no-op, so a rerun
+Two steps, because listing can fail (an S3 identity without ListObjectsV2)
+and must fail before anything irreversible: `plan_renders` lists the keys and
+reads the box map BEFORE the index entry and the object go, so a listing
+failure leaves the document exactly as it was; `RenderPlan.apply` removes them
+after the object, the keys first (an external side effect the transaction
+cannot roll back), the row inside the caller's transaction. Removing what is
+already gone is a no-op, so a rerun
 over an already-deleted document removes whatever was left (a render cached
 before this module existed, or one a request was still writing while the
 deletion committed). Such a rerun is not a transition, so `transition` writes
@@ -49,24 +53,39 @@ class RenderCounts:
                 "box_maps_removed": self.box_maps_removed}
 
 
-def remove_renders(session: Session, document_id: UUID, store: ObjectStore,
-                   counts: "DeletionCounts", *, actor: str, dry_run: bool) -> None:
-    """Count (and, unless ``dry_run``, remove) the document's cached renders
-    and its box map, writing the counts into ``counts``."""
+@dataclass
+class RenderPlan:
+    """What `plan_renders` found: the render keys and the box map row."""
+
+    document_id: UUID
+    keys: list[str]
+    box_map: BoxMap | None
+
+    def apply(self, session: Session, store: ObjectStore,
+              counts: "DeletionCounts", *, actor: str, dry_run: bool) -> None:
+        """Remove what the plan found (nothing under ``dry_run``). On a rerun
+        over an already-deleted document, record it as `remove-renders`."""
+        if dry_run or not (self.keys or self.box_map is not None):
+            return
+        for key in self.keys:
+            store.delete(key)
+        if self.box_map is not None:
+            session.delete(self.box_map)
+            session.flush()
+        if audit.current_state(session, self.document_id) == State.DELETED:
+            audit.append(session, document_id=self.document_id,
+                         from_state=State.DELETED.value,
+                         to_state=State.DELETED.value, step="remove-renders",
+                         payload={"actor": actor, **counts.render_counts()})
+
+
+def plan_renders(session: Session, document_id: UUID, store: ObjectStore,
+                 counts: "DeletionCounts") -> RenderPlan:
+    """List the document's cached renders and read its box map -- reads only,
+    called before anything irreversible -- and write their counts into
+    ``counts``. A listing failure propagates: a hard error, nothing removed."""
     keys = [key for key, _ in store.iter_objects(redacted_prefix(document_id))]
     box_map = session.get(BoxMap, document_id)
     counts.renders_removed = len(keys)
     counts.box_maps_removed = int(box_map is not None)
-    if dry_run:
-        return
-    for key in keys:
-        store.delete(key)
-    if box_map is not None:
-        session.delete(box_map)
-        session.flush()
-    rerun = audit.current_state(session, document_id) == State.DELETED
-    if rerun and (keys or box_map is not None):
-        audit.append(session, document_id=document_id,
-                     from_state=State.DELETED.value, to_state=State.DELETED.value,
-                     step="remove-renders",
-                     payload={"actor": actor, **counts.render_counts()})
+    return RenderPlan(document_id, keys, box_map)
