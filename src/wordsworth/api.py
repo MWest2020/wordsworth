@@ -31,6 +31,7 @@ from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .deletion import DeletionError, delete_document
+from .deletion_keys import keys_of
 from .dossier_deletion import DossierDeletionError, delete_dossier
 from .embedder import Embedder
 from .generator import Generator
@@ -823,7 +824,7 @@ def create_app(
                     try:
                         counts = delete_document(
                             session, document_id, store, search_index,
-                            actor=_actor(request))
+                            actor=_actor(request), keys=keys_of(store))
                     except DeletionError:
                         raise HTTPException(status_code=404,
                                             detail="unknown document")
@@ -846,7 +847,7 @@ def create_app(
                     try:
                         report = delete_dossier(
                             session, dossier_id, store, search_index,
-                            actor=_actor(request))
+                            actor=_actor(request), keys=keys_of(store))
                     except DossierDeletionError:
                         raise HTTPException(status_code=404,
                                             detail="unknown dossier")

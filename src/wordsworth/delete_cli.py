@@ -8,6 +8,9 @@ named document is deleted and committed on its own -- the same shape as
 `wordsworth-dedupe` -- so a failure partway through a multi-document run
 leaves only the untouched documents for a rerun to finish.
 
+A sealed original's data key is destroyed with it (`deletion_keys.py`, plain
+SQL), so this command shreds without a key service: it passes no `keys`.
+
 ``--dossier`` deletes a dossier instead (the CLI counterpart of
 `DELETE /dossiers/{id}`, `dossier_deletion.delete_dossier`): its memberships
 and the dossier row go, and a member document is deleted only if it belongs to

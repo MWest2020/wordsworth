@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
 
-from sqlalchemy import DateTime, ForeignKey, LargeBinary, String
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -148,14 +148,41 @@ class DocumentKeys:
         self._cache_put(object_key, fresh)
         return fresh
 
+    def evict(self, object_keys) -> None:
+        """Drop these entries from this process's unwrap cache (after their
+        rows were destroyed). Touches nothing else; correctness does not
+        depend on it -- ``unwrap`` checks the row on every call."""
+        for object_key in object_keys:
+            self._cache.pop(object_key, None)
+
     def unwrap(self, session: Session, object_key: str) -> DataKey:
         """The data key for ``object_key``, from the cache or unwrapped via
         ``transit_for(row.kek_ref)`` -- never the current setting, so a
-        changed KEK setting affects only new objects."""
+        changed KEK setting affects only new objects.
+
+        Every call reads the key row from the database (crypto-shred): a
+        cached key is used only while a row with the same ``key_id`` exists,
+        so a key destroyed by another process (another replica) is never
+        served from this cache, and one destroyed and minted again under the
+        same object key is not served from the old entry. Both reads are
+        ``select`` statements, never ``session.get``, which could answer from
+        the identity map after another transaction deleted the row. This
+        relies on READ COMMITTED (each statement sees what was committed
+        before it started); ``db.py`` sets no other level."""
         cached = self._cache_get(object_key)
         if cached is not None:
-            return cached
-        row = session.get(DocumentKeyRecord, object_key)
+            key_id = session.execute(
+                select(DocumentKeyRecord.key_id)
+                .where(DocumentKeyRecord.object_key == object_key)
+            ).scalar_one_or_none()
+            if key_id == cached.key_id:
+                return cached
+            self._cache.pop(object_key, None)
+        row = session.execute(
+            select(DocumentKeyRecord)
+            .where(DocumentKeyRecord.object_key == object_key)
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
         if row is None:
             raise OriginalsKeyUnavailable(f"no key row for {object_key!r}")
         return self._unwrap_row(row)

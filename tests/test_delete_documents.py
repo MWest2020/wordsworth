@@ -77,7 +77,8 @@ def test_deletion_removes_the_six_kinds_and_keeps_the_row_and_the_trail(session)
     session.commit()
 
     assert counts.as_dict() == {"object": 1, "text": 1, "pseudonyms": 1,
-                                "mappings": 1, "index_entries": 1, "grants": 1}
+                                "mappings": 1, "index_entries": 1, "grants": 1,
+                                "keys_destroyed": 0}
     assert not store.exists(KEY)
     assert not index.exists(str(doc.id))
     assert index.search("tekst") == []
@@ -111,7 +112,8 @@ def test_deleted_audit_record_carries_ids_and_counts_and_the_released_key(sessio
                                   AuditRecord.step == "delete")).scalar_one()
     assert rec.payload == {"actor": "tester", "object": 1, "text": 0,
                            "pseudonyms": 0, "mappings": 0, "index_entries": 0,
-                           "grants": 0, "released_object_key": KEY}
+                           "grants": 0, "keys_destroyed": 0,
+                           "released_object_key": KEY}
     # the former key is recorded -- an id (a content hash), not a value, text,
     # token or filename
     without_key = {k: v for k, v in rec.payload.items() if k != "released_object_key"}
@@ -143,7 +145,8 @@ def test_deleting_an_already_deleted_document_is_a_no_op(session):
         .where(AuditRecord.document_id == doc.id)).scalar_one()
     assert before == after
     assert counts.as_dict() == {"object": 0, "text": 0, "pseudonyms": 0,
-                                "mappings": 0, "index_entries": 0, "grants": 0}
+                                "mappings": 0, "index_entries": 0, "grants": 0,
+                                "keys_destroyed": 0}
 
 
 def test_a_failed_removal_is_a_hard_error_and_a_rerun_finishes(session):

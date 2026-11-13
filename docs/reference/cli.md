@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-11-13
 ---
 
 # CLI reference — `wordsworth`
@@ -250,6 +250,23 @@ failure partway through a multi-document run leaves only the untouched ones
 for a rerun to finish; removing what a previous run already removed is a
 no-op.
 
+Each result carries `keys_destroyed`: the number of data keys of sealed
+originals the deletion destroyed (crypto-shredding), or with `--dry-run`
+would destroy. It is 0 for a legacy plaintext original, 2 for a document
+recovered by OCR (the scan and the OCR'd PDF), and 0 when another document
+that is not deleted still claims the object (a superseded copy). The command
+needs no key service for it: the key rows are deleted with SQL.
+
+```json
+{"dry_run": true, "results": [{"document_id": "…", "object": 1, "text": 1,
+  "pseudonyms": 3, "mappings": 3, "index_entries": 1, "grants": 0,
+  "keys_destroyed": 1}]}
+```
+
+Run again on a document that is already deleted, it destroys a key row left
+behind (documents deleted before crypto-shredding) and records `destroy-key`;
+see [deleting documents](../how-to/deleting-documents.md).
+
 ### `--dossier`
 
 ```bash
@@ -263,7 +280,14 @@ dossier, otherwise only its membership of this one goes. `--actor` and
 `--dry-run` are checked and behave the same way as above; the dry run reports
 which documents would be deleted, which would only be released, and the
 number of topics (`topics`) that would be removed; the output of a real run
-carries the same `topics` count.
+carries the same `topics` count. `keys_destroyed` is the sum of the keys the
+deleted members lose (would lose, with `--dry-run`); released members keep
+theirs.
+
+```json
+{"dry_run": false, "results": [{"dossier_id": "…", "deleted": ["…", "…"],
+  "released": ["…"], "topics": 4, "keys_destroyed": 2}]}
+```
 
 See [deleting documents](../how-to/deleting-documents.md) for what goes, what
 stays, and `DELETE /documents/{id}` / `DELETE /dossiers/{id}` over the API.

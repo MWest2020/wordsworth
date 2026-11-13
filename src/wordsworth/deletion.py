@@ -39,6 +39,11 @@ bytes can be ingested again. In the same transaction as the `deleted` record,
 construction, never equal to a content-addressed key -- and the former key is
 recorded in that record as `released_object_key` (an id, not a value). The
 object-removal check above runs against the former key, before the release.
+
+Deleting a sealed original also destroys its data key (`deletion_keys.py`):
+`doomed` locks and picks the keys before the index entry and the object go;
+their rows are deleted after the object, in this transaction. A rerun over an
+already-deleted document that still finds a key records `destroy-key`.
 """
 from __future__ import annotations
 
@@ -49,7 +54,9 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import deletion_keys
 from .audit import current_state
+from .document_keys import DocumentKeys
 from .models import Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping
 from .object_store import ObjectStore
 from .pipeline import transition
@@ -82,23 +89,13 @@ class DeletionCounts:
     mappings: int = 0
     index_entries: int = 0
     grants: int = 0
+    keys_destroyed: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return {"object": self.object, "text": self.text,
                 "pseudonyms": self.pseudonyms, "mappings": self.mappings,
-                "index_entries": self.index_entries, "grants": self.grants}
-
-
-def _object_claimed_elsewhere(session: Session, document_id: UUID, object_key: str) -> bool:
-    """Does some OTHER, not-yet-deleted document row still claim this object
-    key? A superseded copy keeps its former key (one-document-per-object), so
-    more than one row can point at the same bytes; removing them under one row
-    must not take them out from under another that still needs them."""
-    others = session.execute(
-        select(Document.id).where(Document.object_key == object_key,
-                                  Document.id != document_id)
-    ).scalars().all()
-    return any(current_state(session, other) != State.DELETED for other in others)
+                "index_entries": self.index_entries, "grants": self.grants,
+                "keys_destroyed": self.keys_destroyed}
 
 
 def delete_document(
@@ -109,6 +106,7 @@ def delete_document(
     *,
     actor: str,
     dry_run: bool = False,
+    keys: DocumentKeys | None = None,
 ) -> DeletionCounts:
     """Remove a document's content, or (``dry_run``) only report what would be
     removed. Idempotent: an already-deleted document's content is already gone,
@@ -121,14 +119,16 @@ def delete_document(
     never a silent partial deletion. Nothing after the failing step has run,
     and (outside ``dry_run``) the caller has not committed, so the document
     stays in its previous state and a later call finishes the work.
+    ``keys`` only evicts its unwrap cache; key rows go with or without it.
     """
     doc = session.get(Document, document_id)
     if doc is None:
         raise DeletionError(f"unknown document: {document_id}")
 
     counts = DeletionCounts()
-    already_deleted = current_state(session, document_id) == State.DELETED
     former_key = doc.object_key
+    doomed = deletion_keys.doomed(session, document_id, former_key)  # locks
+    already_deleted = current_state(session, document_id) == State.DELETED
 
     counts.index_entries = int(index.exists(str(document_id)))
     if not dry_run and counts.index_entries:
@@ -136,7 +136,7 @@ def delete_document(
 
     object_removable = (
         store.exists(former_key)
-        and not _object_claimed_elsewhere(session, document_id, former_key)
+        and not deletion_keys._object_claimed_elsewhere(session, document_id, former_key)
     )
     counts.object = int(object_removable)
     if not dry_run and object_removable:
@@ -179,13 +179,21 @@ def delete_document(
         for row in grant_rows:
             session.delete(row)
 
+    counts.keys_destroyed = len(doomed)
     if dry_run:
         return counts
 
     session.flush()
-    payload: dict = {"actor": actor, **counts.as_dict()}
-    if not already_deleted:
-        payload["released_object_key"] = former_key
-        doc.object_key = released_object_key(document_id)
+    deletion_keys.destroy(session, doomed)
+    if keys is not None:
+        keys.evict(doomed)
+    if already_deleted:
+        if doomed:
+            deletion_keys.record_rerun(session, document_id, actor=actor,
+                                       keys_destroyed=len(doomed))
+        return counts
+    payload: dict = {"actor": actor, **counts.as_dict(),
+                     "released_object_key": former_key}
+    doc.object_key = released_object_key(document_id)
     transition(session, document_id, State.DELETED, step="delete", payload=payload)
     return counts

@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-10-25
+last_reviewed: 2026-11-13
 ---
 
 # Runbook: deleting a document
@@ -28,6 +28,8 @@ Deleting a document removes:
   store is global — see [grants](grants.md))
 - its search-index entry
 - its grants scoped to this document
+- the data key of its sealed original (crypto-shredding, below), unless the
+  object stays because another document still claims it
 
 What stays: the `documents` row and every earlier audit record. The audit
 table's `document_id` is a non-null foreign key, and the trail never deletes a
@@ -38,7 +40,62 @@ reachable from every state including `superseded`; nothing transitions out of
 it.
 
 One `deleted` audit record is written, holding the document id, the actor and
-how many of each kind were removed — never a filename, a token or a value.
+how many of each kind were removed (`keys_destroyed` among them) — never a
+filename, a token, a value or key material.
+
+## Crypto-shredding: the key goes with the document
+
+An original stored sealed (ADR-0008) opens only with its data key, which
+lives wrapped in the `document_keys` table. Deleting the document deletes
+that row, in the same transaction as the rest of the deletion, with plain SQL
+(`deletion_keys.py`). From then on every copy of the sealed object that
+survives somewhere — a backup of the object store, a replicated volume — is
+unreadable: there is no key left to open it with. The deletion does not need
+the key service for this, so `wordsworth-delete` shreds exactly like the API.
+
+**The key follows the object.** A key is destroyed exactly when the object is
+removed: when no other document row that is not deleted still points at the
+same object key. A superseded copy keeps the object key of its survivor, so:
+
+- deleting the copy leaves the survivor's key (and object) alone;
+- deleting the survivor while the copy is not deleted keeps the object and
+  its key (`object: 0`, `keys_destroyed: 0`), and deleting the copy afterwards
+  removes both (`object: 1`, `keys_destroyed: 1`).
+
+This is the one case where deleting a document does not destroy its key at
+once (decision #428, default: the key follows the object). A document
+recovered by OCR has two sealed objects, the scan and the OCR'd PDF; it loses
+both keys (`keys_destroyed: 2`). A legacy plaintext original has no key:
+`keys_destroyed: 0`, and the deletion behaves as before.
+
+A copy and its survivor deleted at the same moment do not each keep the key
+"for the other": the deletion locks the document rows of that object key
+first, so the second waits for the first and then sees it as deleted.
+
+**On every replica at once.** Each API process caches unwrapped keys (up to
+`WORDSWORTH_KEY_CACHE_TTL`, 300 s). The cache is not what makes the delete
+hold: every unwrap reads the key row from the database, also on a cache hit,
+and uses the cached key only while a row with the same key id exists. The
+other replica therefore cannot open the object the moment the deletion
+commits. This relies on PostgreSQL's default isolation level, READ COMMITTED
+(each statement sees what was committed before it started); `db.py` sets no
+other level, and a test pins it. Running the API under REPEATABLE READ would
+let a long transaction keep seeing a destroyed row.
+
+### Limits
+
+- **Database backups hold wrapped keys** (decision #429). A backup of the
+  database taken before the deletion still holds the deleted key row, wrapped
+  by the KEK. With that backup, the KEK and a copy of the object, the original
+  can be opened again until the backup expires. Crypto-shredding covers copies
+  of the object store; it does not reach back into database backups. On the
+  homelab cluster both database backups keep **30 days**: the daily
+  `wordsworth-keys-backup` dump of `document_keys` (homelab runbook "Key
+  backups") and the CNPG base backups plus WAL of `homelab-pg` (runbook "CNPG
+  backup", `retentionPolicy: "30d"`). A deleted original is therefore
+  unrecoverable for good 30 days after the deletion, not on the day itself.
+- **A request already holding the key** when the deletion commits finishes
+  with it; the next unwrap fails.
 
 **Deleting releases the object key.** The row's `object_key` becomes the
 placeholder `deleted/<document-id>`, and the former key is recorded in the
@@ -80,7 +137,9 @@ wordsworth-delete <document-id> [<document-id> ...] --actor <who>
 ```
 
 `--dry-run` reports the counts it would remove, using the exact same code
-path as a real run, and stops before the first removal. `--actor` is required
+path as a real run, and stops before the first removal; `keys_destroyed` is
+the number of data keys a real run would destroy, and every key still exists
+afterwards. `--actor` is required
 and checked the same way as above; there is no implicit "whoever is running
 this".
 
@@ -125,7 +184,9 @@ refusal.
 would do: which documents would be deleted, which would only lose their
 membership, and how many topics would be removed (a count, not a list of
 names — topic names are derived from document terms and the report keeps
-names out). Nothing changes and no record is written.
+names out). Nothing changes and no record is written. `keys_destroyed` in the
+dossier report, dry run and real, is the sum over the documents it deletes; a
+released member keeps its key.
 
 ## Releasing keys of documents deleted before this change
 
@@ -140,6 +201,40 @@ object key, and with `--apply` releases each the same way a deletion does:
 one `release-key` audit record per document, holding `released_object_key`.
 Idempotent — a released document is not found again — and it never touches a
 document that is not deleted.
+
+## Destroying keys of documents deleted before crypto-shredding
+
+Documents deleted between the day sealing was switched on
+(`originals-ingest-switch`) and the deployment of `originals-crypto-shred`
+kept their key row. This query lists them — key rows whose document's latest
+audit record is `deleted`:
+
+```sql
+SELECT k.document_id, k.object_key
+FROM document_keys k
+JOIN LATERAL (
+  SELECT a.to_state FROM audit_records a
+  WHERE a.document_id = k.document_id
+  ORDER BY a.seq DESC LIMIT 1
+) latest ON true
+WHERE latest.to_state = 'deleted'
+ORDER BY k.document_id;
+```
+
+Run `wordsworth-delete` on those ids again (dry run first):
+
+```bash
+wordsworth-delete <document-id> [...] --actor <who> --dry-run
+wordsworth-delete <document-id> [...] --actor <who>
+```
+
+A rerun over an already-deleted document destroys any key it still has that
+no other not-deleted document claims, and appends one audit record `deleted`
+→ `deleted` with step `destroy-key` and the payload `{actor, keys_destroyed}`
+— a count, never a key. A rerun with nothing to destroy appends nothing. A row
+the query lists but another live document still reads through (it re-ingested
+the same bytes) is left alone, and the output says `keys_destroyed: 0`. This
+is an operator step after the deployment, not part of the build.
 
 ## What is not here
 

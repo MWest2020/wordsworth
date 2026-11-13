@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 
 from . import dossier_events
 from .deletion import delete_document
+from .document_keys import DocumentKeys
 from .models import Dossier, DossierDocument, Topic
 from .object_store import ObjectStore
 from .pipeline import dossiers_of
@@ -61,10 +62,11 @@ class DossierDeletionReport:
     deleted: list[str] = field(default_factory=list)
     released: list[str] = field(default_factory=list)
     topics: int = 0
+    keys_destroyed: int = 0
 
     def as_dict(self) -> dict[str, list[str] | int]:
         return {"deleted": self.deleted, "released": self.released,
-                "topics": self.topics}
+                "topics": self.topics, "keys_destroyed": self.keys_destroyed}
 
 
 def _member_elsewhere(session: Session, document_id: UUID, dossier_id: UUID) -> bool:
@@ -85,6 +87,7 @@ def delete_dossier(
     *,
     actor: str,
     dry_run: bool = False,
+    keys: DocumentKeys | None = None,
 ) -> DossierDeletionReport:
     """Remove a dossier: its memberships, its topics, the dossier row, and
     the content of every member document that belongs to no other dossier. A
@@ -113,8 +116,9 @@ def delete_dossier(
         if _member_elsewhere(session, document_id, dossier_id):
             report.released.append(str(document_id))
         else:
-            delete_document(session, document_id, store, index,
-                            actor=actor, dry_run=dry_run)
+            counts = delete_document(session, document_id, store, index,
+                                     actor=actor, dry_run=dry_run, keys=keys)
+            report.keys_destroyed += counts.keys_destroyed
             report.deleted.append(str(document_id))
 
     report.topics = len(session.execute(

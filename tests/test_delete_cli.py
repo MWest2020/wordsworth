@@ -55,7 +55,7 @@ def test_dry_run_prints_counts_removes_nothing_writes_no_record(
     assert report["dry_run"] is True
     assert report["results"] == [
         {"document_id": str(doc_id), "object": 1, "text": 1, "pseudonyms": 0,
-         "mappings": 0, "index_entries": 1, "grants": 0}]
+         "mappings": 0, "index_entries": 1, "grants": 0, "keys_destroyed": 0}]
     # nothing removed
     assert store.exists(KEY)
     assert index.exists(str(doc_id))
@@ -156,7 +156,7 @@ def test_dossier_dry_run_reports_without_removing_anything(session_factory, caps
     assert report["dry_run"] is True
     assert report["results"] == [
         {"dossier_id": str(dossier_id), "deleted": [str(doc_id)], "released": [],
-         "topics": 0}]
+         "topics": 0, "keys_destroyed": 0}]
     # nothing removed
     assert store.exists(KEY)
     assert index.exists(str(doc_id))
@@ -186,7 +186,7 @@ def test_dossier_call_without_dry_run_does_what_was_reported(session_factory, ca
     assert report["dry_run"] is False
     assert report["results"] == [
         {"dossier_id": str(dossier_id), "deleted": [str(doc_id)], "released": [],
-         "topics": 0}]
+         "topics": 0, "keys_destroyed": 0}]
     assert not store.exists(KEY)
     assert not index.exists(str(doc_id))
     with session_factory() as s:
@@ -211,7 +211,8 @@ def test_dossier_dry_run_reports_the_topic_count_and_removes_none(
     assert code == 0
     report = json.loads(capsys.readouterr().out)
     assert report["results"] == [
-        {"dossier_id": str(dossier_id), "deleted": [], "released": [], "topics": 1}]
+        {"dossier_id": str(dossier_id), "deleted": [], "released": [], "topics": 1,
+         "keys_destroyed": 0}]
     with session_factory() as s:
         assert s.get(Dossier, dossier_id) is not None
         assert s.execute(
@@ -223,7 +224,8 @@ def test_dossier_dry_run_reports_the_topic_count_and_removes_none(
     assert code == 0
     report = json.loads(capsys.readouterr().out)
     assert report["results"] == [
-        {"dossier_id": str(dossier_id), "deleted": [], "released": [], "topics": 1}]
+        {"dossier_id": str(dossier_id), "deleted": [], "released": [], "topics": 1,
+         "keys_destroyed": 0}]
     with session_factory() as s:
         assert s.get(Dossier, dossier_id) is None
 
