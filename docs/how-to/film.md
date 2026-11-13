@@ -23,10 +23,11 @@ What it does:
 
 1. It runs every check and writes the resolved claims: the shown claims with their
    filled sentences, and the dropped claims with the reason.
-2. If the live installation cannot be asked at all (the probe fails, for example
-   because the jump host is down), it prints `unreachable` and stops without
-   changing anything: a claim that could not be checked today is not disproved, so
-   the last film stays.
+2. If the live installation cannot be asked at all (ssh cannot connect, for example
+   because the jump host is down, or the probe hangs), it prints `unreachable` and
+   stops without changing anything: a claim that could not be checked today is not
+   disproved, so the last film stays. A probe that runs and breaks is different: its
+   claims drop, so the bug shows.
 3. It compares the result with `<outdir>/claims.json` from the last build. If the film
    would say the same thing, it prints `unchanged` and stops. A drop reason worded
    differently does not count as a change.
@@ -60,7 +61,8 @@ drop.
 - **facts** checks need the live probe. It is
   [`tools/film/live_facts.py`](../../tools/film/live_facts.py), piped into the API pod
   (`ssh jumpy kubectl … exec -i deploy/wordsworth-api -- python -`). It prints counts
-  and yes/no flags only. If the probe fails, every facts claim drops.
+  and yes/no flags only. If the probe runs and fails, every facts claim drops; if ssh
+  cannot reach the installation, the build keeps the last film (step 2).
 - **cmd** checks run from the repo root:
   - `licence_check.py` compares GitHub's licence, `LICENSE` and the SPDX headers.
   - `pilot_facts.py` reads the numbers from the pilot report.
