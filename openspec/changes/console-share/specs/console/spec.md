@@ -5,8 +5,8 @@
 The console SHALL offer "Delen" on the document, topic and dossier pages to a
 caller who may issue grants, and SHALL NOT offer it to anyone else. Sharing
 from the console SHALL go through the same gate, the same issue function and
-the same audit as `POST /grants`; the console SHALL add no authorisation of
-its own.
+the same audit as `POST /grants`. The console SHALL add no widening: a share
+may only narrow what `POST /grants` allows.
 
 After sharing, the console SHALL show a result page naming the recipient
 exactly as stored, the number of grants issued, and per document a link to its
@@ -16,8 +16,14 @@ values above PPL 0 are revealed under the recipient's own login. The links
 SHALL be ones the recipient can open; that rests on the recipient's right to
 read a shared document (change `share-recipient-read`).
 
-The console SHALL list the shares and SHALL let an issuer revoke one from its
-page.
+The console SHALL list the shares, the most recent 200 with the total, and
+SHALL let an issuer revoke one from its page.
+
+A refusal SHALL be a page a person can act on. When sharing a topic fails
+because the index is unreachable, a browser SHALL get an HTML page with the
+form and the message. When a caller who may read the corpus is refused because
+he is not an issuer, the page SHALL say that, and SHALL NOT tell him he is not
+on the read list.
 
 #### Scenario: The result page lists what was shared
 
@@ -43,3 +49,17 @@ page.
   document, a topic list or a dossier
 - **THEN** the page offers no "Delen", and requesting the share form directly
   answers 403
+
+#### Scenario: A reader who is not an issuer is told the right thing
+
+- **WHEN** a caller on the corpus-read list who is not an issuer label requests
+  the share form in a browser
+- **THEN** the answer is 403 with a page that names him and says he may not
+  share, and that does not say he is missing from the read list
+
+#### Scenario: The index is unreachable, in a browser
+
+- **WHEN** an issuer shares a topic from the form while the index cannot be
+  reached
+- **THEN** the answer is 503 as an HTML page showing the form and the message
+  that nothing was shared

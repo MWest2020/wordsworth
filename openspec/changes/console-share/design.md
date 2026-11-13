@@ -4,7 +4,10 @@ Code references are to origin/main `8bbbcec`.
 
 ## Decisions
 
-- **No second door.** Every share route calls the guard `POST /grants` calls:
+- **No widening.** A share adds no way to a grant that `POST /grants` does not
+  have; it may only narrow what `POST /grants` allows (always a document
+  scope, always an expiry, never the beheerder role, never a role that is
+  switched off). Every share route calls the guard `POST /grants` calls:
   `_guard_grant_admin` (`api.py:449`), which is `auth.authorize_grant_issue`
   and nothing else. The console already receives it as `admin_guard`
   (`console.py`, `_mag_beheren`, used by the roles page). The form, the issue,
@@ -34,6 +37,11 @@ No `shares` table. Document deletion deletes the grant rows of the document
 (`deletion.py:174-180`); with the id on the grant row it needs no change, and
 a share simply holds one grant fewer. A share whose last grant row is gone no
 longer exists, and the audit events of its grants remain.
+
+The column has no index. The two reads by share id (the page of one share,
+the revoke) and the grouping for the list scan `grants`, which holds thousands
+of rows at most. `db._COLUMNS` adds columns only; an index would need its own
+migration step, and nothing here is slow enough to ask for one.
 
 Two consequences, accepted:
 
@@ -73,18 +81,30 @@ an id. The documents are the live ones, by the console's one hiding rule
   members are the entries of `index.documents_in(str(topic.dossier_id))` whose
   `topics` hold the topic id, as `topic_labels` reads them, intersected with
   the live members of that dossier in the database, so a stale index entry
-  for a deleted document issues nothing.
+  for a deleted document issues nothing. `documents_in` returns at most
+  `limit` entries (10000 by default) and does not say when it cut off. If it
+  returns exactly `limit`, the membership may be incomplete and the share is
+  refused, nothing issued: a share that silently misses the documents past the
+  limit is worse than none.
 
 **Index down.** `documents_in` raises `SearchUnavailable`. It is not caught in
 `shares.py`; it is raised before any grant is issued. The console answers 503
-with "De zoekindex is niet bereikbaar; er is niets gedeeld." Sharing a document
-or a dossier does not read the index and works without it.
+with an HTML page, the share form again with "De zoekindex is niet bereikbaar;
+er is niets gedeeld." above it and what was filled in kept, not a JSON body in
+a browser. Sharing a document or a dossier does not read the index and works
+without it.
 
 **Refused before any write** (each with its own message, none issuing
 anything): an empty recipient; both or neither of `ppl` and `role`; `ppl`
-outside 0–3; a role that does not exist (as `POST /grants` refuses it); the
-role `beheerder`; an expiry that is missing, not timezone-aware or not in the
+outside 0–3; a role that does not exist (as `POST /grants` refuses it); a role
+that is switched off; the role `beheerder`; an expiry that is missing, not timezone-aware or not in the
 future; an unknown document, topic or dossier; a scope with no live document.
+
+A role that is switched off is refused although `POST /grants` accepts it. Its
+grants would reveal nothing (`roles.resolve` returns the empty set) and, under
+`share-recipient-read`, open nothing either: the sharer would get a result
+page full of links that answer 403. Refusing says so at the moment it can be
+fixed.
 
 The beheerder role is refused because `caller_holds_role` counts any active
 grant naming it, document-scoped or not: a share "at role beheerder" would
@@ -99,9 +119,12 @@ of another domain.
 **Types.** `ppl` expands through `types_for_ppl`, as `POST /grants` does; a
 role is stored as the role name with an empty type list, and resolved at use.
 
-**Revoke.** `revoke` calls `grants.revoke_grant` for every grant of the share
-that is still active, and returns how many. Already revoked grants are
-skipped: `revoke_grant` writes a `grant_revoked` event even when the store had
+**Revoke.** `revoke` selects the share's active grant rows
+`with_for_update()`, calls `grants.revoke_grant` for each and returns how
+many, all in the caller's one transaction. The lock is what makes two revokes
+at the same moment safe: the second waits, then finds no active row and writes
+nothing. Without it both would read the rows as active and each grant would
+get two `grant_revoked` events. Already revoked grants are skipped: `revoke_grant` writes a `grant_revoked` event even when the store had
 nothing to do, so revoking a share twice would otherwise write every event
 twice. An unknown share id is a 404. The actor is the caller.
 (`POST /grants/{id}/revoke` records the actor as the literal `"operator"`,
@@ -127,14 +150,28 @@ All five call the guard first. The share routes mount only where a grant store
 is configured, as `POST /grants` does; `api.py` passes the store factory and
 the guard to `build_router`.
 
+`/console/shares` shows the 200 most recently issued shares and says how many
+there are in all, like the document list (`console_list.CAP`).
+
+**The refusal page.** A browser that gets a 403 is shown `geen_toegang.html`,
+which says "Je bent binnen, maar niet op de leeslijst" and tells the caller to
+ask for `WORDSWORTH_CORPUS_READ_LABELS`. For a corpus reader who is not an
+issuer that is false: he is on the list. The 403 handler (`api.py:535`) gets
+the refusal's detail already; for the grant-admin refusal it renders a second
+text: logged in as this name, may read, may not share or manage roles, and the
+setting that decides it is the issuer labels. It names no label that is on the
+list. `/console/roles` gets the right text with it.
+
 "Delen" appears on the document, topic and dossier pages only for a caller who
-may issue. The page asks the same function: `api.py` gains
+may issue. Those pages are rendered by `console_document.py` (new in
+`share-recipient-read`), `console_topics.py` and `console_dossier.py`; each
+gets `may_issue` through its `mount` and passes one boolean to its template. The page asks the same function: `api.py` gains
 `_may_issue(request) -> bool` next to `_guard_grant_admin`, which becomes
 "raise 403 unless `_may_issue`". One decision, asked twice. A caller who types
 the address anyway gets the 403. The sentence on the document page, "De console
 mag er zelf geen uitgeven", goes.
 
-**Result page.** Per document: its name, a link to `/console/documents/{id}`,
+**Result page.** Per document: `document <hash8>` (see "No value"), a link to `/console/documents/{id}`,
 and a link to `/documents/{id}/redacted.pdf` when a `BoxMap` row exists, or
 "nog geen gelakte PDF" when not (354 of the 415 documents of the pilot dossier
 have one). It states the recipient exactly as stored, that the recipient must
@@ -144,8 +181,25 @@ page under the recipient's own login. Those links answer 200 for the recipient
 because of `share-recipient-read`, and for no other reason.
 
 **No value in any message.** Messages, pages and audit events of a share name
-documents by label and id, and counts. None carries a PII value from a
-document; the form has no free-text field besides the recipient.
+documents by id, by `document <hash8>` and by counts. None carries a PII value
+from a document; the form has no free-text field besides the recipient.
+
+That includes the filename. `console_data.label(doc)` returns the filename a
+document arrived under, which is not pseudonymised and in Woo files often
+holds a name. The share form, the result page, the list of shares and every
+refusal use `shared_documents.neutral_label(doc)` from `share-recipient-read`
+instead, for every caller, issuer and reader included: the result page is the
+thing a sharer copies and passes on. Dossier and topic names are shown as
+they are everywhere else in the console. Decision of the main session,
+recorded in #444.
+
+## At archive time
+
+The console spec's Purpose says the console "has no authorisation, keys or
+audit of its own; and it cannot issue a grant". After this change the second
+half is false: it can, through the grant gate. A delta cannot edit a Purpose,
+so the archive step edits that sentence by hand: the console issues grants
+only through the gate, function and audit of `POST /grants`.
 
 ## Line counts
 
@@ -157,9 +211,12 @@ document; the form has no free-text field besides the recipient.
 | `auth.py` | 167 | none |
 | `models.py` | 407 | + the column on `GrantRecord` |
 | `db.py` | 205 | + one line in `_COLUMNS` |
-| `api.py` | 2009 | `_may_issue`, and two arguments to `build_router` |
-| `console.py` | 233 | one `mount` call and its parameters |
-| `templates/` | | `share.html`, `share_result.html`, `shares.html` new; a "Delen" link in `document.html`, `dossier.html`, `topics.html` |
+| `api.py` | 2009 | `_may_issue`, two arguments to `build_router`, and the second text in the 403 handler |
+| `console.py` | 233 (smaller after `share-recipient-read`) | one `mount` call and its parameters; `may_issue` handed on to the three page modules |
+| `console_dossier.py` | 135 | `may_issue` in `mount`, one boolean to the template |
+| `console_topics.py` | 156 | the same |
+| `console_document.py` | new in `share-recipient-read` | the same |
+| `templates/` | | `share.html`, `share_result.html`, `shares.html` new; a "Delen" link in `document.html`, `dossier.html`, `topics.html`; the issuer text in `geen_toegang.html` or a second template |
 
 The four files over 200 already are touched at call sites only. Tests go in
 new files (`tests/test_console.py` is 518 lines).

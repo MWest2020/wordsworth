@@ -17,7 +17,9 @@ as issuers. No role SHALL give the right to share. A refused caller SHALL get
 
 The level SHALL default to PPL 0 and the expiry to 30 days from the moment of
 sharing; a share SHALL always have an expiry. A share SHALL NOT issue a grant
-without a document scope and SHALL NOT name the beheerder role.
+without a document scope, SHALL NOT name the beheerder role, and SHALL NOT
+name a role that does not exist or is switched off. A share adds no widening:
+it SHALL only narrow what `POST /grants` allows.
 
 A live document is one the console does not hide: not deleted and not a
 superseded copy. A share is the documents it was issued for at that moment; a
@@ -25,7 +27,9 @@ document that joins the dossier or the topic later SHALL NOT become part of
 it.
 
 No message, page or audit event of a share SHALL contain a PII value from a
-document.
+document. That includes a document's original filename, which is not
+pseudonymised: a share SHALL name a document by the word "document" and the
+first eight characters of its content hash, for every caller.
 
 #### Scenario: A dossier is shared
 
@@ -58,6 +62,18 @@ document.
 - **WHEN** an issuer shares at the role `beheerder`
 - **THEN** it is refused before any grant is issued
 
+#### Scenario: A role that is switched off cannot be shared at
+
+- **WHEN** an issuer shares at a role that is switched off
+- **THEN** it is refused with a message that names the role and says it is
+  switched off, no grant exists and the audit stream gained no event
+
+#### Scenario: A filename does not appear
+
+- **WHEN** an issuer shares a document whose filename holds a person's name
+- **THEN** the form, the result page, the list of shares and any refusal name
+  the document by its hash and none of them contains the filename
+
 #### Scenario: A later document is not shared
 
 - **WHEN** a document is added to a dossier after the dossier was shared
@@ -84,6 +100,13 @@ dossier SHALL NOT depend on the index.
 - **THEN** the answer says the index is unreachable and nothing was shared, no
   grant exists and the audit stream gained no event
 
+#### Scenario: A membership that may be cut off is refused
+
+- **WHEN** the index returns as many entries for the topic's dossier as the
+  read's limit, so that more may exist
+- **THEN** the share is refused with a message that says so, and no grant is
+  issued
+
 #### Scenario: A dossier is shared while the index is unreachable
 
 - **WHEN** an issuer shares a dossier while the index cannot be reached
@@ -95,7 +118,9 @@ Revoking a share SHALL revoke every grant of that share that is still active,
 each through the function that revokes a single grant and each with its own
 revoke event naming the caller as actor. It SHALL be decided by the same issuer
 gate. Revoking a share again SHALL change nothing and write no event. A grant
-of another share, or of no share, SHALL NOT be touched.
+of another share, or of no share, SHALL NOT be touched. Two revokes of one
+share at the same moment SHALL together write exactly one revoke event per
+grant.
 
 #### Scenario: A share is revoked
 
@@ -107,6 +132,13 @@ of another share, or of no share, SHALL NOT be touched.
 
 - **WHEN** the same share is revoked a second time
 - **THEN** no grant changes and the audit stream gained no event
+
+#### Scenario: Two revokes at once
+
+- **WHEN** two issuers revoke the same share of three grants at the same
+  moment
+- **THEN** the three grants are revoked and the audit stream gained three
+  revoke events, not six
 
 #### Scenario: A non-issuer cannot revoke a share
 

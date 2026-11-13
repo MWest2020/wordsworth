@@ -25,13 +25,25 @@ puts a share flow in the console, behind the same issuer gate.
   need the recipient's own login.
 - Revoking a share revokes its grants in one step. A page lists the shares so
   a share can be found again.
+- The share pages and messages name a document by "document" and the first
+  eight characters of its content hash, never by its filename: a filename is
+  not pseudonymised, and the result page is what a sharer passes on.
 
 ## Depends on
 
-`share-recipient-read`. Without it every link on the result page answers 403
-for the recipient: reading is decided by the corpus-read list, not by grants,
-and a grant at PPL 0 carries no types. This change is built after that one is
-on main, and one of its tests opens a result link as the recipient.
+- **`share-recipient-read` (#439).** Without it every link on the result page
+  answers 403 for the recipient: reading is decided by the corpus-read list,
+  not by grants, and a grant at PPL 0 carries no types. This change is built
+  after that one is on main, and one of its tests opens a result link as the
+  recipient.
+- **#437.** Every form POST under `/console` is refused in a real browser
+  today (the Origin is `null` under `Referrer-Policy: no-referrer`). The share
+  form and the revoke button are form POSTs: until #437 is fixed they work in
+  the tests and with curl and not for a person. Built after #437.
+- **#442 is a deploy gate.** A share is how a caller who is not a corpus reader
+  comes to hold a reason to log in. No such caller gets a key or a login
+  before #442 is closed: until then he also reaches `GET /search`, `/ask` and
+  the other routes that call no corpus-read check.
 
 ## Amended 2026-11-13, after checking the code
 

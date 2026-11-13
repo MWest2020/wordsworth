@@ -1,6 +1,7 @@
 # Tasks
 
-Built after `share-recipient-read` is on main.
+Built after `share-recipient-read` (#439) is on main and after #437 is fixed.
+Not deployed to anyone who is not a corpus reader before #442 is closed.
 
 ## 1. Sharing
 - [ ] `grants.share_id`: nullable column in `models.py` and `db._COLUMNS`.
@@ -22,11 +23,17 @@ Built after `share-recipient-read` is on main.
       an index whose `documents_in` raises `SearchUnavailable`: the call
       raises it, zero grant rows, zero audit events; and a test that sharing a
       document and a dossier works with that same index.
-- [ ] All or nothing. Proved by: a test in which `issue_grant` fails on the
-      third document and, after rollback, no grant row and no audit event of
-      that share exists.
+- [ ] All or nothing. Proved by: a test with `PostgresGrantStore` and
+      `PostgresKeyLifecycleAudit` on one session (not the in-memory doubles,
+      which have no transaction to roll back) in which `issue_grant` fails on
+      the third document and, after rollback, no grant row and no audit event
+      of that share exists.
+- [ ] A topic whose index read returns exactly `limit` entries is refused.
+      Proved by: a test with an index stub and a small `limit`: zero rows,
+      zero events, and the message.
 - [ ] Every refusal before a write: empty recipient, both and neither of
-      `ppl`/`role`, `ppl` 4, unknown role, role `beheerder`, expiry missing,
+      `ppl`/`role`, `ppl` 4, unknown role, a role that is switched off, role
+      `beheerder`, expiry missing,
       naive, in the past, unknown document/topic/dossier, a scope without a
       live document. Proved by: one test per case asserting zero rows and zero
       events.
@@ -37,6 +44,11 @@ Built after `share-recipient-read` is on main.
       caller as actor. Proved by: a test; a test that a second revoke returns 0
       and writes no event; a test that a grant of another share and a grant
       without a share stay active; a test that an unknown share id is 404.
+- [ ] Two revokes at once write one event per grant. Proved by: the query
+      carries `with_for_update()` (asserted on the compiled statement), and a
+      database test with two sessions: the first revokes and holds its
+      transaction, the second blocks, and after both commit the stream holds
+      exactly one `grant_revoked` per grant.
 - [ ] Deleting a shared document needs no change. Proved by: a test that
       deletes one document of a share and then revokes the share.
 
@@ -62,13 +74,31 @@ Built after `share-recipient-read` is on main.
       that shares a dossier, collects the links from the result page and
       requests each **as the recipient** (not on the corpus-read list): 200;
       and after revoke: 403. This test fails without `share-recipient-read`.
-- [ ] Index down: 503 and the message, nothing issued. Proved by: a console
-      test.
+- [ ] Index down: 503 as an HTML page (the form, the message, the input
+      kept), nothing issued. Proved by: a console test with
+      `Accept: text/html` asserting the status, the content type and the
+      message.
 - [ ] No value in a message. Proved by: a test that the form, the result page,
       the list and every refusal contain none of the seeded clear values of
-      the shared documents.
+      the shared documents. One of the seeded documents has a filename that
+      holds a clear value (a person's name); that string is absent from every
+      one of those pages, for the issuer too, and the pages show
+      `document <hash8>`.
+- [ ] `/console/shares` shows at most 200 shares and the total. Proved by: a
+      test with 201 shares.
+- [ ] A corpus reader who is not an issuer gets the issuer refusal, not "niet
+      op de leeslijst". Proved by: a test as such a caller with
+      `Accept: text/html` on `/console/share?document=…` and on
+      `/console/roles`: 403, the page names the caller, says he may not share,
+      and does not contain "leeslijst" or `WORDSWORTH_CORPUS_READ_LABELS`; and
+      a test that a caller off the read list still gets the read-list page on
+      `/console`.
 - [ ] No file over 200 lines is new, and `grants.py` is unchanged. Proved by:
       `wc -l` and the diff in the PR.
+
+- [ ] The console spec's Purpose is edited when this change is archived ("it
+      cannot issue a grant" becomes "it issues grants only through the gate,
+      function and audit of `POST /grants`"). Proved by: the archive PR's diff.
 
 ## 4. Docs
 - [ ] `docs/how-to/grants.md`: sharing from the console, who may (issuer
@@ -76,6 +106,10 @@ Built after `share-recipient-read` is on main.
       topic. Front matter `status`, `last_reviewed`.
 
 ## 5. Local check
+
+Run after #437 and #442 are closed, in a real browser with two profiles
+(`mark`, `gast`), not with curl alone: the share form and the revoke button
+are form POSTs, which is exactly what #437 breaks.
 - [ ] In the harness (`tools/demo/serve_local.py --reset`), in a browser
       session as `mark`: share the demo dossier with `gast` at PPL 1 (28
       grants: the two deleted letters and the superseded scan get none). As
