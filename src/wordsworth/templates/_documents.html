@@ -1,0 +1,29 @@
+{# The document table with its hidden-documents notice, shared by the full list
+   (index.html) and the dossier page (dossier.html): one table, one rule. #}
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>{{ panel_title }}</h3>
+   <span class="badge">{{ total }} document{{ '' if total == 1 else 'en' }}{% if total > docs|length %} · nieuwste {{ docs|length }}{% endif %}</span></div>
+ {% if hidden_total %}
+ <p class="note">
+ {% if alles %}
+ Verwijderde en vervangen documenten worden getoond.
+ <a href="{{ hide_url }}">Verberg ze weer</a>.
+ {% else %}
+ {{ hidden_total }} verwijderd of vervangen document{{ '' if hidden_total == 1 else 'en' }} verborgen.
+ <a href="{{ show_url }}">Toon ze</a>.
+ {% endif %}
+ </p>
+ {% endif %}
+ {% if docs %}
+ <table><thead><tr><th>sleutel</th><th>toestand</th><th>aangetroffen types</th></tr></thead>
+ <tbody>
+ {% for d in docs %}
+ <tr>
+  <td><a href="/console/documents/{{ d.id }}">{{ d.key }}</a></td>
+  <td><span class="state">{{ d.state }}</span></td>
+  <td>{% for t, n in d.types %}<span class="pill"><b>{{ t }}</b> {{ n }}</span>{% else %}<span class="note">—</span>{% endfor %}</td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog geen documenten.</p>{% endif %}
+</div>

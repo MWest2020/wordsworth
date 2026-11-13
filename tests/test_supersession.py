@@ -150,5 +150,5 @@ def test_the_console_lists_live_documents_only(legacy_copies, session_factory):
                               api_keys={"s3cret": "mark"}),
                    follow_redirects=False, base_url="https://testserver")
     c.post("/console/login", data={"key": "s3cret"})
-    page = c.get("/console").text
+    page = c.get("/console/documents").text
     assert "levend.pdf" in page and "kopie.pdf" not in page

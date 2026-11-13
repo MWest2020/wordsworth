@@ -65,7 +65,7 @@ def test_logging_in_sets_an_httponly_cookie_and_the_list_renders(session_factory
     assert r.status_code == 303 and r.headers["location"] == "/console"
     cookie = r.headers["set-cookie"]
     assert "HttpOnly" in cookie and "s3cret" in cookie and "strict" in cookie.lower()
-    page = c.get("/console")
+    page = c.get("/console/documents")
     assert page.status_code == 200
     assert "besluit-1.pdf" in page.text and "PERSON" in page.text and "BSN" in page.text
     assert "mark" in page.text                       # the caller label, from the key
@@ -149,7 +149,7 @@ def test_the_list_hides_deleted_and_superseded_documents_by_default(session_fact
     c = _app(session_factory)
     c.post("/console/login", data={"key": "s3cret"})
 
-    schoon = c.get("/console")
+    schoon = c.get("/console/documents")
     assert "live.pdf" in schoon.text and "survivor.pdf" in schoon.text
     assert "verborgen" not in schoon.text  # nothing hidden, no claim of hiding
 
@@ -161,14 +161,14 @@ def test_the_list_hides_deleted_and_superseded_documents_by_default(session_fact
         _supersede_for_test(s, copy_id, survivor_id)
         s.commit()
 
-    default = c.get("/console")
+    default = c.get("/console/documents")
     assert "live.pdf" in default.text and "survivor.pdf" in default.text
     assert "deleted.pdf" not in default.text
     assert "copy.pdf" not in default.text
     assert "2 verwijderd of vervangen documenten verborgen" in default.text
     assert "Toon ze" in default.text
 
-    getoond = c.get("/console?alles=1")
+    getoond = c.get("/console/documents?alles=1")
     for naam in ("live.pdf", "deleted.pdf", "copy.pdf", "survivor.pdf"):
         assert naam in getoond.text
     assert "deleted" in getoond.text and "superseded" in getoond.text
@@ -318,7 +318,7 @@ def test_an_injected_script_in_a_document_is_escaped(session_factory):
     c.post("/console/login", data={"key": "s3cret"})
     page = c.get(f"/console/documents/{d.id}").text
     assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page
-    assert "<img src=x onerror=alert(1)>" not in c.get("/console").text
+    assert "<img src=x onerror=alert(1)>" not in c.get("/console/documents").text
 
 
 # --- console-entry: a browser must always land on a page that works ---
