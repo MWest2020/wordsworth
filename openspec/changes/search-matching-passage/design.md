@@ -88,6 +88,28 @@
   and the fragment is still a quotation of the pseudonymised text; that
   requirement is not modified.
 
+## Added during the build (review of #432)
+
+Deliberate additions, none of which changes the order of hits or stores
+anything:
+
+- **Vectors of another dimension** than the question's (indexed by another
+  embedder) give no passage, like a count mismatch; `cosine` would otherwise
+  raise and lose the page. One warning per request, with the count of hits.
+- **Any failure of the read or the second embedding** gives today's fragments
+  and the notice, not only `SearchUnavailable`: a 429, 503 or 504 from
+  OpenSearch arrives as a `TransportError` with a status, which `_reads` does
+  not translate. Only the exception class is logged.
+- **One malformed vector costs one hit**: each `best()` call is guarded, so a
+  `None` in a stored vector leaves that hit on its fragment.
+- **A cap of 200 passages per document**, counted with `split_spans` before
+  the read: a larger document is not asked for and shows today's fragment.
+- **The payload estimate is about 20 kB per vector** as JSON (1.6 MB for 80
+  passages, 16 MB per page of ten), not 10 kB. The log line adds `floats` and
+  says `bytes: "unknown"`: the client returns a parsed dict.
+- **The second embedding uses the same `retry_transient`** as `hybrid.py`.
+- **Pseudonym tokens** are never marked, counted or cut by the trimming.
+
 ## Where the code goes
 
 - `passages.py`: `split_spans`;

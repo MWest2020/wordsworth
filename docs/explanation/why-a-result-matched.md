@@ -70,6 +70,8 @@ passages are unavailable. Neither is silent.
   reads "op betekenis", which is true of the passage.
 - The four-character rule for query words is a rule of thumb: it keeps "de"
   and "van" out, and also keeps out a short word that matters ("WOZ" is three).
+- A document of more than 200 passages (about 30,000 words) gets no passage:
+  its vectors alone would be about 4 MB of JSON. It shows today's fragment.
 - The OpenSearch `mget` is tested in CI on a small index. On the real index it
   is first exercised at the demo rehearsal.
 - Rejected for now, first to reopen if the read is too heavy: a nested kNN

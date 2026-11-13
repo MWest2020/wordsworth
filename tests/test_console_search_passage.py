@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MIT
-"""The search page shows why a result matched (search-matching-passage): the
-closest passage of the first ten hits, from the stored text, words marked, a
-reason; the ranking's order; today's fragments and a notice when it cannot."""
+"""The search page shows why a result matched (search-matching-passage)."""
 from __future__ import annotations
 
 import html
 import re
 
+import pytest
 from fastapi.testclient import TestClient
+from opensearchpy.exceptions import TransportError
 
 from wordsworth.api import create_app
 from wordsworth.dossiers import add, ensure
@@ -38,8 +38,6 @@ class Embedder:
 
 def _words(n, prefix="regel"):
     return " ".join(f"{prefix}{i}" for i in range(n))
-
-
 ANSWER = (_words(300) + " De aanvraag voor de dakkapel is geweigerd omdat het"
           " bouwplan te hoog is. " + _words(40, "slot"))
 SEMANTIC = "De aanvraag is afgewezen omdat het bouwplan niet voldoet."
@@ -85,14 +83,14 @@ def order(body: str) -> list[str]:
 
 
 class RecordingIndex(InMemoryIndex):
-    def __init__(self, fail=False):
+    def __init__(self, fail: Exception | None = None):
         super().__init__()
         self.asked, self.fail = [], fail
 
     def passages_of(self, ids):
         self.asked.append(list(ids))
         if self.fail:
-            raise SearchUnavailable("search index unreachable: ConnectionError")
+            raise self.fail
         return super().passages_of(ids)
 
 
@@ -130,8 +128,11 @@ def test_a_count_mismatch_and_no_vectors_show_todays_fragment(session_factory):
     assert "niet beschikbaar" not in body       # …and not an index outage
 
 
-def test_an_index_that_fails_on_passages_keeps_the_results_and_says_so(session_factory):
-    index = RecordingIndex(fail=True)
+@pytest.mark.parametrize("fail", [SearchUnavailable("unreachable"), RuntimeError("x"),
+                                  TransportError(429, "too_many_requests")])
+def test_an_index_that_fails_on_passages_keeps_the_results_and_says_so(
+        session_factory, fail):
+    index = RecordingIndex(fail=fail)
     seed(session_factory, index, {"besluit": ANSWER})
     body = page(session_factory, index, q="Waarom is de dakkapel geweigerd?")
     assert len(index.asked) == 1
@@ -140,7 +141,9 @@ def test_an_index_that_fails_on_passages_keeps_the_results_and_says_so(session_f
     assert "dakkapel is geweigerd" in body   # today's fragment, around the word
 
 
-def test_a_failing_second_embedding_keeps_the_results_and_says_so(session_factory):
+def test_a_failing_second_embedding_keeps_the_results_and_says_so(session_factory,
+                                                                 monkeypatch):
+    monkeypatch.setenv("WORDSWORTH_RETRY_BASE_DELAY", "0")   # it retries, as hybrid
     index = RecordingIndex()
     seed(session_factory, index, {"besluit": ANSWER})
     body = page(session_factory, index, embedder=Embedder(fail_after=1),
@@ -155,8 +158,7 @@ def test_stored_markup_arrives_as_text(session_factory):
     index = InMemoryIndex()
     seed(session_factory, index, {"script": text})
     body = page(session_factory, index, q="vergunning geweigerd")
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
-    assert "<script>alert" not in body
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body and "<script>alert" not in body
     assert "<mark>vergunning</mark>" in body
 
 
@@ -165,18 +167,16 @@ def test_only_the_first_ten_hits_get_a_passage(session_factory):
     ids = seed(session_factory, index,
                {f"d{i:02}": f"De dakkapel nummer {i} is geweigerd." for i in range(13)})
     body = page(session_factory, index, q="dakkapel geweigerd", size=25)
-    assert len(order(body)) == 13
-    assert len(index.asked) == 1 and index.asked[0] == order(body)[:10]
-    assert len(shown_passages(body)) == 10
-    assert set(order(body)) == set(ids.values())
+    assert len(order(body)) == 13 and set(order(body)) == set(ids.values())
+    assert index.asked == [order(body)[:10]] and len(shown_passages(body)) == 10
 
 
 def test_a_keyword_search_says_words_and_reads_no_passages(session_factory):
     index = RecordingIndex()
     seed(session_factory, index, {"besluit": ANSWER})
     body = page(session_factory, index, embedder=None, q="dakkapel geweigerd")
-    assert index.asked == []
-    assert "komt overeen op woorden" in body and shown_passages(body) == []
+    assert index.asked == [] and shown_passages(body) == []
+    assert "komt overeen op woorden" in body
 
 
 def test_the_order_is_the_rankings_with_and_without_passages(session_factory):

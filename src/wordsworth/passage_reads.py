@@ -7,9 +7,11 @@ read (change search-matching-passage).
 
 Why a limit in the read and not only in the caller: the console takes a
 ``size`` from the URL, so "the hits on the page" is not ten by itself. A passage
-vector is 1024 numbers (bge-m3), about 10 kB as JSON, and a long document has
-some 80 passages -- ten such documents are an estimated 8 MB per page. The read
-refuses more than that instead of trusting every caller to remember.
+vector is 1024 numbers (bge-m3), about 20 kB as JSON, and a long document has
+some 80 passages (about 1.6 MB) -- ten such documents are an estimated 16 MB
+per page. The read refuses more ids instead of trusting every caller to
+remember; the console also leaves out a document of more than 200 passages
+(`console_passage.MAX_PASSAGES`).
 
 The log line carries counts and milliseconds, never an id or a text: it exists
 to measure the payload on the real index (the estimate above is not a
@@ -45,6 +47,11 @@ def read(fetch: Callable[[list[str]], Vectors], ids, driver: str) -> Vectors:
     log.info(json.dumps({
         "event": "passages_read", "driver": driver, "ids": len(ids),
         "passages": sum(len(v) for v in found.values()),
+        # The numbers that crossed the wire; their JSON size is roughly 20
+        # bytes each. The response's own size is not measurable here: the
+        # client hands back a parsed dict, without the raw body or its length.
+        "floats": sum(len(p) for v in found.values() for p in v),
+        "bytes": "unknown",
         "ms": round((time.perf_counter() - began) * 1000, 1),
     }))
     return found

@@ -190,29 +190,42 @@ case-insensitively at a word start: "Vergunning" marks "vergunningen", while
 "gunning" never marks the inside of "vergunningen". The whole word is marked.
 Only words of **four characters or more** count, so "de" and "van" are neither
 marked nor turn every reason into "both". That is a rule of thumb, not a
-measurement. Marking is data, not markup: the template writes every piece of
+measurement. A pseudonym token (`[PERSOON:9f8e7d6c]`) is never marked or
+counted, so the question "persoon" does not light up every token, and the
+trimmed window never cuts a token in half. Marking is data, not markup: the template writes every piece of
 the stored text through autoescape, so a `<script>` in a document arrives as
 text.
 
 **When today's fragment is shown instead.**
 
 - A hit after the tenth (`size` comes from the URL): the fragment, no reason.
+- A document of more than **200 passages** (about 30,000 words): its vectors
+  are not read at all (`console_passage.MAX_PASSAGES`, counted from the stored
+  text before the read), so one huge document cannot make the page heavy. The
+  fragment, no reason.
 - The number of stored passage vectors differs from the number of windows the
   stored text splits into (indexed under another passage size, or the text
   changed without a reindex), the document has no passage vectors, or its
   vectors have another dimension than the question's (indexed by another
   embedder; logged): the fragment, no reason.
-- The index cannot be read for the passages (`SearchUnavailable`), or the
-  second embedding of the question fails: every hit shows the fragment and the
-  page says "De passages zijn nu niet beschikbaar". The results themselves stay:
-  the search succeeded.
+- The index cannot be read for the passages, for whatever reason (unreachable,
+  a 429 or 503 from OpenSearch, any other error), or the second embedding of
+  the question fails after the same bounded retry `hybrid_search` uses: every
+  hit shows the fragment and the page says "De passages zijn nu niet
+  beschikbaar". The results themselves stay: the search succeeded. The log
+  says which exception class, nothing more.
+- A malformed stored vector (a `None` in it): that hit shows the fragment, the
+  others keep their passage; one warning per page, with the count.
 
 **The log line.** Every read logs one JSON line on the `wordsworth.search`
 logger: `{"event": "passages_read", "driver": …, "ids": …, "passages": …,
-"ms": …}`, with no id and no text. It is there to measure the payload. The
-**estimate** until then: a passage vector is 1024 numbers (bge-m3), about 10 kB
-as JSON; a 12,000-word document has about 80 passages (0.8 MB), so ten of them
-are about 8 MB per page. That is an estimate, not a measurement: the
+"floats": …, "bytes": "unknown", "ms": …}`, with no id and no text. It is there
+to measure the payload. `bytes` is "unknown" because the OpenSearch client
+returns a parsed answer without its raw size; `floats` is the count of numbers
+that crossed the wire, at roughly 20 bytes each as JSON. The **estimate** until
+then: a passage vector is 1024 numbers (bge-m3), about 20 kB as JSON; a
+12,000-word document has about 80 passages (1.6 MB), so ten of them are about
+16 MB per page. The 200-passage cap bounds one document at about 4 MB. That is an estimate, not a measurement: the
 OpenSearch read has run in CI on a small index only, and the figure from the
 demo rehearsal on the real dossier replaces it here. If the read takes more
 than a second there, the server-side alternative (a nested kNN with inner

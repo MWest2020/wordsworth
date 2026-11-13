@@ -103,3 +103,16 @@ def test_a_count_mismatch_gives_no_passage():
 def test_vectors_of_another_dimension_give_no_passage():
     """Indexed by another embedder: no comparison, and no 500 from `cosine`."""
     assert best("De aanvraag is afgewezen.", [[1.0, 0.0, 0.0]], NEAR, "aanvraag") is None
+
+
+def test_a_pseudonym_token_is_never_marked_nor_counted():
+    text = "De aanvraag van [PERSOON:9f8e7d6c] is binnen."
+    p = best(text, [NEAR], NEAR, "persoon aanvraag")
+    assert _marked(p) == ["aanvraag"] and p["words"] == ["aanvraag"]
+    assert best(text, [NEAR], NEAR, "Persoon")["reason"] == MEANING
+
+
+def test_the_window_never_cuts_a_pseudonym_token_in_half():
+    text = "aanvraag" + "x" * 300 + "[PERSOON:9f8e7d6c] en de rest van de tekst"
+    p = best(text, [NEAR], NEAR, "aanvraag")
+    assert _shown(p).endswith("[PERSOON:9f8e7d6c]")

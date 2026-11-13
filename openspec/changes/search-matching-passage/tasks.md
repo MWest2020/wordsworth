@@ -68,6 +68,22 @@
 - [x] The score is in a `title` attribute and no longer in its own column.
       Proved by: a console test on the HTML.
 
+## 3b. Added during the build (review of #432; see design.md)
+- [x] Any exception from `passages_of` or the second embedding gives today's
+      fragments and the notice. Proved by: a console test parametrised over
+      `SearchUnavailable`, `RuntimeError` and `TransportError(429)`.
+- [x] One malformed vector costs one hit. Proved by: an `annotate` test with a
+      `None` inside a vector and a `None` as a vector.
+- [x] Vectors of another dimension give no passage, with one warning per
+      request. Proved by: a `best` test and an `annotate` test on the log.
+- [x] A document of more than 200 passages is not read. Proved by: an
+      `annotate` test with 201 and 200 passages.
+- [x] The second embedding retries a transient failure. Proved by: an
+      `annotate` test with an embedder that fails once.
+- [x] Pseudonym tokens are not marked, counted or cut. Proved by: two `best`
+      tests.
+- [x] The log line has `floats` and `bytes: "unknown"`. Proved by: the log test.
+
 ## 4. Docs
 - [x] `docs/how-to/console.md`: what a result shows, the three reasons, the
       four-character rule and how words are matched, that only the first ten

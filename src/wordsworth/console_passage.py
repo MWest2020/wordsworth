@@ -2,20 +2,18 @@
 """Why a result matched: the passage of a hit closest to the question.
 
 Explain, don't re-rank (change search-matching-passage). The order of the hits
-is decided elsewhere and nothing here touches it: this module only picks, for
-each of the first ten hits on a page, the passage whose stored vector is closest
-to the question's, and says what that passage shares with the question.
+is decided elsewhere and nothing here touches it: this module picks, for each
+of the first ten hits on a page, the passage whose stored vector is closest to
+the question's, and says what that passage shares with the question.
 
-Three things hold here on purpose:
-
-- The shown text is ``text[s:e]`` of the STORED pseudonymised text, so it stays
-  a quotation of what the index holds -- never a re-joined copy of it.
-- Marking is data, not markup: the answer is a list of segments (a piece of the
-  text, marked or not). The template writes each one through autoescape; no
-  HTML is built here, so a ``<script>`` in a document arrives as text.
-- When the passage cannot be determined the hit keeps today's fragment, and
-  when the cause is the index (or the second embedding of the question), the
-  page says so. A missing explanation must not look like an explanation.
+- The shown text is ``text[s:e]`` of the STORED pseudonymised text: a
+  quotation of what the index holds, never a re-joined copy of it.
+- Marking is data, not markup: a list of segments (a piece of the text, marked
+  or not) that the template writes through autoescape. No HTML is built here.
+- A pseudonym token (``[PERSOON:9f8e7d6c]``) is never marked, counted or cut.
+- When the passage cannot be determined the hit keeps today's fragment; when
+  the cause is the index or the second embedding, the page says so. Whatever
+  goes wrong here costs the explanation, never the page of results.
 """
 from __future__ import annotations
 
@@ -24,10 +22,11 @@ import re
 
 from zeef.similarity import cosine
 
-from .console_data import _WORD
+from .config import settings
+from .console_data import _TOKEN, _WORD
 from .passage_reads import MAX_IDS
 from .passages import split_spans
-from .search_index import SearchUnavailable
+from .retry import retry_transient
 
 log = logging.getLogger("wordsworth.search")
 
@@ -38,6 +37,9 @@ MIN_WORD = 4
 #: this many in all. A passage of 200 words is too long for a result row.
 BEFORE = 80
 WIDTH = 320
+#: A document with more passages than this is not read: at about 20 kB of JSON
+#: per vector that is 4 MB for one document. Its hit shows today's fragment.
+MAX_PASSAGES = 200
 
 WORDS_AND_MEANING = "op woorden en betekenis"
 MEANING = "op betekenis"
@@ -56,8 +58,17 @@ def _pattern(query: str) -> re.Pattern | None:
                       re.IGNORECASE)
 
 
-def _window(text: str, s: int, e: int, at: int) -> tuple[int, int]:
-    """A window inside [s, e) around ``at``, cut at whitespace, never mid-word."""
+def _matches(text: str, s: int, e: int, pattern, tokens) -> list[re.Match]:
+    """The query-word matches in [s, e) that do not touch a pseudonym token."""
+    if pattern is None:
+        return []
+    return [m for m in pattern.finditer(text, s, e)
+            if not any(a < m.end() and m.start() < b for a, b in tokens)]
+
+
+def _window(text: str, s: int, e: int, at: int, tokens) -> tuple[int, int]:
+    """A window inside [s, e) around ``at``, cut at whitespace, never mid-word
+    and never inside a pseudonym token."""
     start = max(s, at - BEFORE)
     end = min(e, start + WIDTH)
     if start > s and not text[start - 1].isspace():
@@ -67,6 +78,9 @@ def _window(text: str, s: int, e: int, at: int) -> tuple[int, int]:
         cut = max((m.start() for m in re.finditer(r"\s", text[at:end])),
                   default=0)
         end = at + cut if cut else end
+    for a, b in tokens:              # a token is whole or absent, never halved
+        start = a if a < start < b else start
+        end = b if a < end < b else end
     while start < end and text[start].isspace():
         start += 1
     while end > start and text[end - 1].isspace():
@@ -74,12 +88,13 @@ def _window(text: str, s: int, e: int, at: int) -> tuple[int, int]:
     return start, end
 
 
-def segments(text: str, start: int, end: int,
-             pattern: re.Pattern | None) -> list[dict]:
+def segments(text: str, start: int, end: int, found) -> list[dict]:
     """``text[start:end]`` as pieces, each marked or not; joined, they are
-    exactly ``text[start:end]``."""
+    exactly ``text[start:end]``. ``found`` are the matches to mark."""
     out, at = [], start
-    for m in (pattern.finditer(text, start, end) if pattern else ()):
+    for m in found:
+        if m.start() < start or m.end() > end:
+            continue
         if m.start() > at:
             out.append({"text": text[at:m.start()], "marked": False})
         out.append({"text": m.group(0), "marked": True})
@@ -90,34 +105,30 @@ def segments(text: str, start: int, end: int,
 
 
 def best(text: str, vectors: list[list[float]], query_vector: list[float],
-         query: str) -> dict | None:
+         query: str, spans: list[tuple[int, int]] | None = None) -> dict | None:
     """The passage of ``text`` closest to the question, or None.
 
     None when the number of stored vectors differs from the number of windows
     the text splits into (indexed under another passage size, or the text
-    changed without a reindex), when there are no vectors at all, and when the
-    vectors have another dimension than the question's: a vector that belongs
-    to another window, or another model, would point at the wrong words.
+    changed without a reindex), when there are none, and when they have another
+    dimension than the question's (another embedder; the caller logs that): a
+    vector that belongs to another window or model points at the wrong words.
     """
-    spans = split_spans(text or "")
+    spans = split_spans(text or "") if spans is None else spans
     if not spans or len(vectors) != len(spans):
         return None
     if any(len(v) != len(query_vector) for v in vectors):
-        # Indexed by another embedder: a comparison would be meaningless, and
-        # `cosine` would raise. The same answer as a count mismatch, logged.
-        log.warning("passage vectors of another dimension than the question's")
         return None
     scores = [cosine(query_vector, v) for v in vectors]
-    i = max(range(len(scores)), key=scores.__getitem__)
-    s, e = spans[i]
-    pattern = _pattern(query)
-    first = pattern.search(text, s, e) if pattern else None
-    start, end = _window(text, s, e, first.start() if first else s)
-    words = sorted({m.group(0).lower() for m in pattern.finditer(text, s, e)}
-                   ) if pattern else []
+    s, e = spans[max(range(len(scores)), key=scores.__getitem__)]
+    tokens = [(m.start(), m.end()) for m in _TOKEN.finditer(text, max(0, s - 64),
+                                                            e + 64)]
+    found = _matches(text, s, e, _pattern(query), tokens)
+    start, end = _window(text, s, e, found[0].start() if found else s, tokens)
+    words = sorted({m.group(0).lower() for m in found})
     return {
         "span": (s, e), "shown": (start, end),
-        "segments": segments(text, start, end, pattern),
+        "segments": segments(text, start, end, found),
         "words": words, "reason": WORDS_AND_MEANING if words else MEANING,
         # "…" only where words were left out, not where whitespace was.
         "cut_before": bool(text[:start].strip()),
@@ -132,32 +143,43 @@ def annotate(index, embedder, query: str, hits: list[dict],
     ``hits`` are the console's result rows, in order; ``texts`` their stored
     texts. Sets ``passage`` and ``reden`` on the rows it can explain and leaves
     the rest on today's fragment. Returns True when the passages are
-    unavailable -- the index could not be read, or the question could not be
-    embedded a second time -- so the page can say so. The rows stay: the search
-    itself succeeded, and a page without results would hide that.
+    unavailable (the index read or the second embedding failed, for any
+    reason) so the page can say so. The rows stay: the search succeeded.
     """
     shown = list(zip(hits, texts))[:MAX_IDS]
     if embedder is None:              # keyword search: no question vector
         for hit, _text in shown:
             hit["reden"] = WORDS
         return False
-    if not shown:
+    spans = {hit["id"]: split_spans(text or "") for hit, text in shown}
+    asked = [h["id"] for h, _t in shown if 0 < len(spans[h["id"]]) <= MAX_PASSAGES]
+    if not asked:
         return False
     try:
         # hybrid_search embeds the question and keeps the vector to itself;
         # changing what it returns would touch the module that orders the hits.
-        query_vector = embedder.embed([query])[0]
-    except Exception as exc:
-        log.warning("passages unavailable: question embedding failed (%s)",
-                    type(exc).__name__)
+        # The same bounded retry as there (hybrid.py), for the same reason.
+        query_vector = retry_transient(lambda: embedder.embed([query])[0],
+                                       settings.retry_attempts,
+                                       settings.retry_base_delay,
+                                       what="passage_query_embed")
+        vectors = index.passages_of(asked)
+    except Exception as exc:          # a 429, a 503, a timeout: all the same here
+        log.warning("passages unavailable: %s", type(exc).__name__)
         return True
-    try:
-        vectors = index.passages_of([hit["id"] for hit, _text in shown])
-    except SearchUnavailable as exc:
-        log.warning("passages unavailable: %s", exc)
-        return True
+    other_dim = failed = 0
     for hit, text in shown:
-        passage = best(text, vectors.get(hit["id"]) or [], query_vector, query)
+        found = vectors.get(hit["id"]) or [] if hit["id"] in asked else []
+        try:
+            other_dim += any(len(v) != len(query_vector) for v in found)
+            passage = best(text, found, query_vector, query, spans[hit["id"]])
+        except Exception:             # one malformed vector costs one hit
+            failed, passage = failed + 1, None
         if passage is not None:
             hit["passage"], hit["reden"] = passage, passage["reason"]
+    if other_dim:
+        log.warning("passage vectors of another dimension than the question's"
+                    " for %d hit(s)", other_dim)
+    if failed:
+        log.warning("passage not determined for %d hit(s): malformed vectors", failed)
     return False

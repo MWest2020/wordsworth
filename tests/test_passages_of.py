@@ -86,5 +86,7 @@ def test_one_log_line_with_counts_and_no_id(caplog):
     assert [(r["driver"], r["ids"], r["passages"]) for r in lines] == [
         ("memory", 2, 2), ("opensearch", 3, 2)]
     assert all(isinstance(r["ms"], float) for r in lines)
+    assert [r["floats"] for r in lines] == [4, 4]       # 2 passages of 2 numbers
+    assert all(r["bytes"] == "unknown" for r in lines)  # a parsed dict has none
     assert "met" not in caplog.text and "zonder" not in caplog.text
     assert "tekst" not in caplog.text
