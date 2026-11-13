@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-21
+last_reviewed: 2026-11-13
 ---
 
 # Runbook: detection allow/deny lists and feedback
@@ -222,3 +222,75 @@ The call appends a `detection_feedback` access event to the document's audit
 chain and changes nothing else. Turning feedback into a list entry is a
 reviewed git change; after changing the lists, run `POST /reprocess` if the
 already-indexed corpus should follow.
+
+### Na een regel- of gazetteerwijziging: de ids expliciet meegeven
+
+`only_outdated` kijkt alleen naar `lists_hash`, en die hash is alleen over
+`allow.json`/`deny.json`. Een nieuwe detectieregel (zoals de particle-naamregel)
+of een nieuwe entry in `voornamen.json` verandert `lists_hash` **niet** — met
+opzet, anders zou elke gazetteerwijziging het hele corpus achterstallig maken.
+Na zo'n wijziging selecteert `only_outdated` dus niets. Geef de documenten dan
+expliciet mee als `document_ids`.
+
+De ids van een dossier haal je uit de database:
+
+```sql
+SELECT dd.document_id FROM dossier_documents dd
+JOIN dossiers d ON d.id = dd.dossier_id
+WHERE d.name = '<dossiernaam>' ORDER BY dd.document_id;
+```
+
+Die lijst gaat, komma-gescheiden, in `WORDSWORTH_REPROCESS_IDS` van de Job
+(`deploy/k8s/45-reprocess-job.yaml`), of in `wordsworth reprocess --ids …`, of
+als body van het eindpunt:
+
+```sh
+curl -XPOST $API/reprocess -H 'content-type: application/json' \
+  -d '{"document_ids": ["<id>", "<id>"]}'
+```
+
+### De telcontrole lezen
+
+Elk opnieuw geanonimiseerd document levert één regel op, per type het aantal
+**verschillende** pseudoniemen in de opgeslagen tekst ervóór en erná, en
+hoeveel er bijkwamen en verdwenen (`wordsworth/reprocess_counts.py`):
+
+```json
+{"counts": {"BSN": {"added": 0, "after": 1, "before": 1, "removed": 0},
+            "PERSON": {"added": 1, "after": 1, "before": 1, "removed": 1}},
+ "document_id": "…", "event": "reprocess_counts", "level": "info"}
+```
+
+- **Verschillende pseudoniemen, geen vermeldingen.** Eén persoon die vijf keer
+  genoemd wordt telt als één. `PERSON 12` is twaalf personen, niet twaalf
+  vermeldingen.
+- **Lees `added` en `removed`, niet alleen de totalen.** Het geval waarvoor
+  dit bestaat: de voornaam was een eigen token, na de regel is de hele naam met
+  partikel één token. Dan blijft het totaal gelijk (`before 1, after 1`) en
+  laat alleen `added 1, removed 1` zien dat er iets veranderde.
+- **Geteld uit de opgeslagen tekst**, niet uit het pseudoniemregister: dat
+  krimpt nooit, dus "erna" kon daar nooit lager zijn dan "ervoor".
+- **Waar je hem leest.** In het antwoord van `POST /reprocess`, veld
+  `entity_counts` (document-id → type → de vier getallen); de Job print dat
+  antwoord, dus de getallen staan in `kubectl logs job/wordsworth-reprocess`.
+  En als regel in de log van de service (logger `wordsworth.pipeline`). De
+  regel wordt pas geschreven nadat de commit van dat document gelukt is.
+- **Een overgeslagen of mislukt document heeft geen telling.** Het staat niet
+  in `entity_counts` en logt geen regel; zijn uitkomst (`skipped`,
+  `retryable`, `failed`, met `problems` en het `reprocess_failed`-record)
+  zegt wat er gebeurde.
+- **Nooit een waarde.** Geen naam, geen token, geen omringende tekst, geen
+  offset: alleen het id, typenamen en getallen.
+
+**Wat de telling niet bewijst.** Dat er geen naam meer leesbaar is. Hij telt
+wat getokeniseerd werd; een naam die de regel niet herkent (een voornaam die
+niet in de gazetteer staat) telt ervoor en erna niet mee. Of een document echt
+schoon is, lees je in het document zelf.
+
+**Na een wijziging van de domeinsleutel of van het normalisatieprofiel**
+(`PROFILE_VERSION`) is elk token een nieuw token: `added` en `removed` zijn
+dan allebei gelijk aan het hele aantal en zeggen niets over detectie.
+
+**In irreversibele modus** zijn er geen pseudoniemtokens (alleen kale
+plaatshouders als `[BSN]`), dus vindt de telling niets. `/reprocess` wordt in
+die modus ook niet aangeboden.

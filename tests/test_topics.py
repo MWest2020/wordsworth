@@ -479,7 +479,7 @@ def test_reprocess_keeps_the_topic_end_to_end(session_factory, mem_store,
         s.commit()
     index.set_topics(str(doc_id), ["topic-1"])
 
-    outcome, _detail = reprocess.one(
+    outcome, _detail, _counts = reprocess.one(
         session_factory, doc_id,
         make_anonymizer=lambda _s, _domain: DeterministicAnonymizer(),
         store=mem_store, search_index=index, embedder=fake_embedder)

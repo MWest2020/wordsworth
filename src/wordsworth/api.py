@@ -322,6 +322,10 @@ class ReprocessResponse(BaseModel):
     # an engine error can carry a fragment of the document it choked on, and
     # this response is not a place where clear text may surface.
     problems: dict[str, str] = {}
+    # document_id -> type -> {before, after, added, removed}: distinct pseudonyms
+    # in the stored text (reprocess_counts). Re-anonymised documents only; ids,
+    # type names and numbers, never a token or a value.
+    entity_counts: dict[str, dict[str, dict[str, int]]] = {}
 
 
 class GrantIssueRequest(BaseModel):
@@ -1276,12 +1280,14 @@ def create_app(
                             session, ids,
                             DetectionLists.load(
                                 default_settings.detection_lists_dir).hash)
+                entity_counts: dict = {}
                 counts, problems = backfill.run(
                     session_factory, ids, make_anonymizer=_make_anonymizer,
                     store=store, search_index=search_index, embedder=embedder,
-                    resolve_key_provider=_resolve_key_provider)
+                    resolve_key_provider=_resolve_key_provider,
+                    entity_counts=entity_counts)
                 return ReprocessResponse(total=len(ids), problems=problems,
-                                         **counts)
+                                         entity_counts=entity_counts, **counts)
 
     # Dataset path (add-dataset-pseudonymisation): column-selected, profile-driven
     # pseudonymisation of CSV with the SAME derivation as documents. Reversible
