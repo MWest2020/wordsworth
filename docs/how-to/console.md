@@ -284,7 +284,7 @@ pseudonymisation is right, so a wrong label is worse than none.
 
 The console sends `Content-Security-Policy` with `frame-ancestors 'none'`, plus
 `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and
-`Referrer-Policy: no-referrer`. Only on `/console` — the API has no browser and
+`Referrer-Policy: same-origin`. Only on `/console` — the API has no browser and
 would get nothing from a CSP but surprises.
 
 Framing is the one that matters. Without it, someone can put
@@ -308,6 +308,22 @@ A request with no `Origin` at all is allowed. curl, the CLI and the tests send
 none, and locking them out would cost more than the hole. That is also the limit
 of this defence: it stops a browser, not a script — and a browser is exactly what
 the hole needed.
+
+The referrer policy and the `Origin` check are one decision. Until 2026-11-13
+the console sent `Referrer-Policy: no-referrer`. Under that policy a browser
+writes the `Origin` of a form `POST` as `null`, and `null` was refused, so every
+console form, login included, answered 403 in a real browser while curl and the
+tests stayed green (#437). With `same-origin` our own posts carry our real
+`Origin`, and a request to another site still gets no `Referer`.
+
+`Origin: null` is still refused, unless the browser also sends
+`Sec-Fetch-Site: same-origin`. The browser computes that header itself and no
+page can set it, so a browser or extension that forces no-referrer on our page
+keeps working. A page elsewhere, a sandboxed frame, a `data:` page and a post
+redirected through our host all get `cross-site` and stay refused; so does
+`same-site` (a sibling host is not us), and so does `null` with no
+`Sec-Fetch-Site` at all. A real foreign `Origin` is refused whatever
+`Sec-Fetch-Site` says.
 
 ## Two deliveries at once
 
