@@ -31,6 +31,12 @@ class DossierError(ValueError):
     """A scope that cannot be acted on."""
 
 
+def named(session: Session, name: str) -> Dossier | None:
+    """The dossier with exactly this name, or None."""
+    return session.execute(
+        select(Dossier).where(Dossier.name == name)).scalars().first()
+
+
 def ensure(session: Session, name: str) -> Dossier:
     """The dossier with this name, created if it does not exist yet.
 
@@ -50,8 +56,7 @@ def ensure(session: Session, name: str) -> Dossier:
         raise DossierError("a dossier needs a name")
     if name.lower() == ALL:
         raise DossierError(f"{ALL!r} is the word for every dossier, not a name")
-    found = session.execute(
-        select(Dossier).where(Dossier.name == name)).scalars().first()
+    found = named(session, name)
     if found is not None:
         return found
     try:
@@ -63,8 +68,7 @@ def ensure(session: Session, name: str) -> Dossier:
     except IntegrityError:
         # De ander was eerder. Dat is geen fout: we wilden dat het dossier
         # bestaat, en dat is nu zo.
-        bestaand = session.execute(
-            select(Dossier).where(Dossier.name == name)).scalars().first()
+        bestaand = named(session, name)
         if bestaand is None:
             raise
         return bestaand
@@ -141,8 +145,7 @@ def rename(session: Session, old: str, new: str, *, actor: str = "",
     The identity is the dossier, not the word used for it — which is why this is
     safe and why a name can be corrected without touching what is in it.
     """
-    found = session.execute(
-        select(Dossier).where(Dossier.name == old.strip())).scalars().first()
+    found = named(session, old.strip())
     if found is None:
         raise DossierError(f"unknown dossier: {old}")
     new = (new or "").strip()
@@ -150,8 +153,7 @@ def rename(session: Session, old: str, new: str, *, actor: str = "",
         raise DossierError("a dossier needs a name")
     if new.lower() == ALL:
         raise DossierError(f"{ALL!r} is the word for every dossier, not a name")
-    clash = session.execute(
-        select(Dossier).where(Dossier.name == new)).scalars().first()
+    clash = named(session, new)
     if clash is not None and clash.id != found.id:
         raise DossierError(f"a dossier named {new!r} already exists")
     oud = old.strip()
@@ -169,8 +171,6 @@ def homeless(session: Session) -> int:
     always: this is the state in which a document is most easily lost, and the
     moment it happens is the moment someone can still act on it.
     """
-    from .models import Document
-
     member = select(DossierDocument.document_id)
     return len(list(session.execute(
         select(Document.id).where(Document.id.not_in(member))).scalars()))
@@ -180,20 +180,22 @@ def documents_in(session: Session, dossier_ids: list[UUID]) -> set[UUID]:
     """Every document in any of these dossiers."""
     if not dossier_ids:
         return set()
-    rows = session.execute(
-        select(DossierDocument.document_id)
-        .where(DossierDocument.dossier_id.in_(dossier_ids)))
-    return {r[0] for r in rows}
+    return set(session.execute(select(DossierDocument.document_id).where(
+        DossierDocument.dossier_id.in_(dossier_ids))).scalars())
 
 
 def resolve(session: Session, scope: str | None) -> list[UUID] | None:
     """Turn a scope as a caller wrote it into dossier ids, or None for "all".
 
-    A missing scope is an error and never "all": that is the whole point.
+    A missing scope is an error and never "all": that is the whole point. The
+    whole scope is tried as one name first: a name may hold a comma.
     """
-    if scope is None or not str(scope).strip():
+    scope = str(scope or "").strip()
+    if not scope:
         raise DossierError("name a dossier, or 'alle' for every dossier")
-    names = [n.strip() for n in str(scope).split(",") if n.strip()]
+    if (exact := named(session, scope)) is not None:
+        return [exact.id]
+    names = [n.strip() for n in scope.split(",") if n.strip()]
     if any(n.lower() == ALL for n in names):
         if len(names) > 1:
             raise DossierError(f"{ALL!r} cannot be combined with a name")
@@ -208,9 +210,7 @@ def resolve(session: Session, scope: str | None) -> list[UUID] | None:
 
 def listing(session: Session) -> list[dict]:
     """Every dossier with how many documents it holds, newest first."""
-    out = []
-    for d in session.execute(
-            select(Dossier).order_by(Dossier.created_at.desc())).scalars():
-        count = len(documents_in(session, [d.id]))
-        out.append({"id": str(d.id), "name": d.name, "documents": count})
-    return out
+    return [{"id": str(d.id), "name": d.name,
+             "documents": len(documents_in(session, [d.id]))}
+            for d in session.execute(
+                select(Dossier).order_by(Dossier.created_at.desc())).scalars()]

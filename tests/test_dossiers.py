@@ -104,3 +104,14 @@ def test_a_document_in_two_dossiers_is_one_entry_in_the_index():
     index = InMemoryIndex()
     index.index("a", "tekst", "ka", None, ["d1", "d2"])
     assert len(index.search("tekst")) == 1
+
+
+def test_a_name_with_a_comma_is_one_dossier_and_a_list_still_works(session):
+    """The whole scope is tried as a name first. Before, 'a,b' was always split,
+    so the dossier named 'a,b' answered with the documents of 'a' and 'b'."""
+    a, b, ab = (dossiers.ensure(session, n) for n in ("a", "b", "a,b"))
+    session.commit()
+    assert dossiers.resolve(session, "a,b") == [ab.id]
+    assert dossiers.resolve(session, " a,b ") == [ab.id]
+    assert sorted(dossiers.resolve(session, "a, b")) == sorted([a.id, b.id])
+    assert sorted(dossiers.resolve(session, "b,a")) == sorted([a.id, b.id])

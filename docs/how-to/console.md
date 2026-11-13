@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-17
+last_reviewed: 2026-11-13
 ---
 
 # Reading the console
@@ -60,7 +60,44 @@ assertion on the request, the form shows as before.
 
 ## What the pages show
 
-**`/console`** lists documents by the name they arrived under, with their state
+**`/console`** starts on a dossier. It lists every dossier with its number of
+live documents (deleted and superseded ones are not counted) and its number of
+topics. An installation with exactly one dossier has nothing to choose, so
+`/console` answers `303` straight to that dossier's page. With none, the page
+says so and links the full list.
+
+**`/console/dossier?dossier=<name>`** is the dossier page. The dossier is a
+query parameter, like on every other console page, and not a path segment:
+names are free text, and a name with a slash would match no route as a path, so
+the answer that lists the dossiers could never be reached for it. Encode the
+name (`a/b` is `?dossier=a%2Fb`, `a b` is `?dossier=a%20b`); the console's own
+links already do. The page shows:
+
+- a question box that searches this dossier (`/console/search?dossier=…`);
+- the dossier's topics, largest first, with their number of documents and a
+  link that searches within the topic (`&topic=<id>`), plus one line saying how
+  many of the live documents fall in a topic at all (a topic list that covers
+  under half the dossier would otherwise read as the whole dossier). The count
+  per topic is from the last computation. When the topics count more documents
+  than the dossier now holds, documents were deleted since; the page says so
+  and links the topics page to compute them again, rather than showing a
+  fraction above one or clamping it;
+- its live documents, most recently touched first, with the same 200-row cap,
+  hidden-documents notice and `&alles=1` toggle as the full list below.
+
+An unknown name answers `404` with the list of dossiers that do exist, not an
+empty page: an empty page for a typo reads as "this dossier holds nothing". No
+name at all (`/console/dossier`, `?dossier=`) answers `303` to `/console`, where
+a dossier is chosen.
+
+A dossier name may contain a comma. A search scope (`/console/search?dossier=`
+and the API's `GET /search?dossier=`) is first tried as one whole name and only
+then read as a comma-separated list, so the dossier `a,b` searches itself and
+not `a` and `b`. With no dossier named `a,b`, `a,b` still means both.
+
+**`/console/documents`** ("alle documenten") is the full list that used to be
+the home page, kept for operators: every document across all dossiers, by the
+name it arrived under, with their state
 and the PII types found, most recently touched first. A document ingested before
 names were recorded shows as `naamloos (<first 8 of the hash>)` —
 `wordsworth-backfill-filenames` can give those their names back where the files
@@ -73,7 +110,7 @@ A deletion keeps a document's row (see below), and a superseded copy is a
 retired row of the same object (`wordsworth-supersession`), so by default the
 list hides both: documents whose state is `deleted`, and superseded copies. A
 cleaned-up corpus would otherwise show mostly what was removed and bury what is
-worth reading. `?alles=1` is the explicit toggle that shows them too, with their
+worth reading. `?alles=1` (`/console/documents?alles=1`) is the explicit toggle that shows them too, with their
 state; the total in the badge follows the same rule as the rows underneath it.
 When something is hidden the page says so, with one total and a link to the
 toggle — a list that silently leaves rows out reads as the whole corpus. A list

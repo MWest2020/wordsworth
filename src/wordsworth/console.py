@@ -33,19 +33,20 @@ from uuid import UUID
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from . import combinations as _combinations
 from . import console_data
+from . import console_dossier
+from . import console_list
 from . import console_search
 from . import console_feedback
 from . import console_roles
 from . import console_topics
 from .auth import CONSOLE_COOKIE
 from .console_data import label, marked, reach, types_per_document
-from .models import AuditRecord, DeclaredCombination, Document, DocumentText
+from .models import DeclaredCombination, Document, DocumentText
 from .pipeline import current_state
-from .states import State
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 #: Self-hosted fonts and stylesheet. A sovereignty demo that fetches its letters
@@ -139,47 +140,11 @@ def build_router(session_factory, keys: dict[str, str],
         r.delete_cookie(CONSOLE_COOKIE)
         return r
 
-    @router.get("", response_class=HTMLResponse, include_in_schema=False)
-    def index(request: Request, alles: bool = False):
-        """``?alles=1`` is the explicit toggle: a deleted or superseded
-        document is hidden unless the reader asks for it (console-hide-deleted)."""
-        _mag_lezen(request)
-        with session_factory() as session:
-            per_doc = types_per_document(session)
-            # Most recently touched first. `documents` has no timestamp — the
-            # audit trail is where time lives in this system — so the ordering
-            # comes from the latest audit record, which is also the more useful
-            # answer: "what did the straat do last".
-            latest = (select(AuditRecord.document_id,
-                             func.max(AuditRecord.seq).label("seq"))
-                      .group_by(AuditRecord.document_id).subquery())
-            states = console_data.latest_state_subquery()
-            hidden = console_data.hidden_condition(states.c.to_state,
-                                                   Document.superseded_by)
-            rows = (select(Document, states.c.to_state)
-                   .outerjoin(latest, latest.c.document_id == Document.id)
-                   .outerjoin(states, states.c.document_id == Document.id)
-                   .order_by(latest.c.seq.desc().nullslast()))
-            if not alles:
-                rows = rows.where(~hidden)
-            docs = []
-            for d, to_state in session.execute(rows.limit(200)):
-                state = State(to_state) if to_state else None
-                docs.append({"id": str(d.id), "key": label(d),
-                             "state": state.value if state else "—",
-                             "types": sorted(per_doc.get(d.id, {}).items())})
-            counted = (select(func.count(Document.id))
-                      .outerjoin(states, states.c.document_id == Document.id))
-            total = session.execute(
-                counted if alles else counted.where(~hidden)).scalar_one()
-            # How many are hidden right now, shown regardless of the toggle so
-            # the notice (and its "show them" / "hide them again" link) match
-            # what the corpus actually holds.
-            hidden_total = session.execute(counted.where(hidden)).scalar_one()
-        return TEMPLATES.TemplateResponse(request, "index.html", {
-            "docs": docs, "total": total, "alles": alles,
-            "hidden_total": hidden_total, "caller": _caller(request)})
-
+    # The home page is the dossier picker; the old list is "alle documenten"
+    # (console-dossier-home).
+    console_dossier.mount(router, session_factory, TEMPLATES, _mag_lezen,
+                          _caller)
+    console_list.mount(router, session_factory, TEMPLATES, _mag_lezen, _caller)
     console_search.mount(router, session_factory, search_index, TEMPLATES,
                          _mag_lezen, embedder)
     console_topics.mount(router, session_factory, search_index, TEMPLATES,
