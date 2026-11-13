@@ -23,6 +23,7 @@ allebei antwoord geven op jouw vraag.</p>
 indeling ván een dossier, niet iets dat eroverheen loopt.</p>
 
 {% if fout %}<p class="fout" style="margin-top:18px">{{ fout }}</p>{% endif %}
+{% if melding %}<p class="note" role="status" style="margin-top:18px"><b>{{ melding }}</b></p>{% endif %}
 
 {% if dossier and not fout %}
 <div class="card" style="margin-top:20px">
@@ -31,17 +32,34 @@ indeling ván een dossier, niet iets dat eroverheen loopt.</p>
   {% else %}<span class="badge">nog niet berekend</span>{% endif %}</div>
 
  {% if topics %}
- <table><thead><tr><th>onderwerp</th><th>documenten</th><th>herkomst</th></tr></thead>
+ <table><thead><tr><th>onderwerp</th><th>documenten</th><th>herkomst</th><th>label</th></tr></thead>
  <tbody>
  {% for t in topics %}
  <tr>
-  <td><a href="/console/search?dossier={{ dossier|urlencode }}&amp;topic={{ t.id }}&amp;q={{ q|urlencode }}">{{ t.name }}</a></td>
+  <td><a href="/console/search?dossier={{ dossier|urlencode }}&amp;topic={{ t.id }}&amp;q={{ q|urlencode }}">{{ t.name }}</a>
+   {% if t.llm_label %}
+   {% if t.given_name %}<div class="note">label van het taalmodel: {{ t.llm_label }}</div>{% endif %}
+   <div class="note">{{ t.llm_description }}</div>
+   <div class="note"><i>geschreven door {{ t.llm_model }} op {{ t.llm_at }}</i> — een bewering van een taalmodel, geen samenvatting van een mens</div>
+   {% else %}<div class="note">label ontbreekt</div>{% endif %}
+   <div class="note" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem">termen: {{ t.computed_name }}</div></td>
   <td><span class="state">{{ t.document_count }}</span></td>
   <td class="note" style="font-family:'IBM Plex Mono',monospace; font-size:.76rem">
-    {% if t.given_name %}berekend: {{ t.computed_name }}{% else %}berekend{% endif %}</td>
+    {% if t.given_name %}naam van een mens{% elif t.llm_label %}taalmodel{% else %}berekend{% endif %}</td>
+  <td>{% if kan_labelen %}<form method="post" action="/console/topics/{{ t.id }}/label">
+   <input type="hidden" name="dossier" value="{{ dossier }}">
+   <button class="btn" type="submit">{{ 'Opnieuw labelen' if t.llm_label else 'Label schrijven' }}</button>
+  </form>{% else %}<span class="note">geen taalmodel</span>{% endif %}</td>
  </tr>
  {% endfor %}
  </tbody></table>
+ {% set zonder_label = topics|rejectattr('llm_label')|list %}
+ {% if zonder_label %}<p class="note" style="padding:12px 16px">{{ zonder_label|length }} van de
+ {{ topics|length }} onderwerpen {{ 'heeft' if zonder_label|length == 1 else 'hebben' }} geen label:
+ {% for t in zonder_label %}{{ t.computed_name }}{{ '; ' if not loop.last else '.' }}{% endfor %}
+ Eén label is ongeveer twee minuten modeltijd. Een heel dossier labelt een beheerder met
+ <code>python -m wordsworth.onderwerpen_labelen --dossier {{ dossier }}</code>; herberekenen
+ vervangt de onderwerpen en dus hun labels.</p>{% endif %}
  {% else %}<p class="empty">Nog geen onderwerpen voor dit dossier.</p>{% endif %}
 
  <div style="padding:14px 16px; border-top:1px solid var(--line)">

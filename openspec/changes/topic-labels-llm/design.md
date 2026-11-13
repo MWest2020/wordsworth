@@ -74,6 +74,9 @@
   `rejected`, `no_summaries` or `failed`; never the label text of a rejected
   answer). One labelling runs at a time (`concurrency.limiter`); a click
   while one runs answers "er loopt al een label-opdracht" and starts nothing.
+  The limit is per process (one semaphore per worker); two pods or workers
+  can each run one. The route takes the same slot without waiting and
+  answers 409 "er loopt al een label-opdracht" when it is taken.
   No queue and no worker: if the process restarts mid-call the label is not
   stored and the button can be pressed again.
 - **Display.** `topics.display_name`: `given_name`, then `llm_label`, then

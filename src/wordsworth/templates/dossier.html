@@ -31,7 +31,7 @@ Stel een vraag, kies een onderwerp of open een document.</p>
  <table><thead><tr><th>onderwerp</th><th>documenten</th></tr></thead>
  <tbody>
  {% for t in topics %}
- <tr><td><a href="{{ t.href }}">{{ t.name }}</a></td><td>{{ t.count }}</td></tr>
+ <tr><td><a href="{{ t.href }}">{{ t.name }}</a>{% if t.claim %} <span class="note" title="{{ t.claim }}">(taalmodel, {{ t.claim }})</span>{% endif %}</td><td>{{ t.count }}</td></tr>
  {% endfor %}
  </tbody></table>
  {% else %}

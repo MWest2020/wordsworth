@@ -28,6 +28,7 @@ from sqlalchemy import func, select
 
 from . import console_data, console_list, dossiers
 from . import topics as topics_mod
+from .topic_claim import claim
 from .models import Document, Dossier, DossierDocument, Topic
 
 
@@ -71,7 +72,7 @@ def topic_rows(dossier: Dossier, listed: list[Topic]) -> list[dict]:
     each with a link that searches within it."""
     base = f"/console/search?dossier={quote(dossier.name, safe='')}"
     return [{"name": topics_mod.display_name(t), "count": t.document_count,
-             "href": f"{base}&topic={t.id}"} for t in listed]
+             "claim": claim(t), "href": f"{base}&topic={t.id}"} for t in listed]
 
 
 def coverage(topics: list[dict], live: int) -> dict:
