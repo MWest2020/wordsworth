@@ -49,25 +49,35 @@ class SeededValues:
         return found
 
 
-INGEST_REFUSED = ("the local demo does not ingest documents: it has no real "
-                  "entity detector (see docs/how-to/local-demo.md)")
+INGEST_REFUSED = ("the local demo does not ingest documents or data: it has no "
+                  "real entity detector and its key is a public test key "
+                  "(see docs/how-to/local-demo.md)")
+#: Every route that turns outside input into pseudonyms, and so writes mapping
+#: material under the demo keys: documents, a re-run of de-identification, CSV
+#: datasets. Grants, roles, topics and deletes stay: they write no key material
+#: and are steps of the demo script.
+REFUSED = ("/ingest", "/reprocess", "/datasets")
+
+
+def refused(path: str) -> bool:
+    path = path.rstrip("/")
+    return any(path == p or path.startswith(p + "/") for p in REFUSED)
 
 
 class NoIngest:
-    """ASGI middleware: `/ingest` is answered with 403 before any route runs.
+    """ASGI middleware: the `REFUSED` routes are answered with 403 before any
+    route runs, for every caller (`gast` and anonymous included).
 
     The demo's detector only knows the seeded values, so a real document sent
-    to it would reach the index with its names in the clear. Refused at the
-    edge, so no document row and no stored original is created first -- and for
-    every caller, `gast` included."""
+    to it would reach the index with its names in the clear, and anything
+    pseudonymised here is wrapped under FakeTransit's public KEK. Refused at the
+    edge, so no document row, no stored original and no mapping is created."""
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        path = scope.get("path", "")
-        if scope["type"] == "http" and (path.rstrip("/") == "/ingest"
-                                        or path.startswith("/ingest/")):
+        if scope["type"] == "http" and refused(scope.get("path", "")):
             from starlette.responses import JSONResponse
 
             await JSONResponse({"detail": INGEST_REFUSED}, status_code=403)(

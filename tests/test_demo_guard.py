@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 
 from wordsworth.db import make_engine
-from wordsworth.models import Document
+from wordsworth.models import Document, PiiMapping
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
@@ -25,7 +25,7 @@ from demo import corpus  # noqa: E402
 from demo.guard import (Refused, check_database, check_url,  # noqa: E402
                         clear_environment, connected_name, refuse_if_held)
 from demo.seeds import seed  # noqa: E402
-from demo.wiring import StandIns, build_app  # noqa: E402
+from demo.wiring import StandIns, build_app, refused  # noqa: E402
 
 VALUES = corpus.seeded_values(corpus.documents())
 
@@ -117,3 +117,34 @@ def test_ingest_is_refused_at_the_edge_for_every_caller(session_factory):
     key = "documents/" + hashlib.sha256(pdf).hexdigest()
     assert not stand_ins.store.exists(key)
     assert not stand_ins.index.has_object_key(key)
+
+
+@pytest.mark.parametrize("path, refuse", [
+    ("/ingest", True), ("/ingest/", True), ("/reprocess", True),
+    ("/datasets/pseudonymize", True), ("/datasets/pseudonymize/", True),
+    ("/documents/x/reveal", False), ("/documents/x/reveal.pdf", False),
+    ("/grants", False), ("/console/search", False), ("/ingestion", False),
+])
+def test_the_refused_routes_are_exactly_the_writing_ones(path, refuse):
+    assert refused(path) is refuse
+
+
+def test_a_dataset_is_refused_at_the_edge_and_mints_no_mapping(session_factory):
+    stand_ins = StandIns(session_factory, VALUES)
+    seed(stand_ins)
+    app = build_app(stand_ins, {"k-mark": "mark"})
+    # Mounted underneath: without the edge it would answer.
+    assert "/datasets/pseudonymize" in {getattr(r, "path", "") for r in app.routes}
+
+    def mappings():
+        with session_factory() as s:
+            return s.execute(select(func.count()).select_from(PiiMapping)).scalar_one()
+
+    before = mappings()
+    c = TestClient(app, base_url="https://testserver")
+    c.post("/console/login", data={"key": "k-mark"})
+    r = c.post("/datasets/pseudonymize",
+               files={"file": ("x.csv", b"naam\nZwaantje Oostergoo\n", "text/csv")},
+               data={"profile_name": "example-wi"})
+    assert r.status_code == 403 and "does not ingest" in r.json()["detail"]
+    assert mappings() == before

@@ -59,7 +59,7 @@ ignored. Run it from a clean shell anyway.
 | Object store (originals) | `InMemoryObjectStore`, in the process |
 | OpenBao transit key | `FakeTransit`: a fixed KEK published in the source, so anything wrapped under it is readable by anyone. The data keys are real and wrapped under it in the Postgres key vault. Acceptable only for synthetic data in a demo database. |
 | Entity detection (names, addresses) | a list of the values the seed wrote; BSN, IBAN, e-mail and postcode go through the real deterministic detectors |
-| `POST /ingest` | refused with 403 before any route runs, for every caller: the stand-in detector knows only seeded names, so a real document would reach the index unredacted. No row and no stored original is created. |
+| `POST /ingest`, `/reprocess`, `/datasets/…` | refused with 403 before any route runs, for every caller: the stand-in detector knows only seeded names, so a real document would reach the index unredacted, and anything pseudonymised would sit under the public test KEK. No row, no stored original and no mapping is created. The demo reads and reveals; grants, roles, topic names and deletes still work, as steps of the demo script. |
 
 Because the index and the object store live in the process, a restart loses
 them while the database keeps its rows. A dossier whose searches find nothing
