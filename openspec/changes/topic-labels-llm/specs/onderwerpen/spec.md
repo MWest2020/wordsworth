@@ -6,9 +6,9 @@ Labelling SHALL give a topic a label of at most six words and a one-line
 description, written by the configured in-cluster language model from the
 summaries of the topic's most central documents and its terms. The label SHALL
 be stored and shown as a model's claim, with model and date, alongside the
-TF-IDF terms. A label or description that contains a pseudonym token or a URL,
-or a label of more than six words, SHALL be rejected, and the topic SHALL keep
-the name it had. A name given by a person SHALL take precedence over a label.
+TF-IDF terms. A label or description that contains a pseudonym token, a
+bracketed placeholder or a URL, or a label of more than six words, SHALL be
+rejected, and the topic SHALL keep the name it had. A name given by a person SHALL take precedence over a label.
 
 #### Scenario: A topic gets a label
 
@@ -29,8 +29,8 @@ the name it had. A name given by a person SHALL take precedence over a label.
 
 Labelling every topic of a dossier SHALL be a command
 (`python -m wordsworth.onderwerpen_labelen --dossier <name>`) that reports in
-one line how many topics it saw, labelled, rejected, skipped and failed, and
-ends with a non-zero exit code when a model call failed or the search index
+one line how many topics it saw, labelled, rejected, skipped, found without
+summaries and failed, and ends with a non-zero exit code when a model call failed or the search index
 was unreachable. The API SHALL label one topic per call and SHALL NOT offer a
 call that labels a whole dossier. A topic computation SHALL NOT call the model.
 
@@ -49,10 +49,25 @@ result says so.
 - **WHEN** the command runs again for a dossier whose topics all have a label
 - **THEN** the model is not called, the result line says all were skipped, and the exit code is 0
 
-#### Scenario: One topic is labelled from the console
+#### Scenario: One topic is labelled through the API
 
-- **WHEN** a permitted caller asks to label one topic
+- **WHEN** a caller who may read the corpus asks to label one topic
 - **THEN** that topic is labelled and no other topic changes
+
+#### Scenario: A caller who may not read the corpus
+
+- **WHEN** a caller who may not read the corpus asks to label a topic
+- **THEN** the call is refused and the model is not called
+
+#### Scenario: The console button does not wait for the model
+
+- **WHEN** a reader presses the label button of a topic in the console
+- **THEN** the page returns at once saying the label is being written, and the label is stored when the model has answered
+
+#### Scenario: A topic without summaries
+
+- **WHEN** none of a topic's central documents has a summary
+- **THEN** the model is not called, the topic keeps its name and the result says it had no summaries
 
 #### Scenario: The model is down
 

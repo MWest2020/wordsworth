@@ -26,6 +26,10 @@ are frequent, not meaningful. An in-cluster model is available (Ollama,
   summaries moved to a command (`samenvatten-als-commando`).
 - **The API and the console label one topic per call**:
   `POST /topics/{topic_id}/label`, and a button per topic on the topics page.
+  The button does not wait for the model: it starts the work, the page comes
+  back saying "bezig, ververs over ongeveer 2 minuten", and the server
+  finishes and stores the label. A two-minute request would be cut by
+  Cloudflare (100 seconds) and by oauth2-proxy (30 seconds by default).
 - If the model is unreachable or answers with nothing usable, the topic keeps
   its TF-IDF name, the answer says so, and the page says the label is missing.
   If the search index is unreachable, nothing is labelled and the answer says
