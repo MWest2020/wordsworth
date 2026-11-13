@@ -15,8 +15,10 @@ printed below.
 The stand-ins live in this process. A database seeded by an earlier run has
 lost its index and its PDFs with that run, so serving it would show a dossier
 whose searches find nothing and whose PDFs are missing -- without saying why.
-This refuses instead: pass --reset (drops and recreates every table, only in a
-database named wordsworth_demo* or wordsworth_test*) or use an empty database.
+This refuses instead: pass --reset (drops and recreates every table) or use an
+empty database. Either way it runs only on a database named wordsworth_demo* or
+wordsworth_test* (tools/demo/guard.py), and it clears every WORDSWORTH_*
+variable from its own environment first, because `create_app` reads them.
 See docs/how-to/local-demo.md.
 """
 from __future__ import annotations
@@ -28,64 +30,42 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import func, select  # noqa: E402
-from sqlalchemy.engine import make_url  # noqa: E402
-
 from demo import corpus  # noqa: E402
+from demo.guard import (check_database, check_url, clear_environment,  # noqa: E402
+                        connected_name, refuse_if_held)
 from demo.seeds import seed  # noqa: E402
 from demo.wiring import StandIns, build_app  # noqa: E402
 
-RESETTABLE = ("wordsworth_demo", "wordsworth_test")
-
-
-class Refused(SystemExit):
-    def __init__(self, why: str):
-        super().__init__(f"serve_local: {why}")
-
-
-def check_url(url: str, reset: bool) -> str:
-    """The database name, after refusing what this tool must not touch."""
-    u = make_url(url)
-    if u.drivername != "postgresql+psycopg":
-        raise Refused(f"use a postgresql+psycopg:// URL, not {u.drivername}://")
-    name = u.database or ""
-    if reset and not name.startswith(RESETTABLE):
-        raise Refused(f"--reset drops every table; it only runs on a database "
-                      f"named {' or '.join(p + '*' for p in RESETTABLE)}, "
-                      f"not {name!r}")
-    return name
-
 
 def prepare(url: str, reset: bool):
-    """Schema in place and the database empty, or refuse. Returns a session factory."""
-    from wordsworth.db import init_schema, make_engine, make_session_factory
-    from wordsworth.models import Base, Document
+    """Schema in place and the database empty, or refuse. Returns a session factory.
 
-    name = check_url(url, reset)
+    The connected name is checked before any schema work: `drop_all` and
+    `init_schema` run only on a database the server itself calls a demo one."""
+    from wordsworth.db import init_schema, make_engine, make_session_factory
+    from wordsworth.models import Base
+
+    check_url(url)
     engine = make_engine(url)
+    name = check_database(connected_name(engine))
     if reset:
         Base.metadata.drop_all(engine)
     init_schema(engine)
     sf = make_session_factory(engine)
-    with sf() as s:
-        held = s.execute(select(func.count()).select_from(Document)).scalar_one()
-    if held:
-        raise Refused(f"{name!r} already holds {held} documents from an earlier run; "
-                      "their index and PDFs died with that process. Pass --reset "
-                      "or use an empty database.")
+    refuse_if_held(sf, name)
     return sf
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--database-url", required=True,
-                    help="postgresql+psycopg://… of a database this demo may own")
+                    help="postgresql+psycopg://…/wordsworth_demo* or …/wordsworth_test*")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--reset", action="store_true",
-                    help="drop and recreate every table first "
-                         "(wordsworth_demo*/wordsworth_test* only)")
+                    help="drop and recreate every table first")
     args = ap.parse_args(argv)
 
+    cleared = clear_environment()
     sf = prepare(args.database_url, args.reset)
     stand_ins = StandIns(sf, corpus.seeded_values(corpus.documents()))
     report = seed(stand_ins)
@@ -94,8 +74,10 @@ def main(argv: list[str] | None = None) -> int:
 
     base = f"http://127.0.0.1:{args.port}"
     print("\nwordsworth demo (synthetic data, stand-ins; not the real dossier)")
+    if cleared:
+        print("  ignored:  " + ", ".join(cleared) + " (cleared from this process)")
     print("  seeded:   " + ", ".join(f"{k} {v}" for k, v in report.items()
-                                     if k not in ("grant_id", "grant_document")))
+                                     if k not in ("seeded", "grant_id", "grant_document")))
     for key, label in keys.items():
         print(f"  key {label:<5} {key}")
     print(f"  login     {base}/console/login")

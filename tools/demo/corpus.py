@@ -144,10 +144,11 @@ def render_scan(d: Document) -> bytes:
 
 
 def seeded_values(docs: list[Document]) -> dict[str, str]:
-    """value -> type, for the types the deterministic detectors do not cover."""
+    """value -> type, for the types no deterministic detector covers. POSTCODE is
+    left to the real detector (`detectors.py`), which the seed's wording satisfies."""
     found: dict[str, str] = {}
     for d in docs:
         for e in d.entities:
-            if e["type"] in ("PERSON", "LOCATION", "POSTCODE"):
+            if e["type"] in ("PERSON", "LOCATION"):
                 found[d.text[e["start"]:e["end"]]] = e["type"]
     return found

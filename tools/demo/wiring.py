@@ -49,16 +49,39 @@ class SeededValues:
         return found
 
 
-class RefuseIngest:
-    """The anonymizer behind `POST /ingest` in the demo: it refuses.
+INGEST_REFUSED = ("the local demo does not ingest documents: it has no real "
+                  "entity detector (see docs/how-to/local-demo.md)")
+
+
+class NoIngest:
+    """ASGI middleware: `/ingest` is answered with 403 before any route runs.
 
     The demo's detector only knows the seeded values, so a real document sent
-    to it would reach the index with its names in the clear. Refusing is the
-    only answer that does not pretend."""
+    to it would reach the index with its names in the clear. Refused at the
+    edge, so no document row and no stored original is created first -- and for
+    every caller, `gast` included."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
+        if scope["type"] == "http" and (path.rstrip("/") == "/ingest"
+                                        or path.startswith("/ingest/")):
+            from starlette.responses import JSONResponse
+
+            await JSONResponse({"detail": INGEST_REFUSED}, status_code=403)(
+                scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+class RefuseIngest:
+    """The anonymizer `create_app` gets: refuses too, so nothing behind the edge
+    (and no default OpenAnonymiser driver) is ever reached for ingest."""
 
     def anonymize(self, text: str):
-        raise RuntimeError("the local demo does not ingest documents: it has no "
-                           "real entity detector (see docs/how-to/local-demo.md)")
+        raise RuntimeError(INGEST_REFUSED)
 
 
 @dataclass
@@ -76,7 +99,11 @@ class StandIns:
 
     def __post_init__(self):
         # The production key path (ADR-0002): data keys wrapped in the Postgres
-        # key vault. Only the KEK is a stand-in.
+        # key vault. Only the KEK is a stand-in: FakeTransit's KEK is a fixed
+        # value published in the source, so anything wrapped under it is
+        # readable by anyone. Acceptable here only because the data is synthetic
+        # and guard.py keeps this off any database not named as a demo or test
+        # one; never for a real document.
         self.key_provider = DurableKeyProvider(
             SessionFactoryKeyVaultStore(self.session_factory), self.transit)
         # The same lists the redacted-PDF route compares the box map against;
@@ -96,7 +123,7 @@ def build_app(stand_ins: StandIns, api_keys: dict[str, str]):
     unknown = set(api_keys.values()) - set(LABELS)
     if unknown:
         raise ValueError(f"unexpected caller labels: {sorted(unknown)}")
-    return create_app(
+    app = create_app(
         session_factory=stand_ins.session_factory,
         search_index=stand_ins.index,
         embedder=stand_ins.embedder,
@@ -109,3 +136,5 @@ def build_app(stand_ins: StandIns, api_keys: dict[str, str]):
         corpus_read_labels=["mark"],
         grant_issuer_labels=["mark"],
     )
+    app.add_middleware(NoIngest)   # added last, so it runs first (before auth)
+    return app

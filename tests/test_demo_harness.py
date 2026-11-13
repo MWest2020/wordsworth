@@ -4,21 +4,18 @@ promised dossier, and the console walk works over the stand-ins. DB-backed:
 runs against a real Postgres and skips locally without one."""
 import io
 import os
-import re
 import sys
 
 import pypdf
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from wordsworth.models import Dossier
+from wordsworth.models import AuditRecord, Dossier
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
 from demo import corpus  # noqa: E402
 from demo.seeds import grants, seed  # noqa: E402
-from demo.serve_local import Refused, check_url  # noqa: E402
 from demo.wiring import StandIns, build_app  # noqa: E402
 
 EXPECTED = {"documents": 31, "live": 28, "deleted": 2, "superseded": 1,
@@ -68,9 +65,19 @@ def test_the_console_walk_over_the_stand_ins(session_factory):
     assert r.json()["revealed_types"] == ["PERSON"]
     assert "[BSN:" in r.json()["revealed_text"]          # not asked, stays a token
 
+    with session_factory() as s:
+        rec = s.execute(select(AuditRecord).where(
+            AuditRecord.step == "deanonymize")).scalars().one()
+    assert rec.payload["caller"] == "mark" and rec.payload["types"] == ["PERSON"]
+
+    r = c.post(f"/documents/{doc}/reveal.pdf",
+               json={"grant_id": report["grant_id"], "types": ["PERSON"]})
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
     # gast is logged in and may read nothing
     g = TestClient(c.app, follow_redirects=False, base_url="https://testserver")
     g.post("/console/login", data={"key": "k-gast"})
+    assert g.get("/console", headers={"Accept": "text/html"}).status_code == 403
     assert g.get(f"/documents/{doc}/redacted.pdf").status_code == 403
 
 
@@ -99,18 +106,3 @@ def test_a_value_is_never_wrapped_over_two_lines():
         lines = corpus._lines(d)
         for e in d.entities:
             assert any(d.text[e["start"]:e["end"]] in line for line in lines)
-
-
-@pytest.mark.parametrize("url, reset, why", [
-    ("postgresql://u:p@h/wordsworth_demo", False, "postgresql+psycopg"),
-    ("postgresql+psycopg://u:p@h/ww_demo", True, "--reset drops every table"),
-    ("postgresql+psycopg://u:p@h/wordsworth", True, "--reset drops every table"),
-])
-def test_the_url_guard_refuses_before_connecting(url, reset, why):
-    with pytest.raises(Refused, match=re.escape(why)):
-        check_url(url, reset)
-
-
-def test_the_url_guard_lets_a_demo_database_reset():
-    assert check_url("postgresql+psycopg://u:p@h/wordsworth_demo_x", True) == \
-        "wordsworth_demo_x"

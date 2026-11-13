@@ -32,9 +32,18 @@ for `gast` (new on every start), the login URL, and the document the seeded
 grant is for. Open `http://127.0.0.1:8765/console/login` and paste the `mark`
 key. Ctrl-C stops it.
 
-`--reset` drops and recreates every table, and only runs on a database whose
-name starts with `wordsworth_demo` or `wordsworth_test`. Without it, the
-command refuses a database that already holds documents (next section).
+The command only runs on a database whose name starts with `wordsworth_demo`
+or `wordsworth_test`, with or without `--reset`. It checks the name in the URL
+(and refuses any `?query`, since `?dbname=` would connect elsewhere), and again
+as `SELECT current_database()` reports it, before any schema work. `--reset`
+drops and recreates every table; without it, the command refuses a database
+that already holds documents (next section).
+
+`create_app` reads its settings from `WORDSWORTH_*` environment variables
+(identity provider, global grants, detection lists, rate limits). A variable
+left in your shell would change what the demo shows, so the command removes
+every `WORDSWORTH_*` variable from its own process and prints the names it
+ignored. Run it from a clean shell anyway.
 
 ## What is real and what is a stand-in
 
@@ -48,9 +57,9 @@ command refuses a database that already holds documents (next section).
 | Embeddings | `DeterministicEmbedder` (a hash of the words) |
 | Generator (`/ask`) | `DeterministicGenerator` (echoes, cites every source) |
 | Object store (originals) | `InMemoryObjectStore`, in the process |
-| OpenBao transit key | `FakeTransit` (a fixed test KEK); the data keys are real and wrapped under it in the Postgres key vault |
+| OpenBao transit key | `FakeTransit`: a fixed KEK published in the source, so anything wrapped under it is readable by anyone. The data keys are real and wrapped under it in the Postgres key vault. Acceptable only for synthetic data in a demo database. |
 | Entity detection (names, addresses) | a list of the values the seed wrote; BSN, IBAN, e-mail and postcode go through the real deterministic detectors |
-| `POST /ingest` | refused: the stand-in detector knows only seeded names, so a real document would reach the index unredacted |
+| `POST /ingest` | refused with 403 before any route runs, for every caller: the stand-in detector knows only seeded names, so a real document would reach the index unredacted. No row and no stored original is created. |
 
 Because the index and the object store live in the process, a restart loses
 them while the database keeps its rows. A dossier whose searches find nothing
@@ -82,7 +91,7 @@ refused both, which shows the "geen toegang" page.
 ```sh
 B=http://127.0.0.1:8765
 curl -s -c jar -o /dev/null -w '%{http_code}\n' --data-urlencode "key=<mark key>" $B/console/login   # 303
-curl -s -b jar -H 'Accept: text/html' -o /dev/null -w '%{http_code}\n' $B/console                  # 200
+curl -s -b jar -H 'Accept: text/html' -o /dev/null -w '%{http_code}\n' $B/console                  # 200, or 303 to the dossier page
 curl -s -b jar -H 'Accept: text/html' -G $B/console/search \
      --data-urlencode 'q=Wanneer krijg ik als bewoner een parkeervergunning?' --data-urlencode dossier=alle
 curl -s -b jar $B/documents/<id>/redacted.pdf | head -c 5                                            # %PDF-
