@@ -43,6 +43,15 @@ One `deleted` audit record is written, holding the document id, the actor and
 how many of each kind were removed (`keys_destroyed` among them) — never a
 filename, a token, a value or key material.
 
+**Deleting releases the object key.** The row's `object_key` becomes the
+placeholder `deleted/<document-id>`, and the former key is recorded in the
+`deleted` record as `released_object_key`. A deleted document therefore no
+longer counts as *the* live document for its bytes: the same bytes can be
+ingested again afterwards, which registers a new document while the deleted
+one stays deleted with its trail unchanged. Documents deleted before this
+behaviour existed still carry their real key until `wordsworth-release-
+deleted-keys` (below) has run once.
+
 ## Crypto-shredding: the key goes with the document
 
 An original stored sealed (ADR-0008) opens only with its data key, which
@@ -92,19 +101,21 @@ let a long transaction keep seeing a destroyed row.
   homelab cluster both database backups keep **30 days**: the daily
   `wordsworth-keys-backup` dump of `document_keys` (homelab runbook "Key
   backups") and the CNPG base backups plus WAL of `homelab-pg` (runbook "CNPG
-  backup", `retentionPolicy: "30d"`). A deleted original is therefore
-  unrecoverable for good 30 days after the deletion, not on the day itself.
+  backup", `retentionPolicy: "30d"`). CNPG keeps the base backup it needs to
+  restore any point in those 30 days, and that base backup can be up to a day
+  older than the window. A deleted original can therefore still be opened from
+  a database backup for up to about 31 days after the deletion, not only on
+  the day itself.
 - **A request already holding the key** when the deletion commits finishes
   with it; the next unwrap fails.
-
-**Deleting releases the object key.** The row's `object_key` becomes the
-placeholder `deleted/<document-id>`, and the former key is recorded in the
-`deleted` record as `released_object_key`. A deleted document therefore no
-longer counts as *the* live document for its bytes: the same bytes can be
-ingested again afterwards, which registers a new document while the deleted
-one stays deleted with its trail unchanged. Documents deleted before this
-behaviour existed still carry their real key until `wordsworth-release-
-deleted-keys` (below) has run once.
+- **The dry run can undercount when a copy and its survivor are deleted
+  together.** Each document's dry run looks at the others as they are now,
+  not as the run would leave them. When a superseded copy and its survivor
+  are both deleted in one run (both members of the dossier being deleted, or
+  `wordsworth-delete A B --dry-run` with A and B a copy and its survivor), the
+  dry run reports `object: 0` and `keys_destroyed: 0` for both, while the real
+  run removes the object and destroys the key with the second of the two.
+  The real run's output and the `deleted` records carry the true counts.
 
 ## Who may
 

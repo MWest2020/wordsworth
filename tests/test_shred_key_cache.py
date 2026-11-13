@@ -9,6 +9,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import text
 
 from shred_setup import KEY, CountingTransit, keys_over, sealed, originals
+from wordsworth.db import make_engine
 from wordsworth.document_keys import DocumentKeyRecord, OriginalsKeyUnavailable
 
 
@@ -123,9 +124,43 @@ def test_the_miss_path_does_not_answer_from_the_identity_map(session_factory):
     assert transit.unwraps == calls
 
 
+def test_the_miss_path_does_not_return_a_destroyed_key_held_in_the_session(
+        session_factory):
+    """`populate_existing`: a session that loaded the key row earlier must not
+    get the old, destroyed key back after another process destroyed and
+    minted it again under the same object key."""
+    doc_id, transit = _seal_and_commit(session_factory)
+    keys = keys_over(transit)
+    with session_factory() as s:
+        held = s.get(DocumentKeyRecord, KEY)  # the old row, kept mapped
+        old_key_id = held.key_id
+        _destroy_row(session_factory)
+        with session_factory() as other:
+            new = keys_over(transit).mint(other, doc_id, KEY, "default")
+            other.commit()
+        got = keys.unwrap(s, KEY)
+    assert new.key_id != old_key_id
+    assert got.key_id == new.key_id and got.material == new.material
+
+
 def test_the_engine_runs_read_committed(session_factory):
     """`unwrap`'s row check relies on each statement seeing what was
     committed before it started."""
     with session_factory() as s:
         level = s.execute(text("SHOW transaction_isolation")).scalar_one()
+    assert level == "read committed"
+
+
+def test_read_committed_holds_against_a_server_side_default(database_url):
+    """`make_engine` sets the level itself, so a database or role default of
+    REPEATABLE READ (simulated here per connection) cannot bypass the check."""
+    engine = make_engine(database_url)
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                "SET SESSION default_transaction_isolation = 'repeatable read'")
+            conn.commit()
+            level = conn.exec_driver_sql("SHOW transaction_isolation").scalar_one()
+    finally:
+        engine.dispose()
     assert level == "read committed"

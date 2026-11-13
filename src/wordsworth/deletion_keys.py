@@ -24,8 +24,12 @@ checking the key row on every call, not from eviction.
 **Two deletions at once.** A copy and its survivor deleted at the same moment
 would each see the other as not yet deleted and each keep the object and the
 key "for the other". `doomed` therefore locks the `documents` rows that carry
-the candidate object keys (`SELECT ... FOR UPDATE`, ordered by id, so two
-deletions take them in the same order) before it reads who still claims them.
+the candidate object keys (`SELECT ... FOR NO KEY UPDATE`, ordered by id, so
+two deletions take them in the same order) before it reads who still claims
+them. NO KEY UPDATE, not UPDATE: an audit append takes the chain's advisory
+lock and then a KEY SHARE lock on the document row (the foreign key), which
+FOR UPDATE would block while this deletion later waits for that advisory
+lock -- a deadlock. Two NO KEY UPDATE locks still exclude each other.
 The second deletion waits for the first to commit and then, under READ
 COMMITTED (`db.py` sets no isolation level), reads the committed state.
 """
@@ -83,7 +87,7 @@ def doomed(session: Session, document_id: UUID, former_key: str) -> list[str]:
         select(Document.id)
         .where(Document.object_key.in_(sorted(candidates | {former_key})))
         .order_by(Document.id)
-        .with_for_update()
+        .with_for_update(key_share=True)
     ).all()
     locked = session.execute(
         select(DocumentKeyRecord.object_key)
@@ -99,7 +103,9 @@ def destroy(session: Session, object_keys: Sequence[str]) -> int:
     """Delete the key rows of ``object_keys``, in the caller's transaction.
     Raises when fewer rows go than were named: `doomed` locked them, so a
     difference means something is wrong, and a deletion must not report a
-    key destroyed that it did not destroy."""
+    key destroyed that it did not destroy. By then the index entry and the
+    object may already be gone; the document is not marked deleted, and a
+    rerun finishes the deletion."""
     if not object_keys:
         return 0
     gone = session.execute(
@@ -109,7 +115,8 @@ def destroy(session: Session, object_keys: Sequence[str]) -> int:
     ).rowcount
     if gone != len(object_keys):
         raise RuntimeError(
-            f"destroyed {gone} of {len(object_keys)} key rows; nothing committed")
+            f"destroyed {gone} of {len(object_keys)} key rows; the document is "
+            "not marked deleted, a rerun finishes the deletion")
     return gone
 
 

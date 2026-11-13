@@ -94,8 +94,9 @@ can revoke its KEK and every one of its documents becomes unreadable at once.
   wrapped data key; with it, the KEK and a copy of the object, the original
   opens until that backup expires. On the homelab cluster both database
   backups (the daily `document_keys` dump and the CNPG base backups with WAL)
-  keep 30 days, so a deleted original is gone for good 30 days after the
-  deletion. Shortening that window means shortening the database retention;
+  keep 30 days; CNPG keeps the base backup that window needs, which can be a
+  day older, so a deleted original can be opened from a database backup for
+  up to about 31 days after the deletion. Shortening that window means shortening the database retention;
   the how-to "deleting documents" names it.
 - **A key follows its object** (`originals-crypto-shred`, decision #428): a
   deletion destroys a data key exactly when it ends the last claim on that
