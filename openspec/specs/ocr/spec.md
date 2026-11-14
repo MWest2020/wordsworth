@@ -41,8 +41,11 @@ and `positioned_text` (pypdfium2) path unchanged. Engine failure SHALL raise
 An `unprocessable_ocr` document SHALL be run through OCR; the resulting text-layer
 PDF SHALL be **stored as a new content-addressed object** (object keys are
 `documents/` + sha256 of the bytes, so `key == sha256(bytes)` must keep holding)
-and the document's `object_key` SHALL be updated to that new key — the original
-scanned object SHALL NOT be overwritten or deleted. The document SHALL then be
+and the document's `object_key` SHALL be updated to that new key — recovery
+SHALL NOT overwrite or delete the original scanned object. The scan object SHALL
+stay while the document is not deleted, and SHALL be removed when the document
+is deleted, unless another document that is not deleted still claims it
+(`document-deletion`, "Deleting a document removes its original scan"). The document SHALL then be
 re-classified by the same characters-per-page threshold via `profile_pdf` on that
 PDF: at/above threshold it becomes `extractable` (the normal extract step fetches
 by the updated key and reads the OCR text layer); below, it remains
@@ -82,3 +85,9 @@ through the originals store, under a key row of the recovered document.
 - **WHEN** the OCR'd bytes are already the object of another live document
 - **THEN** that object is unchanged, nothing is written, and the scan's
   document is superseded by the owner
+
+#### Scenario: The scan goes with the deleted document
+
+- **WHEN** a recovered document is deleted and no other document that is not
+  deleted claims its scan
+- **THEN** the original scan object is no longer in the object store
