@@ -39,9 +39,9 @@ recorded in that record as `released_object_key` (an id, not a value). The
 object-removal check above runs against the former key, before the release.
 
 Deleting a sealed original also destroys its data key (`deletion_keys.py`):
-`doomed` locks and picks the keys before the index entry and the object go;
-their rows are deleted after the object, in this transaction. A rerun over an
-already-deleted document that still finds a key records `destroy-key`.
+`doomed` locks the row and its copies (#452: no ingest writes the object back)
+and picks the keys first; key rows go after the object, in this transaction.
+A rerun over an already-deleted document that finds a key records `destroy-key`.
 """
 from __future__ import annotations
 
@@ -125,8 +125,8 @@ def delete_document(
         raise DeletionError(f"unknown document: {document_id}")
 
     counts = DeletionCounts()
-    former_key = doc.object_key
-    doomed = deletion_keys.doomed(session, document_id, former_key)  # locks
+    former_key, doomed = deletion_keys.doomed(session, document_id, lock=not dry_run)
+    doc = session.get(Document, document_id, populate_existing=True)
     already_deleted = current_state(session, document_id) == State.DELETED
 
     counts.index_entries = int(index.exists(str(document_id)))

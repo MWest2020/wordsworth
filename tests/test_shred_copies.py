@@ -56,7 +56,7 @@ def test_the_second_deletion_waits_for_the_lock_of_the_first(legacy_copies):
     index = InMemoryIndex()
     first, second = legacy_copies(), legacy_copies()
     try:
-        assert deletion_keys.doomed(first, copy_id, KEY) == []  # survivor live
+        assert deletion_keys.doomed(first, copy_id) == (KEY, [])  # survivor live
         second.execute(text("SET lock_timeout = '200ms'"))
         with pytest.raises(OperationalError, match="lock timeout"):
             delete_document(second, survivor_id, store, index, actor="b")

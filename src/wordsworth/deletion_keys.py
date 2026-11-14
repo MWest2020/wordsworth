@@ -71,32 +71,50 @@ def _candidate_rows(document_id: UUID, former_key: str):
                DocumentKeyRecord.document_id == document_id)
 
 
-def doomed(session: Session, document_id: UUID, former_key: str) -> list[str]:
-    """The object keys whose data key this deletion destroys: the candidate
+def _object_key(session: Session, document_id: UUID) -> str:
+    return session.execute(select(Document.object_key)
+                           .where(Document.id == document_id)).scalar_one()
+
+
+def doomed(session: Session, document_id: UUID, *,
+           lock: bool = True) -> tuple[str, list[str]]:
+    """``(former_key, keys)``: the document's object key, read under the lock,
+    and the object keys whose data key this deletion destroys -- the candidate
     rows (``former_key``'s, and every row carrying ``document_id``) that no
-    other not-deleted document still claims. Takes the locks first -- the
-    `documents` rows of every candidate object key and of ``former_key``
-    (so the object removal's claim check is serialised too), then the key
-    rows themselves, so nothing else removes them before `destroy`. Runs
-    before anything irreversible (the index entry, the object)."""
-    candidates = set(session.execute(
-        select(DocumentKeyRecord.object_key)
-        .where(_candidate_rows(document_id, former_key))
-    ).scalars().all())
-    session.execute(
-        select(Document.id)
-        .where(Document.object_key.in_(sorted(candidates | {former_key})))
-        .order_by(Document.id)
-        .with_for_update(key_share=True)
-    ).all()
-    locked = session.execute(
-        select(DocumentKeyRecord.object_key)
-        .where(_candidate_rows(document_id, former_key))
-        .order_by(DocumentKeyRecord.object_key)
-        .with_for_update()
-    ).scalars().all()
-    return [key for key in locked
-            if not _object_claimed_elsewhere(session, document_id, key)]
+    other not-deleted document still claims. Runs before anything
+    irreversible (the index entry, the object).
+
+    With ``lock`` it locks first: the document's own row (by id, so a key
+    that moved since it was read is still covered) and the rows of every
+    candidate object key, in one statement ordered by id; then it reads the
+    object key again and repeats once if it changed before the lock (the row
+    is held after that, so it cannot change again); then it locks the key
+    rows, so nothing else removes them before `destroy`. The row lock also
+    stops an ingest from writing the object back (`ingest_lock.lock_live`,
+    #452). A dry run (``lock=False``) takes no lock and waits for nothing."""
+    locked_for = None
+    while True:
+        former_key = _object_key(session, document_id)
+        if not lock or former_key == locked_for:
+            break
+        candidates = set(session.execute(
+            select(DocumentKeyRecord.object_key)
+            .where(_candidate_rows(document_id, former_key))
+        ).scalars().all())
+        session.execute(
+            select(Document.id)
+            .where(or_(Document.id == document_id,
+                       Document.object_key.in_(sorted(candidates | {former_key}))))
+            .order_by(Document.id)
+            .with_for_update(key_share=True)
+        ).all()
+        locked_for = former_key
+    rows = (select(DocumentKeyRecord.object_key)
+            .where(_candidate_rows(document_id, former_key))
+            .order_by(DocumentKeyRecord.object_key))
+    keys = session.execute(rows.with_for_update() if lock else rows).scalars().all()
+    return former_key, [key for key in keys
+                        if not _object_claimed_elsewhere(session, document_id, key)]
 
 
 def destroy(session: Session, object_keys: Sequence[str]) -> int:

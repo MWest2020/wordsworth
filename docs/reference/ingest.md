@@ -83,6 +83,28 @@ outage) still continues the batch, exactly as before.
 exit non-zero, print `key service unavailable` on stderr, and do not go on to
 the next file.
 
+## Ingest racing a deletion
+
+Content already ingested is the live document for its bytes. Before writing
+the original, ingest locks that document's row `FOR SHARE` and checks again
+that it is still live (#452). A deletion locks the same row before it removes
+anything, so it either commits first or waits for the ingest to commit. When the deletion won, the bytes are
+ingested as a new document, exactly as if they arrived after it (see
+document-deletion, "The same bytes can be ingested again"); the deleted
+document gets no write and no key row. OCR recovery retiring a scan locks
+the scan's row the same way, so an ingest of the scan's bytes waits for it and
+then becomes a new document too.
+
+A deleted document that still holds its content key (deleted before deletions
+released it) is refused. `POST /ingest` reports that file with
+`"state": "error"` and the fixed `error` "no live document for these bytes
+could be locked; a deleted document still holding their object key is
+released by wordsworth-release-deleted-keys"; the rest of the batch goes on.
+`wordsworth-ingest` prints `<file>: refused: …` on stderr, goes on, and the
+run exits with status 1. The server log has one `ingest_refused` JSON line with
+the document id and the object key; run `wordsworth-release-deleted-keys
+--apply` and ingest again.
+
 ## A page with no text layer
 
 A document whose text extraction and OCR recovery together yield no text ends
