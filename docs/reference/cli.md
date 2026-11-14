@@ -72,13 +72,28 @@ There is deliberately **no `--api-key` flag**: a key on the command line lands
 in shell history and is visible to every user on the machine in the process
 list. The environment variable wins over the config file.
 
-The client never prints the key. Errors name the URL and the status:
-`HTTP 401` means the key is missing or not one the API knows; `HTTP 403` means
-the key was accepted but its caller may not do this (for instance a label
-outside `WORDSWORTH_GRANT_ISSUER_LABELS` revoking a grant). `ingest` stops at
-the first 401 or 403 instead of marking every batch failed. The key is not
-re-sent when the API answers with a redirect, so it cannot follow a redirect to
-another host.
+The key must be printable latin-1 with no whitespace inside (leading and
+trailing whitespace is trimmed). Anything else, typically a second line picked
+up from `$(cat keyfile)`, is refused before any request with exit code 2 and a
+message naming where the key came from, not the key itself.
+
+The client never prints the key. Errors name the URL and the status, and the
+hint line depends on whether a key was sent:
+
+- `HTTP 401` without a key: set `$WORDSWORTH_API_KEY`. With a key: the key was
+  not accepted (wrong or retired key for this installation).
+- `HTTP 403` with a key: the key was accepted, but its caller may not do this
+  (for instance a label outside `WORDSWORTH_GRANT_ISSUER_LABELS` revoking a
+  grant). Without a key: refused, and no key was sent.
+
+`ingest` stops at the first 401 or 403 instead of marking every batch failed.
+
+**Use the https URL directly.** The key is never re-sent when the API answers
+with a redirect, to any host, so it cannot be carried off by one. The flip side:
+an `http://` URL that redirects to `https://` ends in a 401, and the hint then
+names the URL it was redirected to. The client also warns on stderr when a key
+is about to go to a plain `http://` URL other than localhost, because the key
+would go out in clear.
 
 ## Commands
 

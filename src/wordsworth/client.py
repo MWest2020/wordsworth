@@ -67,10 +67,35 @@ def _resolve_url(flag: str | None, cfg: dict[str, str]) -> str:
 _API_KEY: str | None = None
 
 
+class BadApiKey(ValueError):
+    """The configured key cannot go into a header. Names where it came from,
+    never the key: http.client's own error would echo it in a traceback."""
+
+
+def _usable_key_char(c: str) -> bool:
+    # Printable latin-1 without whitespace: what a header value can carry.
+    return "!" <= c <= "~" or "\xa1" <= c <= "\xff"
+
+
 def _resolve_api_key(cfg: dict[str, str]) -> str | None:
     # $WORDSWORTH_API_KEY > config file. No flag: shell history, process list.
-    return (os.environ.get("WORDSWORTH_API_KEY", "").strip()
-            or cfg.get("api_key", "").strip() or None)
+    for source, raw in (("$WORDSWORTH_API_KEY", os.environ.get("WORDSWORTH_API_KEY")),
+                        ("api_key in the config file", cfg.get("api_key"))):
+        key = (raw or "").strip()
+        if not key:
+            continue
+        if not all(_usable_key_char(c) for c in key):
+            raise BadApiKey(
+                f"{source} is not a usable API key: it contains whitespace, a "
+                "control character or a character outside latin-1 (a second "
+                "line from a key file, for instance). The key is not shown.")
+        return key
+    return None
+
+
+def _is_local(url: str) -> bool:
+    host = urllib.parse.urlsplit(url).hostname or ""
+    return host in ("localhost", "127.0.0.1", "::1") or host.endswith(".localhost")
 
 
 def _request(url: str, data: bytes | None = None, headers: dict | None = None,
@@ -387,11 +412,26 @@ def _cmd_config(args) -> int:
     return 0
 
 
-_AUTH_HINT = {
-    401: "       the API wants a valid key: set $WORDSWORTH_API_KEY "
-         "(or api_key in the config file)",
-    403: "       the key was accepted, but its caller may not do this",
-}
+def _auth_hint(code: int, key_sent: bool, base: str, final_url: str) -> str:
+    """One line on why a 401/403 happened, depending on whether a key went out.
+    The key itself is never part of it."""
+    if code == 403:
+        return ("       the key was accepted, but its caller may not do this"
+                if key_sent else
+                "       refused, and no key was sent: this may need an API key "
+                "whose caller is allowed to do it ($WORDSWORTH_API_KEY)")
+    redirected = (final_url and urllib.parse.urlsplit(final_url)[:2]
+                  != urllib.parse.urlsplit(base)[:2])
+    if redirected:
+        # The key is deliberately not re-sent on a redirect, to any host.
+        target = "{0}://{1}".format(*urllib.parse.urlsplit(final_url)[:2])
+        return (f"       the API redirected to {target}, and the key is never "
+                "sent along on a redirect: use that (https) URL directly")
+    if key_sent:
+        return ("       the key was not accepted by this API: check it is a "
+                "current key for this installation")
+    return ("       the API wants a key and none was sent: set "
+            "$WORDSWORTH_API_KEY (or api_key in the config file)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -521,7 +561,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args.url = _resolve_url(args.url, cfg)
     global _API_KEY
-    _API_KEY = _resolve_api_key(cfg)
+    try:
+        _API_KEY = _resolve_api_key(cfg)
+    except BadApiKey as e:
+        _API_KEY = None
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    if _API_KEY and args.url.lower().startswith("http://") and not _is_local(args.url):
+        print(f"warning: {args.url} is plain http: the API key goes out in clear. "
+              "Use the https URL.", file=sys.stderr)
     if args.cmd == "ingest":
         if args.batch is None:
             args.batch = int(cfg.get("batch", 25))
@@ -543,7 +591,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {args.url} returned HTTP {e.code} {e.reason}{detail}",
               file=sys.stderr)
         if e.code in (401, 403):
-            print(_AUTH_HINT[e.code], file=sys.stderr)
+            print(_auth_hint(e.code, bool(_API_KEY), args.url, e.filename or ""),
+                  file=sys.stderr)
         return 1
     except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
         reason = getattr(e, "reason", e)

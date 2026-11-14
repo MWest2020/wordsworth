@@ -113,19 +113,23 @@ def _refuse(code: int, detail: str):
     return fake_urlopen
 
 
-@pytest.mark.parametrize("code,detail", [
-    (401, "invalid or missing API key"),
-    (403, "caller not authorized for corpus read"),
+@pytest.mark.parametrize("code,key,hint,not_hint", [
+    (401, None, "none was sent: set $WORDSWORTH_API_KEY", "not accepted"),
+    (401, KEY, "the key was not accepted", "set $WORDSWORTH_API_KEY"),
+    (403, KEY, "the key was accepted, but its caller", "no key was sent"),
+    (403, None, "no key was sent", "the key was accepted"),
 ])
-def test_refusal_is_named_and_the_key_never_shown(sent, monkeypatch, capsys,
-                                                  code, detail):
-    monkeypatch.setenv("WORDSWORTH_API_KEY", KEY)
-    monkeypatch.setattr(client.urllib.request, "urlopen", _refuse(code, detail))
-    assert main(["--url", "http://api", "search", "x", "--dossier", "alle"]) == 1
+def test_refusal_hint_depends_on_whether_a_key_was_sent(
+        sent, monkeypatch, capsys, code, key, hint, not_hint):
+    if key:
+        monkeypatch.setenv("WORDSWORTH_API_KEY", key)
+    monkeypatch.setattr(client.urllib.request, "urlopen",
+                        _refuse(code, "server detail"))
+    assert main(["--url", "http://localhost:8000", "search", "x",
+                 "--dossier", "alle"]) == 1
     out, err = capsys.readouterr()
-    assert f"HTTP {code}" in err and detail in err
-    hint = "WORDSWORTH_API_KEY" if code == 401 else "accepted"
-    assert hint in err
+    assert f"HTTP {code}" in err and "server detail" in err
+    assert hint in err and not_hint not in err
     assert KEY not in out + err
 
 
