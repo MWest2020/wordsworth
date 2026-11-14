@@ -12,9 +12,12 @@ import threading
 
 import pytest
 
-from shred_setup import KEY, key_row, pair, wait_for_a_lock_waiter
+from sqlalchemy import select, text
+
+from shred_setup import KEY, key_row, originals, pair, sealed, wait_for_a_lock_waiter
 from wordsworth import audit
 from wordsworth.audit import current_state, verify_chain
+from wordsworth.models import AuditRecord
 from wordsworth.deletion import delete_document
 from wordsworth.search_index import InMemoryIndex
 from wordsworth.states import State
@@ -106,3 +109,40 @@ def test_a_plaintext_copy_and_its_survivor_deleted_at_once_leave_no_object(
     assert not store.objects.exists(KEY)
     with legacy_copies() as s:
         assert key_row(s) is None
+
+
+def test_a_key_moved_while_the_deletion_waited_is_read_again_under_the_lock(
+        session_factory):
+    """An OCR repoint (the row's object key moves from the scan to the OCR'd
+    PDF) commits while the deletion waits for the row: `doomed` reads the key
+    again under the lock, so the OCR'd PDF goes, the record names it, and
+    both keys go -- not the scan, with the OCR'd object left behind."""
+    ocr_key = "documents/" + "0c" * 32
+    store = originals()
+    with session_factory() as s:
+        doc_id = sealed(s, store)
+        sealed(s, store, key=ocr_key, data=b"%PDF-1.4 the OCR'd PDF", document_id=doc_id)
+        s.commit()
+    errors, result = {}, {}
+
+    def delete():
+        with session_factory() as s:
+            result["counts"] = delete_document(s, doc_id, store, InMemoryIndex(), actor="t")
+            s.commit()
+
+    with session_factory() as rec:
+        rec.execute(text("UPDATE documents SET object_key = :k WHERE id = :d"),
+                    {"k": ocr_key, "d": doc_id})
+        worker = _run(errors, "delete", delete)
+        wait_for_a_lock_waiter(session_factory)
+        rec.commit()
+    worker.join(30)
+
+    assert not errors, errors
+    assert result["counts"].keys_destroyed == 2 and result["counts"].object == 1
+    assert not store.objects.exists(ocr_key)
+    with session_factory() as s:
+        assert key_row(s, KEY) is None and key_row(s, ocr_key) is None
+        rec = s.execute(select(AuditRecord).where(
+            AuditRecord.document_id == doc_id, AuditRecord.step == "delete")).scalar_one()
+        assert rec.payload["released_object_key"] == ocr_key
