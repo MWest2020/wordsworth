@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: MIT
-"""Ingest racing a deletion or a supersession (#452).
+"""Ingest or processing racing a deletion or a supersession (#452, #462).
 
 `pipeline.register_live` reads the live document without a lock, so before
 `ingest` writes the original it locks the row and checks again (`lock_live`).
-The lock order is every document writer's: the `documents` row first, the
-audit chain's advisory lock after -- a deletion, a supersession and OCR
-recovery all lock the row before their first audit append.
+`process` locks the row the same way before it reads the state
+(`lock_for_process`), so a deletion cannot run beside it and leave what it
+indexes behind. The lock order is every document writer's: the `documents`
+row first, the audit chain's advisory lock after -- a deletion, a
+supersession and OCR recovery all lock the row before their first audit
+append, and a dossier deletion locks all its members' rows before its first.
 """
 from __future__ import annotations
 
@@ -64,3 +67,18 @@ def lock_live(session: Session, document_id: UUID, object_key: str) -> bool:
     ).scalar_one()
     return (doc.object_key == object_key and doc.superseded_by is None
             and current_state(session, document_id) != State.DELETED)
+
+
+def lock_for_process(session: Session, document_id: UUID) -> Document | None:
+    """Lock the document row FOR SHARE before `process` reads its state (#462).
+
+    A deletion takes FOR NO KEY UPDATE before it looks at anything, so it
+    either committed first -- `process` then reads `deleted` and does nothing
+    -- or waits for `process` to commit and then removes what it wrote,
+    index entry and text included. Held for the whole `process` call, which
+    is one transaction: the deletion waited for its chain lock that long
+    already, but then only after it had looked for an index entry not yet
+    written. ``None`` for an unknown document, as `session.get`.
+    """
+    return session.get(Document, document_id, populate_existing=True,
+                       with_for_update={"read": True})

@@ -44,6 +44,7 @@ from .deletion import delete_document
 from .models import Dossier, DossierDocument, Topic
 from .object_store import ObjectStore
 from .pipeline import dossiers_of
+from .models import Document
 from .search_index import SearchIndex
 
 
@@ -107,6 +108,13 @@ def delete_dossier(
         select(DossierDocument.document_id)
         .where(DossierDocument.dossier_id == dossier_id)
     ).scalars().all()
+    if not dry_run:
+        # Every member's row before the first audit append (#462): after the
+        # first `deleted` record this transaction holds the chain lock, and
+        # waiting then for a row that `process` or `ingest` holds FOR SHARE
+        # -- each waiting for the chain lock next -- is a deadlock.
+        session.execute(select(Document.id).where(Document.id.in_(member_ids))
+                        .order_by(Document.id).with_for_update(key_share=True)).all()
 
     report = DossierDeletionReport()
     for document_id in member_ids:

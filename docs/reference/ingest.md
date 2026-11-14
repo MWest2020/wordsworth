@@ -95,6 +95,14 @@ document gets no write and no key row. OCR recovery retiring a scan locks
 the scan's row the same way, so an ingest of the scan's bytes waits for it and
 then becomes a new document too.
 
+Processing (`process`: profile, extract, anonymize, index) locks the row
+`FOR SHARE` too, before it reads the document's state (#462). A deletion that
+arrives while a document is processed waits until processing commits, and
+then removes what it wrote: the index entry and the stored text. A deletion
+already under way makes processing wait; it then reads `deleted` and does
+nothing. A dossier deletion locks all its members' rows before its first
+audit record, so it does not deadlock with either.
+
 A deleted document that still holds its content key (deleted before deletions
 released it) is refused. `POST /ingest` reports that file with
 `"state": "error"` and the fixed `error` "no live document for these bytes
