@@ -382,7 +382,7 @@ is an operator step after the deployment, not part of the build.
 
 ## Original scans of deleted documents
 
-**After `delete-removes-original-scan` is deployed.** A document recovered by
+A document recovered by
 OCR points at its OCR'd PDF; its original scan (the uploaded bytes, personal
 data in the clear) is named only in its `ocr` audit record, as
 `old_object_key`. Documents deleted before that change left the scan object

@@ -304,8 +304,16 @@ recovered by OCR (the scan and the OCR'd PDF), and 0 when another document
 that is not deleted still claims the object (a superseded copy). The command
 needs no key service for it: the key rows are deleted with SQL.
 
+Each result also carries `original_scan`: the number of original scans
+removed (or, with `--dry-run`, that would be). A document recovered by OCR
+keeps its uploaded scan next to the OCR'd PDF; the deletion removes it too,
+unless another document that is not deleted still claims it. It is 0 for a
+document that was never recovered, and `object` keeps its 0/1 meaning for
+the document's own object. Run again on a document deleted before this
+existed, it removes a scan left behind and records `remove-original-scan`.
+
 ```json
-{"dry_run": true, "results": [{"document_id": "…", "object": 1, "text": 1,
+{"dry_run": true, "results": [{"document_id": "…", "object": 1, "original_scan": 1, "text": 1,
   "renders_removed": 1, "box_maps_removed": 1, "summaries_removed": 1,
   "pseudonyms": 3, "mappings": 3,
   "index_entries": 1, "grants": 0, "keys_destroyed": 1}]}
@@ -328,14 +336,14 @@ dossier, otherwise only its membership of this one goes. `--actor` and
 `--dry-run` are checked and behave the same way as above; the dry run reports
 which documents would be deleted, which would only be released, and the
 number of topics (`topics`) that would be removed; the output of a real run
-carries the same `topics` count. `keys_destroyed`, `renders_removed`,
-`box_maps_removed` and `summaries_removed` are sums over the deleted members (what they would lose,
+carries the same `topics` count. `keys_destroyed`, `original_scan`,
+`renders_removed`, `box_maps_removed` and `summaries_removed` are sums over the deleted members (what they would lose,
 with `--dry-run`); released members keep theirs.
 
 ```json
 {"dry_run": false, "results": [{"dossier_id": "…", "deleted": ["…", "…"],
   "released": ["…"], "topics": 4, "keys_destroyed": 2, "renders_removed": 3,
-  "box_maps_removed": 2, "summaries_removed": 2}]}
+  "box_maps_removed": 2, "summaries_removed": 2, "original_scan": 1}]}
 ```
 
 See [deleting documents](../how-to/deleting-documents.md) for what goes, what
