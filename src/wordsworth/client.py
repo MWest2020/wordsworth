@@ -14,6 +14,11 @@ one file to a machine on the tailnet and run it, or use the installed
 ``--all`` for every file) and uploads to ``POST /ingest`` in batches, printing a
 per-file result and a final summary. The base URL defaults to
 ``$WORDSWORTH_API_URL`` or ``http://localhost:8000``.
+
+An installation with caller authentication on wants an API key: set
+``$WORDSWORTH_API_KEY`` (or ``api_key`` in the config file) and it is sent as
+``X-API-Key`` on every request. There is deliberately no flag for it — a key on
+the command line lands in shell history and in the process list.
 """
 from __future__ import annotations
 
@@ -36,7 +41,7 @@ CONFIG_PATH = Path(os.environ.get(
 
 def _load_config() -> dict[str, str]:
     """Read a flat ``key: value`` config (a small YAML subset: url, batch,
-    timeout). Missing/unreadable file → empty. Stdlib only (no YAML dep)."""
+    timeout, api_key). Missing/unreadable file → empty. Stdlib only (no YAML dep)."""
     cfg: dict[str, str] = {}
     try:
         text = CONFIG_PATH.read_text()
@@ -57,17 +62,39 @@ def _resolve_url(flag: str | None, cfg: dict[str, str]) -> str:
             or cfg.get("url") or DEFAULT_URL)
 
 
+# Set by main() from $WORDSWORTH_API_KEY or the config file; None = send none.
+# Never printed or logged: every error path below names the URL, not headers.
+_API_KEY: str | None = None
+
+
+def _resolve_api_key(cfg: dict[str, str]) -> str | None:
+    # $WORDSWORTH_API_KEY > config file. No flag: shell history, process list.
+    return (os.environ.get("WORDSWORTH_API_KEY", "").strip()
+            or cfg.get("api_key", "").strip() or None)
+
+
+def _request(url: str, data: bytes | None = None, headers: dict | None = None,
+             method: str | None = None) -> urllib.request.Request:
+    """A request carrying ``X-API-Key`` when a key is set. Unredirected: urllib
+    copies ordinary headers onto a redirect, to whatever host it points at."""
+    req = urllib.request.Request(url, data=data, headers=headers or {},
+                                 method=method)
+    if _API_KEY:
+        req.add_unredirected_header("X-API-Key", _API_KEY)
+    return req
+
+
 def _get(base: str, path: str, params: dict | None = None, timeout: float = 30):
     url = base.rstrip("/") + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+    with urllib.request.urlopen(_request(url), timeout=timeout) as resp:  # noqa: S310
         return json.loads(resp.read())
 
 
 def _post_json(base: str, path: str, payload: dict, timeout: float = 3600):
     """POST a JSON body and return the parsed response."""
-    req = urllib.request.Request(
+    req = _request(
         base.rstrip("/") + path,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
@@ -83,7 +110,7 @@ def _download(base: str, path: str, dest: str, params: dict | None = None,
     url = base.rstrip("/") + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310
+    with urllib.request.urlopen(_request(url), timeout=timeout) as resp:  # noqa: S310
         data = resp.read()
     Path(dest).write_bytes(data)
     return len(data)
@@ -105,7 +132,7 @@ def _post_files(base: str, paths: list[Path], timeout: float = 600,
         body += b"\r\n"
     body += f"--{boundary}--\r\n".encode()
     params = {k: v for k, v in (("domain", domain), ("dossier", dossier)) if v}
-    req = urllib.request.Request(
+    req = _request(
         base.rstrip("/") + "/ingest"
         + ("?" + urllib.parse.urlencode(params) if params else ""),
         data=bytes(body),
@@ -136,6 +163,8 @@ def _post_batch_with_retry(url, chunk, timeout, retries, index,
                      if v}
             return _post_files(url, chunk, timeout=timeout, **extra)
         except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise  # no key / wrong key: every batch would fail the same way
             transient = e.code >= 500
             reason = f"HTTP {e.code} {e.reason}"
         except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
@@ -293,7 +322,7 @@ def _post_dataset(base: str, path: Path, profile: str | None, profile_name: str 
     if profile_name is not None:
         part("profile_name", profile_name.encode())
     body.extend(f"--{boundary}--\r\n".encode())
-    req = urllib.request.Request(
+    req = _request(
         base.rstrip("/") + "/datasets/pseudonymize", data=bytes(body), method="POST",
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -348,12 +377,21 @@ def _cmd_config(args) -> int:
         for k in ("url", "batch", "timeout"):
             if k in cfg:
                 print(f"{k}: {cfg[k]}")
+        if cfg.get("api_key"):
+            print("api_key: (set, not shown)")
         return 0
     cfg.update({k: str(v) for k, v in updates.items()})
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text("".join(f"{k}: {v}\n" for k, v in cfg.items()))
     print(f"wrote {CONFIG_PATH}")
     return 0
+
+
+_AUTH_HINT = {
+    401: "       the API wants a valid key: set $WORDSWORTH_API_KEY "
+         "(or api_key in the config file)",
+    403: "       the key was accepted, but its caller may not do this",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -482,6 +520,8 @@ def main(argv: list[str] | None = None) -> int:
         return args.func(args)  # local file op; skip network error handling
 
     args.url = _resolve_url(args.url, cfg)
+    global _API_KEY
+    _API_KEY = _resolve_api_key(cfg)
     if args.cmd == "ingest":
         if args.batch is None:
             args.batch = int(cfg.get("batch", 25))
@@ -502,6 +542,8 @@ def main(argv: list[str] | None = None) -> int:
             pass
         print(f"error: {args.url} returned HTTP {e.code} {e.reason}{detail}",
               file=sys.stderr)
+        if e.code in (401, 403):
+            print(_AUTH_HINT[e.code], file=sys.stderr)
         return 1
     except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
         reason = getattr(e, "reason", e)

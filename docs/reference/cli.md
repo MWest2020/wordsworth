@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-11-14
 ---
 
 # CLI reference — `wordsworth`
@@ -52,6 +52,34 @@ The API base URL is resolved in this order:
 
 `--batch` / `--timeout` resolve as: flag → config file → built-in default.
 
+### API key
+
+An installation with caller authentication on (see
+[API-key authentication](../how-to/api-auth.md)) refuses every request except
+`health` without a key: `HTTP 401`. Give the client its key in one of two ways;
+it is then sent as the `X-API-Key` header on every request:
+
+1. `$WORDSWORTH_API_KEY` — preferred. Set it for the session without the key
+   ever appearing in a command line, e.g. from your secret store (SOPS,
+   OpenBao) or typed at a hidden prompt:
+   `read -rs WORDSWORTH_API_KEY && export WORDSWORTH_API_KEY`.
+2. `api_key: <key>` in the config file. Add that line by hand and keep the file
+   private (`chmod 600 ~/.config/wordsworth/config.yaml`).
+   `wordsworth config --show` reports `api_key: (set, not shown)`, and
+   rewriting the file with `wordsworth config --url …` keeps the key.
+
+There is deliberately **no `--api-key` flag**: a key on the command line lands
+in shell history and is visible to every user on the machine in the process
+list. The environment variable wins over the config file.
+
+The client never prints the key. Errors name the URL and the status:
+`HTTP 401` means the key is missing or not one the API knows; `HTTP 403` means
+the key was accepted but its caller may not do this (for instance a label
+outside `WORDSWORTH_GRANT_ISSUER_LABELS` revoking a grant). `ingest` stops at
+the first 401 or 403 instead of marking every batch failed. The key is not
+re-sent when the API answers with a redirect, so it cannot follow a redirect to
+another host.
+
 ## Commands
 
 Every console script in `pyproject.toml` is started in its own interpreter by
@@ -89,7 +117,7 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   stops that HTTP batch early and answers `503` with `detail` `key service
   unavailable` (see `docs/reference/ingest.md`). This CLI does not yet stop
   the whole run on that signal: `client.py`'s retry handling
-  (`client.py:178-184`) treats a batch that still fails after retries as a
+  (`_post_batch_with_retry`) treats a batch that still fails after retries as a
   generic batch failure and moves on to the next batch, the same as any other
   5xx. This is not fixed here. Follow-up issue:
   [#403](https://github.com/MWest2020/wordsworth/issues/403). Exit
