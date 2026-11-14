@@ -67,6 +67,7 @@ def make_engine(url: str | None = None) -> Engine:
         max_overflow=settings.db_max_overflow,
         pool_pre_ping=True,
         pool_recycle=1800,
+        isolation_level="READ COMMITTED",  # never a server default: DocumentKeys.unwrap relies on it
         # Force UTC so timestamptz round-trips are stable for hashing.
         connect_args={"options": "-c timezone=utc"},
     )
