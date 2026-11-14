@@ -71,7 +71,8 @@ def lock_live(session: Session, document_id: UUID, object_key: str) -> bool:
 
 
 def lock_for_process(session: Session, document_id: UUID) -> Document | None:
-    """Lock the document row FOR SHARE before `process` reads its state (#462).
+    """Lock the document row FOR SHARE before `process` reads its state (#462);
+    `reanonymize` takes it the same way (#463).
 
     A deletion takes FOR NO KEY UPDATE before it looks at anything, so it
     either committed first -- `process` then reads `deleted` and does nothing

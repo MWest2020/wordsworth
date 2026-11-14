@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- **A deletion racing `reanonymize` put the document back in the index**
+  (#463). `reanonymize` (the `reprocess` backfill) read the state without a
+  lock; a deletion that committed before it wrote the index entry and the
+  text saw both come back, with a `reanonymize` record after `deleted`. It
+  now locks the document row `FOR SHARE` before it reads the state, as
+  `process` does (#462): a deletion waits and then removes what it wrote, and
+  a `reanonymize` that finds a deletion under way waits and then skips it.
+
 - **A deletion during processing left the document's text in the index**
   (#462). A deletion that started while `process` ran found no index entry
   yet, waited for the audit chain lock, and recorded `deleted` after
