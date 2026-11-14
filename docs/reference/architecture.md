@@ -40,9 +40,10 @@ is the engine. Reference case: Woo-request handling for a Dutch municipality.
   `superseded`) — there is no restore path. The `documents` row and every
   earlier audit record stay, because the audit table's `document_id` is a
   non-null foreign key and the trail never deletes a record; what goes is the
-  stored object, the stored text, the pseudonyms, the mappings, the index
-  entry and the grants. The one `deleted` audit record holds ids and counts
-  only, written in the same transaction as the removal — see
+  stored object, the original scan of a document recovered by OCR, the
+  stored text, the pseudonyms, the mappings, the index entry and the grants.
+  The one `deleted` audit record holds ids and counts only, written in the
+  same transaction as the removal — see
   [deleting documents](../how-to/deleting-documents.md).
 - **A failed embedding is a hard error, never a silent fallback.** No silent
   fallbacks anywhere. A transport failure (the embedding service unreachable,
