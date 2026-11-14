@@ -19,7 +19,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from . import audit
+from . import audit, reprocess_counts
 from .models import AuditRecord, Document
 from .pdf_text import TEXT_SOURCE
 from .pipeline import (current_state, document_domain, lists_hash_of,
@@ -118,11 +118,12 @@ def _value_not_located_detail(session, document_id: UUID) -> str | None:
 
 def one(session_factory, document_id: UUID, *, make_anonymizer,
         store, search_index=None, embedder=None,
-        resolve_key_provider=None) -> tuple[str, str | None]:
+        resolve_key_provider=None) -> tuple[str, str | None, dict | None]:
+    """(outcome, problem detail, entity counts); counts only when reanonymized."""
     with session_factory() as session:
         state = current_state(session, document_id)
         if state not in (State.INDEXED, State.ANONYMIZED):
-            return "skipped", None
+            return "skipped", None, None
         anon = make_anonymizer(session, document_domain(session, document_id))
         # pdf-redaction: a key provider lets reanonymize recompute the box map
         # under the lists this run just reanonymized under; absent in
@@ -133,15 +134,21 @@ def one(session_factory, document_id: UUID, *, make_anonymizer,
             from .mapping_store import PostgresMappingStore
 
             mapping_store = PostgresMappingStore(session)
+        before = reprocess_counts.stored_text(session, document_id)
         reanonymize(session, document_id, store, anonymizer=anon,
                     search_index=search_index, embedder=embedder,
                     key_provider=key_provider, mapping_store=mapping_store)
+        entity_counts = reprocess_counts.compare(  # the text about to be committed
+            before, reprocess_counts.stored_text(session, document_id))
         session.commit()
         # The text/embed/index work above succeeded regardless -- only the box
         # map may not have (pdf-redaction-locate): report it, do not hide a
         # reanonymized document behind a different counts bucket.
         detail = _value_not_located_detail(session, document_id)
-    return "reanonymized", detail
+        # Last: not before the commit (a rolled-back change), not before the
+        # detail query (a document both logged and reported failed).
+        reprocess_counts.log(document_id, entity_counts)
+    return "reanonymized", detail, entity_counts
 
 def outdated(session, ids, lists_hash: str | None):
     """De documenten die nog niet onder deze lijst-hash zijn verwerkt, OF nog
@@ -161,8 +168,10 @@ def indexed_ids(session) -> list[UUID]:
 
 
 def run(session_factory, ids, *, make_anonymizer, store, search_index=None,
-        embedder=None, on_progress=None, resolve_key_provider=None) -> tuple[dict, dict]:
-    """Verwerk `ids` en geef (tellingen, problemen).
+        embedder=None, on_progress=None, resolve_key_provider=None,
+        entity_counts: dict | None = None) -> tuple[dict, dict]:
+    """Verwerk `ids` en geef (tellingen, problemen). `entity_counts`, als de
+    aanroeper er een geeft, krijgt per herwerkt document de tellingen per type.
 
     `on_progress(n, totaal)` wordt na elk document aangeroepen, zodat een Job
     voortgang kan tonen zonder dat deze lus iets van printen hoeft te weten.
@@ -171,13 +180,15 @@ def run(session_factory, ids, *, make_anonymizer, store, search_index=None,
     problems: dict[str, str] = {}
     for n, document_id in enumerate(ids, 1):
         try:
-            outcome, detail = one(session_factory, document_id,
+            outcome, detail, per_type = one(session_factory, document_id,
                        make_anonymizer=make_anonymizer, store=store,
                        search_index=search_index, embedder=embedder,
                        resolve_key_provider=resolve_key_provider)
             counts[outcome] += 1
             if detail is not None:
                 problems[str(document_id)] = detail
+            if per_type is not None and entity_counts is not None:
+                entity_counts[str(document_id)] = per_type
         except Exception as exc:   # never leaks text; entry left intact
             counts["retryable" if is_transient(exc) else "failed"] += 1
             problems[str(document_id)] = cause_chain(exc)
