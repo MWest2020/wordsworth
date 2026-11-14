@@ -25,11 +25,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import DateTime, String, literal, select
 from sqlalchemy.orm import Session
 
 from .generator import GenerationError, Generator
-from .models import DocumentSummary
+from .models import DocumentSummary, DocumentText
 from .pipeline import get_anonymized_text
 from .pseudonymizer import without_tokens
 
@@ -229,7 +229,7 @@ def for_document(session: Session, generator: Generator | None, document_id: UUI
 
 
 def _bewaar(session: Session, document_id: UUID, tekst: str,
-            model: str) -> DocumentSummary:
+            model: str) -> DocumentSummary | None:
     """Schrijf de samenvatting weg, ook als een ander hem net schreef.
 
     Een upsert en geen lezen-dan-schrijven. `compute()` kijkt aan het begin één
@@ -242,17 +242,29 @@ def _bewaar(session: Session, document_id: UUID, tekst: str,
     Wie het laatst schrijft wint, en dat is hier goed: het is dezelfde
     samenvatting over dezelfde tekst, hoogstens door een ander model. Het model
     en het moment gaan mee, dus wat er staat blijft navertelbaar.
+
+    **Alleen zolang de tekst er nog is** (#455). Een verwijdering haalt de
+    tekst en de samenvatting weg; een samenvatting die tijdens die verwijdering
+    gemaakt werd, mag daarna niet alsnog landen. Dus `INSERT … SELECT` uit
+    `document_texts` in hetzelfde statement, met `FOR SHARE`: is de tekst weg,
+    of wacht een verwijdering die hem weghaalt, dan schrijft dit niets en geeft
+    None. Een verwijdering die de samenvatting al las voordat deze insert hem
+    schreef, laat hem staan; een rerun van `wordsworth-delete` ruimt hem op.
     """
     from sqlalchemy.dialects.postgresql import insert
 
     now = datetime.now(timezone.utc)
-    stmt = insert(DocumentSummary).values(
-        document_id=document_id, text=tekst, model=model, created_at=now)
+    bron = select(DocumentText.document_id, literal(tekst, String),
+                  literal(model, String), literal(now, DateTime(timezone=True))
+                  ).where(DocumentText.document_id == document_id
+                          ).with_for_update(read=True)
+    stmt = insert(DocumentSummary).from_select(
+        ["document_id", "text", "model", "created_at"], bron)
     session.execute(stmt.on_conflict_do_update(
         index_elements=[DocumentSummary.document_id],
         set_={"text": tekst, "model": model, "created_at": now}))
     session.flush()
-    return session.get(DocumentSummary, document_id)
+    return session.get(DocumentSummary, document_id, populate_existing=True)
 
 
 def compute(session: Session, generator: Generator | None, document_ids,

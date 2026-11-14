@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-"""What a deletion removes of a document's redacted PDF (#451).
+"""What a deletion removes of a document's redacted PDF (#451) and summary (#455).
 
 `GET /documents/{id}/redacted.pdf` caches its render in the object store
 under ``redacted/<doc>/<render_version>/<boxmap_hash>`` and the box map it was
@@ -8,19 +8,23 @@ so they go with it: every object under the document's ``redacted/<doc>/``
 prefix, and its `box_maps` row. Counted as `renders_removed` and
 `box_maps_removed` in `DeletionCounts`, and so in the `deleted` record, the
 API answer and the CLI output -- counts only, never a key's hash part.
+The document's `document_summaries` row (LLM text derived from its content,
+`summaries.py`) goes the same way, counted as `summaries_removed`: it is read
+in the plan and removed in `apply`, never its text in a count or a record.
 
 Two steps, because listing can fail (an S3 identity without ListObjectsV2)
 and must fail before anything irreversible: `plan_renders` lists the keys and
 reads the box map BEFORE the index entry and the object go, so a listing
 failure leaves the document exactly as it was; `RenderPlan.apply` removes them
 after the object, the keys first (an external side effect the transaction
-cannot roll back), the row inside the caller's transaction. Removing what is
+cannot roll back), the rows inside the caller's transaction. Removing what is
 already gone is a no-op, so a rerun
 over an already-deleted document removes whatever was left (a render cached
 before this module existed, or one a request was still writing while the
-deletion committed). Such a rerun is not a transition, so `transition` writes
-nothing for it; when it does remove something it appends one `remove-renders`
-record (`deleted` -> `deleted`) with the actor and the two counts.
+deletion committed, or a summary row from before #455). Such a rerun is not
+a transition, so `transition` writes nothing for it; when it does remove
+something it appends one `remove-renders` record (`deleted` -> `deleted`) with
+the actor and the three counts -- the summary rides on the same record.
 """
 from __future__ import annotations
 
@@ -31,7 +35,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from . import audit
-from .models import BoxMap
+from .models import BoxMap, DocumentSummary
 from .object_store import ObjectStore
 from .pdf_redaction import redacted_prefix
 from .states import State
@@ -42,35 +46,41 @@ if TYPE_CHECKING:
 
 @dataclass
 class RenderCounts:
-    """The two counts `DeletionCounts` inherits (a base class, so the change to
+    """The counts `DeletionCounts` inherits (a base class, so the change to
     `deletion.py` stays at one import, one base and one call)."""
 
     renders_removed: int = 0
     box_maps_removed: int = 0
+    summaries_removed: int = 0
 
     def render_counts(self) -> dict[str, int]:
         return {"renders_removed": self.renders_removed,
-                "box_maps_removed": self.box_maps_removed}
+                "box_maps_removed": self.box_maps_removed,
+                "summaries_removed": self.summaries_removed}
 
 
 @dataclass
 class RenderPlan:
-    """What `plan_renders` found: the render keys and the box map row."""
+    """What `plan_renders` found: the render keys, the box map row and the
+    summary row."""
 
     document_id: UUID
     keys: list[str]
     box_map: BoxMap | None
+    summary: DocumentSummary | None
 
     def apply(self, session: Session, store: ObjectStore,
               counts: "DeletionCounts", *, actor: str, dry_run: bool) -> None:
         """Remove what the plan found (nothing under ``dry_run``). On a rerun
         over an already-deleted document, record it as `remove-renders`."""
-        if dry_run or not (self.keys or self.box_map is not None):
+        rows = [row for row in (self.box_map, self.summary) if row is not None]
+        if dry_run or not (self.keys or rows):
             return
         for key in self.keys:
             store.delete(key)
-        if self.box_map is not None:
-            session.delete(self.box_map)
+        for row in rows:
+            session.delete(row)
+        if rows:
             session.flush()
         if audit.current_state(session, self.document_id) == State.DELETED:
             audit.append(session, document_id=self.document_id,
@@ -81,11 +91,14 @@ class RenderPlan:
 
 def plan_renders(session: Session, document_id: UUID, store: ObjectStore,
                  counts: "DeletionCounts") -> RenderPlan:
-    """List the document's cached renders and read its box map -- reads only,
-    called before anything irreversible -- and write their counts into
-    ``counts``. A listing failure propagates: a hard error, nothing removed."""
+    """List the document's cached renders and read its box map and summary
+    rows -- reads only, called before anything irreversible -- and write their
+    counts into ``counts``. A listing failure propagates: a hard error,
+    nothing removed."""
     keys = [key for key, _ in store.iter_objects(redacted_prefix(document_id))]
     box_map = session.get(BoxMap, document_id)
+    summary = session.get(DocumentSummary, document_id)
     counts.renders_removed = len(keys)
     counts.box_maps_removed = int(box_map is not None)
-    return RenderPlan(document_id, keys, box_map)
+    counts.summaries_removed = int(summary is not None)
+    return RenderPlan(document_id, keys, box_map, summary)

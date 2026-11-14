@@ -65,12 +65,14 @@ class DossierDeletionReport:
     keys_destroyed: int = 0
     renders_removed: int = 0
     box_maps_removed: int = 0
+    summaries_removed: int = 0
 
     def as_dict(self) -> dict[str, list[str] | int]:
         return {"deleted": self.deleted, "released": self.released,
                 "topics": self.topics, "keys_destroyed": self.keys_destroyed,
                 "renders_removed": self.renders_removed,
-                "box_maps_removed": self.box_maps_removed}
+                "box_maps_removed": self.box_maps_removed,
+                "summaries_removed": self.summaries_removed}
 
 
 def _member_elsewhere(session: Session, document_id: UUID, dossier_id: UUID) -> bool:
@@ -125,6 +127,7 @@ def delete_dossier(
             report.keys_destroyed += counts.keys_destroyed
             report.renders_removed += counts.renders_removed
             report.box_maps_removed += counts.box_maps_removed
+            report.summaries_removed += counts.summaries_removed
             report.deleted.append(str(document_id))
 
     report.topics = len(session.execute(

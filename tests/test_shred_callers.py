@@ -3,7 +3,7 @@
 also evicts its cache), `wordsworth-delete` with a plain object store and no
 key service, and a dossier deletion -- and the counts reach every report,
 dry run and real (a dossier also sums `renders_removed` and
-`box_maps_removed`, #453)."""
+`box_maps_removed`, #453, and `summaries_removed`, #457)."""
 from __future__ import annotations
 
 import json
@@ -15,7 +15,7 @@ from wordsworth import dossiers
 from wordsworth.api import create_app
 from wordsworth.delete_cli import main
 from wordsworth.dossier_deletion import delete_dossier
-from wordsworth.models import BoxMap
+from wordsworth.models import BoxMap, DocumentSummary
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pdf_redaction import redacted_cache_key
 from wordsworth.search_index import InMemoryIndex
@@ -87,8 +87,8 @@ def test_a_dossier_deletion_passes_keys_on(session_factory):
 
 def _dossier_of_three(session_factory):
     """Two sealed documents only in this dossier, one shared with another,
-    each with a cached render and a box map: a deletion deletes two and
-    releases one, so it destroys two keys and removes two of each."""
+    each with a cached render, a box map and a summary: a deletion deletes two
+    and releases one, so it destroys two keys and removes two of each."""
     store = originals()
     with session_factory() as s:
         mine, theirs = dossiers.ensure(s, "zaak-a"), dossiers.ensure(s, "zaak-b")
@@ -98,15 +98,16 @@ def _dossier_of_three(session_factory):
             s.add(BoxMap(document_id=doc_id, boxmap_hash="h" * 64,
                          lists_hash=None, boxes=[]))
             store.objects.put(redacted_cache_key(doc_id, 1, "h" * 64), b"%PDF-1.4")
+            s.add(DocumentSummary(document_id=doc_id, text="samenvatting", model="t"))
         shared_id = key_row(s, SHARED).document_id
         dossiers.add(s, theirs.id, shared_id, actor="t")
         s.commit()
         return store, mine.id
 
 
-def _sums(report: dict) -> tuple[int, int, int]:
+def _sums(report: dict) -> tuple[int, int, int, int]:
     return (report["keys_destroyed"], report["renders_removed"],
-            report["box_maps_removed"])
+            report["box_maps_removed"], report["summaries_removed"])
 
 
 def _rows_left(session_factory):
@@ -120,12 +121,12 @@ def test_a_dossier_reports_the_sum_in_as_dict(session_factory):
         dry = delete_dossier(s, dossier_id, store, InMemoryIndex(), actor="t",
                              dry_run=True)
         s.rollback()
-    assert _sums(dry.as_dict()) == (2, 2, 2)
+    assert _sums(dry.as_dict()) == (2, 2, 2, 2)
     assert _rows_left(session_factory) == {A, B, SHARED}
     with session_factory() as s:
         real = delete_dossier(s, dossier_id, store, InMemoryIndex(), actor="t")
         s.commit()
-    assert _sums(real.as_dict()) == (2, 2, 2)
+    assert _sums(real.as_dict()) == (2, 2, 2, 2)
     assert _rows_left(session_factory) == {SHARED}
 
 
@@ -133,7 +134,7 @@ def test_a_dossier_reports_the_sum_in_the_api_answer(session_factory):
     store, dossier_id = _dossier_of_three(session_factory)
     r = _client(session_factory, store).delete(f"/dossiers/{dossier_id}",
                                                headers=HEADERS)
-    assert r.status_code == 200 and _sums(r.json()) == (2, 2, 2)
+    assert r.status_code == 200 and _sums(r.json()) == (2, 2, 2, 2)
     assert _rows_left(session_factory) == {SHARED}
 
 
@@ -142,10 +143,10 @@ def test_a_dossier_reports_the_sum_in_the_cli_output(session_factory, capsys):
     plain = store.objects
     assert _cli(session_factory, plain, "--dossier", str(dossier_id), "--dry-run") == 0
     dry = json.loads(capsys.readouterr().out)["results"][0]
-    assert _sums(dry) == (2, 2, 2)
+    assert _sums(dry) == (2, 2, 2, 2)
     assert _rows_left(session_factory) == {A, B, SHARED}
 
     assert _cli(session_factory, plain, "--dossier", str(dossier_id)) == 0
     real = json.loads(capsys.readouterr().out)["results"][0]
-    assert _sums(real) == (2, 2, 2)
+    assert _sums(real) == (2, 2, 2, 2)
     assert _rows_left(session_factory) == {SHARED}

@@ -231,9 +231,9 @@ removing it, not retiring it — is `wordsworth-delete`, below.
 
 Removes a document's content: the stored object, its text, its cached
 redacted PDFs and box map (`renders_removed`, `box_maps_removed`), its
-pseudonyms, its mappings, its search-index entry and its grants. The
-`documents` row and its audit trail stay — the trail is append-only, the same
-reason a superseded copy keeps its row. There is **no undo**.
+summary (`summaries_removed`), its pseudonyms, its mappings, its search-index
+entry and its grants. The `documents` row and its audit trail stay — the trail
+is append-only, the same reason a superseded copy keeps its row. There is **no undo**.
 
 ```bash
 wordsworth-delete <document-id> [<document-id> ...] --actor <who> [--dry-run]
@@ -249,7 +249,10 @@ path, and stops before the first removal — no store, index or database
 change, and no `deleted` record. Each named document commits on its own, so a
 failure partway through a multi-document run leaves only the untouched ones
 for a rerun to finish; removing what a previous run already removed is a
-no-op.
+no-op. A rerun over an already-deleted document still removes a leftover
+render, box map or summary, and records that as one `remove-renders` audit
+record with `{actor, renders_removed, box_maps_removed, summaries_removed}`
+([deleting documents](../how-to/deleting-documents.md)).
 
 Each result carries `keys_destroyed`: the number of data keys of sealed
 originals the deletion destroyed (crypto-shredding), or with `--dry-run`
@@ -260,7 +263,8 @@ needs no key service for it: the key rows are deleted with SQL.
 
 ```json
 {"dry_run": true, "results": [{"document_id": "…", "object": 1, "text": 1,
-  "renders_removed": 1, "box_maps_removed": 1, "pseudonyms": 3, "mappings": 3,
+  "renders_removed": 1, "box_maps_removed": 1, "summaries_removed": 1,
+  "pseudonyms": 3, "mappings": 3,
   "index_entries": 1, "grants": 0, "keys_destroyed": 1}]}
 ```
 
@@ -281,14 +285,14 @@ dossier, otherwise only its membership of this one goes. `--actor` and
 `--dry-run` are checked and behave the same way as above; the dry run reports
 which documents would be deleted, which would only be released, and the
 number of topics (`topics`) that would be removed; the output of a real run
-carries the same `topics` count. `keys_destroyed`, `renders_removed` and
-`box_maps_removed` are sums over the deleted members (what they would lose,
+carries the same `topics` count. `keys_destroyed`, `renders_removed`,
+`box_maps_removed` and `summaries_removed` are sums over the deleted members (what they would lose,
 with `--dry-run`); released members keep theirs.
 
 ```json
 {"dry_run": false, "results": [{"dossier_id": "…", "deleted": ["…", "…"],
   "released": ["…"], "topics": 4, "keys_destroyed": 2, "renders_removed": 3,
-  "box_maps_removed": 2}]}
+  "box_maps_removed": 2, "summaries_removed": 2}]}
 ```
 
 See [deleting documents](../how-to/deleting-documents.md) for what goes, what

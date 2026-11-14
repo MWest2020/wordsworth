@@ -123,6 +123,18 @@ python -m wordsworth.samenvatten --dossier <dossier-uuid>
 python -m wordsworth.samenvatten --ontbrekend
 ```
 
+`--ontbrekend` neemt alleen documenten mee die opgeslagen tekst hebben. Een
+verwijderd document verliest zijn tekst en (sinds #455) zijn samenvatting; zou
+het hier meetellen, dan stond het als `without_text` in de uitvoer en eindigde
+de CronJob na elke verwijdering met exitcode 1. Een document dat nooit door de
+straat kwam valt er om dezelfde reden buiten; `--dossier` telt zo'n document
+wél, als `without_text`.
+
+Een samenvatting wordt alleen opgeslagen zolang de tekst van het document er
+nog is, in hetzelfde statement gecontroleerd. Wordt het document verwijderd
+terwijl het model nog schrijft, dan landt de samenvatting niet (het document
+telt dan als `failed`).
+
 Zonder argumenten legt het commando uit wat het verwacht en stopt met
 exitcode 2 — er is geen impliciete "alles" en geen stille no-op.
 

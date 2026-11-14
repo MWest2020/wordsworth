@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **A deleted document kept its summary** (#455). Deletion now removes its
+  `document_summaries` row (LLM text derived from the document), counted as
+  `summaries_removed` in the `deleted` record, the API answer and the CLI
+  output; a dry run counts it. A rerun of `wordsworth-delete` over a document
+  deleted earlier removes a leftover summary and records it on the same
+  `remove-renders` record as the renders. `samenvatten --ontbrekend` skips
+  documents without stored text (a deleted document no longer makes the
+  CronJob exit 1), and a summary is stored only while the document's text is
+  still there.
+
 - **A deleted document's redacted PDF was still served** (#451). Deletion now
   removes its cached renders (`redacted/<doc>/`) and its `box_maps` row,
   counted as `renders_removed` and `box_maps_removed`;

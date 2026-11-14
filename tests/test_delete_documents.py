@@ -77,7 +77,7 @@ def test_deletion_removes_the_six_kinds_and_keeps_the_row_and_the_trail(session)
     session.commit()
 
     assert counts.as_dict() == {"object": 1, "text": 1, "renders_removed": 0,
-                                "box_maps_removed": 0, "pseudonyms": 1,
+                                "box_maps_removed": 0, "summaries_removed": 0, "pseudonyms": 1,
                                 "mappings": 1, "index_entries": 1, "grants": 1,
                                 "keys_destroyed": 0}
     assert not store.exists(KEY)
@@ -112,7 +112,7 @@ def test_deleted_audit_record_carries_ids_and_counts_and_the_released_key(sessio
         select(AuditRecord).where(AuditRecord.document_id == doc.id,
                                   AuditRecord.step == "delete")).scalar_one()
     assert rec.payload == {"actor": "tester", "object": 1, "text": 0,
-                           "renders_removed": 0, "box_maps_removed": 0,
+                           "renders_removed": 0, "box_maps_removed": 0, "summaries_removed": 0,
                            "pseudonyms": 0, "mappings": 0, "index_entries": 0,
                            "grants": 0, "keys_destroyed": 0,
                            "released_object_key": KEY}
@@ -147,7 +147,7 @@ def test_deleting_an_already_deleted_document_is_a_no_op(session):
         .where(AuditRecord.document_id == doc.id)).scalar_one()
     assert before == after
     assert counts.as_dict() == {"object": 0, "text": 0, "renders_removed": 0,
-                                "box_maps_removed": 0, "pseudonyms": 0,
+                                "box_maps_removed": 0, "summaries_removed": 0, "pseudonyms": 0,
                                 "mappings": 0, "index_entries": 0, "grants": 0,
                                 "keys_destroyed": 0}
 

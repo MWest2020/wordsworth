@@ -6,7 +6,7 @@ foreign key and the audit table has no UPDATE/DELETE, so removing the row would
 break the trail or require deleting audit records — the one thing this system
 never does (as a superseded copy keeps its row, `supersession.py`). Deletion
 removes everything *about the content* (object, text, pseudonyms, mappings,
-index entry, grants, and the cached redacted PDFs and box map, see
+index entry, grants, and the cached redacted PDFs, box map and summary, see
 `deletion_renders.py`) and keeps the row and its audit records. The `deleted`
 record is written in the same transaction: ids and counts, never a value.
 

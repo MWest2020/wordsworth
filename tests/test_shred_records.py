@@ -115,7 +115,8 @@ def test_a_rerun_that_finds_a_key_and_a_render_writes_one_record_for_each(sessio
     new = _records(session, doc.id)[seen:]
     assert [(r.step, r.from_state, r.to_state) for r in new] == [
         ("remove-renders", "deleted", "deleted"), ("destroy-key", "deleted", "deleted")]
-    assert new[0].payload == {"actor": "op", "renders_removed": 1, "box_maps_removed": 1}
+    assert new[0].payload == {"actor": "op", "renders_removed": 1, "box_maps_removed": 1,
+                              "summaries_removed": 0}
     assert new[1].payload == {"actor": "op", "keys_destroyed": 1}
     assert (counts.keys_destroyed, counts.renders_removed) == (1, 1)
     assert verify_chain(session) == (True, None)
