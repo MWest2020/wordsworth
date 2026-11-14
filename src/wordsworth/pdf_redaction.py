@@ -99,8 +99,14 @@ def box_map_status(session: Session, document_id: UUID,
     return box_map, None
 
 
+def redacted_prefix(document_id: UUID) -> str:
+    """Every cached render of one document lives under this prefix; a deletion
+    removes all of them (`deletion_renders`)."""
+    return f"redacted/{document_id}/"
+
+
 def redacted_cache_key(document_id: UUID, render_version: int, boxmap_hash: str) -> str:
-    return f"redacted/{document_id}/{render_version}/{boxmap_hash}"
+    return f"{redacted_prefix(document_id)}{render_version}/{boxmap_hash}"
 
 
 def compute_box_map(

@@ -44,6 +44,7 @@ from .deletion import delete_document
 from .models import Dossier, DossierDocument, Topic
 from .object_store import ObjectStore
 from .pipeline import dossiers_of
+from .dossier_locks import lock_members
 from .search_index import SearchIndex
 
 
@@ -107,6 +108,13 @@ def delete_dossier(
         select(DossierDocument.document_id)
         .where(DossierDocument.dossier_id == dossier_id)
     ).scalars().all()
+    if not dry_run:
+        # Before the loop below appends its first record (#462): every
+        # member and its copies (`dossier_locks`). All members, not only the
+        # ones it will delete: the loop classifies them only after this, and
+        # an ingest adding a membership holds the row FOR SHARE until it
+        # commits, so the classification below cannot go stale under it.
+        lock_members(session, member_ids)
 
     report = DossierDeletionReport()
     for document_id in member_ids:

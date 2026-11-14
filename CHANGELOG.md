@@ -4,6 +4,59 @@
 
 ### Fixed
 
+- **A deletion racing `reanonymize` put the document back in the index**
+  (#463). `reanonymize` (the `reprocess` backfill) read the state without a
+  lock; a deletion that committed before it wrote the index entry and the
+  text saw both come back, with a `reanonymize` record after `deleted`. It
+  now locks the document row `FOR SHARE` before it reads the state, as
+  `process` does (#462): a deletion waits and then removes what it wrote, and
+  a `reanonymize` that finds a deletion under way waits and then skips it.
+
+- **A deletion during processing left the document's text in the index**
+  (#462). A deletion that started while `process` ran found no index entry
+  yet, waited for the audit chain lock, and recorded `deleted` after
+  `process` had indexed the document and stored its anonymized text; both
+  stayed. `process` now locks the document row `FOR SHARE` before it reads
+  the state, so the deletion waits and then removes the index entry and the
+  text, and a `process` that finds a deletion under way waits and then does
+  nothing. A dossier deletion locks all its members' rows, and those of
+  their superseded copies, before its first audit record: otherwise it
+  deadlocked with a `process` or an `ingest` (#452) of a member it had not
+  reached yet (and, with crypto-shred, with a deletion of such a copy).
+
+- **An ingest racing a deletion could bring the deleted original back**
+  (#452). `ingest` now locks the live document's row `FOR SHARE` after
+  `register_live` and re-checks it before `write_original`; a document deleted
+  (or superseded) in between is looked up again, so the bytes become a new
+  document and the deleted one gets no write and no key row. A deletion now
+  locks the document row (`FOR NO KEY UPDATE`) before it removes anything,
+  so an ingest cannot write the object back mid-deletion either (a dry run
+  takes no lock); a supersession (OCR recovery retiring a scan, `dedupe`)
+  locks the copy's row before its first audit record, the order an ingest
+  uses, so the two no longer deadlock. A deleted document that still holds
+  its content key is refused instead of written again: `POST /ingest`
+  reports that file as `error` with a fixed text pointing at
+  `wordsworth-release-deleted-keys`, `wordsworth-ingest` prints it and goes
+  on, and the server log gets one `ingest_refused` line (document id and
+  object key, never the filename).
+
+- **A deleted document kept its summary** (#455). Deletion now removes its
+  `document_summaries` row (LLM text derived from the document), counted as
+  `summaries_removed` in the `deleted` record, the API answer and the CLI
+  output; a dry run counts it. A rerun of `wordsworth-delete` over a document
+  deleted earlier removes a leftover summary and records it on the same
+  `remove-renders` record as the renders. `samenvatten --ontbrekend` skips
+  documents without stored text (a deleted document no longer makes the
+  CronJob exit 1), and a summary is stored only while the document's text is
+  still there.
+
+- **A deleted document's redacted PDF was still served** (#451). Deletion now
+  removes its cached renders (`redacted/<doc>/`) and its `box_maps` row,
+  counted as `renders_removed` and `box_maps_removed`;
+  `GET .../redacted.pdf` and `POST .../reveal.pdf` answer 410 for a deleted
+  document before looking at the cache. A rerun of `wordsworth-delete` over a
+  document deleted earlier removes what it left behind (`remove-renders`).
+
 - **A redacted PDF hid nothing on real documents.** pdfium reported a tight
   character box 0.01 pt high for every character of the Word-exported Gooise
   Meren Woo PDFs, so every redaction box had zero height and the page raster

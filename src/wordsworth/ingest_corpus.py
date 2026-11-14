@@ -24,15 +24,17 @@ from .openanonymiser_driver import OpenAnonymiserAnonymizer
 from .opensearch_index import OpenSearchIndex
 from .originals_io import originals_from_config
 from .models import Document
+from .ingest_lock import IngestRaceError
 from .pipeline import dossiers_of, ingest, process
 from .recovery import recover
 from .states import State
 
 
-def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
+def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State | None]]:
     """Ingest every ``*.pdf`` in ``corpus_dir`` through the full straat.
 
-    Returns ``(filename, terminal_state)`` per document. Backends are the real
+    Returns ``(filename, terminal_state)`` per document, ``None`` for a file
+    ingest refused (`IngestRaceError`). Backends are the real
     sovereign ones resolved from config; the anonymizer is the OpenAnonymiser
     GLiNER driver (structured PII via the deterministic pass it composes, entity
     PII via the service)."""
@@ -44,11 +46,19 @@ def ingest_corpus(corpus_dir: Path, dossier: str) -> list[tuple[str, State]]:
     embedder = OllamaEmbedder.from_config()
     index.ensure_ready()
 
-    results: list[tuple[str, State]] = []
+    results: list[tuple[str, State | None]] = []
     for pdf in sorted(corpus_dir.glob("*.pdf")):
         with session_factory() as session:
-            doc = ingest(session, store, pdf.read_bytes(), filename=pdf.name,
-                         dossier=dossier)
+            try:
+                doc = ingest(session, store, pdf.read_bytes(), filename=pdf.name,
+                             dossier=dossier)
+            except IngestRaceError as exc:
+                # Refused before any write; the ids are in the log (#452).
+                # No state (None): it counts as not indexed, and the run goes on.
+                session.rollback()
+                results.append((pdf.name, None))
+                print(f"{pdf.name}: refused: {exc.public}", file=sys.stderr)
+                continue
             session.commit()
             state = process(session, doc.id, store, anonymizer=anonymizer,
                             search_index=index, embedder=embedder)
