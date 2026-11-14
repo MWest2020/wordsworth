@@ -231,9 +231,9 @@ removing it, not retiring it — is `wordsworth-delete`, below.
 
 Removes a document's content: the stored object, its text, its cached
 redacted PDFs and box map (`renders_removed`, `box_maps_removed`), its
-pseudonyms, its mappings, its search-index entry and its grants. The
-`documents` row and its audit trail stay — the trail is append-only, the same
-reason a superseded copy keeps its row. There is **no undo**.
+summary (`summaries_removed`), its pseudonyms, its mappings, its search-index
+entry and its grants. The `documents` row and its audit trail stay — the trail
+is append-only, the same reason a superseded copy keeps its row. There is **no undo**.
 
 ```bash
 wordsworth-delete <document-id> [<document-id> ...] --actor <who> [--dry-run]
@@ -249,7 +249,10 @@ path, and stops before the first removal — no store, index or database
 change, and no `deleted` record. Each named document commits on its own, so a
 failure partway through a multi-document run leaves only the untouched ones
 for a rerun to finish; removing what a previous run already removed is a
-no-op.
+no-op. A rerun over an already-deleted document still removes a leftover
+render, box map or summary, and records that as one `remove-renders` audit
+record with `{actor, renders_removed, box_maps_removed, summaries_removed}`
+([deleting documents](../how-to/deleting-documents.md)).
 
 ### `--dossier`
 

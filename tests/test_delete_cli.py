@@ -55,7 +55,7 @@ def test_dry_run_prints_counts_removes_nothing_writes_no_record(
     assert report["dry_run"] is True
     assert report["results"] == [
         {"document_id": str(doc_id), "object": 1, "text": 1, "renders_removed": 0,
-         "box_maps_removed": 0, "pseudonyms": 0,
+         "box_maps_removed": 0, "summaries_removed": 0, "pseudonyms": 0,
          "mappings": 0, "index_entries": 1, "grants": 0}]
     # nothing removed
     assert store.exists(KEY)
