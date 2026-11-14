@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-07-12
+last_reviewed: 2026-11-13
 ---
 
 # Architecture reference
@@ -89,7 +89,11 @@ object store ([ADR-0008](../explanation/adr/0008-envelope-encryption-of-original
   per pseudonymisation domain (`src/wordsworth/document_keys.py`,
   `DocumentKeys`), so a KEK-per-organisation is a configuration change, not a
   rewrite. The unwrap cache is bounded in size and time (`key_cache_ttl`), so
-  a revoked or rotated KEK takes effect within that window.
+  a revoked or rotated KEK takes effect within that window. A *destroyed* key
+  takes effect at once: every unwrap, also a cache hit, reads the key row and
+  uses a cached key only while a row with the same key id exists. Deleting a
+  document deletes the key rows of the objects it ends the last claim on
+  (`src/wordsworth/deletion_keys.py`, crypto-shredding).
 - **`OriginalsStore`** (`src/wordsworth/originals_store.py`) is the only way
   an original is written or read: `put_original` never mints a second key for
   an object and never overwrites bytes a document can still read (its result

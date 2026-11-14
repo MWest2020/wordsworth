@@ -297,6 +297,24 @@ render, box map or summary, and records that as one `remove-renders` audit
 record with `{actor, renders_removed, box_maps_removed, summaries_removed}`
 ([deleting documents](../how-to/deleting-documents.md)).
 
+Each result carries `keys_destroyed`: the number of data keys of sealed
+originals the deletion destroyed (crypto-shredding), or with `--dry-run`
+would destroy. It is 0 for a legacy plaintext original, 2 for a document
+recovered by OCR (the scan and the OCR'd PDF), and 0 when another document
+that is not deleted still claims the object (a superseded copy). The command
+needs no key service for it: the key rows are deleted with SQL.
+
+```json
+{"dry_run": true, "results": [{"document_id": "…", "object": 1, "text": 1,
+  "renders_removed": 1, "box_maps_removed": 1, "summaries_removed": 1,
+  "pseudonyms": 3, "mappings": 3,
+  "index_entries": 1, "grants": 0, "keys_destroyed": 1}]}
+```
+
+Run again on a document that is already deleted, it destroys a key row left
+behind (documents deleted before crypto-shredding) and records `destroy-key`;
+see [deleting documents](../how-to/deleting-documents.md).
+
 ### `--dossier`
 
 ```bash
@@ -310,7 +328,15 @@ dossier, otherwise only its membership of this one goes. `--actor` and
 `--dry-run` are checked and behave the same way as above; the dry run reports
 which documents would be deleted, which would only be released, and the
 number of topics (`topics`) that would be removed; the output of a real run
-carries the same `topics` count.
+carries the same `topics` count. `keys_destroyed`, `renders_removed`,
+`box_maps_removed` and `summaries_removed` are sums over the deleted members (what they would lose,
+with `--dry-run`); released members keep theirs.
+
+```json
+{"dry_run": false, "results": [{"dossier_id": "…", "deleted": ["…", "…"],
+  "released": ["…"], "topics": 4, "keys_destroyed": 2, "renders_removed": 3,
+  "box_maps_removed": 2, "summaries_removed": 2}]}
+```
 
 See [deleting documents](../how-to/deleting-documents.md) for what goes, what
 stays, and `DELETE /documents/{id}` / `DELETE /dossiers/{id}` over the API.

@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-10-30
+last_reviewed: 2026-11-13
 ---
 
 # ADR 0008 — Envelope encryption of the original documents
@@ -89,6 +89,20 @@ can revoke its KEK and every one of its documents becomes unreadable at once.
 - **Backups**: a backup of the object store is useless without the key store;
   a backup of the key store without the KEK is useless too. Both must be backed
   up, and the KEK escrowed (ADR-0002 custody; key export in ADR-0009).
+- **Crypto-shredding does not reach database backups** (decision #429). A
+  database backup taken before a deletion still holds the deleted document's
+  wrapped data key; with it, the KEK and a copy of the object, the original
+  opens until that backup expires. On the homelab cluster both database
+  backups (the daily `document_keys` dump and the CNPG base backups with WAL)
+  keep 30 days; CNPG keeps the base backup that window needs, which can be a
+  day older, so a deleted original can be opened from a database backup for
+  up to about 31 days after the deletion. Shortening that window means shortening the database retention;
+  the how-to "deleting documents" names it.
+- **A key follows its object** (`originals-crypto-shred`, decision #428): a
+  deletion destroys a data key exactly when it ends the last claim on that
+  object, so deleting a superseded copy never destroys its survivor's key.
+  The unwrap cache checks the key row on every unwrap, so a destroyed key is
+  unusable on every replica at once.
 - **Key loss is data loss.** Losing the KEK, or a DEK and its escrow, loses the
   documents. That is the point of option C and the risk of it; escrow and a
   tested recovery are part of the work, not an afterthought.
