@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-13
+last_reviewed: 2026-11-14
 ---
 
 # Runbook: deleting a document
@@ -80,6 +80,17 @@ once (decision #428, default: the key follows the object). A document
 recovered by OCR has two sealed objects, the scan and the OCR'd PDF; it loses
 both keys (`keys_destroyed: 2`). A legacy plaintext original has no key:
 `keys_destroyed: 0`, and the deletion behaves as before.
+
+**The original scan stays in the object store today** (#454). Destroying the
+scan's key does not remove the scan object. A sealed scan is left as
+ciphertext under no key row: unreadable without a database backup from before
+the deletion, and removed only when someone runs `wordsworth-sealed-orphans
+--apply`. A legacy plaintext scan (every scan ingested before sealing was
+switched on) has no key and stays readable. **After `delete-removes-original-scan`
+is deployed**, a deletion also removes the scan object (counted as
+`original_scan`), and rerunning `wordsworth-delete` on a document deleted
+earlier removes a scan left behind; the change's `design.md` has the query
+that lists them.
 
 A copy and its survivor deleted at the same moment do not each keep the key
 "for the other": the deletion locks the document rows of that object key
