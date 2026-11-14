@@ -15,7 +15,8 @@ from shred_setup import KEY, CountingTransit, key_row, keys_over, originals, sea
 from wordsworth.audit import verify_chain
 from wordsworth.deletion import delete_document
 from wordsworth.document_keys import DocumentKeyRecord
-from wordsworth.models import AuditRecord
+from wordsworth.models import AuditRecord, BoxMap
+from wordsworth.pdf_redaction import redacted_cache_key
 from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
 
@@ -91,3 +92,30 @@ def test_a_rerun_over_a_deleted_document_destroys_a_left_key_and_records_it(sess
     session.commit()
     assert again.keys_destroyed == 0
     assert count() == before + 1  # nothing to destroy, nothing appended
+
+
+def test_a_rerun_that_finds_a_key_and_a_render_writes_one_record_for_each(session):
+    """Two records, not one: `remove-renders` (#453) and `destroy-key` keep
+    their own steps and payloads, in the same transaction."""
+    store, index = originals(), InMemoryIndex()
+    doc = register(session, KEY)
+    session.commit()
+    delete_document(session, doc.id, store, index, actor="t")
+    session.commit()
+    _put_row_back(session, doc.id)
+    session.add(BoxMap(document_id=doc.id, boxmap_hash="h" * 64,
+                       lists_hash=None, boxes=[]))
+    store.objects.put(redacted_cache_key(doc.id, 1, "h" * 64), b"%PDF-1.4")
+    session.commit()
+    seen = len(_records(session, doc.id))
+
+    counts = delete_document(session, doc.id, store, index, actor="op")
+    session.commit()
+
+    new = _records(session, doc.id)[seen:]
+    assert [(r.step, r.from_state, r.to_state) for r in new] == [
+        ("remove-renders", "deleted", "deleted"), ("destroy-key", "deleted", "deleted")]
+    assert new[0].payload == {"actor": "op", "renders_removed": 1, "box_maps_removed": 1}
+    assert new[1].payload == {"actor": "op", "keys_destroyed": 1}
+    assert (counts.keys_destroyed, counts.renders_removed) == (1, 1)
+    assert verify_chain(session) == (True, None)

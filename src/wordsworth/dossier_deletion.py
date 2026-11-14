@@ -63,10 +63,14 @@ class DossierDeletionReport:
     released: list[str] = field(default_factory=list)
     topics: int = 0
     keys_destroyed: int = 0
+    renders_removed: int = 0
+    box_maps_removed: int = 0
 
     def as_dict(self) -> dict[str, list[str] | int]:
         return {"deleted": self.deleted, "released": self.released,
-                "topics": self.topics, "keys_destroyed": self.keys_destroyed}
+                "topics": self.topics, "keys_destroyed": self.keys_destroyed,
+                "renders_removed": self.renders_removed,
+                "box_maps_removed": self.box_maps_removed}
 
 
 def _member_elsewhere(session: Session, document_id: UUID, dossier_id: UUID) -> bool:
@@ -119,6 +123,8 @@ def delete_dossier(
             counts = delete_document(session, document_id, store, index,
                                      actor=actor, dry_run=dry_run, keys=keys)
             report.keys_destroyed += counts.keys_destroyed
+            report.renders_removed += counts.renders_removed
+            report.box_maps_removed += counts.box_maps_removed
             report.deleted.append(str(document_id))
 
     report.topics = len(session.execute(

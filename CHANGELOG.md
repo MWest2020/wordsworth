@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **A deleted document's redacted PDF was still served** (#451). Deletion now
+  removes its cached renders (`redacted/<doc>/`) and its `box_maps` row,
+  counted as `renders_removed` and `box_maps_removed`;
+  `GET .../redacted.pdf` and `POST .../reveal.pdf` answer 410 for a deleted
+  document before looking at the cache. A rerun of `wordsworth-delete` over a
+  document deleted earlier removes what it left behind (`remove-renders`).
+
 - **A redacted PDF hid nothing on real documents.** pdfium reported a tight
   character box 0.01 pt high for every character of the Word-exported Gooise
   Meren Woo PDFs, so every redaction box had zero height and the page raster

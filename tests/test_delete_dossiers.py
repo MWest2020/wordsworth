@@ -116,7 +116,8 @@ def test_an_empty_dossier_is_removed_and_no_document_changes(session):
     session.commit()
 
     assert report.as_dict() == {"deleted": [], "released": [], "topics": 0,
-                                "keys_destroyed": 0}
+                                "keys_destroyed": 0, "renders_removed": 0,
+                                "box_maps_removed": 0}
     assert session.get(Dossier, empty.id) is None
     assert dossiers_of(session, doc.id) == [str(other.id)]
 

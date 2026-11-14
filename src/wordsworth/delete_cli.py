@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: MIT
 """`wordsworth-delete`: remove one or more documents' content, or a dossier.
 
+A document's content is its stored object, its text, its cached redacted PDFs
+and box map, its pseudonyms, its mappings, its index entry and its grants
+(`deletion.py`); the row and its audit trail stay.
+
 ``--dry-run`` reports the counts it would remove, using the exact same code
 path as a real run (`deletion.delete_document`), and stops before the first
 removal: nothing changes, and no `deleted` record is written. Without it, each
@@ -76,8 +80,9 @@ def main(argv: list[str] | None = None, *, session_factory=None, store=None,
     ap = argparse.ArgumentParser(
         prog="wordsworth-delete",
         description="Remove a document's content: the stored object, its "
-                    "text, its pseudonyms, its mappings, its index entry and "
-                    "its grants. The documents row and its audit trail stay. "
+                    "text, its cached redacted PDFs and box map, its "
+                    "pseudonyms, its mappings, its index entry and its "
+                    "grants. The documents row and its audit trail stay. "
                     "With --dossier, remove a dossier instead: its "
                     "memberships and the dossier row, deleting each member "
                     "that belongs to no other dossier.")
