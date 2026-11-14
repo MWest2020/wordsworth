@@ -194,7 +194,8 @@ def test_a_rerun_over_an_already_deleted_document_removes_leftovers(session):
         AuditRecord.document_id == doc.id, AuditRecord.step == "remove-renders")
     ).scalar_one()
     assert (rec.from_state, rec.to_state) == ("deleted", "deleted")
-    assert rec.payload == {"actor": "op", "renders_removed": 1, "box_maps_removed": 1}
+    assert rec.payload == {"actor": "op", "renders_removed": 1, "box_maps_removed": 1,
+                           "summaries_removed": 0}
     assert current_state(session, doc.id) == State.DELETED
     ok, bad = verify_chain(session)
     assert ok and bad is None

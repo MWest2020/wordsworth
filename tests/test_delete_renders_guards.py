@@ -13,7 +13,7 @@ from wordsworth.api import create_app
 from wordsworth.audit import current_state
 from wordsworth.deletion import delete_document
 from wordsworth.keys import InMemoryKeyProvider
-from wordsworth.models import AuditRecord, BoxMap, DocumentText
+from wordsworth.models import AuditRecord, BoxMap, DocumentSummary, DocumentText
 from wordsworth.object_store import InMemoryObjectStore, ObjectStoreError
 from wordsworth.pdf_redaction import redacted_cache_key
 from wordsworth.pipeline import register
@@ -44,6 +44,7 @@ def test_a_listing_failure_removes_nothing_and_keeps_the_state(session):
     store.put(redacted_cache_key(doc.id, 1, "h" * 64), b"%PDF-1.4")
     session.add(DocumentText(document_id=doc.id, anonymized_text="tekst"))
     session.add(_box_map(doc.id))
+    session.add(DocumentSummary(document_id=doc.id, text="samenvatting", model="t"))
     index.index(str(doc.id), "tekst", KEY)
     session.commit()
 
@@ -57,6 +58,7 @@ def test_a_listing_failure_removes_nothing_and_keeps_the_state(session):
     assert store.exists(redacted_cache_key(doc.id, 1, "h" * 64))
     assert session.get(DocumentText, doc.id) is not None
     assert session.get(BoxMap, doc.id) is not None
+    assert session.get(DocumentSummary, doc.id) is not None  # #455
     assert current_state(session, doc.id) == State.REGISTERED
     assert session.execute(select(AuditRecord).where(
         AuditRecord.document_id == doc.id, AuditRecord.step == "delete")
