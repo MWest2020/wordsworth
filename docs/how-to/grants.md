@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-07
+last_reviewed: 2026-11-14
 ---
 
 # Runbook: reveal grants
@@ -107,6 +107,10 @@ wordsworth grant show <grant_id>          # GET /grants/{id}
 wordsworth grant revoke <grant_id>        # POST /grants/{id}/revoke  (idempotent)
 ```
 After revocation, `POST /documents/{id}/reveal` with that grant returns 403.
+The `grant_revoked` record names who revoked it: the authenticated caller's
+label, or `onbekend` when auth is off, the same as `grant_issued` names who
+issued. Before #443 it always said `operator`, so a revoke recorded before
+that fix does not say who did it.
 
 ## Use a grant to reveal
 ```sh
