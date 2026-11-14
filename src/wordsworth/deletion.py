@@ -124,6 +124,12 @@ def delete_document(
     doc = session.get(Document, document_id)
     if doc is None:
         raise DeletionError(f"unknown document: {document_id}")
+    # Before anything irreversible: an ingest locks this row FOR SHARE before
+    # it writes the original (`pipeline.lock_live`, #452), so it cannot write
+    # the object back after it is removed below. NO KEY UPDATE, not UPDATE, so
+    # an audit append's KEY SHARE (through the foreign key) is not blocked.
+    session.execute(select(Document.id).where(Document.id == document_id)
+                    .with_for_update(key_share=True))
 
     counts = DeletionCounts()
     already_deleted = current_state(session, document_id) == State.DELETED
