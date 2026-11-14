@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-13
+last_reviewed: 2026-11-14
 ---
 
 # Runbook: deleting a document
@@ -80,6 +80,18 @@ once (decision #428, default: the key follows the object). A document
 recovered by OCR has two sealed objects, the scan and the OCR'd PDF; it loses
 both keys (`keys_destroyed: 2`). A legacy plaintext original has no key:
 `keys_destroyed: 0`, and the deletion behaves as before.
+
+**The original scan stays in the object store today** (#454). Destroying the
+scan's key does not remove the scan object. A sealed scan is left as
+ciphertext under no key row: unreadable without a database backup from before
+the deletion, and removed only when someone runs `wordsworth-sealed-orphans
+--apply`. A legacy plaintext scan (every scan ingested before sealing was
+switched on) has no key and stays readable. **After `delete-removes-original-scan`
+is deployed**, a deletion also removes the scan object (counted as
+`original_scan`), and rerunning `wordsworth-delete` on a document deleted
+earlier removes a scan left behind; see [Original scans of deleted
+documents](#original-scans-of-deleted-documents) below for the query that
+lists them.
 
 A copy and its survivor deleted at the same moment do not each keep the key
 "for the other": the deletion locks the document rows of that object key
@@ -359,6 +371,77 @@ with its own step and payload. A row
 the query lists but another live document still reads through (it re-ingested
 the same bytes) is left alone, and the output says `keys_destroyed: 0`. This
 is an operator step after the deployment, not part of the build.
+
+## Original scans of deleted documents
+
+**After `delete-removes-original-scan` is deployed.** A document recovered by
+OCR points at its OCR'd PDF; its original scan (the uploaded bytes, personal
+data in the clear) is named only in its `ocr` audit record, as
+`old_object_key`. Documents deleted before that change left the scan object
+in the store (#454). On 2026-11-14 production held 6 such documents, all
+without a key row for the scan.
+
+This query lists them (read-only): deleted documents whose scan no document
+that is not deleted still claims, by its own object key or as the scan of its
+own `ocr` record. `key_row` says whether a key row for the scan still exists.
+
+```sql
+BEGIN TRANSACTION READ ONLY;
+WITH state AS (
+  SELECT d.id AS document_id, d.object_key, latest.to_state
+  FROM documents d
+  JOIN LATERAL (
+    SELECT a.to_state FROM audit_records a
+    WHERE a.document_id = d.id
+    ORDER BY a.seq DESC LIMIT 1
+  ) latest ON true
+),
+scans AS (
+  SELECT DISTINCT a.document_id, a.payload->>'old_object_key' AS scan_key
+  FROM audit_records a
+  WHERE a.step = 'ocr' AND a.to_state = 'extractable'
+    AND a.payload ? 'old_object_key'
+),
+leftover AS (
+  SELECT s.document_id, s.scan_key, (k.object_key IS NOT NULL) AS key_row
+  FROM scans s
+  JOIN state st ON st.document_id = s.document_id AND st.to_state = 'deleted'
+  LEFT JOIN document_keys k ON k.object_key = s.scan_key
+  WHERE NOT EXISTS (
+          SELECT 1 FROM state o
+          WHERE o.object_key = s.scan_key AND o.to_state <> 'deleted')
+    AND NOT EXISTS (
+          SELECT 1 FROM scans s2
+          JOIN state o ON o.document_id = s2.document_id
+          WHERE s2.scan_key = s.scan_key
+            AND s2.document_id <> s.document_id
+            AND o.to_state <> 'deleted')
+)
+SELECT document_id, scan_key, key_row FROM leftover ORDER BY document_id;
+ROLLBACK;
+```
+
+The query cannot see the object store: whether the scan is still stored, and
+whether it is sealed or plaintext, is for the dry run. Run it over those ids,
+then the real run:
+
+```bash
+wordsworth-delete <document-id> [...] --actor <who> --dry-run   # original_scan: 1 if still stored
+wordsworth-delete <document-id> [...] --actor <who>
+```
+
+A rerun over an already-deleted document removes a scan object that is still
+stored and no longer claimed, and appends one audit record `deleted` →
+`deleted` with step `remove-original-scan` and the payload `{actor,
+original_scan}`. A key row it still finds is destroyed and recorded as
+`destroy-key`, leftover renders as `remove-renders`: each its own record, in
+the same transaction. A rerun with nothing to remove appends nothing.
+
+As with `remove-renders`, the object store is not in the transaction: if the
+scan is removed and the commit then fails, the removal is real but goes
+unrecorded, and the next rerun reports `original_scan: 0`.
+
+This is an operator step after the deployment, not part of the build.
 
 ## What is not here
 
