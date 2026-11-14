@@ -104,3 +104,23 @@ def log_topic_label(*, topic_id: UUID | str, outcome: str,
     )
     logger.log(logging.WARNING if error is not None else logging.INFO, line)
     return line
+
+
+def log_ingest_refused(*, document_id: UUID | str, object_key: str,
+                       attempts: int) -> str:
+    """One JSON line when `ingest` refuses because the document for these
+    bytes is not live (#452): its id and the content-addressed object key
+    (a sha256), never the filename -- a filename can be a name."""
+    line = json.dumps(
+        {
+            "event": "ingest_refused",
+            "document_id": str(document_id),
+            "object_key": object_key,
+            "attempts": attempts,
+            "level": "error",
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    logger.error(line)
+    return line

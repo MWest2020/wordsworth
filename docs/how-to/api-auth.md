@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-11-14
 ---
 
 # Runbook — optional API-key authentication
@@ -23,6 +23,9 @@ WORDSWORTH_API_KEYS="acceptance:sk_live_aaaaaaaa,mark:sk_live_bbbbbbbb"
 - Callers then send the header `X-API-Key: sk_live_aaaaaaaa` on every request
   except `/health` and `/metrics` (which stay open for probes).
 - A missing or unknown key returns **401**. Keys are never logged.
+- The `wordsworth` CLI sends its key from `$WORDSWORTH_API_KEY` (or `api_key`
+  in its config file) — see [the CLI reference](../reference/cli.md#api-key).
+  It has no flag for the key, so the key stays out of shell history.
 
 ## Effect
 

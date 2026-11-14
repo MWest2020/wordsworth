@@ -20,6 +20,14 @@ Waarom Origin en geen token: een token vergt sessiestatus die er niet is, en een
 formulier dat je zonder sessie moet kunnen openen. De Origin-controle is
 stateless en dicht voor precies dit geval. Wat hij NIET dicht doet staat hieronder
 bij `same_origin`.
+
+**Referrer-Policy and Origin are one decision** (#437). Until 2026-11-13 the
+console sent `no-referrer`. Under that policy a browser writes the Origin of a
+form POST as `null` (Fetch, "serializing a request origin"), and `null` was
+refused: every console form, login included, gave 403 in a real browser while
+curl and the tests, which send no Origin or a real one, stayed green. The policy
+is now `same-origin`: our own posts carry our real Origin, and a request to
+another site still gets no Referer at all, so search terms in a URL go nowhere.
 """
 from __future__ import annotations
 
@@ -39,14 +47,16 @@ HEADERS = {
     # Dubbelop met frame-ancestors, voor browsers die dat nog niet kennen.
     "x-frame-options": "DENY",
     "x-content-type-options": "nosniff",
-    "referrer-policy": "no-referrer",
+    # same-origin, not no-referrer: under no-referrer the browser sends
+    # `Origin: null` on our own form posts, and `same_origin` refuses that.
+    "referrer-policy": "same-origin",
 }
 
 
 _DEFAULT_PORT = {"http": 80, "https": 443}
 
 
-def same_origin(origin: str, host: str) -> bool:
+def same_origin(origin: str, host: str, fetch_site: str = "") -> bool:
     """Komt dit verzoek van onze eigen pagina?
 
     Een ontbrekende Origin telt als eigen: curl, een CLI en de tests sturen hem
@@ -61,12 +71,27 @@ def same_origin(origin: str, host: str) -> bool:
     the suffix any hostname ending in ours did. A Host without a port is taken
     to be on the default port of the scheme the browser used, because that is
     how a browser writes an Origin.
+
+    `Origin: null` is refused, with one exception: `Sec-Fetch-Site:
+    same-origin` beside it (`fetch_site`). The browser computes that header
+    itself, and no page can set or change it: a `Sec-` name is forbidden to
+    fetch() and XHR, and a form sets no headers at all. A browser or extension
+    that still forces no-referrer on our own page therefore keeps working. What
+    stays refused: `null` alone (a browser too old to send Fetch Metadata), and
+    `null` beside any other value (a page elsewhere, a sandboxed frame, a
+    `data:` page all get `cross-site`). A post that a page elsewhere
+    sends through a redirect on our host arrives as `null` too, but the browser
+    judges `Sec-Fetch-Site` over every hop, so it says `cross-site`. `same-site`
+    is refused on purpose: a sibling host under the same registrable domain is
+    not us.
     """
     if not origin:
         return True
+    if origin.strip() == "null":
+        return fetch_site.strip().lower() == "same-origin"
     o = urlsplit(origin.strip())
     if o.scheme not in _DEFAULT_PORT or not o.hostname:
-        return False            # "null", a file: page, anything opaque
+        return False            # a file: page, anything opaque
     try:
         h = urlsplit("//" + host.strip())
         o_port = o.port or _DEFAULT_PORT[o.scheme]
@@ -89,7 +114,8 @@ class ConsoleSafety:
             return
         headers = {k.decode(): v.decode() for k, v in scope.get("headers", [])}
         if scope.get("method") == "POST" and not same_origin(
-                headers.get("origin", ""), headers.get("host", "")):
+                headers.get("origin", ""), headers.get("host", ""),
+                headers.get("sec-fetch-site", "")):
             await JSONResponse({"detail": "cross-site request refused"},
                                status_code=403)(scope, receive, send)
             return

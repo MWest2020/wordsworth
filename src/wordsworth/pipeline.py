@@ -30,6 +30,8 @@ from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
+from .ingest_lock import (LIVE_ATTEMPTS, IngestRaceError, lock_for_process,  # noqa: F401
+                          lock_live)
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
@@ -149,8 +151,16 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
     key = "documents/" + digest
     # Content already ingested is one document, not a second. Delivering it into
     # another dossier adds a membership; that is the normal case, not an error.
-    doc = register_live(session, key, domain, filename, source_url=source_url,
-                        fetched_at=fetched_at, source_sha256=digest)
+    # `register_live` reads without a lock, so a deletion can commit before the
+    # write (#452); `lock_live` serialises against it and a document no longer
+    # live is looked up again: deleted bytes ingested again are a new document.
+    for _ in range(LIVE_ATTEMPTS):
+        doc = register_live(session, key, domain, filename, source_url=source_url,
+                            fetched_at=fetched_at, source_sha256=digest)
+        if lock_live(session, doc.id, key):
+            break
+    else:
+        raise IngestRaceError(doc.id, key)
     wrote = write_original(session, store, doc.id, key, pdf_bytes)
     try:
         if dossier:
@@ -273,7 +283,9 @@ def process(
     """
     threshold = threshold if threshold is not None else settings.born_digital_threshold
     anonymizer = anonymizer or DeterministicAnonymizer()
-    doc = session.get(Document, document_id)
+    # The row before the state (#462): a deleted document reads `deleted`
+    # here and falls through every step below, writing nothing.
+    doc = lock_for_process(session, document_id)
     state = current_state(session, document_id)
     text: str | None = None
     raw: bytes | None = None
@@ -450,7 +462,10 @@ def reanonymize(
     blanks a document nor leaves clear PII. Only meaningful for INDEXED/ANONYMIZED
     documents; any other state is a no-op. Idempotent: stable keyed pseudonyms and
     an upsert-by-id index mean re-running yields the same text and one entry."""
-    doc = session.get(Document, document_id)
+    # The row before the state, as `process` (#463): a deletion either
+    # committed first -- `deleted` is no state to backfill -- or waits for
+    # this commit and then removes the entry and text written below.
+    doc = lock_for_process(session, document_id)
     if doc is None:
         raise ValueError("unknown document")
     state = current_state(session, document_id)

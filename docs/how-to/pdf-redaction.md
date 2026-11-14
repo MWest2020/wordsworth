@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-10-25
+last_reviewed: 2026-11-13
 ---
 
 # Runbook: the redacted PDF
@@ -41,8 +41,10 @@ Responses:
 |---|---|
 | 200 | the redacted PDF |
 | 404 | unknown document |
+| 410 `"document deleted"` | the document is deleted — checked before the cache; the deletion removed its renders and box map ([deleting documents](deleting-documents.md#the-redacted-pdf-of-a-deleted-document)) |
 | 409 `"no box map yet..."` | not processed in reversible mode, or the last run hit `value-not-located` |
 | 409 `"stale"` | the current detection lists differ from the ones the box map was made under |
+| 409 `"document is superseded by ..."` | a retired copy; fetch the survivor named in the message (same as `reveal.pdf`) |
 
 A `stale` response means the lists moved (git change, redeploy) since this
 document's box map was built — not necessarily that the document itself is
@@ -58,7 +60,7 @@ curl -XPOST $API/documents/<doc>/reveal.pdf -H 'content-type: application/json' 
 ```
 
 The same grant and the same gates as [`/reveal`](grants.md) — a document that
-has no box map yet also answers 409 here. The granted type is drawn in clear,
+has no box map yet also answers 409 here, a deleted one 410. The granted type is drawn in clear,
 straight from the original page (nothing is decrypted to render it: the box
 for that type is simply left unpainted, so the original pixels and the
 original invisible text pass through); every other type keeps its box and
@@ -155,8 +157,36 @@ Scanned documents use the existing OCR text layer
 (`object_key` repointed by the OCR recovery step) — there is no separate OCR
 path for redaction.
 
-## Not decided here
+## In the console
 
-Whether and how the console embeds these two views is a separate, undecided
-question (see the `pdf-redaction` proposal's open questions) — this runbook
-covers the two HTTP endpoints only.
+The console document page (`/console/documents/{id}`) links both views
+(change `console-pdf-views`); it embeds no viewer, the browser opens the PDF.
+
+- **Gelakte PDF** links `GET /documents/{id}/redacted.pdf` when the document
+  has a box map made under the current detection lists. Otherwise the page
+  says why not: no box map yet, or a stale one. The page and the route make
+  that check in one function, `pdf_redaction.box_map_status`, so they cannot
+  disagree.
+- **Onthul als PDF**, on every active grant row, posts
+  `{"grant_id": ..., "types": [the checked types]}` to
+  `POST /documents/{id}/reveal.pdf` (`static/console_pdf.js`) and opens the
+  returned PDF from an in-memory blob. The browser may block that window after
+  the render; the "Open de onthulde PDF" link in the status line always works.
+  The button is disabled, with the reason next to it, when there is no box map
+  or the box map is stale (`reveal.pdf` itself does not yet refuse a stale box
+  map: #438).
+- **Without an object store** the two PDF routes are not mounted (`serve` can
+  run without one). The page then says "PDF's zijn op deze installatie niet
+  beschikbaar" and shows no reveal-PDF button.
+
+Some refusals only a render can find, so the link or button is there and the
+route refuses: a box map from before the char-box fix (409 `box map unusable`,
+see above) and an unreachable key service for the encrypted original
+(503 `key service unavailable`). The page shows the route's answer: "Geweigerd"
+for 401/403, "Niet gelukt" for anything else.
+
+Both requests go to the API routes above with the console cookie: the
+redacted PDF through the corpus-read check, the reveal PDF through the grant's
+`authorize()` and its audit record (`view=pdf`). The console adds no
+authorisation code. The reveal PDF is rendered fresh on every call, answered
+with `Cache-Control: no-store`, and never written to the object store.

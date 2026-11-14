@@ -96,7 +96,8 @@ totals — never a value, a page text or a context window.
 **Access path and credentials for the live run:** the operator runs this on
 the host where the service is deployed, through the service's own entry
 points above — `wordsworth reprocess --all` or `POST /reprocess` directly.
-The API key goes in `X-API-Key` (see [api-auth](api-auth.md)); it and the
+The API key goes in `X-API-Key` (see [api-auth](api-auth.md); the CLI reads it
+from `$WORDSWORTH_API_KEY`); it and the
 OpenBao token used to unseal/reach OpenBao for the reversible driver's keys
 come from SOPS or OpenBao, never from a PR, the repo or a log line. The
 by-type counts (never a value) are what goes into the wordsworth#261

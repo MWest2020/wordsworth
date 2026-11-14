@@ -67,8 +67,46 @@ def boxes_of(box_map: BoxMap) -> list[Box]:
     return [Box(row["page"], Rect(*row["rect"]), row["token"]) for row in box_map.boxes]
 
 
+#: Why a document's redacted PDF cannot be served (`box_map_status`).
+NO_BOX_MAP = "no-box-map"
+STALE = "stale"
+
+
+def current_lists_hash() -> str | None:
+    """The hash of the detection lists as currently configured."""
+    from .config import settings
+    from .detection_lists import DetectionLists
+
+    return DetectionLists.load(settings.detection_lists_dir).hash
+
+
+def box_map_status(session: Session, document_id: UUID,
+                   lists_hash: str | None) -> tuple[BoxMap | None, str | None]:
+    """``(box_map, None)`` when the box map is present and current, else
+    ``(box_map_or_None, NO_BOX_MAP | STALE)``. The one check behind both
+    ``GET .../redacted.pdf`` and the console's link to it.
+
+    Compared against the lists AS CURRENTLY CONFIGURED, not against the
+    document's own audit trail: those two are the same number right after
+    `reanonymize` runs, by construction, so comparing a document to itself
+    could never detect staleness. Staleness is the lists having moved on
+    git/deploy since the box map was made."""
+    box_map = session.get(BoxMap, document_id)
+    if box_map is None:
+        return None, NO_BOX_MAP
+    if box_map.lists_hash != lists_hash:
+        return box_map, STALE
+    return box_map, None
+
+
+def redacted_prefix(document_id: UUID) -> str:
+    """Every cached render of one document lives under this prefix; a deletion
+    removes all of them (`deletion_renders`)."""
+    return f"redacted/{document_id}/"
+
+
 def redacted_cache_key(document_id: UUID, render_version: int, boxmap_hash: str) -> str:
-    return f"redacted/{document_id}/{render_version}/{boxmap_hash}"
+    return f"{redacted_prefix(document_id)}{render_version}/{boxmap_hash}"
 
 
 def compute_box_map(

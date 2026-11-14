@@ -166,7 +166,7 @@ def test_export_docs_downloads_zip(tmp_path, monkeypatch):
     seen = {}
 
     def fake_urlopen(url, timeout=0):
-        seen["url"] = url
+        seen["url"] = url.full_url
         return _FakeResp(b"PK\x03\x04zip")
 
     monkeypatch.setattr(client.urllib.request, "urlopen", fake_urlopen)
@@ -180,7 +180,7 @@ def test_export_ranking_downloads_csv(tmp_path, monkeypatch):
     seen = {}
 
     def fake_urlopen(url, timeout=0):
-        seen["url"] = url
+        seen["url"] = url.full_url
         return _FakeResp(b"rank,document_id,score,object_key\n1,d1,9.0,k1\n")
 
     monkeypatch.setattr(client.urllib.request, "urlopen", fake_urlopen)

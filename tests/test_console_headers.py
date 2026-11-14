@@ -21,7 +21,15 @@ def test_the_console_cannot_be_framed(session_factory):
     assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
     assert r.headers["x-frame-options"] == "DENY"
     assert r.headers["x-content-type-options"] == "nosniff"
-    assert r.headers["referrer-policy"] == "no-referrer"
+
+
+def test_the_referrer_policy_lets_our_own_posts_carry_their_origin(session_factory):
+    """#437: under `no-referrer` a browser sends `Origin: null` on every form
+    POST, and the origin check refuses that, so no console form worked in a
+    real browser. `same-origin` keeps the real Origin on our own posts and
+    still sends no Referer to another site."""
+    r = _app(session_factory).get("/console/login")
+    assert r.headers["referrer-policy"] == "same-origin"
 
 
 def test_the_api_itself_is_untouched(session_factory):
@@ -47,6 +55,41 @@ def test_a_same_site_post_still_works(session_factory):
     r = c.post("/console/login", data={"key": "k"},
                headers={"Origin": "https://testserver"})
     assert r.status_code == 303
+
+
+def _login(session_factory, **headers):
+    return _app(session_factory).post("/console/login", data={"key": "k"},
+                                      headers=headers)
+
+
+def test_a_null_origin_alone_is_refused(session_factory):
+    """`null` is what a sandboxed frame or a data: page sends. Without Fetch
+    Metadata beside it nothing says it came from us."""
+    r = _login(session_factory, Origin="null")
+    assert r.status_code == 403
+    assert "set-cookie" not in {h.lower() for h in r.headers}
+
+
+def test_a_null_origin_from_our_own_page_is_allowed(session_factory):
+    """A browser that still forces no-referrer on our page sends `null`, and
+    beside it `Sec-Fetch-Site: same-origin`, which no page can set."""
+    r = _login(session_factory, **{"Origin": "null", "Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 303
+
+
+def test_a_null_origin_from_elsewhere_is_refused(session_factory):
+    for site in ("cross-site", "same-site", "none"):
+        r = _login(session_factory, **{"Origin": "null", "Sec-Fetch-Site": site})
+        assert r.status_code == 403, site
+        assert "set-cookie" not in {h.lower() for h in r.headers}
+
+
+def test_a_foreign_origin_is_refused_whatever_fetch_site_says(session_factory):
+    """Sec-Fetch-Site only rescues `null`. A real foreign Origin is decided on
+    the Origin alone."""
+    r = _login(session_factory, **{"Origin": "https://evil.example",
+                                   "Sec-Fetch-Site": "same-origin"})
+    assert r.status_code == 403
 
 
 def test_a_request_without_an_origin_is_allowed(session_factory):
@@ -89,5 +132,10 @@ def test_another_port_or_an_opaque_origin_is_refused():
     assert not same_origin("http://wordsworth.westerweel.work",
                            "wordsworth.westerweel.work:443")
     assert not same_origin("null", "wordsworth.westerweel.work")
+    assert not same_origin("null", "wordsworth.westerweel.work", "cross-site")
+    assert not same_origin("null", "wordsworth.westerweel.work", "same-site")
+    assert same_origin("null", "wordsworth.westerweel.work", "same-origin")
+    assert not same_origin("https://evil.example", "wordsworth.westerweel.work",
+                           "same-origin")
     assert not same_origin("file://", "wordsworth.westerweel.work")
     assert not same_origin("https://wordsworth.westerweel.work", "wordsworth.westerweel.work:abc")
