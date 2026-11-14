@@ -1890,7 +1890,7 @@ def create_app(
                 gs = _grant_store(session)
                 if gs.get(grant_id) is None:
                     raise HTTPException(status_code=404, detail="unknown grant")
-                revoke_grant(gs, _resolve_audit(session), grant_id, actor="operator")
+                revoke_grant(gs, _resolve_audit(session), grant_id, actor=_actor(request))
                 session.commit()
                 grant = gs.get(grant_id)
             return _grant_response(grant)
