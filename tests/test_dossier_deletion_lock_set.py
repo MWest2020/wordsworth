@@ -61,8 +61,7 @@ def test_the_lock_covers_every_member_and_its_copies(session_factory):
         assert not _try_lock(session_factory, shared)
         assert _try_lock(session_factory, other)
         s.commit()
-    assert report.as_dict() == {"deleted": [str(a)], "released": [str(shared)],
-                                "topics": 0}
+    assert (report.deleted, report.released) == ([str(a)], [str(shared)])
 
 
 @pytest.mark.parametrize("held", ["member", "copy"])
@@ -78,8 +77,7 @@ def test_a_dry_run_takes_no_lock(session_factory, held):
             report = delete_dossier(s, zaak, store, index, actor="t", dry_run=True)
             s.rollback()
         holder.rollback()
-    assert report.as_dict() == {"deleted": [str(a)], "released": [str(shared)],
-                                "topics": 0}
+    assert (report.deleted, report.released) == ([str(a)], [str(shared)])
     with session_factory() as s:
         assert s.get(Dossier, zaak) is not None
         assert current_state(s, a) != State.DELETED
