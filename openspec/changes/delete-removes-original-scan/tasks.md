@@ -118,8 +118,17 @@ superseded copy whose `object_key` is S, N a later ingest of S's bytes.
       - in "Original scans of deleted documents", drop the "after … is
         deployed" markers and the "today" note in the crypto-shredding
         section.
-- [ ] `docs/reference/cli.md`: `original_scan` in the `wordsworth-delete`
-      output.
+- [ ] `docs/reference/cli.md` (the `wordsworth-delete` section, about
+      lines 300-338): add `original_scan` to the single-document JSON
+      example and to the `--dossier` JSON example, and to the prose on which
+      fields are present and which are summed over the deleted members.
+      Proved by: `grep -n original_scan docs/reference/cli.md` shows it in
+      both examples and in the prose.
+- [ ] `docs/how-to/deleting-documents.md`, section "Original scans of deleted
+      documents" (about line 377): remove the opening "After
+      `delete-removes-original-scan` is deployed." and write the section in
+      the present tense. Proved by: `grep -n "is deployed"
+      docs/how-to/deleting-documents.md` finds no such marker.
 - [ ] `docs/reference/architecture.md` (deletion) if it lists what a deletion
       removes.
 - [ ] `uv run ruff check src/ tests/` and the full suite against a private
