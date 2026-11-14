@@ -8,8 +8,8 @@ PDF SHALL be **stored as a new content-addressed object** (object keys are
 and the document's `object_key` SHALL be updated to that new key — recovery
 SHALL NOT overwrite or delete the original scanned object. The scan object SHALL
 stay while the document is not deleted, and SHALL be removed when the document
-is deleted (`document-deletion`, "Deleting a document removes its original
-scan"). The document SHALL then be
+is deleted, unless another document that is not deleted still claims it
+(`document-deletion`, "Deleting a document removes its original scan"). The document SHALL then be
 re-classified by the same characters-per-page threshold via `profile_pdf` on that
 PDF: at/above threshold it becomes `extractable` (the normal extract step fetches
 by the updated key and reads the OCR text layer); below, it remains
