@@ -52,6 +52,11 @@ class OriginalsStore:
         self.objects = objects
         self._keys = keys
 
+    @property
+    def keys(self) -> DocumentKeys:
+        """The key store, for a deletion to evict its unwrap cache."""
+        return self._keys
+
     # --- ObjectStore protocol: delegate to `.objects`, except `get` -------
     # (ADR-0008 + originals-ingest-seam): an `OriginalsStore` can go wherever
     # a plain `store` goes today, for objects that are not originals. `get`
