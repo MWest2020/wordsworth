@@ -462,7 +462,10 @@ def reanonymize(
     blanks a document nor leaves clear PII. Only meaningful for INDEXED/ANONYMIZED
     documents; any other state is a no-op. Idempotent: stable keyed pseudonyms and
     an upsert-by-id index mean re-running yields the same text and one entry."""
-    doc = session.get(Document, document_id)
+    # The row before the state, as `process` (#463): a deletion either
+    # committed first -- `deleted` is no state to backfill -- or waits for
+    # this commit and then removes the entry and text written below.
+    doc = lock_for_process(session, document_id)
     if doc is None:
         raise ValueError("unknown document")
     state = current_state(session, document_id)
