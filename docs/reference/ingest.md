@@ -100,7 +100,9 @@ Processing (`process`: profile, extract, anonymize, index) locks the row
 arrives while a document is processed waits until processing commits, and
 then removes what it wrote: the index entry and the stored text. A deletion
 already under way makes processing wait; it then reads `deleted` and does
-nothing. A dossier deletion locks all its members' rows, and the rows of
+nothing. Re-anonymizing (`reanonymize`, the `reprocess` backfill) takes the
+same lock the same way (#463), so a deletion cannot be undone by a backfill
+that read the document just before it. A dossier deletion locks all its members' rows, and the rows of
 their superseded copies, before its first audit record, so it does not
 deadlock with either, nor with a deletion of such a copy.
 
