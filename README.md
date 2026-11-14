@@ -97,6 +97,11 @@ wordsworth state <document-id>                       # current pipeline state
 wordsworth meta <document-id>                        # duration, PII counts, step trail
 ```
 
+With API-key authentication on, give the CLI its key through the environment
+(`export WORDSWORTH_API_KEY=…`, from your secret store) or as `api_key` in the
+config file; it is sent as `X-API-Key`. There is no flag for it, so it stays out
+of shell history ([details](docs/reference/cli.md#api-key)).
+
 Without the install step, point at the API per call or via the environment:
 
 ```bash

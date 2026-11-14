@@ -10,10 +10,14 @@ Grants gate the key-gated reveal endpoint per PII type. They are **shareable**
 reveal stops working immediately). Every issue/revoke is recorded in the
 key-lifecycle audit stream.
 
-> **Auth caveat.** This is an operator/admin surface with **no caller
-> authentication yet** — the API is tailnet-internal and the `grant_id` is a
-> bearer capability (anyone holding it can reveal what it allows). A real auth
-> model is a pending decision; treat `grant_id`s as secrets until then.
+> **Auth.** With API-key authentication on (`WORDSWORTH_API_KEYS`, see
+> [api-auth](api-auth.md)) every grant route needs a valid key, only the labels
+> in `WORDSWORTH_GRANT_ISSUER_LABELS` may issue or revoke (see
+> [who may issue a grant](#who-may-issue-a-grant)), and a reveal is honoured
+> only for the caller the grant names as recipient. Without auth, the
+> tailnet-internal mode, none of that applies: anyone who reaches the API can
+> issue and revoke, and a `grant_id` is a bearer capability (anyone holding it
+> can reveal what it allows). In that mode, treat `grant_id`s as secrets.
 
 ## Issue
 
