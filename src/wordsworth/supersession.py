@@ -46,7 +46,13 @@ def supersede(session: Session, copy_id: UUID, survivor_id: UUID, *, actor: str,
     object another document already holds. The copy keeps its own key -- the
     scan is what it is -- and the record says which object made it a copy.
     """
-    copy = session.get(Document, copy_id)
+    # The copy's row first, before the index and before any audit append (the
+    # chain's advisory lock): an ingest holds this row FOR SHARE and then
+    # appends (`ingest_lock.lock_live`, #452), so locking it only at the
+    # `superseded_by` update below, after the appends, deadlocked. Re-read, so
+    # the checks below see a supersession that committed while this waited.
+    copy = session.get(Document, copy_id, populate_existing=True,
+                       with_for_update={"key_share": True})
     survivor = session.get(Document, survivor_id)
     if copy is None or survivor is None:
         raise SupersessionError("both documents have to exist")

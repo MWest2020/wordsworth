@@ -30,6 +30,7 @@ from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
+from .ingest_lock import LIVE_ATTEMPTS, IngestRaceError, lock_live  # noqa: F401
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
@@ -149,8 +150,16 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
     key = "documents/" + digest
     # Content already ingested is one document, not a second. Delivering it into
     # another dossier adds a membership; that is the normal case, not an error.
-    doc = register_live(session, key, domain, filename, source_url=source_url,
-                        fetched_at=fetched_at, source_sha256=digest)
+    # `register_live` reads without a lock, so a deletion can commit before the
+    # write (#452); `lock_live` serialises against it and a document no longer
+    # live is looked up again: deleted bytes ingested again are a new document.
+    for _ in range(LIVE_ATTEMPTS):
+        doc = register_live(session, key, domain, filename, source_url=source_url,
+                            fetched_at=fetched_at, source_sha256=digest)
+        if lock_live(session, doc.id, key):
+            break
+    else:
+        raise IngestRaceError(doc.id, key)
     wrote = write_original(session, store, doc.id, key, pdf_bytes)
     try:
         if dossier:
