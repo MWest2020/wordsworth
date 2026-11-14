@@ -10,9 +10,15 @@
   (or superseded) in between is looked up again, so the bytes become a new
   document and the deleted one gets no write and no key row. A deletion now
   locks the document row (`FOR NO KEY UPDATE`) before it removes anything,
-  so an ingest cannot write the object back mid-deletion either. A deleted
-  document that still holds its content key is refused (`IngestRaceError`,
-  pointing at `wordsworth-release-deleted-keys`) instead of written again.
+  so an ingest cannot write the object back mid-deletion either (a dry run
+  takes no lock); a supersession (OCR recovery retiring a scan, `dedupe`)
+  locks the copy's row before its first audit record, the order an ingest
+  uses, so the two no longer deadlock. A deleted document that still holds
+  its content key is refused instead of written again: `POST /ingest`
+  reports that file as `error` with a fixed text pointing at
+  `wordsworth-release-deleted-keys`, `wordsworth-ingest` prints it and goes
+  on, and the server log gets one `ingest_refused` line (document id and
+  object key, never the filename).
 
 - **A deleted document kept its summary** (#455). Deletion now removes its
   `document_summaries` row (LLM text derived from the document), counted as

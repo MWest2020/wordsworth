@@ -126,15 +126,17 @@ def delete_document(
         raise DeletionError(f"unknown document: {document_id}")
 
     counts = DeletionCounts()
+    if not dry_run:
+        # Before anything irreversible: an ingest locks this row FOR SHARE
+        # before it writes the original (`ingest_lock.lock_live`, #452), so it
+        # cannot write the object back after it is removed below. NO KEY
+        # UPDATE, not UPDATE: an audit append's KEY SHARE (the foreign key) is
+        # not blocked. Re-read, so the key and state below are not stale.
+        # crypto-shred's `doomed` takes this lock itself, ordered with copies.
+        doc = session.get(Document, document_id, populate_existing=True,
+                          with_for_update={"key_share": True})
     already_deleted = current_state(session, document_id) == State.DELETED
     former_key = doc.object_key
-    # Before anything irreversible: an ingest locks this row FOR SHARE before
-    # it writes the original (`pipeline.lock_live`, #452), so it cannot write
-    # the object back after it is removed below. NO KEY UPDATE, not UPDATE, so
-    # an audit append's KEY SHARE (through the foreign key) is not blocked.
-    # crypto-shred's `doomed` takes this lock itself, ordered with the copies.
-    session.execute(select(Document.id).where(Document.id == document_id)
-                    .with_for_update(key_share=True))
 
     counts.index_entries = int(index.exists(str(document_id)))
     renders = plan_renders(session, document_id, store, counts)  # reads only

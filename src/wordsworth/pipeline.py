@@ -30,6 +30,7 @@ from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
+from .ingest_lock import LIVE_ATTEMPTS, IngestRaceError, lock_live  # noqa: F401
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
@@ -152,16 +153,13 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
     # `register_live` reads without a lock, so a deletion can commit before the
     # write (#452); `lock_live` serialises against it and a document no longer
     # live is looked up again: deleted bytes ingested again are a new document.
-    for _ in range(_LIVE_ATTEMPTS):
+    for _ in range(LIVE_ATTEMPTS):
         doc = register_live(session, key, domain, filename, source_url=source_url,
                             fetched_at=fetched_at, source_sha256=digest)
         if lock_live(session, doc.id, key):
             break
     else:
-        raise IngestRaceError(
-            f"document {doc.id} is not live for {key} after {_LIVE_ATTEMPTS} "
-            "attempts; a deleted document still holding its key is released "
-            "by wordsworth-release-deleted-keys")
+        raise IngestRaceError(doc.id, key)
     wrote = write_original(session, store, doc.id, key, pdf_bytes)
     try:
         if dossier:
@@ -173,38 +171,6 @@ def ingest(session: Session, store: ObjectStore, pdf_bytes: bytes,
             store.delete(key)
         raise
     return doc
-
-
-#: How often `ingest` looks the live document up again when the one it found
-#: stopped being live before it could lock it (#452). One retry covers a
-#: deletion or supersession; a third failure is not a race, it is a refusal.
-_LIVE_ATTEMPTS = 3
-
-
-class IngestRaceError(RuntimeError):
-    """`ingest` found no document it could lock while it is still live."""
-
-
-def lock_live(session: Session, document_id: UUID, object_key: str) -> bool:
-    """Lock the document row FOR SHARE and say whether it is still the live
-    document for ``object_key``: not superseded, not deleted, key not released.
-
-    FOR SHARE conflicts with the FOR NO KEY UPDATE a deletion takes before it
-    removes anything, so a deletion either commits first -- and the re-read
-    below, a fresh statement under READ COMMITTED, sees it -- or waits for
-    this transaction and then removes what it wrote. It does not conflict
-    with the KEY SHARE an audit append takes through the foreign key, and the
-    order is a deletion's: this row first, the chain's advisory lock after.
-    Held until the caller commits, which every caller does right after
-    `ingest`: never across extraction or OCR.
-    """
-    doc = session.execute(
-        select(Document).where(Document.id == document_id)
-        .with_for_update(read=True)
-        .execution_options(populate_existing=True)
-    ).scalar_one()
-    return (doc.object_key == object_key and doc.superseded_by is None
-            and current_state(session, document_id) != State.DELETED)
 
 
 def live_document_for(session: Session, object_key: str) -> Document | None:

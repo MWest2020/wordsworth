@@ -45,6 +45,7 @@ from .object_store import ObjectStore
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
+from .ingest_lock import IngestRaceError
 from .pipeline import (
     current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
     live_document_for, process, register_live,
@@ -1242,6 +1243,11 @@ def create_app(
                         "indexed": indexed,
                         "results": [r.model_dump() for r in results],
                     })
+                except IngestRaceError as exc:
+                    # Refused, not failed: the fixed text names the way out;
+                    # the ids are already in the server log (#452).
+                    results.append(IngestResult(
+                        filename=f.filename, state="error", error=exc.public))
                 except Exception as exc:  # fail-hard; carry no document text out
                     # A transient downstream outage (after in-pipeline retries)
                     # leaves the document resumable — not indexed, no clear PII —
