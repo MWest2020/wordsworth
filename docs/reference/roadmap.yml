@@ -36,5 +36,6 @@ done_means:
   - {item: "Console for the key user: deleted documents hidden, a dossier home (built in #426; live after the next deploy)", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/426"}
   - {item: "Readable topics (named by the language model) and search that shows the matching passage (built in #433 and #432; live after the next deploy, label quality judged at the rehearsal)", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/433"}
   - {item: "Share from the console with layered anonymisation: proposals #439/#440 merged, PDF views built (#436); the build waits for Mark (#416, #417, #444) and the read gate #446", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/440"}
+  - {item: "Only corpus readers reach the corpus over the API and the console: every route has a recorded check, and a logged-in caller on no read list is refused (the deploy gate for sharing)", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/442"}
   - {item: "Documents survive a node (storage on two nodes, proven)", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/193#issuecomment-6714219091"}
   - {item: "The tailnet ingress runs on two nodes and survives losing one proxy", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/192"}
