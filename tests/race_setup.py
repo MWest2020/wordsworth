@@ -74,3 +74,33 @@ def wait_for_a_lock_waiter(session_factory, timeout: float = 10.0) -> None:
             probe.rollback()
             time.sleep(0.05)
     raise AssertionError("no session started waiting on a lock")
+
+
+def pause_process(monkeypatch, where: str, paused: threading.Event,
+                  resume: threading.Event) -> None:
+    """Hold `pipeline.process` until ``resume`` is set (#462): ``"anonymized"``
+    right after its ANONYMIZED record (so it holds the chain lock),
+    ``"profile"`` before its first audit append."""
+    from wordsworth import pipeline
+    from wordsworth.states import State
+
+    def hold():
+        paused.set()
+        assert resume.wait(30), "never resumed"
+
+    if where == "profile":
+        real_profile = pipeline.profile_pdf
+
+        def profile(*args, **kwargs):
+            hold()
+            return real_profile(*args, **kwargs)
+        monkeypatch.setattr(pipeline, "profile_pdf", profile)
+        return
+    real = pipeline.transition
+
+    def transition(session, document_id, to_state, **kwargs):
+        record = real(session, document_id, to_state, **kwargs)
+        if to_state == State.ANONYMIZED:
+            hold()
+        return record
+    monkeypatch.setattr(pipeline, "transition", transition)

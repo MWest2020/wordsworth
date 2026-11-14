@@ -20,7 +20,7 @@ phases:
       - {item: "A deleted document releases its object key (same bytes can be ingested again)", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/341"}
       - {item: "New originals are sealed at rest under a per-document key, and every reader opens them through the seam (in production since 2026-11-09; verified 2026-11-10 with a synthetic document)", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/379#issuecomment-6761871781"}
       - {item: "OCR-recovered originals stored encrypted, never over another document (in production since 2026-11-11)", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/411"}
-      - {item: "Deleting a document destroys its key (crypto-shredding)", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-crypto-shred"}
+      - {item: "Deleting a document destroys its key (crypto-shredding): built and reviewed in #450, waits for Mark's merge (#428, #429)", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/450"}
       - {item: "The existing corpus sealed and verified", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/originals-encrypt-existing"}
       - {item: "Rights per Keycloak group, managed as data", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/keycloak-groups-to-roles"}
       - {item: "A separate key-and-reveal service with its own database", status: open, evidence: "https://github.com/MWest2020/wordsworth/tree/main/openspec/changes/key-service-skeleton"}
@@ -33,8 +33,8 @@ done_means:
   - {item: "PII read on a sample of the anonymised output", status: done, evidence: "https://github.com/MWest2020/wordsworth/pull/284"}
   - {item: "No untokenised names left (names with particles like ter, van der)", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/285"}
   - {item: "A redacted PDF for every reversible document in the dossier", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/259"}
-  - {item: "Console for the key user: deleted documents hidden, a dossier home", status: open, evidence: "https://github.com/MWest2020/wordsworth/issues/277"}
-  - {item: "Readable topics (named by the language model) and search that shows the matching passage", status: open, evidence: "https://github.com/MWest2020/wordsworth/blob/main/docs/explanation/review-key-user-2026-10-28.md"}
-  - {item: "Share from the console with layered anonymisation (a grant at a PPL, the redacted and reveal PDF)", status: open, evidence: "https://github.com/MWest2020/wordsworth/blob/main/docs/explanation/review-key-user-2026-10-28.md"}
+  - {item: "Console for the key user: deleted documents hidden, a dossier home (built in #426; live after the next deploy)", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/426"}
+  - {item: "Readable topics (named by the language model) and search that shows the matching passage (built in #433 and #432; live after the next deploy, label quality judged at the rehearsal)", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/433"}
+  - {item: "Share from the console with layered anonymisation: proposals #439/#440 merged, PDF views built (#436); the build waits for Mark (#416, #417, #444) and the read gate #446", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/440"}
   - {item: "Documents survive a node (storage on two nodes, proven)", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/193#issuecomment-6714219091"}
   - {item: "The tailnet ingress runs on two nodes and survives losing one proxy", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/192"}
