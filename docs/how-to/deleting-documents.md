@@ -385,7 +385,7 @@ is an operator step after the deployment, not part of the build.
 A document recovered by
 OCR points at its OCR'd PDF; its original scan (the uploaded bytes, personal
 data in the clear) is named only in its `ocr` audit record, as
-`old_object_key`. Documents deleted before that change left the scan object
+`old_object_key`. Documents deleted before `delete-removes-original-scan` existed left the scan object
 in the store (#454). On 2026-11-14 production held 6 such documents, all
 without a key row for the scan.
 

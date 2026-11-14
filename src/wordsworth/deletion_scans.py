@@ -14,6 +14,7 @@ drift apart (a document is recovered at most once, but the query below reads
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -29,18 +30,25 @@ from .states import State
 #: deleted again -- `deleted` to `deleted`, like `deletion_keys`' `destroy-key`.
 REMOVE_SCAN_STEP = "remove-original-scan"
 
+#: The only shape an original's object key has (content-addressed, `pipeline.py`).
+#: A trail value of any other shape -- missing, NULL, or pointing elsewhere such as
+#: `redacted/...` -- is never locked, claimed or removed as a scan (review of #476).
+_SCAN_KEY = re.compile(r"documents/[0-9a-f]{64}")
+
 
 def scan_keys(session: Session, document_ids: Sequence[UUID]) -> set[str]:
     """The distinct `old_object_key` of these documents' recovering `ocr`
     audit records -- the original scans their OCR recovery replaced."""
     if not document_ids:
         return set()
-    return set(session.execute(
+    keys = session.execute(
         select(AuditRecord.payload["old_object_key"].astext)
         .where(AuditRecord.step == "ocr",
                AuditRecord.to_state == State.EXTRACTABLE.value,
+               AuditRecord.payload.has_key("old_object_key"),
                AuditRecord.document_id.in_(document_ids))
-    ).scalars().all())
+    ).scalars().all()
+    return {k for k in keys if k and _SCAN_KEY.fullmatch(k)}
 
 
 def plan(session: Session, document_id: UUID, former_key: str,
