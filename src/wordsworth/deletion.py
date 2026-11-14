@@ -42,21 +42,29 @@ Deleting a sealed original also destroys its data key (`deletion_keys.py`):
 `doomed` locks the row and its copies (#452: no ingest writes the object back)
 and picks the keys first; key rows go after the object, in this transaction.
 A rerun over an already-deleted document that finds a key records `destroy-key`.
+
+Deleting a document recovered by OCR also removes its original scan object
+(`deletion_scans.py`, #454): the scan is named only in the document's
+recovering `ocr` audit record, never overwritten by `recover`, and goes with
+the deletion under the same claim the object and the key already use --
+unless another document that is not deleted still claims it. The scan is
+removed right after the main object, before the DB-only work; a rerun over an
+already-deleted document that still finds one removes it and records
+`remove-original-scan`.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import deletion_keys
+from . import deletion_keys, deletion_scans
 from .audit import current_state
 from .document_keys import DocumentKeys
 from .models import Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping
-from .deletion_renders import RenderCounts, plan_renders
+from .deletion_renders import DeletionCounts, plan_renders  # re-exported
 from .object_store import ObjectStore
 from .pipeline import transition
 from .search_index import SearchIndex
@@ -74,27 +82,6 @@ def released_object_key(document_id: UUID) -> str:
 
 class DeletionError(ValueError):
     """A deletion that cannot proceed."""
-
-
-@dataclass
-class DeletionCounts(RenderCounts):
-    """How many of each kind a deletion removed (or, dry-run, would remove).
-    Ids and counts only -- this is exactly what the `deleted` audit record
-    carries, never a value, a filename or a token."""
-
-    object: int = 0
-    text: int = 0
-    pseudonyms: int = 0
-    mappings: int = 0
-    index_entries: int = 0
-    grants: int = 0
-    keys_destroyed: int = 0
-
-    def as_dict(self) -> dict[str, int]:
-        return {"object": self.object, "text": self.text, **self.render_counts(),
-                "pseudonyms": self.pseudonyms, "mappings": self.mappings,
-                "index_entries": self.index_entries, "grants": self.grants,
-                "keys_destroyed": self.keys_destroyed}
 
 
 def delete_document(
@@ -141,6 +128,13 @@ def delete_document(
     counts.object = int(object_removable)
     if not dry_run and object_removable:
         store.delete(former_key)
+
+    scans = deletion_scans.plan(session, document_id, former_key, store)
+    counts.original_scan = len(scans)
+    if not dry_run:
+        for scan_key in scans:
+            store.delete(scan_key)
+
     renders.apply(session, store, counts, actor=actor, dry_run=dry_run)
 
     text_row = session.get(DocumentText, document_id)
@@ -189,6 +183,9 @@ def delete_document(
     if keys is not None:
         keys.evict(doomed)
     if already_deleted:
+        if scans:
+            deletion_scans.record_rerun(session, document_id, actor=actor,
+                                        original_scan=len(scans))
         if doomed:
             deletion_keys.record_rerun(session, document_id, actor=actor,
                                        keys_destroyed=len(doomed))

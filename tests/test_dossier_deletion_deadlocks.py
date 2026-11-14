@@ -15,13 +15,17 @@ import uuid
 from sqlalchemy import select, text
 
 from race_setup import SpyOriginalsStore, pause_process, run, wait_for_a_lock_waiter
+from scan_setup import RECOVERY_TEXT
+
 from wordsworth import dossier_deletion, dossiers
 from wordsworth.audit import current_state, verify_chain
 from wordsworth.deletion import delete_document
 from wordsworth.dossier_deletion import delete_dossier
 from wordsworth.models import Document, DossierDocument
 from wordsworth.object_store import InMemoryObjectStore
+from wordsworth.ocr import FixedOcrEngine
 from wordsworth.pipeline import ingest, process, register, transition
+from wordsworth.recovery import recover
 from wordsworth.search_index import InMemoryIndex
 from wordsworth.states import State
 
@@ -198,3 +202,72 @@ def test_a_dossier_deletion_does_not_deadlock_with_deleting_a_copy(
         assert current_state(s, member) == State.DELETED
         assert current_state(s, copy) == State.DELETED
         assert verify_chain(s) == (True, None)
+
+
+def test_a_dossier_deletion_does_not_deadlock_with_deleting_a_copy_of_a_scan(
+        session_factory, monkeypatch, scanned_pdf):
+    """A copy of a recovered member's SCAN (not its current `object_key`),
+    with a lower id than the member. Without `lock_members`/`doomed` widened
+    by the claim, the dossier deletion's pre-lock would not cover the copy,
+    and crypto-shred's `doomed` for the member -- which now also claims the
+    scan -- would deadlock against a concurrent deletion of the copy, as
+    #464 found for an ordinary copy (`delete-removes-original-scan`, #454)."""
+    store = InMemoryObjectStore()
+    copy = uuid.UUID(int=1)
+    with session_factory() as s:
+        member = ingest(s, store, scanned_pdf)
+        s.commit()
+        scan_key = member.object_key
+        assert process(s, member.id, store) == State.UNPROCESSABLE_OCR
+        s.commit()
+        final = recover(s, member.id, store, threshold=10,
+                        engine=FixedOcrEngine(RECOVERY_TEXT))
+        s.commit()
+        assert final == State.EXTRACTABLE
+        member_id = member.id
+
+        s.add(Document(id=copy, object_key=scan_key, superseded_by=member_id))
+        s.flush()
+        transition(s, copy, State.REGISTERED, step="register")
+        transition(s, copy, State.SUPERSEDED, step="supersede")
+        dossier_id = dossiers.ensure(s, "zaak").id
+        dossiers.add(s, dossier_id, member_id, actor="t")
+        s.commit()
+    assert copy < member_id
+    errors, paused, resume = {}, threading.Event(), threading.Event()
+    real = dossier_deletion.delete_document
+
+    def held(*args, **kwargs):  # past the pre-lock, before any append
+        paused.set()
+        assert resume.wait(30), "never resumed"
+        return real(*args, **kwargs)
+    monkeypatch.setattr(dossier_deletion, "delete_document", held)
+
+    def deleting_dossier():
+        with session_factory() as s:
+            _bounded(s)
+            delete_dossier(s, dossier_id, store, InMemoryIndex(), actor="t")
+            s.commit()
+
+    def deleting_copy():
+        with session_factory() as s:
+            _bounded(s)
+            delete_document(s, copy, store, InMemoryIndex(), actor="t")
+            s.commit()
+
+    dele = run(errors, "delete-dossier", deleting_dossier)
+    assert paused.wait(10)
+    cop = run(errors, "delete-copy", deleting_copy)
+    try:
+        wait_for_a_lock_waiter(session_factory)  # the copy's row is held
+    finally:
+        resume.set()
+        dele.join(30)
+        cop.join(30)
+
+    assert not errors, errors
+    with session_factory() as s:
+        assert current_state(s, member_id) == State.DELETED
+        assert current_state(s, copy) == State.DELETED
+        assert verify_chain(s) == (True, None)
+    assert not store.exists(scan_key)

@@ -22,6 +22,10 @@ Deleting a document removes:
 
 - the stored object (unless another, not-yet-deleted document row still
   claims the same object key — a superseded copy keeps its former key)
+- the original scan of a document recovered by OCR (counted as
+  `original_scan`), unless another document that is not deleted still claims
+  it — by its own object key, or as its own scan (see "Crypto-shredding"
+  below)
 - the stored (de-identified) text
 - its cached redacted PDFs (every object under `redacted/<document-id>/`) and
   its box map (the `box_maps` row they were drawn from)
@@ -44,8 +48,8 @@ reachable from every state including `superseded`; nothing transitions out of
 it.
 
 One `deleted` audit record is written, holding the document id, the actor and
-how many of each kind were removed (`keys_destroyed` among them) — never a
-filename, a token, a value or key material.
+how many of each kind were removed (`keys_destroyed`, `original_scan` among
+them) — never a filename, a token, a value or key material.
 
 **Deleting releases the object key.** The row's `object_key` becomes the
 placeholder `deleted/<document-id>`, and the former key is recorded in the
@@ -66,9 +70,11 @@ survives somewhere — a backup of the object store, a replicated volume — is
 unreadable: there is no key left to open it with. The deletion does not need
 the key service for this, so `wordsworth-delete` shreds exactly like the API.
 
-**The key follows the object.** A key is destroyed exactly when the object is
-removed: when no other document row that is not deleted still points at the
-same object key. A superseded copy keeps the object key of its survivor, so:
+**The key follows the object, and so does the scan.** A key is destroyed, and
+a scan removed, exactly when no other document that is not deleted still
+**claims** that object key: its row points at it (as for the main object), or
+its recovering `ocr` audit record names it as its original scan. A superseded
+copy keeps the object key of its survivor, so:
 
 - deleting the copy leaves the survivor's key (and object) alone;
 - deleting the survivor while the copy is not deleted keeps the object and
@@ -76,22 +82,23 @@ same object key. A superseded copy keeps the object key of its survivor, so:
   removes both (`object: 1`, `keys_destroyed: 1`).
 
 This is the one case where deleting a document does not destroy its key at
-once (decision #428, default: the key follows the object). A document
-recovered by OCR has two sealed objects, the scan and the OCR'd PDF; it loses
-both keys (`keys_destroyed: 2`). A legacy plaintext original has no key:
-`keys_destroyed: 0`, and the deletion behaves as before.
+once (decision #428, default: the key follows the object). The same now holds
+for a document recovered by OCR: a copy whose object key is the recovered
+document's scan, or a later ingest of the scan's bytes, keeps the scan (and
+its key) while the recovered document is not deleted — deleting that copy or
+re-ingest removes only its own content, `object: 0` and `keys_destroyed: 0`,
+even though its object key is the scan everyone else sees go. A document
+recovered by OCR has two sealed objects, the scan and the OCR'd PDF; deleting
+it removes both objects and loses both keys (`object: 1`, `original_scan: 1`,
+`keys_destroyed: 2`), unless a copy or re-ingest still claims the scan. A
+legacy plaintext original has no key: `keys_destroyed: 0`, and the deletion
+behaves as before; a legacy plaintext scan is removed the same way, just
+without a key to destroy.
 
-**The original scan stays in the object store today** (#454). Destroying the
-scan's key does not remove the scan object. A sealed scan is left as
-ciphertext under no key row: unreadable without a database backup from before
-the deletion, and removed only when someone runs `wordsworth-sealed-orphans
---apply`. A legacy plaintext scan (every scan ingested before sealing was
-switched on) has no key and stays readable. **After `delete-removes-original-scan`
-is deployed**, a deletion also removes the scan object (counted as
-`original_scan`), and rerunning `wordsworth-delete` on a document deleted
-earlier removes a scan left behind; see [Original scans of deleted
-documents](#original-scans-of-deleted-documents) below for the query that
-lists them.
+Rerunning `wordsworth-delete` on a document deleted before this change
+removes a scan object left behind, and destroys its key if that was left too;
+see [Original scans of deleted documents](#original-scans-of-deleted-documents)
+below for the query that lists them.
 
 A copy and its survivor deleted at the same moment do not each keep the key
 "for the other": the deletion locks the document rows of that object key
@@ -237,10 +244,11 @@ the payload `{actor, renders_removed, box_maps_removed, summaries_removed}`
 nothing.
 
 After a partial failure, the record the rerun writes (`deleted`, or
-`remove-renders` on an already-deleted document) counts only what was still
-there: renders, an index entry or an object the failed attempt already removed
-from outside the database are not counted again, so the counts can be lower
-than what the document once had.
+`remove-renders`, `remove-original-scan` or `destroy-key` on an
+already-deleted document) counts only what was still there: renders, a scan,
+an index entry or an object the failed attempt already removed from outside
+the database are not counted again, so the counts can be lower than what the
+document once had.
 
 ## The summary of a deleted document
 

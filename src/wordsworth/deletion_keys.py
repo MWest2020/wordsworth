@@ -1,19 +1,27 @@
 # SPDX-License-Identifier: MIT
-"""Crypto-shredding on delete (`originals-crypto-shred`, ADR-0008): deleting a
-document destroys the wrapped data key of every object the deletion ends the
-last claim on, in the same transaction as the rest of the deletion. A copy of
-the sealed object that survives anywhere (a backup of the object store, a
-replica) then opens under no key.
+"""Crypto-shredding on delete (`originals-crypto-shred`, ADR-0008; widened by
+`delete-removes-original-scan`, #454): deleting a document destroys the
+wrapped data key of every object the deletion ends the last claim on, in the
+same transaction as the rest of the deletion. A copy of the sealed object
+that survives anywhere (a backup of the object store, a replica) then opens
+under no key.
 
 **A key follows its object.** The key goes exactly when the object goes: when
-no other document row that is not deleted still points at that object key
+no other document that is not deleted still **claims** that object key
 (`_object_claimed_elsewhere`, the check the object removal uses too). A
-superseded copy shares its object key with its survivor, so deleting the copy
-leaves the survivor's key alone. A key row's `document_id` is not a reliable
-owner (`put_original` re-points it on a re-ingest and leaves it on a reseal),
-so the candidates are the row of the document's former object key plus every
-row that carries its id (the scan of an OCR-recovered document), and the claim
-check decides.
+document claims an object key when its row points at it, as before, or when
+its recovering `ocr` audit record names it as its original scan
+(`deletion_scans.scan_keys`) -- so a document recovered by OCR claims its scan
+even though its own row no longer points at it. A superseded copy shares its
+object key with its survivor, so deleting the copy leaves the survivor's key
+alone; the same now holds for a copy or a re-ingest that shares a recovered
+document's scan while that document is not deleted. A key row's `document_id`
+is not a reliable owner (`put_original` re-points it on a re-ingest and leaves
+it on a reseal), so the candidates are the row of the document's former object
+key, every row that carries its id (the scan of an OCR-recovered document, if
+sealed), and every row whose object key is one of this document's scans
+(`deletion_scans.scan_keys`, needed because that row's `document_id` may have
+moved to a re-ingest) -- and the claim check decides.
 
 **Who deletes the rows.** `destroy` is plain SQL on the caller's session: no
 key service, no `DocumentKeys`, so every caller shreds -- `wordsworth-delete`
@@ -45,7 +53,7 @@ from sqlalchemy.orm import Session
 from . import audit
 from .audit import current_state
 from .document_keys import DocumentKeyRecord, DocumentKeys
-from .models import Document
+from .models import AuditRecord, Document
 from .states import State
 
 #: The audit step of a key destroyed when an already-deleted document is
@@ -55,20 +63,33 @@ DESTROY_KEY_STEP = "destroy-key"
 
 
 def _object_claimed_elsewhere(session: Session, document_id: UUID, object_key: str) -> bool:
-    """Does some OTHER, not-yet-deleted document row still claim this object
-    key? A superseded copy keeps its former key (one-document-per-object), so
-    more than one row can point at the same bytes; removing them under one row
-    must not take them out from under another that still needs them."""
-    others = session.execute(
+    """Does some OTHER, not-yet-deleted document still CLAIM this object key:
+    its row points at it (a superseded copy keeps its former key,
+    one-document-per-object), or its recovering `ocr` audit record names it
+    as its original scan (a document recovered by OCR claims its scan even
+    though its own row no longer points at it)? Removing an object, a scan or
+    a key under one document must not take it out from under another that
+    still needs it."""
+    others = set(session.execute(
         select(Document.id).where(Document.object_key == object_key,
                                   Document.id != document_id)
-    ).scalars().all()
+    ).scalars().all())
+    others |= set(session.execute(
+        select(AuditRecord.document_id).where(
+            AuditRecord.step == "ocr",
+            AuditRecord.to_state == State.EXTRACTABLE.value,
+            AuditRecord.payload["old_object_key"].astext == object_key,
+            AuditRecord.document_id != document_id)
+    ).scalars().all())
     return any(current_state(session, other) != State.DELETED for other in others)
 
 
-def _candidate_rows(document_id: UUID, former_key: str):
-    return or_(DocumentKeyRecord.object_key == former_key,
-               DocumentKeyRecord.document_id == document_id)
+def _candidate_rows(document_id: UUID, former_key: str, scans: set[str]):
+    clauses = [DocumentKeyRecord.object_key == former_key,
+               DocumentKeyRecord.document_id == document_id]
+    if scans:
+        clauses.append(DocumentKeyRecord.object_key.in_(sorted(scans)))
+    return or_(*clauses)
 
 
 def _object_key(session: Session, document_id: UUID) -> str:
@@ -80,37 +101,54 @@ def doomed(session: Session, document_id: UUID, *,
            lock: bool = True) -> tuple[str, list[str]]:
     """``(former_key, keys)``: the document's object key, read under the lock,
     and the object keys whose data key this deletion destroys -- the candidate
-    rows (``former_key``'s, and every row carrying ``document_id``) that no
-    other not-deleted document still claims. Runs before anything
-    irreversible (the index entry, the object).
+    rows (``former_key``'s, every row carrying ``document_id``, and every row
+    whose object key is one of this document's scans) that no other
+    not-deleted document still claims. Runs before anything irreversible (the
+    index entry, the object).
 
     With ``lock`` it locks first: the document's own row (by id, so a key
-    that moved since it was read is still covered) and the rows of every
-    candidate object key, in one statement ordered by id; then it reads the
-    object key again and repeats once if it changed before the lock (the row
-    is held after that, so it cannot change again); then it locks the key
-    rows, so nothing else removes them before `destroy`. The row lock also
-    stops an ingest from writing the object back (`ingest_lock.lock_live`,
-    #452). A dry run (``lock=False``) takes no lock and waits for nothing."""
+    that moved since it was read is still covered), the rows of every
+    candidate object key (now including this document's scans,
+    `deletion_scans.scan_keys`), and the rows of any document whose
+    recovering `ocr` record names one of those keys as its scan (the scan's
+    claimant may not carry its key row's `document_id`) -- in one statement
+    ordered by id; then it reads the object key again and repeats once if it
+    changed before the lock (the row is held after that, so it cannot change
+    again -- a document's scan keys change together with its object key, in
+    the same `recover` transaction, so checking `former_key` alone still
+    catches it); then it locks the key rows, so nothing else removes them
+    before `destroy`. The row lock also stops an ingest from writing the
+    object back (`ingest_lock.lock_live`, #452). A dry run (``lock=False``)
+    takes no lock and waits for nothing."""
+    from . import deletion_scans  # deferred: deletion_scans imports this module
+
     locked_for = None
     while True:
         former_key = _object_key(session, document_id)
         if not lock or former_key == locked_for:
             break
+        scans = deletion_scans.scan_keys(session, [document_id])
         candidates = set(session.execute(
             select(DocumentKeyRecord.object_key)
-            .where(_candidate_rows(document_id, former_key))
+            .where(_candidate_rows(document_id, former_key, scans))
         ).scalars().all())
+        all_keys = sorted(candidates | scans | {former_key})
         session.execute(
             select(Document.id)
             .where(or_(Document.id == document_id,
-                       Document.object_key.in_(sorted(candidates | {former_key}))))
+                       Document.object_key.in_(all_keys),
+                       Document.id.in_(
+                           select(AuditRecord.document_id).where(
+                               AuditRecord.step == "ocr",
+                               AuditRecord.to_state == State.EXTRACTABLE.value,
+                               AuditRecord.payload["old_object_key"].astext.in_(all_keys)))))
             .order_by(Document.id)
             .with_for_update(key_share=True)
         ).all()
         locked_for = former_key
+    scans = deletion_scans.scan_keys(session, [document_id])
     rows = (select(DocumentKeyRecord.object_key)
-            .where(_candidate_rows(document_id, former_key))
+            .where(_candidate_rows(document_id, former_key, scans))
             .order_by(DocumentKeyRecord.object_key))
     keys = session.execute(rows.with_for_update() if lock else rows).scalars().all()
     return former_key, [key for key in keys

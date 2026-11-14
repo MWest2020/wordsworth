@@ -29,7 +29,6 @@ the actor and the three counts -- the summary rides on the same record.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -39,9 +38,6 @@ from .models import BoxMap, DocumentSummary
 from .object_store import ObjectStore
 from .pdf_redaction import redacted_prefix
 from .states import State
-
-if TYPE_CHECKING:
-    from .deletion import DeletionCounts
 
 
 @dataclass
@@ -57,6 +53,32 @@ class RenderCounts:
         return {"renders_removed": self.renders_removed,
                 "box_maps_removed": self.box_maps_removed,
                 "summaries_removed": self.summaries_removed}
+
+
+@dataclass
+class DeletionCounts(RenderCounts):
+    """How many of each kind a deletion removed (or, dry-run, would remove).
+    Ids and counts only -- this is exactly what the `deleted` audit record
+    carries, never a value, a filename or a token. Lives here, next to
+    `RenderCounts` it extends, so `deletion.py` stays at or under 200 lines
+    (`deletion.py` re-exports it: tests and `dossier_deletion.py` import it
+    from there)."""
+
+    object: int = 0
+    original_scan: int = 0
+    text: int = 0
+    pseudonyms: int = 0
+    mappings: int = 0
+    index_entries: int = 0
+    grants: int = 0
+    keys_destroyed: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {"object": self.object, "original_scan": self.original_scan,
+                "text": self.text, **self.render_counts(),
+                "pseudonyms": self.pseudonyms, "mappings": self.mappings,
+                "index_entries": self.index_entries, "grants": self.grants,
+                "keys_destroyed": self.keys_destroyed}
 
 
 @dataclass
