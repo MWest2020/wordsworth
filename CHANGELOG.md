@@ -11,9 +11,10 @@
   stayed. `process` now locks the document row `FOR SHARE` before it reads
   the state, so the deletion waits and then removes the index entry and the
   text, and a `process` that finds a deletion under way waits and then does
-  nothing. A dossier deletion locks all its members' rows before its first
-  audit record: otherwise it deadlocked with a `process` or an `ingest`
-  (#452) of a member it had not reached yet.
+  nothing. A dossier deletion locks all its members' rows, and those of
+  their superseded copies, before its first audit record: otherwise it
+  deadlocked with a `process` or an `ingest` (#452) of a member it had not
+  reached yet (and, with crypto-shred, with a deletion of such a copy).
 
 - **An ingest racing a deletion could bring the deleted original back**
   (#452). `ingest` now locks the live document's row `FOR SHARE` after

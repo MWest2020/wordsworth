@@ -8,7 +8,8 @@
 indexes behind. The lock order is every document writer's: the `documents`
 row first, the audit chain's advisory lock after -- a deletion, a
 supersession and OCR recovery all lock the row before their first audit
-append, and a dossier deletion locks all its members' rows before its first.
+append, and a dossier deletion locks all its members' rows (and their copies')
+before its first (`dossier_locks`).
 """
 from __future__ import annotations
 

@@ -100,8 +100,9 @@ Processing (`process`: profile, extract, anonymize, index) locks the row
 arrives while a document is processed waits until processing commits, and
 then removes what it wrote: the index entry and the stored text. A deletion
 already under way makes processing wait; it then reads `deleted` and does
-nothing. A dossier deletion locks all its members' rows before its first
-audit record, so it does not deadlock with either.
+nothing. A dossier deletion locks all its members' rows, and the rows of
+their superseded copies, before its first audit record, so it does not
+deadlock with either, nor with a deletion of such a copy.
 
 A deleted document that still holds its content key (deleted before deletions
 released it) is refused. `POST /ingest` reports that file with
