@@ -167,7 +167,12 @@ model derived from the document's content, so it goes with that content. A
 deletion removes the row and counts it as `summaries_removed` (0 or 1) — in
 the `deleted` record, the API answer and the CLI output; a dry run counts it
 and removes nothing. The text itself never appears in a count or a record. A
-deleted document has no text left, so no summary is made for it afterwards.
+deleted document has no text left, so no summary is made for it afterwards:
+`samenvatten --ontbrekend` only picks documents that still have their text,
+and a summary is stored only while the text is still there (checked in the
+same statement), so one the model was still writing during the deletion does
+not land. A summary stored just before the deletion committed is removed by a
+rerun.
 
 **Leftovers.** Documents deleted before #455 kept their summary. It was no
 longer served (the index entry was gone), but it still held derived content.

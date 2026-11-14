@@ -26,15 +26,22 @@ from . import dossiers
 from .config import settings
 from .db import make_engine, make_session_factory
 from .generator import OllamaGenerator
-from .models import Document, DocumentSummary
+from .models import DocumentSummary, DocumentText
 from .summaries import compute
 
 
 def ontbrekend(session) -> list[UUID]:
-    """Elk document dat nog geen samenvatting heeft, ongeacht dossier."""
+    """Elk document met opgeslagen tekst dat nog geen samenvatting heeft,
+    ongeacht dossier.
+
+    Zonder tekst valt er niets samen te vatten: een verwijderd document (zijn
+    tekst en, sinds #455, zijn samenvatting gaan mee) of een dat nooit door de
+    straat kwam. Die hier meenemen telt ze als `without_text`, en dan eindigt
+    de CronJob na elke verwijdering met exitcode 1."""
     heeft_al = select(DocumentSummary.document_id)
     return [r[0] for r in session.execute(
-        select(Document.id).where(Document.id.not_in(heeft_al)))]
+        select(DocumentText.document_id)
+        .where(DocumentText.document_id.not_in(heeft_al)))]
 
 
 def main(argv: list[str] | None = None) -> int:
