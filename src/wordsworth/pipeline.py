@@ -30,7 +30,8 @@ from .anonymizer import Anonymizer, DeterministicAnonymizer
 from .config import settings
 from .embedder import Embedder
 from .extraction import ExtractionError, extract_text
-from .ingest_lock import LIVE_ATTEMPTS, IngestRaceError, lock_live  # noqa: F401
+from .ingest_lock import (LIVE_ATTEMPTS, IngestRaceError, lock_for_process,  # noqa: F401
+                          lock_live)
 from .keys import DEFAULT_DOMAIN, KeyProvider
 from .mapping_store import MappingStore
 from .models import AuditRecord, Document, DocumentText, DossierDocument
@@ -282,7 +283,9 @@ def process(
     """
     threshold = threshold if threshold is not None else settings.born_digital_threshold
     anonymizer = anonymizer or DeterministicAnonymizer()
-    doc = session.get(Document, document_id)
+    # The row before the state (#462): a deleted document reads `deleted`
+    # here and falls through every step below, writing nothing.
+    doc = lock_for_process(session, document_id)
     state = current_state(session, document_id)
     text: str | None = None
     raw: bytes | None = None

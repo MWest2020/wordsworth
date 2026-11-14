@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- **A deletion during processing left the document's text in the index**
+  (#462). A deletion that started while `process` ran found no index entry
+  yet, waited for the audit chain lock, and recorded `deleted` after
+  `process` had indexed the document and stored its anonymized text; both
+  stayed. `process` now locks the document row `FOR SHARE` before it reads
+  the state, so the deletion waits and then removes the index entry and the
+  text, and a `process` that finds a deletion under way waits and then does
+  nothing. A dossier deletion locks all its members' rows, and those of
+  their superseded copies, before its first audit record: otherwise it
+  deadlocked with a `process` or an `ingest` (#452) of a member it had not
+  reached yet (and, with crypto-shred, with a deletion of such a copy).
+
 - **An ingest racing a deletion could bring the deleted original back**
   (#452). `ingest` now locks the live document's row `FOR SHARE` after
   `register_live` and re-checks it before `write_original`; a document deleted
