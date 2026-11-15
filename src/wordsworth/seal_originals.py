@@ -5,9 +5,16 @@ document's original, and the original scan of a live document recovered by
 OCR. The per-object mechanics (verify-before-replace, resumability) live in
 `originals_seal.py`; this module is the report and the CLI.
 
-Dry run is the default shape every CLI here uses: report, change nothing.
-``--verify`` checks the outcome of a real run (or a deploy before one):
-whether any live document or scan is still a legacy plaintext original.
+A run without flags seals for real; ``--dry-run`` reports what would be
+sealed and changes nothing. ``--verify`` (`seal_verify.py`) checks the outcome
+of a real run (or a deploy before one): it fails while any live document or
+scan is still a legacy plaintext original, or a sealed object has no usable
+key row.
+
+Every object is its own attempt: an exception sealing one (the key service
+unavailable, a store error) is reported as ``failed`` with the exception's
+class name only -- never its message, which could carry content -- and the
+run goes on with the next.
 """
 from __future__ import annotations
 
@@ -17,7 +24,9 @@ import sys
 from uuid import UUID
 
 from .object_store import ObjectStore
-from .originals_seal import candidates, counts, object_state, seal_one
+from .originals_seal import seal_one
+from .seal_candidates import candidates, counts, object_state
+from .seal_verify import verify
 
 
 def run(session_factory, store: ObjectStore, keys, *,
@@ -31,22 +40,27 @@ def run(session_factory, store: ObjectStore, keys, *,
         return {"dry_run": True, "before": before, "would_seal": would_seal}
 
     results = []
-    done = {"sealed": 0, "scans": 0, "already_sealed": 0, "scan_gone": 0, "failed": 0}
+    done = {"sealed": 0, "scans": 0, "already_sealed": 0, "scan_gone": 0,
+            "skipped_deleted": 0, "skipped_moved": 0, "failed": 0}
     for c in work:
-        if c.kind == "scan" and object_state(store, c.object_key)[0] == "missing":
+        try:
+            with session_factory() as session:
+                outcome = seal_one(session, store, keys, c.document_id, c.object_key, c.kind)
+        except Exception as exc:  # one object's failure never ends the run
+            outcome = {"status": "failed", "error": type(exc).__name__}
+        status = outcome["status"]
+        if status == "scan_gone":
             # A scan no longer in the store (removed with an old copy, by
             # sealed-orphans, ...) is nothing to seal and nothing failed (spec:
             # "A scan that is already sealed or gone is left alone").
             done["scan_gone"] += 1
             continue
-        with session_factory() as session:
-            outcome = seal_one(session, store, keys, c.document_id, c.object_key)
         results.append({"document_id": str(c.document_id), "object_key": c.object_key,
                         "kind": c.kind, **outcome})
-        if outcome["status"] == "sealed":
+        if status == "sealed":
             done["scans" if c.kind == "scan" else "sealed"] += 1
-        elif outcome["status"] == "already_sealed":
-            done["already_sealed"] += 1
+        elif status in ("already_sealed", "skipped_deleted", "skipped_moved"):
+            done[status] += 1
         else:
             done["failed"] += 1
 
@@ -55,15 +69,6 @@ def run(session_factory, store: ObjectStore, keys, *,
     after = counts(store, after_work)
     return {"dry_run": False, "before": before, "after": after, "done": done,
            "failed": done["failed"], "results": results}
-
-
-def verify(session, store: ObjectStore, ids: list[UUID] | None = None) -> dict:
-    """``{"verified": True}`` iff no live document or scan is still a legacy
-    plaintext original; else the offending object keys, never content."""
-    legacy = [{"document_id": str(c.document_id), "object_key": c.object_key, "kind": c.kind}
-             for c in candidates(session, ids)
-             if object_state(store, c.object_key)[0] == "legacy"]
-    return {"verified": not legacy, "legacy": legacy}
 
 
 def main(argv: list[str] | None = None, *, session_factory=None, store=None, keys=None) -> int:
@@ -77,7 +82,8 @@ def main(argv: list[str] | None = None, *, session_factory=None, store=None, key
                     help="report what would be sealed; change nothing")
     ap.add_argument("--verify", action="store_true",
                     help="check only: fails if a live document or its scan "
-                        "is still a legacy plaintext original")
+                        "is still a legacy plaintext original, or a sealed "
+                        "object has no key row or a mismatched key id")
     ap.add_argument("--ids", nargs="+", help="limit to these document id(s) (uuid)")
     args = ap.parse_args(argv)
     if args.dry_run and args.verify:
