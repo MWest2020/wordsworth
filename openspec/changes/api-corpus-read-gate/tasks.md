@@ -6,53 +6,85 @@ list). Every refusal is asserted as `derde`, and where the gate is the
 grant-issue right also as `lezer`: the side that does not hold the key.
 
 ## 1. The gate
-- [ ] `read_gate.py`: `corpus_read(labels)`, `grant_read(labels, issuer_labels,
+- [x] `read_gate.py`: `corpus_read(labels)`, `grant_read(labels, issuer_labels,
       auth_enabled)`, `grant_admin(issuer_labels, auth_enabled)`,
       `gate_of(route)`. Proved by: unit tests of the truth tables (on the
       list; off the list; no caller with the list set; empty list; issuer who
       is no reader; reader who is no issuer) and of `gate_of` on a route with
       and without a gate.
-- [ ] The refusal runs before validation and lookup. Proved by: a test on a
+      Done: `tests/test_read_gate.py`.
+- [x] The refusal runs before validation and lookup. Proved by: a test on a
       gated route with a missing query parameter, a malformed path id and an
       unknown id, all 403 with the same body; and a test that a body that is
       not JSON answers 422 with the same body for an existing and an unknown
       id, and changes nothing.
-- [ ] `api.py` loses `_guard_corpus_read` and its five body calls become the
+      Done: `tests/test_route_refusal.py` (missing `q`, malformed and
+      unknown id, one body); `tests/test_read_gate_writes.py` (non-JSON
+      body: 422, one body, snapshot unchanged).
+- [x] `api.py` loses `_guard_corpus_read` and its five body calls become the
       declared gate; `api.py` is not longer than 2009 lines and `read_gate.py`
       is under 200. Proved by: `wc -l` in the PR.
+      Done: `api.py` 2002 lines, `read_gate.py` 134 (the label
+      resolution, the delete guard and the startup warning moved into
+      `read_gate.build`).
 
 ## 2. The routes
-- [ ] The twelve API routes of design.md, "Corpus read, new", declare the gate
+- [x] The twelve API routes of design.md, "Corpus read, new", declare the gate
       (`GET /grants/{id}`: `grant-read`). Proved by: task 3.
-- [ ] `POST /reprocess`: 403 for `derde` with no body, with a list of existing
+      Done:
+      `tests/test_route_inventory.py::test_the_walk_on_the_real_application`.
+- [x] `POST /reprocess`: 403 for `derde` with no body, with a list of existing
       ids and with an unknown id, the same body each time, and no document was
       re-de-identified (no new audit record); `lezer` runs it as before.
       Proved by: tests. `deploy/k8s/45-reprocess-job.yaml` says its key has to
       be a reader. Proved by: the diff.
-- [ ] `POST /datasets/pseudonymize` declares `grant-admin`. Proved by: tests
+      Done:
+      `tests/test_read_gate_writes.py::test_reprocess_refuses_the_same_way_and_reprocesses_nothing`
+      (three cases, every table's row count unchanged); `lezer`:
+      `tests/test_read_gate_reader.py` (200 as on main).
+- [x] `POST /datasets/pseudonymize` declares `grant-admin`. Proved by: tests
       as `derde` and as `lezer`: 403, no token in the answer, and no document
       row, no `dataset_pseudonymize` audit record and no mapping row written;
       as `uitgever`: 200 and the CSV as before.
-- [ ] `GET` and `POST /console/combinations` call the console's read check
+      Done: `tests/test_read_gate_writes.py` (`derde`, `lezer`: 403, no
+      CSV, no row in any table; `uitgever`: 200, one dataset row and its
+      two audit records).
+- [x] `GET` and `POST /console/combinations` call the console's read check
       before anything else. Proved by: a test as `derde`: 403 on both, no row
       in `declared_combinations`, and an existing declaration by `lezer` keeps
       its reason and `declared_by`; as `lezer`: stored, reach shown.
-- [ ] A refused write leaves nothing. Proved by: tests as `derde` on
+      Done:
+      `tests/test_read_gate_writes.py::test_combinations_are_refused_to_derde_and_lezers_declaration_stays`
+      and `::test_a_reader_declares_a_combination_and_sees_its_reach`.
+- [x] A refused write leaves nothing. Proved by: tests as `derde` on
       `POST /documents/{id}/feedback` (no `detection_feedback` record; 403 for
       an existing and an unknown id), `POST /dossiers/{id}/topics` (topic rows
       unchanged) and `PATCH /topics/{id}` (name unchanged).
-- [ ] `GET /grants/{id}`: 200 for `lezer` and for `uitgever`, 403 for `derde`
+      Done:
+      `tests/test_read_gate_writes.py::test_a_refused_write_writes_nothing`
+      (nine writes, also label, summaries and the console's topic
+      writes) and
+      `::test_feedback_is_refused_for_an_existing_and_an_unknown_document`.
+- [x] `GET /grants/{id}`: 200 for `lezer` and for `uitgever`, 403 for `derde`
       on an existing and an unknown id, 404 for `lezer` on an unknown id.
       Proved by: tests.
+      Done: `tests/test_read_gate_grants.py`.
 
 ## 3. The inventory
-- [ ] `tests/route_inventory.py`: the 55 rows of design.md as data (method,
+- [x] `tests/route_inventory.py`: the 55 rows of design.md as data (method,
       path, policy, reason). `tests/test_route_inventory.py`: the tests. Each
       file under 200 lines; split the data by API and console if it is not.
       Proved by: `wc -l` in the PR.
-- [ ] Walk test: every route has a row, every row has a route, every API row
+      Done: rows in `tests/route_rows.py` (113 lines), walker and checks
+      in `tests/route_inventory.py` (172), stand-in app in
+      `tests/inventory_app.py` (117), tests in
+      `tests/test_route_inventory.py` (171) and
+      `tests/test_route_refusal.py` (93).
+- [x] Walk test: every route has a row, every row has a route, every API row
       with a declared policy declares that gate. Proved by: the test.
-- [ ] The walk reaches everything. Proved by, each shown failing in the PR
+      Done:
+      `tests/test_route_inventory.py::test_the_walk_on_the_real_application`.
+- [x] The walk reaches everything. Proved by, each shown failing in the PR
       with a scratch change and passing without it:
       (a) a new optional `create_app` parameter the fixture does not pass
           (checked against `inspect.signature(create_app)`; a parameter that
@@ -66,43 +98,75 @@ grant-issue right also as `lezer`: the side that does not hold the key.
       (e) a `WebSocketRoute`;
       (f) a scratch route added without a row; the gate removed from
           `/search`; a row for a route that does not exist.
-- [ ] `HEAD` is folded into the `GET` row of the same route object and
+      Done: `tests/test_route_inventory.py`: each check is a function in
+      `route_inventory.py` that the walk test runs on the real app and
+      the reach tests run on `full_app()` with the scratch change, where
+      it fails: (a) a scratch `create_app` with an extra parameter; (b)
+      five kinds of registration, in a module and in a subpackage; (c)
+      an included router and a mounted app, with their prefixes; (d) an
+      unknown object at the top and inside the console router, and a
+      route answering every method; (e) a WebSocket route; (f) a scratch
+      route, `/search` rebuilt without its gate (also fails the refusal
+      test), a row without a route.
+- [x] `HEAD` is folded into the `GET` row of the same route object and
       requested by the refusal test with the same expectation; a `HEAD` route
       without `GET` needs its own row. Proved by: a test on the collector with
       one route of each kind.
-- [ ] Refusal test, parametrised over every row, as `derde` with valid
+      Done:
+      `tests/test_route_inventory.py::test_head_folds_into_get_and_a_head_only_route_has_its_own_row`;
+      the refusal tests request `HEAD` too where the route answers it.
+- [x] Refusal test, parametrised over every row, as `derde` with valid
       parameters and existing ids: 403 where the policy is `corpus-read`,
       `grant-read`, `grant-admin` or `delete`; neither 401 nor 403 where it is
       `any-key` or `open`. Proved by: the test; the PR lists the 55 statuses.
-- [ ] Reader test, parametrised over the 28 `corpus-read` and `grant-read`
+      Done: `tests/test_route_refusal.py`; the statuses are in the PR.
+- [x] Reader test, parametrised over the 28 `corpus-read` and `grant-read`
       rows, as `lezer`: the status it has on main. Proved by: the test, and
       the existing suite unchanged and green.
-- [ ] Scope off: the same rows as `derde` with an empty read list answer as on
+      Done:
+      `tests/test_read_gate_reader.py::test_a_reader_answers_as_on_main`
+      on the seeded demo corpus in Postgres; the expected statuses were
+      measured on origin/main 07cf9d9 with the same requests.
+- [x] Scope off: the same rows as `derde` with an empty read list answer as on
       main. Proved by: the test.
-- [ ] `POST /ingest` is untouched: as `derde` it is not refused. Proved by:
+      Done:
+      `tests/test_read_gate_reader.py::test_with_the_scope_off_a_caller_on_no_list_answers_as_on_main`,
+      over all 55 rows; the one difference from main is `POST
+      /datasets/pseudonymize` (403: issuers only, design.md).
+- [x] `POST /ingest` is untouched: as `derde` it is not refused. Proved by:
       the refusal test's `any-key` row and the diff.
+      Done: the `any-key` row in `tests/test_route_refusal.py`; the diff
+      does not touch the route.
 
 ## 4. Who the caller is, and an empty list
-- [ ] The OIDC verifier refuses a token whose `email_verified` is not `true`.
+- [x] The OIDC verifier refuses a token whose `email_verified` is not `true`.
       Proved by: tests in the style of `tests/test_access_identity*.py` with a
       signed token: `true` gives the address; `false`, absent, the string
       `"true"` and `1` give no caller; the same request with a valid key is
       that key's caller; a Cloudflare Access assertion without the claim is
       accepted as before.
-- [ ] A startup warning when authentication and a grant store are on and the
+      Done: `tests/test_access_identity.py` (the verifier) and
+      `tests/test_read_gate_identity.py` (through the app: 401 without a
+      key, the key's caller with one).
+- [x] A startup warning when authentication and a grant store are on and the
       read list is empty. Proved by: a log-capture test for the four
       combinations (warned once; silent with a list; silent without
       authentication; silent without a grant store), and a test that the
       answers do not change.
+      Done: `tests/test_read_gate_grants.py` (four combinations; the
+      warned configuration still refuses no corpus-read row); every row
+      in that configuration in `tests/test_read_gate_reader.py`'s
+      scope-off run.
 
 ## 5. Docs
-- [ ] `docs/how-to/api-auth.md`: what a key alone opens, what needs the read
+- [x] `docs/how-to/api-auth.md`: what a key alone opens, what needs the read
       list, what needs the issuer list; the route that does not exist goes;
       front matter. `docs/how-to/local-demo.md`: what `gast` gets now.
       `docs/how-to/console.md`: the read list covers the API routes too, and
       what an empty list means. `docs/how-to/dataset-pseudonymisation.md`: who
       may run a dataset and why. `docs/how-to/access-identity.md`:
       `email_verified`. Proved by: docs-gates green.
+      Done: docs-gates green on #485.
 
 ## 6. Rollout
 - [ ] 6.1 Before the deploy, read and report, changing nothing:
@@ -129,6 +193,7 @@ grant-issue right also as `lezer`: the side that does not hold the key.
       Mark: the console opens. Proved by: the statuses in the deploy PR.
 - [ ] 6.4 `share-recipient-read` (#439) and `console-share` (#440) are not
       deployed, and no non-reader gets a key or login, before 6.1 and 6.3 are
-      done. They may be built before. Proved by: the order of the deploy PRs.
+      done, and before #487 (reveal answers about a document before the
+      grant check) is closed. They may be built before. Proved by: the order of the deploy PRs.
 - [ ] `/security-review` on the diff, clean or every finding answered in the
       PR.
