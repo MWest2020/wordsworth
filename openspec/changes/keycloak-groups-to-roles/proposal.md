@@ -47,3 +47,21 @@ is a new amendment, not a builder's call.
   a separate promise change.
 - Moving these tables into the key service (that is `key-service-cutover`);
   nested groups.
+
+## Open questions
+
+- Should a group-held role ever authorise a reveal? (#495) Default, pending
+  Mark: no. A reveal needs a grant naming the caller. The default stays until
+  he answers.
+- The #495 default names "role and grant admin, the corpus-read list" among
+  the gates that work by role; in code they decide by label lists. Default:
+  they stay label gates (see Out of scope).
+
+## Relation to the earlier amendment (#493)
+
+This amendment supersedes the first one. It keeps its reveal rule, its
+key/cookie rule and its fix-`Role.active`-first ordering, and replaces three
+points a builder would otherwise have to invent: "role-gated pages" (there are
+none; only `caller_holds_role` gates by role), "behind the same gate as roles
+(`beheerder`)" (`/roles` is gated by issuer labels), and "`grants.authorize`
+receives the resolved roles" (it receives nothing new).

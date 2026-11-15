@@ -36,6 +36,9 @@ One function decides, as today:
 caller_holds_role(session, caller, role, groups=()) -> bool
 ```
 
+Step 2 is built first, on today's function, before groups are added (task 1);
+the group path then inherits it.
+
 1. No caller → False.
 2. The role does not exist or `Role.active` is False → False. Checked first,
    for both sources: a switched-off role opens nothing (fixes the current bug
