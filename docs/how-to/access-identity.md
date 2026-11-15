@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-09-20
+last_reviewed: 2026-11-15
 ---
 
 # Logging in as a person instead of a keyring
@@ -64,6 +64,24 @@ homelab that proxy is oauth2-proxy, configured against the Keycloak realm at
 realm, oauth2-proxy's own manifest for the proxy itself). That rollout is
 out of scope here — this document only covers what wordsworth-api needs once
 a token arrives.
+
+### Only a verified address is a caller
+
+An OIDC token names a caller only when its `email_verified` claim is the JSON
+boolean `true`. `false`, a missing claim, the string `"true"` and the number `1`
+are all refused, and a refused token yields no caller: 401 (or the login page
+for a browser), exactly like an expired or badly signed one. A valid
+`X-API-Key` on the same request still makes that key the caller.
+
+Why: the read list and the issuer list name callers by address. If the realm
+lets someone register, or edit their own address, an account could carry
+`mark@westerweel.work` without anybody having checked it, and be a reader and an
+issuer. So check in the realm that verify-email is on and that every address on
+the lists is marked verified; an address that is not is locked out of the
+console behind Keycloak (the `console` key remains the way in).
+
+Cloudflare Access is not affected: its assertion carries no such claim, and
+Access establishes the address itself.
 
 ## Turning it on — Cloudflare Access
 
