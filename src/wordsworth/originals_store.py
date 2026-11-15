@@ -72,6 +72,12 @@ class OriginalsStore:
     def get_raw(self, key: str) -> bytes:
         return self.objects.get_raw(key)
 
+    def get_head(self, key: str, n: int) -> bytes:
+        return self.objects.get_head(key, n)
+
+    def size(self, key: str) -> int | None:
+        return self.objects.size(key)
+
     def iter_objects(self, prefix: str) -> Iterator[tuple[str, datetime]]:
         return self.objects.iter_objects(prefix)
 

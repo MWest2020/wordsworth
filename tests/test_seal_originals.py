@@ -53,7 +53,8 @@ def test_dry_run_reports_and_changes_nothing(session_factory, mem_store, keys):
     report = run(session_factory, mem_store, keys, dry_run=True)
     assert report["dry_run"] is True
     assert report["before"] == {"objects": 1, "sealed": 0, "legacy": 1,
-                                "missing": 0, "bytes": len(PLAINTEXT)}
+                                "missing": 0, "unreadable": 0,
+                                "bytes": len(PLAINTEXT)}
     assert report["would_seal"] == [doc.object_key]
     assert mem_store.get_raw(doc.object_key) == before_bytes
     with session_factory() as session:
@@ -122,7 +123,8 @@ def test_report_has_counts_and_bytes_never_content(session_factory, mem_store, k
 
     report = run(session_factory, mem_store, keys, dry_run=False)
     assert report["before"] == {"objects": 1, "sealed": 0, "legacy": 1,
-                                "missing": 0, "bytes": len(PLAINTEXT)}
+                                "missing": 0, "unreadable": 0,
+                                "bytes": len(PLAINTEXT)}
     assert report["after"]["sealed"] == 1
     assert report["after"]["legacy"] == 0
     assert mem_store.get_raw(doc.object_key)[:len(HEADER_MAGIC)] == HEADER_MAGIC
@@ -145,7 +147,7 @@ def test_verify_fails_before_a_run_and_passes_after(session_factory, mem_store, 
     with session_factory() as session:
         after = verify(session, mem_store)
     assert after == {"verified": True, "legacy": [], "no_key_row": [], "key_id_mismatch": [],
-                     "pending": [], "missing": []}
+                     "pending": [], "missing": [], "unreadable": []}
 
 
 def test_ids_limits_which_documents_are_considered(session_factory, mem_store, keys):

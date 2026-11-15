@@ -80,7 +80,27 @@ wordsworth-seal-originals --verify           # checks only: fails if a live docu
 
 A run without flags seals for real; `--dry-run` is the flag to pass first.
 The dry run reports counts (`objects`, `sealed`, `legacy`, `missing`,
-`bytes`) and the keys it would seal, and changes nothing. A real run seals
+`unreadable`, `bytes`), the keys it would seal (`would_seal`) and the keys it
+could not read (`unreadable`), and changes nothing.
+
+**The dry run is cheap.** Classifying an object -- the dry run, the `before`
+and `after` counts of a real run, and `--verify` -- costs one HEAD (the size)
+and one ranged GET of the first 30 bytes (the sealed header: magic, version,
+key id), never a download of the object. Only a real seal reads an object in
+full, once, and retries that read once on a transient error (a broken stream,
+a timeout) before reporting it failed. (Before this, a dry run downloaded
+every object several times: on production, ~420 objects, it took over ten
+minutes, and one broken 13 MB GET ended it with a traceback.)
+
+**`missing` versus `unreadable`.** `missing` means the store answered that the
+object does not exist. `unreadable` means the store did not answer usably --
+a 5xx, a timeout, a connection broken mid-read: the object may well exist,
+and may still be plaintext, so it is never counted as missing. No read error
+ends a dry run or a `--verify`; every one is reported as `unreadable`. In a
+real run an original that stays unreadable after the retry is reported
+`"failed"` with the error `"unreadable"` (a missing one: `"missing"`), its
+plaintext untouched, and the run goes on; a scan that cannot be read is
+`"gone"`, as the spec says. Rerun once the store is healthy. A real run seals
 every legacy original it finds for a live document, and the original scan
 (`old_object_key` in its recovering `ocr` audit record,
 `deletion_scans.scan_keys`) of every document that is not deleted --
@@ -137,10 +157,12 @@ schedule, until `--verify` reports `"verified": true`.
 original or a scan is still legacy plaintext, or while a sealed object can
 be opened by no one: it has no key row (`no_key_row`) or its header names
 another key id than its row (`key_id_mismatch`), or while a live document's
-original is missing from the store (`missing`: data loss, never a pass; a
-temporary read error fails it too, which is the safe side). It also lists,
-without failing on them, pending objects -- sealed, `sealed_at` still NULL
-(`pending`), which a rerun finishes. **Run one seal at a time:** two runs at
+original is missing from the store (`missing`: data loss, never a pass), or
+while a live document's original cannot be read (`unreadable`: it may still
+be plaintext, so that fails too -- the safe side). It also lists, without
+failing on them, pending objects -- sealed, `sealed_at` still NULL
+(`pending`), which a rerun finishes -- and scans it could not read
+(`unreadable`, `"kind": "scan"`). **Run one seal at a time:** two runs at
 once share the temporary `sealing/<sha>` copies. Object keys and ids only, never content; it needs no key service.
 
 **On a failed document.** The report names the object key and an error, never
