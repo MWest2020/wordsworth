@@ -11,6 +11,7 @@ from s3_fake import FakeS3Client
 from seal_setup import PLAINTEXT, fake_keys
 
 from wordsworth import seal_candidates
+from wordsworth.document_keys import DocumentKeyRecord
 from wordsworth.object_store import InMemoryObjectStore, ObjectStoreError, S3ObjectStore
 from wordsworth.originals_envelope import HEADER_MAGIC
 from wordsworth.pipeline import ingest
@@ -155,3 +156,45 @@ def test_one_transient_read_error_is_retried(session_factory):
     report = run(session_factory, store, fake_keys(), dry_run=False)
     assert report["failed"] == 0 and report["done"]["sealed"] == 1
     assert store.get_raw(key)[:len(HEADER_MAGIC)] == HEADER_MAGIC
+
+
+def _seal_then_rerun(session_factory, store, forget):
+    ids = _ingest(session_factory, store, PLAINTEXT, SECOND)
+    keys = fake_keys()
+    assert run(session_factory, store, keys, dry_run=False)["done"]["sealed"] == 2
+    forget()
+    return [key for _id, key in ids], run(session_factory, store, keys, dry_run=False)
+
+
+def test_a_rerun_reads_only_the_header_of_a_sealed_object(session_factory):
+    """#491: a rerun used to download every sealed object in full before it
+    noticed `sealed_at`. Against the S3 driver: ranged GETs and HEADs only."""
+    client = FakeS3Client()
+    store = S3ObjectStore(client, "bucket")
+    sealed, rerun = _seal_then_rerun(session_factory, store, client.calls.clear)
+
+    assert rerun["done"] == {"sealed": 0, "scans": 0, "already_sealed": 2, "gone": 0,
+                             "skipped_deleted": 0, "skipped_moved": 0, "failed": 0}
+    assert client.full_gets() == []
+    ranged = [(key, rng) for op, key, rng in client.calls if op == "get"]
+    assert sorted(set(ranged)) == sorted((key, "bytes=0-29") for key in sealed)
+    assert not [call for call in client.calls if call[0] == "put"]
+
+
+def test_a_rerun_still_reads_what_is_not_sealed_and_committed(session_factory):
+    """The short cut needs the header AND `sealed_at`: plaintext under a sealed
+    row is read and refused (a downgrade); a pending object is read and verified."""
+    store = CountingStore()
+    (downgraded, pending), _ = _seal_then_rerun(session_factory, store, lambda: None)
+    store.put(downgraded, PLAINTEXT)
+    with session_factory() as s:
+        s.get(DocumentKeyRecord, pending).sealed_at = None
+        s.commit()
+    store.full_reads.clear()
+
+    report = run(session_factory, store, fake_keys(), dry_run=False)
+    outcome = {r["object_key"]: (r["status"], r.get("error")) for r in report["results"]}
+    assert outcome[downgraded] == ("failed", "key row is sealed but the object is plaintext")
+    assert outcome[pending] == ("sealed", None)
+    assert sorted(store.full_reads) == sorted([downgraded, pending])
+    assert store.get_raw(downgraded) == PLAINTEXT  # nothing written over it
