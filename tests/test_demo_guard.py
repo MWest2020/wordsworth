@@ -148,3 +148,26 @@ def test_a_dataset_is_refused_at_the_edge_and_mints_no_mapping(session_factory):
                data={"profile_name": "example-wi"})
     assert r.status_code == 403 and "does not ingest" in r.json()["detail"]
     assert mappings() == before
+
+
+@pytest.mark.parametrize("reset", [False, True])
+def test_prepare_refuses_before_any_schema_work(monkeypatch, reset):
+    """The URL names a demo database, the server says another: no create, no drop.
+
+    No database needed: the engine is never connected, because the one call that
+    would connect (`connected_name`) is the one answered here (#434)."""
+    import wordsworth.db
+    from demo import serve_local
+    from wordsworth.models import Base
+
+    calls = []
+    monkeypatch.setattr(serve_local, "connected_name", lambda engine: "ww_demo")
+    monkeypatch.setattr(wordsworth.db, "init_schema",
+                        lambda *a, **k: calls.append("init_schema"))
+    monkeypatch.setattr(Base.metadata, "drop_all",
+                        lambda *a, **k: calls.append("drop_all"))
+    monkeypatch.setattr(Base.metadata, "create_all",
+                        lambda *a, **k: calls.append("create_all"))
+    with pytest.raises(Refused, match="not 'ww_demo'"):
+        serve_local.prepare("postgresql+psycopg://u:p@127.0.0.1:1/wordsworth_demo", reset)
+    assert calls == []
