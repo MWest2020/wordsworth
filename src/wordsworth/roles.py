@@ -163,6 +163,26 @@ def resolve(session: Session, name: str | None) -> Resolved:
     return Resolved(frozenset(role.allowed_types or ()), "rol actief")
 
 
+def held_by(session: Session, caller: str | None, groups, role: str) -> bool:
+    """Of ``caller`` nu ``role`` houdt: als recipient van een actieve,
+    niet-verlopen grant die hem noemt (`grants.caller_holds_role`), óf via een
+    groep in zijn geverifieerde assertie die erop is afgebeeld
+    (keycloak-groups-to-roles, `group_roles.roles_for`). De unie van de twee —
+    beide paden respecteren `Role.active`, dus een uitgezette rol levert via
+    geen van beide iets op.
+
+    ``groups`` komt uitsluitend van een geverifieerde assertie (zie
+    `access_identity.py`); een caller zonder zo'n assertie geeft hier `None` of
+    een lege lijst mee en houdt dus niets via deze weg.
+    """
+    from .grants import caller_holds_role
+    from .group_roles import roles_for
+
+    if caller_holds_role(session, caller, role):
+        return True
+    return role in roles_for(session, groups)
+
+
 def _noteer(audit, role: Role, change: str, actor: str, reason: str | None) -> None:
     """Schrijf de wijziging naar het sleutel-levensloopspoor.
 

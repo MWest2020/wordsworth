@@ -146,10 +146,17 @@ Only a caller with role `beheerder`, or one carrying a label in
 `WORDSWORTH_GRANT_ISSUER_LABELS`, may delete. Anyone else is refused before
 anything is read or removed, and a refusal writes no `deleted` record.
 
-A caller **holds** `beheerder` by being the recipient of an active, unexpired
-grant that names the role — the same fact [grants](grants.md) already uses to
-resolve a role-granted reveal, read here as yes/no instead of a type set.
-There is no separate identity-to-role table (see
+A caller **holds** `beheerder` one of two ways: as the recipient of an
+active, unexpired grant that names the role — the same fact [grants](grants.md)
+already uses to resolve a role-granted reveal, read here as yes/no instead of
+a type set — or through a group in their verified identity assertion that is
+mapped to the role (keycloak-groups-to-roles, see
+[roles](roles.md#een-rol-via-een-groep)). The delete gate takes the union of
+the two. A group reaches only a caller authenticated by the signed assertion;
+an API key or the `ww_console` cookie carries none, so that caller needs a
+grant naming them. Either way, a switched-off `beheerder` role opens the gate
+for nobody, grant or group — breakglass applies to both the same way.
+There is no separate identity-to-role table beyond the group mapping (see
 [roles](roles.md#wat-hier-niet-woont)): "who someone is" comes from sign-on,
 "what they may do" is decided here, at the one place every delete passes
 through.

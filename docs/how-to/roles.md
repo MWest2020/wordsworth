@@ -112,12 +112,46 @@ ook op hem. Een bijzondere route voor beheerders is de tweede deur die dit
 project nergens heeft — en het is de deur die het meest gebruikt wordt en het
 minst bekeken.
 
+## Een rol via een groep
+
+Een organisatie beheert mensen in groepen bij haar identiteitsprovider. Een
+groep in de geverifieerde assertie (Keycloak's group-membership-mapper) kan
+worden afgebeeld op een rol, in de console op de rollenpagina of over de API:
+
+```sh
+curl -XPUT $API/group-roles/hr-afdeling -H 'content-type: application/json' \
+  -d '{"role":"hr"}'
+curl -XDELETE $API/group-roles/hr-afdeling
+```
+
+Dezelfde poort als rollen zelf (`beheerder`): wie bepaalt welke groep welke rol
+krijgt, bepaalt wat iedereen in die groep mag zien.
+
+Een caller houdt een rol dan via **twee** wegen — een grant die hem noemt, of
+een groep in zijn assertie die erop is afgebeeld — en rolgebonden handelingen
+(de verwijdergate, rolgebonden pagina's) kijken naar de **unie** van beide.
+Beide wegen respecteren `active`: een uitgezette rol levert via geen van
+beide iets op. Verwijder je de groep bij iemand in Keycloak, of de afbeelding
+hier, dan werkt dat door bij diens volgende assertie — er wordt niets over een
+groep bewaard voorbij het verzoek.
+
+**Een groep opent nooit een onthulling.** Dat blijft bij uitsluitend een grant
+op naam van de aanvrager (`global_by_role` noemt dus nog steeds een persoon,
+niet een groep). Een groep is goed voor "mag deze handeling", nooit voor "mag
+deze PII zien" — dat tweede is precies de reden dat een grant een naam draagt
+en geen groepslidmaatschap.
+
+Groepen bereiken alleen een caller die door de ondertekende assertie is
+geauthenticeerd: een sleutel- of `ww_console`-cookiecaller heeft er geen (zie
+[access-identity](access-identity.md)).
+
 ## Wat hier niet woont
 
-**Wie iemand is.** Dat komt uit de aanmelding: nu Cloudflare Access (het
-geverifieerde e-mailadres is het callerlabel), later mogelijk Keycloak. Deze
-laag kent alleen namen die daarvandaan komen, zodat de dag dat rollidmaatschap
-ergens anders vandaan komt, alléén dat punt verandert en niet de beslissing.
+**Wie iemand is.** Dat komt uit de aanmelding: Cloudflare Access of Keycloak
+(het geverifieerde e-mailadres is het callerlabel, de groepen komen uit
+diezelfde assertie). Deze laag kent alleen namen en groepen die daarvandaan
+komen, zodat de dag dat rollidmaatschap ergens anders vandaan komt, alléén dat
+punt verandert en niet de beslissing.
 
 Zie ook [grants](grants.md), [api-auth](api-auth.md) en
 [deleting documents](deleting-documents.md) — die laatste leunt op precies

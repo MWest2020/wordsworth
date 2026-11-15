@@ -118,12 +118,14 @@ def build(*, keys, identity, corpus_read_labels: list[str] | None,
     def delete(request: Request, session) -> None:
         """Deleting is irreversible: the admin role or a named issuer label
         only. The role is resolved here because ``authorize_delete`` touches
-        no database."""
-        from .grants import caller_holds_role
-        from .roles import ADMIN
+        no database. ``held_by`` is the union of a grant-held and a
+        group-held role (keycloak-groups-to-roles); ``groups`` is empty for
+        every caller but one authenticated by the signed assertion."""
+        from .roles import ADMIN, held_by
 
         caller = getattr(request.state, "caller", None)
-        beheerder = bool(caller) and caller_holds_role(session, caller, ADMIN)
+        groups = getattr(request.state, "groups", None)
+        beheerder = held_by(session, caller, groups, ADMIN)
         if not authorize_delete(caller, issuers, auth_enabled,
                                 is_beheerder=beheerder):
             raise HTTPException(status_code=403,

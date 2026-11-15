@@ -31,6 +31,11 @@ ROLE_ACTION = "role_changed"
 #: hier en niet in de document-hashketen, om exact dezelfde reden als een rol.
 #: Lidmaatschappen zelf horen wel op het document: zie `dossier_events.py`.
 DOSSIER_RENAMED_ACTION = "dossier_renamed"
+#: keycloak-groups-to-roles: een groep op een rol afbeelden, de afbeelding
+#: aanpassen, of verwijderen. Hier en niet in de document-hashketen, om
+#: dezelfde reden als een rol of een grant: een globaal autorisatiefeit zonder
+#: document.
+GROUP_ROLE_ACTION = "group_role_changed"
 
 
 @runtime_checkable
@@ -83,6 +88,15 @@ class KeyLifecycleAudit(Protocol):
         active: bool,
         actor: str,
         reason: str | None = None,
+    ) -> None: ...
+
+    def group_role_changed(
+        self,
+        *,
+        group: str,
+        role: str,
+        change: str,          # created | updated | deleted
+        actor: str,
     ) -> None: ...
 
 
@@ -154,6 +168,13 @@ class JsonlKeyLifecycleAudit:
             STREAM, ROLE_ACTION,
             role=role, change=change, allowed_types=list(allowed_types),
             active=active, actor=actor, reason=reason,
+        )
+
+    def group_role_changed(self, *, group, role, change, actor) -> None:
+        """Welke groep op welke rol werd afgebeeld, en wie het deed."""
+        self._log.event(
+            STREAM, GROUP_ROLE_ACTION,
+            group=group, role=role, change=change, actor=actor,
         )
 
     def dossier_renamed(self, *, dossier_id, old, new, documents, actor) -> None:

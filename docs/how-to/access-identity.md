@@ -83,6 +83,32 @@ console behind Keycloak (the `console` key remains the way in).
 Cloudflare Access is not affected: its assertion carries no such claim, and
 Access establishes the address itself.
 
+### Groups, for role membership (keycloak-groups-to-roles)
+
+Configure a group-membership mapper on the client in Keycloak so its token
+carries a `groups` claim (a list of strings — the group's own name or path).
+A group in that claim can then be mapped to a wordsworth role (see
+[roles](roles.md#een-rol-via-een-groep)), giving every member the role for
+role-checked actions such as the delete gate.
+
+The same rule as the email holds: **a group is read only from the verified
+assertion.** A `groups` header or any claim in an unsigned or badly signed
+token grants nothing — exactly like the readable email header, it rides along
+unauthenticated and is never consulted.
+
+A caller authenticated by an `X-API-Key` or the `ww_console` cookie has **no
+groups at all**, even when an identity provider is configured: the key and
+the cookie carry a label, not a group, and the precedence rule below ("a
+credential you send beats one that rides along") means groups from an
+assertion that rides along behind a presented key never reach that request
+either. A group-gated action for such a caller needs a grant naming them
+instead.
+
+A group-held role never authorises a reveal by itself — see
+[roles](roles.md#een-rol-via-een-groep). That line is drawn once, in the
+authorization layer, not here: this document only covers how a group reaches
+wordsworth at all.
+
 ## Turning it on — Cloudflare Access
 
 ```bash

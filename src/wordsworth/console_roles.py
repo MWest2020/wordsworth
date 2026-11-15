@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from . import group_roles as group_roles_mod
 from . import roles as roles_mod
 from .pii_categories import known_types, legal_basis_of
 
@@ -23,6 +24,13 @@ def _rows(session) -> list[dict]:
     ]
 
 
+def _group_rows(session) -> list[dict]:
+    return [
+        {"group": r.group, "role": r.role, "created_by": r.created_by}
+        for r in group_roles_mod.listing(session)
+    ]
+
+
 def _types() -> list[dict]:
     return [{"name": t, "basis": legal_basis_of(t)} for t in known_types()]
 
@@ -32,8 +40,10 @@ def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None,
     def _page(request, fout=""):
         with session_factory() as session:
             rollen = _rows(session)
+            groepen = _group_rows(session)
         return TEMPLATES.TemplateResponse(request, "roles.html", {
             "rollen": rollen, "types": _types(), "fout": fout,
+            "groepen": groepen,
             "caller": caller(request) if caller else ""})
 
     @router.get("/roles", response_class=HTMLResponse, include_in_schema=False)
@@ -70,6 +80,36 @@ def mount(router, session_factory, TEMPLATES, mag_beheren=None, caller=None,
                 fn(session, name, actor=caller(request) if caller else "onbekend",
                    reason=reason, audit=audit(session) if audit else None)
             except roles_mod.RoleError as exc:
+                return _page(request, str(exc))
+            session.commit()
+        return RedirectResponse("/console/roles", status_code=303)
+
+    @router.post("/roles/groups", include_in_schema=False)
+    def set_group(request: Request, group: str = Form(...), role: str = Form(...)):
+        if mag_beheren is not None:
+            mag_beheren(request)
+        with session_factory() as session:
+            try:
+                group_roles_mod.set_role(
+                    session, group, role,
+                    actor=caller(request) if caller else "onbekend",
+                    audit=audit(session) if audit else None)
+            except group_roles_mod.GroupRoleError as exc:
+                return _page(request, str(exc))
+            session.commit()
+        return RedirectResponse("/console/roles", status_code=303)
+
+    @router.post("/roles/groups/delete", include_in_schema=False)
+    def delete_group(request: Request, group: str = Form(...)):
+        if mag_beheren is not None:
+            mag_beheren(request)
+        with session_factory() as session:
+            try:
+                group_roles_mod.delete(
+                    session, group,
+                    actor=caller(request) if caller else "onbekend",
+                    audit=audit(session) if audit else None)
+            except group_roles_mod.GroupRoleError as exc:
                 return _page(request, str(exc))
             session.commit()
         return RedirectResponse("/console/roles", status_code=303)

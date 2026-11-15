@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from .key_audit import KeyLifecycleAudit
 from .keys import DEFAULT_DOMAIN
-from .models import GrantRecord
+from .models import GrantRecord, Role
 
 ACTIVE = "active"
 REVOKED = "revoked"
@@ -173,8 +173,17 @@ def caller_holds_role(session: Session, caller: str | None, role: str) -> bool:
     active, unexpired grant naming it" — the same fact `authorize()` already
     reads when a role-granted reveal is resolved, read here for a yes/no instead
     of a type set. A revoked or expired grant answers no, like everywhere else.
+
+    A switched-off role answers no too, same as a role-granted reveal: a grant
+    naming it is not itself touched (see `roles.py`), but it stops opening
+    anything the moment the role is off. An unknown role name is left alone —
+    that is not this function's call to make.
     """
     if not caller:
+        return False
+    actief = session.execute(
+        select(Role.active).where(Role.name == role)).scalars().first()
+    if actief is False:
         return False
     now = _now()
     rows = session.execute(

@@ -60,6 +60,45 @@ het toekennen, dus bij de grant. Dezelfde rol kan aan de een gegeven worden voor
  </form>
 </div>
 
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Groep → rol</h3>
+   <span class="badge">{{ groepen|length }}</span></div>
+ <p class="lede" style="padding:0 16px">Een groep uit de geverifieerde
+ identiteitsassertie die hiermee is afgebeeld, geeft iedereen erin de rol —
+ voor rolgebonden handelingen zoals de verwijdergate. Een onthulling gaat
+ hier <b>niet</b> langs: die vraagt altijd een grant op naam.</p>
+ {% if groepen %}
+ <table><thead><tr><th>groep</th><th>rol</th><th></th></tr></thead>
+ <tbody>
+ {% for g in groepen %}
+ <tr>
+  <td><b>{{ g.group }}</b>
+    <div class="note" style="font-size:.76rem">aangemaakt door {{ g.created_by }}</div></td>
+  <td><span class="pill">{{ g.role }}</span></td>
+  <td>
+   <form method="post" action="/console/roles/groups/delete">
+    <input type="hidden" name="group" value="{{ g.group }}">
+    <button class="btn" type="submit" style="padding:7px 14px">Verwijder</button>
+   </form>
+  </td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog geen groep-afbeeldingen.</p>{% endif %}
+ <form method="post" action="/console/roles/groups"
+       style="padding:16px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+  <div class="field">
+   <label for="groepnaam">Groep</label>
+   <input type="text" id="groepnaam" name="group" placeholder="hr-afdeling" required>
+  </div>
+  <div class="field">
+   <label for="groeprol">Rol</label>
+   <input type="text" id="groeprol" name="role" placeholder="hr" required>
+  </div>
+  <button class="btn" type="submit">Beeld af</button>
+ </form>
+</div>
+
 <div class="sovereign">
  <p>Een rol uitzetten werkt <b>onmiddellijk</b> en raakt geen enkele grant aan:
  elke grant die de rol noemt autoriseert vanaf dat moment niets. Dat is de reden

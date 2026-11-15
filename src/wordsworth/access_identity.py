@@ -155,10 +155,11 @@ def _fetch(url: str) -> dict:
         return json.loads(resp.read())
 
 
-def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = None):
-    """The verified email in this assertion, or raise. Every check here is a
-    refusal, never a warning — there is no partial trust."""
-    now = time.time() if now is None else now
+def _verify(token: str, keys: dict, verifier: Verifier, now: float) -> dict:
+    """The verified claims of this assertion, or raise. Every check here is a
+    refusal, never a warning — there is no partial trust. Shared by every
+    extractor (email, groups, ...) so a token is checked once per call, not
+    once per claim read from it."""
     try:
         head_raw, body_raw, sig_raw = token.split(".")
         head = json.loads(_b64(head_raw))
@@ -199,6 +200,10 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         raise AccessError("assertion has an unreadable expiry")
     if verloopt <= now:
         raise AccessError("assertion has expired")
+    return body
+
+
+def _email_from_body(body: dict, verifier: Verifier) -> str:
     email = body.get("email")
     if not isinstance(email, str) or not email.strip():
         # A non-string would flow into the caller label and the audit trail.
@@ -210,6 +215,26 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         # sets this flag, so it is unaffected.
         raise AccessError("assertion's address is not verified")
     return email
+
+
+def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = None):
+    """The verified email in this assertion, or raise. Every check here is a
+    refusal, never a warning — there is no partial trust."""
+    now = time.time() if now is None else now
+    body = _verify(token, keys, verifier, now)
+    return _email_from_body(body, verifier)
+
+
+def groups_from(body: dict) -> list[str]:
+    """The verified ``groups`` claim (Keycloak's group membership mapper) as a
+    list of strings — missing, wrong-shaped, or non-string entries all yield
+    no groups rather than a guess. Takes the already-verified body, never the
+    raw token or a header: a group is only as trustworthy as the signature it
+    rode in on (keycloak-groups-to-roles)."""
+    raw = body.get("groups")
+    if not isinstance(raw, list):
+        return []
+    return [g for g in raw if isinstance(g, str) and g.strip()]
 
 
 class Identity:
@@ -240,16 +265,34 @@ class Identity:
             self._at = now - self._ttl + self._backoff
         return self._keys
 
+    def _token(self, request) -> str:
+        auth = request.headers.get(BEARER_HEADER, "")
+        return (auth[len(BEARER_PREFIX):].strip() if auth.startswith(BEARER_PREFIX)
+                else request.headers.get(JWT_HEADER, ""))
+
     def caller(self, request, now: float | None = None):
         """The verified email on this request, or None. Never reads the
         readable email header: it arrives on every path, including ones
         that skip the provider."""
-        auth = request.headers.get(BEARER_HEADER, "")
-        token = (auth[len(BEARER_PREFIX):].strip() if auth.startswith(BEARER_PREFIX)
-                 else request.headers.get(JWT_HEADER, ""))
+        token = self._token(request)
         if not token:
             return None
         try:
             return email_from(token, self.keys(now), self.verifier, now)
         except AccessError:
             return None
+
+    def groups(self, request, now: float | None = None) -> list[str]:
+        """The verified ``groups`` claim on this request, or an empty list.
+        Same discipline as `caller`: only from the signed assertion, never a
+        header and never an unsigned token — an invalid or token-less request
+        carries no groups rather than raising (keycloak-groups-to-roles)."""
+        token = self._token(request)
+        if not token:
+            return []
+        try:
+            body = _verify(token, self.keys(now), self.verifier,
+                           time.time() if now is None else now)
+        except AccessError:
+            return []
+        return groups_from(body)

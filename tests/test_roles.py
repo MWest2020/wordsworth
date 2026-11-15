@@ -233,6 +233,42 @@ def test_a_role_survives_a_round_trip_through_postgres(session_factory):
                          resolve_role=_resolver(s)) == {"PERSON"}
 
 
+def test_caller_holds_role_respects_active(session_factory):
+    """`caller_holds_role` keek nooit naar `Role.active`: een grant op naam
+    van een uitgezette rol opende de verwijdergate dan nog. Dat moet eerst
+    gerepareerd zijn (keycloak-groups-to-roles), vóór de functie wordt
+    uitgebreid met groepen."""
+    from wordsworth.grants import PostgresGrantStore, caller_holds_role
+
+    with session_factory() as s:
+        roles.create(s, roles.ADMIN, ["PERSON"], actor="installatie", audit=_Stroom(s))
+        s.flush()
+        PostgresGrantStore(s).issue("mark", [], actor="installatie", role=roles.ADMIN)
+        s.commit()
+        assert caller_holds_role(s, "mark", roles.ADMIN) is True
+
+        roles.deactivate(s, roles.ADMIN, actor="mark", reason="lek gemeld",
+                         audit=_Stroom(s))
+        s.commit()
+        assert caller_holds_role(s, "mark", roles.ADMIN) is False
+
+        roles.activate(s, roles.ADMIN, actor="mark", reason="lek gedicht",
+                       audit=_Stroom(s))
+        s.commit()
+        assert caller_holds_role(s, "mark", roles.ADMIN) is True
+
+
+def test_caller_holds_role_leaves_an_unknown_role_name_alone(session_factory):
+    """Een rolnaam die geen `Role`-rij heeft, is niet deze functie om op te
+    oordelen — dat was altijd al zo en verandert hier niet."""
+    from wordsworth.grants import PostgresGrantStore, caller_holds_role
+
+    with session_factory() as s:
+        PostgresGrantStore(s).issue("mark", [], actor="installatie", role="spook")
+        s.commit()
+        assert caller_holds_role(s, "mark", "spook") is True
+
+
 def test_a_role_is_a_row_not_a_copy(session_factory):
     """Bewijs dat de types niet bij uitgifte zijn overgeschreven."""
     with session_factory() as s:

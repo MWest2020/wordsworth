@@ -13,8 +13,8 @@ import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from wordsworth.access_identity import (AccessError, DiscoveryError, Verifier,
-                                        discover_jwks_url, email_from,
+from wordsworth.access_identity import (AccessError, DiscoveryError, Identity,
+                                        Verifier, discover_jwks_url, email_from,
                                         public_keys)
 
 TEAM = "raspy-wood-e123.cloudflareaccess.com"
@@ -282,3 +282,65 @@ def test_a_cloudflare_access_assertion_without_email_verified_is_accepted(key, k
     unaffected by the OIDC-only check."""
     token = _token(key)
     assert email_from(token, keys, VERIFIER, NU) == "mark@westerweel.work"
+
+
+# --- groups (keycloak-groups-to-roles): only from the verified assertion ----
+
+class _Req:
+    """Genoeg van een `Request` om `Identity.groups` op te roepen: alleen
+    headers worden gelezen, net als bij `caller`."""
+
+    def __init__(self, headers: dict):
+        self.headers = headers
+
+
+def test_the_verified_groups_claim_is_extracted(key):
+    token = _token(key, groups=["hr-afdeling", "ict", 123, "", "  "])
+    ident = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    groepen = ident.groups(_Req({"authorization": f"Bearer {token}"}), NU)
+    assert groepen == ["hr-afdeling", "ict"], (
+        "niet-string- en lege entries horen niet mee te komen")
+
+
+def test_no_groups_claim_yields_no_groups(key):
+    token = _token(key)  # geen groups-claim
+    ident = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    assert ident.groups(_Req({"authorization": f"Bearer {token}"}), NU) == []
+
+
+def test_a_forged_groups_header_is_ignored(key):
+    """Groepen komen alleen uit de ondertekende assertie — een header die
+    langs het verzoek meereist telt niet, net als het leesbare e-mailadres."""
+    token = _token(key)  # geen groups-claim in het geverifieerde token
+    ident = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    req = _Req({"authorization": f"Bearer {token}", "x-groups": "beheerder",
+               "groups": "beheerder"})
+    assert ident.groups(req, NU) == []
+
+
+def test_an_unsigned_tokens_groups_are_ignored(key):
+    """`alg: none` draagt zijn eigen (afwezige) verificatie — net als bij
+    `email_from` sluit het weigeren van alles buiten RS256 die hele familie."""
+    head = _b64(json.dumps({"alg": "none", "kid": "k1"}).encode())
+    payload = _b64(json.dumps(
+        {"email": "x@y.nl", "aud": [AUD], "groups": ["beheerder"]}).encode())
+    token = f"{head}.{payload}."
+    ident = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    assert ident.groups(_Req({"authorization": f"Bearer {token}"}), NU) == []
+
+
+def test_a_tampered_groups_claim_is_refused():
+    """Een handtekening-mismatch weigert het hele token, dus ook de groepen
+    erin — niet alleen het e-mailadres."""
+    key = _key()
+    head, payload, sig = _token(key, groups=["beheerder"]).split(".")
+    body = json.loads(base64.urlsafe_b64decode(payload + "=="))
+    body["groups"] = ["beheerder", "aanvaller-wil-erbij"]
+    vervalst = f"{head}.{_b64(json.dumps(body).encode())}.{sig}"
+    ident = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    assert ident.groups(_Req({"authorization": f"Bearer {vervalst}"}), NU) == []
+
+
+def test_groups_with_no_token_at_all_yields_no_groups(key):
+    ident = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    assert ident.groups(_Req({}), NU) == []

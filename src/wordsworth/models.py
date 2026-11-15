@@ -356,6 +356,27 @@ class Role(Base):
     created_by: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class GroupRole(Base):
+    """Group -> role (keycloak-groups-to-roles): rights follow group
+    membership managed in the identity provider, as data in one place — the
+    application decides nothing beyond looking a verified group up here.
+
+    One role per group: a group that should carry two roles gets two groups at
+    the identity provider's side instead, so the lookup here stays a plain
+    function and the audit trail reads as "this group means that role" rather
+    than a set that can grow unnoticed.
+    """
+
+    __tablename__ = "group_roles"
+
+    group: Mapped[str] = mapped_column(String, primary_key=True)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class BoxMap(Base):
     """Where each redaction goes on the page: page, rectangle and pseudonym
     token, per document (pdf-redaction). Derived working data like

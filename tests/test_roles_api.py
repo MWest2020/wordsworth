@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from wordsworth import group_roles, roles
 from wordsworth.api import create_app
 from wordsworth.grants import PostgresGrantStore
+from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit as _Stroom
 from wordsworth.keys import InMemoryKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.pipeline import ingest, process
@@ -287,6 +289,58 @@ def test_narrowing_a_role_is_recorded_too(session_factory, tmp_path):
     laatste = [e for e in audit.events() if e.get("action") == "role_changed"][-1]
     assert laatste["change"] == "types"
     assert laatste["allowed_types"] == ["EMAIL"]
+
+
+class _GroupIdent:
+    """Een identiteitsprovider die het e-mailadres uit ``x-wie`` en de
+    groepen uit ``x-groepen`` (kommagescheiden) haalt — genoeg om te testen
+    dat een groep een onthulling niet opent, zonder een echte
+    JWT-infrastructuur (keycloak-groups-to-roles)."""
+
+    def caller(self, request, now=None):
+        return request.headers.get("x-wie") or None
+
+    def groups(self, request, now=None):
+        raw = request.headers.get("x-groepen", "")
+        return [g for g in raw.split(",") if g]
+
+
+def test_a_group_held_role_never_opens_a_reveal(
+        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+    """Een groep is goed voor een rolgebonden handeling (de verwijdergate),
+    nooit voor een onthulling: die vraagt altijd een grant op naam van de
+    aanvrager. `global_by_role` blijft dus een persoon noemen, geen groep."""
+    kp, doc_id = _document(session_factory, mem_store, mem_index, fake_embedder,
+                           born_digital_pii_pdf)
+    with session_factory() as s:
+        roles.create(s, roles.ADMIN, ["EMAIL"], actor="installatie", audit=_Stroom(s))
+        group_roles.set_role(s, "hr-afdeling", roles.ADMIN, actor="installatie",
+                             audit=_Stroom(s))
+        gs = PostgresGrantStore(s)
+        grant = gs.issue("iemand-anders@gemeente.nl", ["EMAIL"], actor="mark",
+                         document_id=doc_id)
+        s.commit()
+        grant_id = grant.grant_id
+
+    app = create_app(session_factory=session_factory, key_provider=kp,
+                     grant_store_factory=lambda s: PostgresGrantStore(s),
+                     access_verifier=object())
+    for m in app.user_middleware:
+        if m.cls.__name__ == "ApiKeyAuthMiddleware":
+            m.kwargs["identity"] = _GroupIdent()
+    c = TestClient(app, base_url="https://testserver")
+
+    # Een grant die een ander noemt: geweigerd, net als elke andere caller.
+    r = c.post(f"/documents/{doc_id}/reveal",
+              headers={"x-wie": "iemand@gemeente.nl", "x-groepen": "hr-afdeling"},
+              json={"grant_id": grant_id, "types": ["EMAIL"]})
+    assert r.status_code == 403
+
+    # En op geen grant: dezelfde weigering die elke andere caller ook krijgt.
+    r2 = c.post(f"/documents/{doc_id}/reveal",
+               headers={"x-wie": "iemand@gemeente.nl", "x-groepen": "hr-afdeling"},
+               json={"grant_id": "onbekend", "types": ["EMAIL"]})
+    assert r2.status_code == 404
 
 
 def test_the_console_writes_the_same_record_as_the_api(session_factory, tmp_path):

@@ -370,3 +370,112 @@ def test_delete_unknown_document_is_404(session_factory):
     r = _app(session_factory).delete(f"/documents/{uuid4()}",
                                      headers={"X-API-Key": "k-issuer"})
     assert r.status_code == 404
+
+
+# --- 2. Een groep opent de verwijdergate (keycloak-groups-to-roles) ---------
+
+class _GroupIdent:
+    """Een identiteitsprovider die het e-mailadres uit ``x-wie`` en de
+    groepen uit ``x-groepen`` (kommagescheiden) haalt — genoeg om de
+    verwijdergate via een groep te testen zonder een echte JWT-infrastructuur
+    (zie ``_Ident`` in ``test_auth_belooft_en_doet.py`` voor hetzelfde
+    patroon)."""
+
+    def caller(self, request, now=None):
+        return request.headers.get("x-wie") or None
+
+    def groups(self, request, now=None):
+        raw = request.headers.get("x-groepen", "")
+        return [g for g in raw.split(",") if g]
+
+
+def _app_met_identiteit(session_factory, **kw):
+    opts = {"access_verifier": object()}
+    opts.update(kw)
+    app = create_app(session_factory=session_factory, store=InMemoryObjectStore(),
+                     search_index=InMemoryIndex(), **opts)
+    for m in app.user_middleware:
+        if m.cls.__name__ == "ApiKeyAuthMiddleware":
+            m.kwargs["identity"] = _GroupIdent()
+    return TestClient(app)
+
+
+def _beheerder_via_groep(session_factory, group="hr-afdeling"):
+    """Zet de beheerdersrol en een afbeelding ``group`` -> beheerder klaar, en
+    registreert een document. Geeft het document-id terug."""
+    from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit as _Stroom
+
+    with session_factory() as s:
+        roles.create(s, roles.ADMIN, ["PERSON"], actor="installatie", audit=_Stroom(s))
+        doc = register(s, KEY)
+        s.flush()
+        from wordsworth import group_roles
+
+        group_roles.set_role(s, group, roles.ADMIN, actor="installatie",
+                             audit=_Stroom(s))
+        s.commit()
+        return doc.id
+
+
+def test_a_group_held_role_deletes(session_factory):
+    doc_id = _beheerder_via_groep(session_factory)
+    r = _app_met_identiteit(session_factory).delete(
+        f"/documents/{doc_id}",
+        headers={"x-wie": "iemand@gemeente.nl", "x-groepen": "hr-afdeling"})
+    assert r.status_code == 200
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.DELETED
+
+
+def test_a_revoked_group_no_longer_deletes(session_factory):
+    """Zodra de groep niet meer in de assertie staat, houdt de caller de rol
+    niet meer via die weg — en de verwijdering wordt geweigerd."""
+    doc_id = _beheerder_via_groep(session_factory)
+    r = _app_met_identiteit(session_factory).delete(
+        f"/documents/{doc_id}",
+        headers={"x-wie": "iemand@gemeente.nl", "x-groepen": "een-andere-groep"})
+    assert r.status_code == 403
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.REGISTERED
+
+
+def test_a_group_mapped_to_a_switched_off_role_does_not_delete(session_factory):
+    """Zelfde gedrag als een grant op een uitgezette rol: uitzetten werkt
+    onmiddellijk, via welke weg de rol ook gehouden wordt."""
+    from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit as _Stroom
+
+    doc_id = _beheerder_via_groep(session_factory)
+    with session_factory() as s:
+        roles.deactivate(s, roles.ADMIN, actor="mark", reason="lek gemeld",
+                         audit=_Stroom(s))
+        s.commit()
+    r = _app_met_identiteit(session_factory).delete(
+        f"/documents/{doc_id}",
+        headers={"x-wie": "iemand@gemeente.nl", "x-groepen": "hr-afdeling"})
+    assert r.status_code == 403
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.REGISTERED
+
+
+def test_a_key_caller_has_no_groups_on_the_delete_gate(session_factory):
+    """Een sleutelcaller draagt een label, geen groep — ook niet wanneer er
+    een identiteitsprovider is geconfigureerd."""
+    doc_id = _beheerder_via_groep(session_factory)
+    c = _app_met_identiteit(session_factory, api_keys={"k-niemand": "niemand"})
+    r = c.delete(f"/documents/{doc_id}",
+                headers={"X-API-Key": "k-niemand", "x-groepen": "hr-afdeling"})
+    assert r.status_code == 403
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.REGISTERED
+
+
+def test_a_console_cookie_caller_has_no_groups_on_the_delete_gate(session_factory):
+    """Dezelfde weigering via de `ww_console`-cookie: die draagt dezelfde
+    sleutel als de header, dus hetzelfde label en geen groep."""
+    doc_id = _beheerder_via_groep(session_factory)
+    c = _app_met_identiteit(session_factory, api_keys={"k-niemand": "niemand"})
+    c.cookies.set("ww_console", "k-niemand")
+    r = c.delete(f"/documents/{doc_id}", headers={"x-groepen": "hr-afdeling"})
+    assert r.status_code == 403
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.REGISTERED
