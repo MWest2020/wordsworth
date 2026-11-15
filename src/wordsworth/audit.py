@@ -28,6 +28,18 @@ def _tail_hash(session: Session) -> str:
     return tail or GENESIS_HASH
 
 
+def lock_chain(session: Session) -> None:
+    """Take the chain's advisory lock now, until the transaction ends.
+
+    `append` takes it by itself. A caller takes it earlier when something has
+    to be decided under it: linking a pseudonym to a document and removing a
+    `pii_mappings` row both are (#465, `docs/reference/lock-order.md`).
+    Re-entrant within one transaction."""
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK_KEY}
+    )
+
+
 def append(
     session: Session,
     *,
@@ -38,9 +50,7 @@ def append(
     payload: dict[str, Any] | None = None,
     ts: datetime | None = None,
 ) -> AuditRecord:
-    session.execute(
-        text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK_KEY}
-    )
+    lock_chain(session)
     payload = payload or {}
     ts = ts or datetime.now(timezone.utc)
     prev = _tail_hash(session)

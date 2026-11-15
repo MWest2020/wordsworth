@@ -27,9 +27,10 @@ import logging
 from collections import Counter
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import DocumentText
+from .models import AuditRecord, DocumentText
 from .pseudonym_registry import tokens_in
 from .pseudonymizer import label_of
 from .structured_log import logger
@@ -87,3 +88,20 @@ def log(document_id: UUID | str, counts: dict[str, dict[str, int]]) -> str:
     )
     logger.log(logging.INFO, line)
     return line
+
+
+def value_not_located_detail(session, document_id: UUID) -> str | None:
+    """The `problems` text for this document, if the run just finished ended
+    in `value-not-located` (pdf-redaction-locate) rather than a usable box
+    map. Names the PII type and the counts, never the value -- the same
+    contract the audit record itself keeps."""
+    row = session.execute(
+        select(AuditRecord.step, AuditRecord.payload)
+        .where(AuditRecord.document_id == document_id)
+        .order_by(AuditRecord.seq.desc()).limit(1)
+    ).first()
+    if row is None or row[0] != "value-not-located":
+        return None
+    payload = row[1] or {}
+    return (f"value-not-located: {payload.get('pii_type')} "
+            f"({payload.get('in_positioned')} of {payload.get('in_anonymized')} located)")

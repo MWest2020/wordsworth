@@ -54,6 +54,9 @@ curl -X POST "$WORDSWORTH_API_URL/reprocess" \
 
 Response is a per-document tally: `{total, reanonymized, skipped, retryable,
 failed}`.
+A document deleted while the run was at it counts as `skipped` and is listed
+in `problems` with the reason `deleted` (#469); one that was not
+`INDEXED`/`ANONYMIZED` to begin with is skipped without an entry.
 
 ## Notes
 

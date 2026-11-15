@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -43,12 +44,13 @@ class PostgresMappingStore:
         # same value at once -- two threads in one pod, or two replicas -- both
         # saw "absent", and the second insert failed its whole ingest on the
         # primary key. Both rows encrypt the same value, so the first one wins.
-        self._session.execute(
-            pg_insert(PiiMapping)
-            .values(pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
-                    key_id=key_id, norm_version=norm_version,
-                    created_at=datetime.now(timezone.utc))
-            .on_conflict_do_nothing(index_elements=["pseudonym"]))
+        values = dict(pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
+                      key_id=key_id, norm_version=norm_version,
+                      created_at=datetime.now(timezone.utc))
+        _insert(self._session, values)
+        # Kept for `pin`: a row found here can be gone again before this
+        # transaction links it to a document (#465).
+        self._session.info.setdefault(_PUTS, {})[pseudonym] = values
 
     def get(self, pseudonym: str) -> Mapping | None:
         row = self._session.get(PiiMapping, pseudonym)
@@ -74,6 +76,61 @@ class PostgresMappingStore:
             row.key_id = new_id
         self._session.flush()
         return len(rows)
+
+
+#: `Session.info` key: what this session `put`, by pseudonym, so `pin` can
+#: store a row again. Ciphertext only, as the table itself.
+_PUTS = "pii_mapping_puts"
+
+
+def _insert(session: Session, values: dict) -> None:
+    session.execute(pg_insert(PiiMapping).values(**values)
+                    .on_conflict_do_nothing(index_elements=["pseudonym"]))
+
+
+def pin(session: Session, pseudonyms: set[str]) -> None:
+    """Make sure the mapping rows this session `put` for ``pseudonyms`` exist,
+    and hold them FOR KEY SHARE until the transaction ends (#465).
+
+    `put` inserts nothing when another document already minted the value, and
+    takes no lock on the row it found; a deletion of that document, the last
+    committed holder, removes the row. The caller holds the audit chain lock
+    (`pseudonym_registry.link`), which a deletion takes before it removes a
+    mapping, so a row found or stored here stays. A pseudonym this session
+    never `put` (irreversible mode, a non-Postgres store) is not looked at.
+    The clever pitfall: the remembered values live on `Session.info`, so this
+    only works on the session the store was built on -- which is the one
+    `process` runs on."""
+    put = session.info.get(_PUTS, {})
+    wanted = sorted(set(pseudonyms) & put.keys())
+    if not wanted:
+        return
+    for _ in range(2):
+        held = set(session.execute(
+            select(PiiMapping.pseudonym).where(PiiMapping.pseudonym.in_(wanted))
+            .order_by(PiiMapping.pseudonym).with_for_update(key_share=True, read=True)
+        ).scalars().all())
+        missing = [p for p in wanted if p not in held]
+        if not missing:
+            return
+        for pseudonym in missing:
+            _insert(session, put[pseudonym])
+    raise RuntimeError(f"{len(missing)} pii_mappings rows could not be stored "
+                       "again; nothing is linked, a rerun finishes the work")
+
+
+def remove_orphans(session: Session, pseudonyms: list[str]) -> None:
+    """Delete these mapping rows, locked FOR UPDATE in pseudonym order first.
+    The caller holds the audit chain lock and has checked, under it, that no
+    other document is linked to them (`deletion_mappings`)."""
+    if not pseudonyms:
+        return
+    session.execute(select(PiiMapping.pseudonym)
+                    .where(PiiMapping.pseudonym.in_(pseudonyms))
+                    .order_by(PiiMapping.pseudonym).with_for_update())
+    session.execute(sa_delete(PiiMapping)
+                    .where(PiiMapping.pseudonym.in_(pseudonyms))
+                    .execution_options(synchronize_session="fetch"))
 
 
 class InMemoryMappingStore:

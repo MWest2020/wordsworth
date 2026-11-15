@@ -4,6 +4,26 @@
 
 ### Fixed
 
+- **Concurrency fixes around deletion** (#460, #465, #466, #469); the one
+  lock order is now written down in `docs/reference/lock-order.md`.
+  - A deletion could remove a `pii_mappings` row that another document, being
+    anonymised at that moment, was about to rely on; that document's token
+    could then never be revealed (#465). Linking a pseudonym to a document
+    and removing a mapping now both happen under the audit chain lock, and a
+    run that finds its mapping gone stores it again.
+  - The API's already-indexed ingest path added a dossier membership without
+    locking the document; a dossier deletion in flight still deleted it,
+    leaving a deleted document as a member (#466). It now locks the row and
+    checks again; bytes whose document was deleted meanwhile are ingested as
+    a new document.
+  - `wordsworth-release-deleted-keys` and `wordsworth-dedupe` took the audit
+    chain lock before a document row and could deadlock with a deletion or
+    an ingest (#466). Both lock the rows first.
+  - `reprocess` counted a document deleted mid-run as `reanonymized` (#469);
+    it is now `skipped`, with `deleted` as the reason in the problems list.
+  - The dossier-deletion lock-order inversion (#460) was fixed with #462;
+    this adds the test the issue asked for.
+
 - **A deletion racing `reanonymize` put the document back in the index**
   (#463). `reanonymize` (the `reprocess` backfill) read the state without a
   lock; a deletion that committed before it wrote the index entry and the

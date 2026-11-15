@@ -25,6 +25,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import audit, mapping_store
 from .models import DocumentPseudonym
 
 MINTED = "minted"
@@ -64,6 +65,21 @@ def register(session: Session, document_id: UUID, text: str,
         session.add(DocumentPseudonym(document_id=document_id, pseudonym=pseudonym,
                                       source=source, created_at=now))
     return len(nieuw)
+
+
+def link(session: Session, document_id: UUID, text: str) -> int:
+    """`register` for a run that just minted ``text`` (`process`,
+    `reanonymize`), safe beside a deletion (#465): under the audit chain
+    lock, with the mapping rows behind the tokens pinned first.
+
+    A deletion removes a mapping no other document is linked to, and decides
+    that under the same lock. So either this link commits first and the
+    deletion sees it, or the deletion commits first and `pin` stores the
+    mapping again. The caller appends its audit record right after; the lock
+    is not held any longer for this (`docs/reference/lock-order.md`)."""
+    audit.lock_chain(session)
+    mapping_store.pin(session, tokens_in(text))
+    return register(session, document_id, text)
 
 
 def registered(session: Session, document_id: UUID) -> set[str]:

@@ -70,6 +70,21 @@ def lock_live(session: Session, document_id: UUID, object_key: str) -> bool:
             and current_state(session, document_id) != State.DELETED)
 
 
+def lock_live_for(session: Session, object_key: str) -> Document | None:
+    """The live document for ``object_key`` with its row locked (`lock_live`),
+    or None when there is none, or none that stayed live while this waited
+    for it. For a caller that adds to an existing document without `ingest`
+    (the API's already-indexed path, #466): what it adds then cannot land on
+    a document a deletion in flight is removing."""
+    from .pipeline import live_document_for  # deferred: pipeline imports this module
+
+    for _ in range(LIVE_ATTEMPTS):
+        doc = live_document_for(session, object_key)
+        if doc is None or lock_live(session, doc.id, object_key):
+            return doc
+    return None
+
+
 def lock_for_process(session: Session, document_id: UUID) -> Document | None:
     """Lock the document row FOR SHARE before `process` reads its state (#462);
     `reanonymize` takes it the same way (#463).

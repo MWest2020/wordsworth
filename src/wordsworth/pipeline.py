@@ -338,7 +338,7 @@ def process(
         # Welke pseudonymen bij dit document horen. Mag uit de uitvoer gelezen
         # worden omdat neutralise_foreign_tokens ervóór draait: wat er ná afloop
         # in staat, is hier gemunt.
-        pseudonym_registry.register(session, document_id, result.text)
+        pseudonym_registry.link(session, document_id, result.text)
         session.flush()
         # Counts per type + per-layer confidence aggregates (add-detection-
         # confidence): aggregates only, never a value or an offset. text_source
@@ -516,7 +516,7 @@ def reanonymize(
     # Idem bij een herindexering: de nieuwe tokens komen erbij. Oude blijven
     # staan -- een registratie die krimpt onder een lopende reveal is een race,
     # geen waarborg.
-    pseudonym_registry.register(session, document_id, result.text)
+    pseudonym_registry.link(session, document_id, result.text)
     session.flush()
     # An update/access event (from==to), like deanonymize: keeps the hash-chain
     # valid without an illegal state transition. Counts only, never clear values.
