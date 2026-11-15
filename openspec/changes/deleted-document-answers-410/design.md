@@ -63,7 +63,10 @@ in the 410 requirement, and two rows in the inventory test.
 
 1. 401, then the route's gate (403, before validation and lookup, as #485
    built it);
-2. 422 for a malformed id or body;
+2. request validation: 422 for a malformed id or body, 400 for an
+   unsupported `view` on `/anonymized` (`_check_view`, `api.py:611`; it is a
+   400 today, not a 422, and this change leaves the code as it is). These
+   depend on the request alone, so they say nothing about the document;
 3. 404 for an unknown id;
 4. **410 for a deleted document**;
 5. the route's other answers (409 superseded, 409 not yet de-identified, the
@@ -86,7 +89,8 @@ failed cleanup left behind is never served.
 A small helper (proposed: `src/wordsworth/document_gone.py`, a few lines)
 takes the session and the id, raises 404 for no state and 410 for
 `State.DELETED`, and returns the state. The three content routes call it
-first in their body; `redacted.pdf` loses its own two checks. One spelling of
+first in their body (the feedback route after taking the chain lock,
+decision 5); `redacted.pdf` loses its own two checks. One spelling of
 the detail, `document deleted`, as the PDF routes use today.
 
 **The clever pitfall, twice.**
@@ -112,8 +116,13 @@ between leaves a `detection_feedback` record after the `deleted` record, with
 latest record, so the document then reads as `indexed` again while its
 content is gone, and every check in this change stops seeing it as deleted
 (read from the code, not reproduced). The route therefore decides while
-holding the lock `audit.append` takes (take the lock, read the state, refuse
-or append, in one transaction). The spec states the result: no
+holding the lock `audit.append` takes: take the lock, read the state, refuse
+or append, in one transaction. That needs the lock as a callable of its own
+(`audit.lock_chain(session)`, which `append` then uses too), and it makes the
+feedback route the one exception to decision 4's "the helper first": here the
+lock is first and the helper second. A deletion that already holds the lock
+finishes before the route reads the state, and one that comes later waits
+until the feedback is committed. The spec states the result: no
 `detection_feedback` record after a `deleted` record, concurrent or not, and
 the state stays `deleted`.
 
@@ -149,9 +158,12 @@ would be a second place to keep right.
   refused feedback).
 - **The reveal routes stay inconsistent until #494 is built.** Named so the
   inventory test's `reveal-api` rows are not read as covered by this change.
-- **Lock order.** The feedback route takes the chain lock earlier than
-  today. It takes no other lock, so there is nothing to order against;
-  task 2.3 runs it against a concurrent deletion.
+- **Lock order and width.** The feedback route takes the chain lock earlier
+  than today (`audit.lock_chain`, tasks 1.2 and 1.4). It takes no other
+  lock, so there is nothing to order against; task 2.3 runs it against a
+  concurrent deletion. The lock is one key for the whole audit table, not
+  per document, so a feedback request now holds every audit write off for
+  one more indexed read; it already held it for the append.
 
 ## Found and not changed
 

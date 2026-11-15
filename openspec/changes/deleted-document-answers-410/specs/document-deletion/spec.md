@@ -14,6 +14,11 @@ the render cache is read. A caller the gate refuses SHALL get the gate's 403
 for a deleted document exactly as for any other id. An id that was never
 registered SHALL keep answering 404.
 
+Request validation SHALL keep its place before both the 404 and the 410, and
+SHALL answer a deleted document as it answers any other: 422 for a malformed
+document id or request body, and 400 for an unsupported `view` on
+`GET /documents/{document_id}/anonymized`.
+
 Whether a document is deleted SHALL be decided from its state alone, never
 from the absence of its text, its box map or its object.
 
@@ -51,6 +56,13 @@ the requirements on repeated deletion and SHALL NOT answer 410.
 - **WHEN** a corpus reader requests each of the three routes for an id that
   was never registered
 - **THEN** the answer is 404
+
+#### Scenario: A request that is not valid is refused as before
+
+- **WHEN** a corpus reader requests `GET /documents/{document_id}/anonymized`
+  with an unsupported `view`, for a deleted document, a live document and an
+  unknown id
+- **THEN** every answer is the same 400, not 410 and not 404
 
 #### Scenario: A document that is not yet de-identified is not called deleted
 

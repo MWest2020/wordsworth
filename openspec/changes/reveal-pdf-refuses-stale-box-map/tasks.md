@@ -1,12 +1,25 @@
 # Tasks
 
-Built after `reveal-authorize-first` (#494) is built. Tests with caller
+**Blocked on the build of `reveal-authorize-first` (#494).** Task 1.1 puts
+the check in `reveal_gate.decide`, and `src/wordsworth/reveal_gate.py` does
+not exist on main (`8577ece`): #494 is a proposal that is neither merged nor
+built. Do not start this build, and do not put the check in the `reveal_pdf`
+route body instead, until task 0.1 holds.
+
+Tests with caller
 authentication on use `ontvanger` (the grant's recipient) and `derde`
 (authenticated, not the recipient). "Stale" in a test means: the box map is
 made, then the application is pointed at detection lists with another hash
 (the lists rewritten on disk, as `test_stale_lists_then_reanonymize` in
 `tests/test_redacted_api.py` does for the redacted PDF), not a hand-edited
 `lists_hash` column.
+
+## 0. Precondition
+
+- [ ] 0.1 `reveal-authorize-first` is built and merged: `reveal_gate.py`
+      exists on main with `decide(..., pdf=...)`, and both reveal routes call
+      it. Proved by: the merge commit of that build, named in the PR. If it
+      is not there, stop and report; nothing else in this list starts.
 
 ## 1. The check
 

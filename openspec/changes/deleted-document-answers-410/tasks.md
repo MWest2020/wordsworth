@@ -14,16 +14,43 @@ on status and body.
       state is `State.DELETED`, and returns the state. It reads
       `pipeline.current_state` and nothing else. Proved by: unit tests for
       unknown, deleted, and each live state.
-- [ ] 1.2 `document_anonymized`, `redacted_pdf` and `document_feedback` call
-      it first in their body, after the declared gate; `redacted_pdf` loses
-      its own 404 and 410 checks. Docstrings name the 410. `api.py` does not
-      grow. Proved by: the tests in 2, `wc -l`, and
-      `grep -n '"document deleted"' src/wordsworth/api.py` showing only the
-      reveal route(s) that #494 has not yet moved, or none.
-- [ ] 1.3 The reveal routes, `document_state`, `document_meta`,
+- [ ] 1.2 A lock primitive in `audit.py`: `lock_chain(session)`, which takes
+      the same transaction-scoped advisory lock `append` takes
+      (`pg_advisory_xact_lock` on `_CHAIN_LOCK_KEY`, `audit.py:42`), and
+      `append` calls it instead of its own statement, so there is one
+      spelling of the lock. Taking it twice in one transaction is harmless
+      (the lock is re-entrant per session and released at commit or
+      rollback), so a route that locks and then appends does not block
+      itself. Proved by: a unit test that `lock_chain` followed by `append`
+      in one session returns, and a two-session test that a second session's
+      `lock_chain` waits until the first commits.
+- [ ] 1.3 `document_anonymized` and `redacted_pdf` call the helper of 1.1
+      first in their body, after the declared gate and after
+      `document_anonymized`'s `view` check; `redacted_pdf` loses its own 404
+      and 410 checks. Docstrings name the 410. Proved by: the tests in 2.
+- [ ] 1.4 `document_feedback` is the exception to "the helper first": it
+      calls `audit.lock_chain(session)` FIRST, then the helper of 1.1, then
+      builds the payload and appends, all in the one transaction it commits.
+      The state the record carries is the one the helper returned under the
+      lock. The helper before the lock is today's bug in a new place
+      (`api.py:776-787` reads the state, `audit.append` locks later, and the
+      engine is READ COMMITTED, `db.py:70`): a deletion can commit in between.
+      A comment at the call says so. On the 404 and the 410 the transaction
+      ends without a write and the lock goes with it. Proved by: task 2.3,
+      and a test that a refused feedback (404, 410) leaves no session holding
+      the lock (a second session's `lock_chain` returns at once).
+- [ ] 1.5 `api.py` does not grow. Proved by: `wc -l` in the PR. And
+      `grep -n '"document deleted"' src/wordsworth/api.py`, whose expected
+      output depends on which build lands first. If `reveal-authorize-first`
+      (#494) is already built: no line (the string lives in
+      `document_gone.py` and `reveal_gate.py`). If it is not: exactly one
+      line, in `reveal_pdf`, which this change must not touch; #494's build
+      then removes it (its task 1.2) and owns the grep ending empty. The PR
+      says which case applied.
+- [ ] 1.6 The reveal routes, `document_state`, `document_meta`,
       `delete_document_endpoint` and the console are not changed. Proved by:
       the diff.
-- [ ] 1.4 `uv run ruff check src/ tests/` clean. Proved by: the output in the
+- [ ] 1.7 `uv run ruff check src/ tests/` clean. Proved by: the output in the
       PR.
 
 ## 2. Tests: the content routes
@@ -38,17 +65,21 @@ on status and body.
       passes, the earlier `detection_feedback` records byte-equal. Proved by:
       the tests, and that the first fails against origin/main with 201.
 - [ ] 2.3 Scenario "Feedback while the document is being deleted": the route
-      decides under the lock `audit.append` takes. Two sessions against
+      decides under the chain lock (tasks 1.2 and 1.4). Two sessions against
       Postgres: the feedback request is held after it has taken the lock and
       the deletion is started; and the reverse order. In both, no
       `detection_feedback` record follows the `deleted` record, the state is
       `deleted` and the chain verifies. Proved by: the test, and that it fails with the state read
-      moved back in front of the lock.
+      moved back in front of `lock_chain` (paste that failure in the PR).
 - [ ] 2.4 Scenario "A caller without corpus read learns nothing": `derde` on
       the three routes, for a deleted, a live and an unknown id: one 403, one
       body. Proved by: one parametrised test.
-- [ ] 2.5 Scenarios "An unknown id is still unknown" and "A document that is
-      not yet de-identified is not called deleted". Proved by: the tests.
+- [ ] 2.5 Scenarios "An unknown id is still unknown", "A document that is
+      not yet de-identified is not called deleted" and "A request that is not
+      valid is refused as before" (`view=nonsense`: 400 for a deleted, a live
+      and an unknown id; a malformed id: 422; a feedback body that fails
+      validation: 422 for a deleted and a live id, nothing appended). Proved
+      by: the tests.
 
 ## 3. Tests: the record routes and the list
 
