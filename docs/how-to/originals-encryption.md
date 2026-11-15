@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-11
+last_reviewed: 2026-11-15
 ---
 
 # Runbook: originals encryption
@@ -61,6 +61,52 @@ content-addressed key, with a `document_keys` row for the recovered document.
 The scan object it was read from keeps its own key and row unchanged. If the
 repoint of `object_key` or the state transition fails after a fresh write, the
 written object is deleted so a retry starts clean.
+
+## Sealing the existing corpus
+
+`originals-ingest-switch` only covers new originals. The ~420 objects already
+on the homelab, ingested before that change, stay legacy plaintext until
+`wordsworth-seal-originals` (ADR-0008, `originals-encrypt-existing`) runs
+against them:
+
+```bash
+wordsworth-seal-originals --dry-run          # reports what would be sealed; changes nothing
+wordsworth-seal-originals                    # a real run: seals everything it finds
+wordsworth-seal-originals --ids <uuid> <uuid> # a real run, limited to named documents
+wordsworth-seal-originals --verify           # checks only: fails if a live document
+                                              # or its scan is still legacy plaintext
+```
+
+Dry run is the default, like every CLI in this corpus: it reports counts
+(`objects`, `sealed`, `legacy`, `missing`, `bytes`) and the keys it would
+seal, and changes nothing. Without `--dry-run` it seals every legacy original it
+finds for a live document, and the original scan of a live document recovered
+by OCR (`old_object_key` in its recovering `ocr` audit record,
+`deletion_scans.scan_keys`) when that scan is itself still plaintext -- these
+are counted separately in the report, under `scans`.
+
+**Never without a readable copy.** Per object: the sealed bytes are written
+first under a temporary key (`sealing/<sha256>`) and verified to open to the
+object's recorded SHA-256 *before* the plaintext at `documents/<sha256>` is
+ever overwritten. A sealed copy that fails that check leaves the plaintext in
+place and the document reported `"failed"`, never `"sealed"` -- there is
+nothing destructive about a failed attempt, and the run moves on to the next
+document. `put_original` is deliberately not used for this: it refuses to
+replace a legacy object, which is right for ingest and wrong for this
+migration.
+
+**Idempotent and resumable.** A document already sealed (`sealed_at` set) is
+reported `"already_sealed"` and touched not at all. A run interrupted between
+the overwrite and the `sealed_at` commit leaves a sealed object with no
+`sealed_at` yet; a rerun finds exactly that state, verifies it, and finishes
+the commit -- it never re-reads a plaintext that is already gone. Safe to
+run repeatedly, including on a schedule, until `--verify` reports
+`{"verified": true}`.
+
+**On a failed document.** The report names the object key and an error, never
+document content. Investigate the object directly (is it reachable, does the
+key service answer) and rerun -- a prior failure does not block any other
+document, and rerunning retries only what is still legacy or still pending.
 
 ## Deploy precondition
 
