@@ -10,10 +10,16 @@ document, bound to a different domain, unscoped where the deployment does not
 allow it, or presented by a caller who is not its recipient, and a grant never
 covers a document that does not exist.
 
-To a caller the grant covers, the endpoints SHALL answer 410 when the document
-is deleted, 409 naming the surviving document when it is superseded, and 409
-when it has not been de-identified (for `reveal.pdf` also when it has no box
-map), in that order. A successful reveal SHALL be recorded as an audited access
+The domain binding SHALL be decided before any answer about the document's
+deletion or supersession, for scoped and unscoped grants alike. Where a
+verifiable credential gate is configured, it SHALL be decided after the grant
+and the domain and before those answers too: a caller it rejects SHALL get 403
+`vc rejected: ...`, as today, and hear nothing about deletion or supersession.
+
+To a caller the grant covers and the credential gate (where configured) admits,
+the endpoints SHALL answer 410 when the document is deleted, 409 naming the
+surviving document when it is superseded, and 409 when it has not been
+de-identified (for `reveal.pdf` also when it has no box map), in that order. A successful reveal SHALL be recorded as an audited access
 event whose actor is the grant recipient, carrying the revealed types and no
 clear value, leaving the audit chain verifiable.
 
@@ -57,8 +63,8 @@ every other check, the order and the uniform refusal SHALL apply unchanged.
 #### Scenario: Without caller authentication nothing changes
 
 - **WHEN** caller authentication is disabled
-- **THEN** the grant is evaluated on status, expiry, document scope and domain
-  only, as before
+- **THEN** the grant is evaluated on status, expiry, scope and domain, and the
+  recipient is not checked
 
 #### Scenario: A covered caller is told the document is not yet de-identified
 
@@ -153,7 +159,8 @@ whether it is deleted.
 
 A reveal endpoint SHALL tell a caller that a document is superseded, which
 document survives it, or that it is deleted only when the grant covers that
-caller for that document.
+caller for that document, its domain included, and the credential gate (where
+configured) admits the caller.
 
 #### Scenario: The recipient of a grant on a copy is told the survivor
 
@@ -168,6 +175,22 @@ caller for that document.
   document (an unscoped grant where the deployment allows it, or a grant under a
   global role) reveals a deleted document, on either endpoint
 - **THEN** the endpoint answers 410 and nothing is revealed
+
+#### Scenario: An unscoped grant from another domain hears nothing about deletion or supersession
+
+- **WHEN** the recipient of an unscoped grant bound to domain A — allowed because
+  the deployment allows global grants, or because the grant is under a global
+  role — reveals, on either endpoint, a deleted document and a superseded
+  document registered in domain B
+- **THEN** each answer is the uniform refusal, never 410 and never 409
+
+#### Scenario: A covered caller without a required credential hears nothing about the document
+
+- **WHEN** a verifiable credential is required and the recipient of a grant that
+  covers a superseded or a deleted document reveals it, on either endpoint,
+  without a valid credential
+- **THEN** the endpoint answers 403 `vc rejected: ...`, never 409 or 410, and
+  nothing is revealed
 
 #### Scenario: A grant removed by the deletion no longer covers
 

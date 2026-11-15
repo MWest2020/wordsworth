@@ -36,12 +36,17 @@ def decide(session, grant_store, grant_id, document_id, *, caller,
                      grant.domain or DEFAULT_DOMAIN,   # domain-blind pass
                      allow_global, caller, auth_enabled, ...):
         raise REFUSAL
-    # 2. only now: the document
-    state = current_state(session, document_id)    # None -> REFUSAL
+    # 2. only now: the document. Both reads always run (or one query),
+    #    so an unknown id costs what a document in another domain costs.
+    state = current_state(session, document_id)
     dom = document_domain(session, document_id)
+    if state is None:
+        raise REFUSAL                              # no grant covers it
     allowed = authorize(grant, document_id, permitted, now, dom, ...)
     if not allowed:
         raise REFUSAL                              # other domain
+    # 2b. the VC gate (pure, no reads), as part of "covered"
+    vc_types, vc_audit = apply_vc_gate(allowed, x_vc, ...)  # VcError -> 403
     # 3. covered: the answers about the document
     if state == State.DELETED:      raise 410 "document deleted"
     if copy.superseded_by:          raise 409 "... superseded by <id> ..."
@@ -67,10 +72,24 @@ Why not change `authorize()` (for example `domain=None` meaning "skip"): a
 decision with fixed meaning. A new parameter there would be a second promise
 to keep; the domain-blind call needs none.
 
+**The domain is decided before 410 and 409, for every grant.** For a scoped
+grant the scope already pins the document; for an unscoped one (flag on, or
+a `beheerder` role grant) the domain is the only thing between a holder in
+domain A and the deletion or supersession of a document in domain B. A test
+pins the order (task 2.2).
+
+**The VC gate moves into "covered".** Today it runs after the 409 superseded
+check, so with `vc_required` a grant holder without a valid credential still
+hears 409 naming the survivor (and on `reveal.pdf` 410). `apply_vc_gate` is
+pure and reads nothing, so it moves to step 2b at no cost: a caller it
+rejects gets 403 `vc rejected: ...` as today, before any answer about the
+document. `decide` returns the VC's narrowing and audit fields; the route
+intersects the requested types with them as it does now, and verifies the
+credential once.
+
 The routes keep everything after the gate as it is: types requested, the
-second `authorize()` for the requested types, the VC gate, `deanonymize`, the
-audit record, the response. The VC gate answers 403 `vc rejected: ...`, but
-only after the caller is covered, so it tells a covered caller nothing new.
+second `authorize()` for the requested types, `deanonymize`, the audit
+record, the response.
 
 ## What "before any document lookup" means here
 
@@ -78,9 +97,10 @@ Not read before step 1 passes: `current_state`, `session.get(Document, ...)`,
 `document_domain`, `BoxMap`, `get_anonymized_text`, the pseudonym registry,
 the object store. Read: the grant store and, for a role grant, the `roles`
 table. The test for this listens on the engine (`before_cursor_execute`) and
-fails if a statement naming `documents`, `audit_records`, `box_maps`,
-`anonymized_texts` or the pseudonym tables runs during a refused request.
-(The builder takes the exact table names from `models.py`.)
+fails if a statement naming `documents`, `audit_records`, `document_texts`,
+`document_pseudonyms`, `pii_mappings`, `box_maps`, `document_summaries` or
+`dossier_documents` runs during a refused request (the table names in
+`models.py` at `b54c774`).
 
 ## Deleted documents
 
@@ -91,7 +111,9 @@ form: 410 for any grant id, `no-such-grant` included, so it goes.
 
 After this change:
 
-- a document-scoped grant is gone after the deletion, so its former recipient
+- a document-scoped grant is gone after the deletion (in `PostgresGrantStore`,
+  the production store; `InMemoryGrantStore` keeps it, so tests of this use
+  the Postgres store), so its former recipient
   gets the uniform refusal. He held a grant on that one document, so he
   learns nothing he did not know, and the refusal is honest: the grant no
   longer exists.
@@ -129,9 +151,10 @@ whoever reads logs; the shares make that a wider circle than today.
 A caller refused in step 1 triggers no document read, so his refusals take
 the same path whatever the document. A caller who passes step 1 holds either
 a grant scoped to that very id (he knows it existed at issue) or a global
-grant (he may reveal any document of his domain). Between those, the time of
-an unknown id against a document in another domain differs by a query or
-two. No constant-time promise is made; this is named so nobody mistakes the
+grant (he may reveal any document of his domain). Step 2 reads state and domain
+for an unknown id as for a document in another domain, so those two make the
+same queries; what remains is noise in the database and in Python. No
+constant-time promise is made; this is named so nobody mistakes the
 identical bodies for one.
 
 ## Found and not changed

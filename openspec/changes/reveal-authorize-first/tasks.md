@@ -12,10 +12,14 @@ type, not the status alone. "Both routes" means one parametrised test over
 - [ ] 1.1 New module `src/wordsworth/reveal_gate.py` (under 200 lines) with
       the uniform refusal as one constant and one `decide(...)` used by both
       routes, in the order of design.md: grant lookup, `authorize()` with the
-      grant's own domain, then state and domain, `authorize()` with the
-      document's domain, then 410 / 409 superseded / 409 box map (pdf only) /
-      409 not de-identified. The docstring says why `authorize()` is called
-      twice. Proved by: the tests in 2 and 3, and `wc -l`.
+      grant's own domain; then state and domain, both read always (or in one
+      query), also when the state is None, so an unknown id and a document in
+      another domain cost the same reads; `authorize()` with the document's
+      domain; the VC gate; only then 410 / 409 superseded / 409 box map (pdf
+      only) / 409 not de-identified. The docstring says why `authorize()` is
+      called twice. Proved by: the tests in 2 and 3, a test that the state
+      and domain reads both run for an unknown id (statement listener), and
+      `wc -l`.
 - [ ] 1.2 `reveal` and `reveal_pdf` in `api.py` call `decide` and lose their
       own grant, state, superseded and `deleted` checks; their docstrings
       describe the new answers. `grants.py` is not changed. Proved by: the
@@ -31,14 +35,24 @@ type, not the status alone. "Both routes" means one parametrised test over
       document": an engine `before_cursor_execute` listener records every
       statement during the request; for an unknown grant id, a revoked, an
       expired, an other-document grant and (auth on) `derde`'s request, on
-      both routes, no statement names the documents, audit-record, box-map,
-      anonymized-text or pseudonym tables (names from `models.py`). Proved
-      by: the test, and that it fails against origin/main.
+      both routes, no statement names `documents`, `audit_records`,
+      `document_texts`, `document_pseudonyms`, `pii_mappings`, `box_maps`,
+      `document_summaries` or `dossier_documents` (the table names in
+      `models.py`). Proved by: the test, and that it fails against
+      origin/main.
 - [ ] 2.2 Scenario "A grant bound to another domain is refused after the
       lookup": the recipient of a default-domain grant on a document in
       another domain gets the uniform refusal on both routes (extend
-      `tests/test_domain_keys.py:85` with the body and `reveal.pdf`). Proved
-      by: the test.
+      `tests/test_domain_keys.py:85` with the body and `reveal.pdf`). And
+      scenario "An unscoped grant from another domain hears nothing about
+      deletion or supersession": an unscoped grant bound to domain A, once
+      with `allow_global_grants=True` and once as a `beheerder` role grant
+      (`roles.ADMIN`), used by its recipient on a deleted document and on a
+      superseded document registered in domain B, on both routes: the
+      uniform refusal every time, never 410 or 409. Grants in
+      `PostgresGrantStore`, so the deletion runs as in production (an
+      unscoped grant is not removed by it). Proved by: the test, and that it
+      fails if the domain check is moved after the 410/409 checks.
 - [ ] 2.3 Scenario "An unknown document and a document outside the scope look
       alike": `derde` with `ontvanger`'s grant, unknown id against a live
       document, both routes: identical status and body. Proved by: the test.
@@ -48,8 +62,10 @@ type, not the status alone. "Both routes" means one parametrised test over
       from the body. Proved by: the test.
 - [ ] 2.5 Scenario "A deleted document is not announced": on a deleted
       document, both routes, with `no-such-grant`, with the grant the
-      deletion removed and as `derde`: the uniform refusal, not 410. Proved
-      by: the test.
+      deletion removed and as `derde`: the uniform refusal, not 410. The
+      grants live in `PostgresGrantStore` (`grant_store_factory`): only that
+      store loses the document's grants on deletion; `InMemoryGrantStore`
+      keeps them and would test something else. Proved by: the test.
 - [ ] 2.6 Scenario "An unknown grant is not a 404": `tests/test_reveal_api.py`
       `test_unknown_grant_is_404` becomes the uniform refusal, on an
       existing and an unknown document, both routes. Proved by: the test.
@@ -61,8 +77,15 @@ type, not the status alone. "Both routes" means one parametrised test over
       route over the eight causes of the scenario, asserting that all
       answers equal the first one (status, body, content type); once with
       `accept: application/json` and once with `accept: text/html`, where
-      the 403 page is compared with the document id removed from it. Proved
-      by: the test.
+      the 403 page is compared with the document id removed from it. All
+      eight requests come from one authenticated caller (the 403 page shows
+      the caller's label, so two callers would differ for that reason
+      alone), with grants issued to that caller so that each cause reaches
+      its own check: a revoked, an expired and an other-document grant of
+      his, an unknown grant id, his live grant on an unknown and on a
+      superseded or deleted document; the other-recipient cause uses a grant
+      issued to somebody else, presented by the same caller. Proved by: the
+      test.
 
 ## 3. Tests: what a covered caller still hears
 
@@ -78,8 +101,9 @@ type, not the status alone. "Both routes" means one parametrised test over
 - [ ] 3.3 Scenario "A grant removed by the deletion no longer covers":
       `tests/test_delete_renders.py:96-99` ("410 whatever the grant") is
       rewritten: the removed grant and `no-such-grant` get the uniform
-      refusal; `GET /documents/{id}/redacted.pdf` keeps its 410. Proved by:
-      the test.
+      refusal; `GET /documents/{id}/redacted.pdf` keeps its 410. The test
+      keeps `grant_store_factory=PostgresGrantStore`, which is what removes
+      the grant on deletion. Proved by: the test.
 - [ ] 3.4 Scenario "A covered caller is told the document is not yet
       de-identified": the recipient of a grant on a registered, unprocessed
       document gets 409 on `/reveal`. Proved by: the test.
@@ -95,6 +119,13 @@ type, not the status alone. "Both routes" means one parametrised test over
 - [ ] 3.7 Scenario document-lifecycle "Reveal on a copy by a caller the grant
       does not cover": covered by 2.4; the test names this scenario in its
       docstring. Proved by: the test.
+
+- [ ] 3.8 Scenario "A covered caller without a required credential hears
+      nothing about the document": with a VC issuer key configured and
+      `vc_required=True`, the grant's recipient without an `X-VC` header
+      (and once with an invalid one) on a superseded and on a deleted
+      document (a grant that survives the deletion), both routes: 403
+      `vc rejected: ...`, never 409 or 410. Proved by: the test.
 
 ## 4. Tests: no trace of the cause
 
@@ -116,7 +147,9 @@ type, not the status alone. "Both routes" means one parametrised test over
       covered one), why (#487, the shares), how an operator finds the cause
       (`GET /grants/{id}`, `GET /documents/{id}/state`), and the deploy note
       that clients expecting 404 `unknown grant` or `unknown document` from a
-      reveal now get 403; `last_reviewed` updated. Proved by: docs-gates
+      reveal now get 403, and that the former recipient of a document-scoped
+      grant gets 403 instead of 410 after the document is deleted (the
+      deletion removed his grant); `last_reviewed` updated. Proved by: docs-gates
       green.
 - [ ] 5.2 `docs/how-to/pdf-redaction.md` (the reveal paragraph, "a deleted
       one 410") and `docs/how-to/deleting-documents.md` (the 410 paragraph):
