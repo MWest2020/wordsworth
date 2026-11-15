@@ -77,6 +77,12 @@ class Verifier:
     jwks_url: str
     #: Alleen voor tests: een eigen ophaler voor het discovery-document.
     _fetch_discovery: object = None
+    #: Whether `email_from` requires `email_verified: true` (api-corpus-read-
+    #: gate). True for an OIDC issuer (Keycloak, ...): the read list and the
+    #: grants name callers by address, so an address nobody verified must not
+    #: be one. False for Cloudflare Access, which carries no such claim and
+    #: establishes the address itself.
+    require_email_verified: bool = False
 
     def resolved_jwks_url(self) -> str:
         """Het JWKS-adres, zo nodig alsnog opgezocht.
@@ -114,9 +120,10 @@ class Verifier:
         inloggen te maken hebben.
         """
         if jwks_url:
-            return cls(issuer=issuer, audience=audience, jwks_url=jwks_url)
+            return cls(issuer=issuer, audience=audience, jwks_url=jwks_url,
+                      require_email_verified=True)
         return cls(issuer=issuer, audience=audience, jwks_url="",
-                   _fetch_discovery=fetch)
+                   _fetch_discovery=fetch, require_email_verified=True)
 
 
 def public_keys(verifier: Verifier, fetch=None) -> dict:
@@ -196,6 +203,12 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
     if not isinstance(email, str) or not email.strip():
         # A non-string would flow into the caller label and the audit trail.
         raise AccessError("assertion names no usable email")
+    if verifier.require_email_verified and body.get("email_verified") is not True:
+        # Literal `true` only: the string "true" and the int 1 are not the
+        # boolean the claim promises, and an absent claim is the same refusal
+        # as a false one. Cloudflare Access carries no such claim and never
+        # sets this flag, so it is unaffected.
+        raise AccessError("assertion's address is not verified")
     return email
 
 

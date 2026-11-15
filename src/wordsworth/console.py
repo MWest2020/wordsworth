@@ -195,6 +195,7 @@ def build_router(session_factory, keys: dict[str, str],
     @router.get("/combinations", response_class=HTMLResponse,
                 include_in_schema=False)
     def combinations_page(request: Request, fout: str = ""):
+        _mag_lezen(request)
         with session_factory() as session:
             rows = _declared(session, session)
         return TEMPLATES.TemplateResponse(request, "combinations.html",
@@ -202,6 +203,7 @@ def build_router(session_factory, keys: dict[str, str],
 
     @router.post("/combinations", include_in_schema=False)
     def declare(request: Request, types: str = Form(...), reason: str = Form("")):
+        _mag_lezen(request)
         wanted = sorted({t.strip().upper() for t in re.split(r"[,\s]+", types)
                          if t.strip()})
         try:

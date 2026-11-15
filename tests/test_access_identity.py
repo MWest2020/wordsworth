@@ -252,5 +252,33 @@ def test_a_valid_keycloak_style_token_yields_the_email(key):
 
     verifier = Verifier.oidc(issuer, "wordsworth", fetch=fetch)
     keys = public_keys(verifier, fetch=fetch)
-    token = _token(key, aud=["wordsworth"], iss=issuer)
+    token = _token(key, aud=["wordsworth"], iss=issuer, email_verified=True)
     assert email_from(token, keys, verifier, NU) == "mark@westerweel.work"
+
+
+@pytest.mark.parametrize("email_verified", [False, None, "true", 1])
+def test_an_oidc_token_without_a_true_email_verified_names_nobody(
+        key, email_verified):
+    issuer = "https://iam.westerweel.work/realms/westerweel-4"
+    jwks_uri = f"{issuer}/protocol/openid-connect/certs"
+
+    def fetch(url):
+        if url == jwks_uri:
+            return _jwks(key)
+        return {"jwks_uri": jwks_uri}
+
+    verifier = Verifier.oidc(issuer, "wordsworth", fetch=fetch)
+    keys = public_keys(verifier, fetch=fetch)
+    claims = {"aud": ["wordsworth"], "iss": issuer}
+    if email_verified is not None:
+        claims["email_verified"] = email_verified
+    token = _token(key, **claims)
+    with pytest.raises(AccessError):
+        email_from(token, keys, verifier, NU)
+
+
+def test_a_cloudflare_access_assertion_without_email_verified_is_accepted(key, keys):
+    """Access itself establishes the address; it carries no such claim and is
+    unaffected by the OIDC-only check."""
+    token = _token(key)
+    assert email_from(token, keys, VERIFIER, NU) == "mark@westerweel.work"
