@@ -1,172 +1,123 @@
 # SPDX-License-Identifier: MIT
-"""The inventory test (api-corpus-read-gate): every route the application
-mounts has a recorded access decision, and the decision holds."""
+"""The walk (api-corpus-read-gate, task 3): every route the application mounts
+has a row, every row has a route, every declared gate is declared, and the
+walk sees everything. Each reach test makes a scratch change to the real
+application and runs the same check the walk test runs, so it shows that
+check failing on the change."""
 from __future__ import annotations
 
-import re
+import shutil
+from inspect import Parameter, signature
 from pathlib import Path
 
 import pytest
-from fastapi import Depends, FastAPI
-from fastapi.testclient import TestClient
+from fastapi import APIRouter, FastAPI
 from fastapi.websockets import WebSocket
+from starlette.routing import Route
 from starlette.staticfiles import StaticFiles
 
+from inventory_app import full_app, ungated_search_app
+from route_inventory import (ROWS, AnyMethodRoute, Row, UnknownRouteType,
+                             UnmountedParameter, WebSocketRouteFound,
+                             collect_routes, count_registrations, missing_rows,
+                             orphan_rows, registration_mismatch,
+                             undeclared_gates)
 from wordsworth.api import create_app
-from wordsworth.embedder import DeterministicEmbedder
-from wordsworth.generator import DeterministicGenerator
-from wordsworth.object_store import InMemoryObjectStore
-from wordsworth.read_gate import corpus_read
-from wordsworth.search_index import InMemoryIndex
-
-from route_inventory import (ROWS, NO_ROUTE_PARAMS, UnknownRouteType,
-                             WebSocketRouteFound, collect_routes, gate_name,
-                             unaccounted_params)
 
 SRC = Path(__file__).parent.parent / "src" / "wordsworth"
-#: The framework's own four schema routes (`/openapi.json`, `/docs`,
-#: `/docs/oauth2-redirect`, `/redoc`) have no `@app.get(...)` of ours.
-FRAMEWORK_ROUTES = 4
 
 
-class _FakeKeyProvider:
-    pass
-
-
-class _FakeAnonymizer:
-    def anonymize(self, text: str):
-        return None
-
-
-class _FakeGrantStore:
-    def get(self, grant_id):
-        return None
-
-
-class _EmptyResult:
-    def scalars(self):
-        return iter(())
-
-    def scalar_one(self):
-        return None
-
-
-class _FakeSession:
-    """Just enough to let a body-call guard run (`caller_holds_role` queries
-    before refusing) without a real database: every query comes back empty."""
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def execute(self, *a, **kw):
-        return _EmptyResult()
-
-    def get(self, *a, **kw):
-        return None
-
-    def commit(self):
-        pass
-
-
-def _full_app(**overrides):
-    """Every optional backend present, so every route in `create_app` mounts.
-    Cheap stand-ins: the walk and refusal tests never let a route body touch
-    them (the gate answers first), and the few any-key/open bodies that do run
-    only need to not raise before returning a non-401/403 status."""
-    kwargs = dict(
-        session_factory=_FakeSession,
-        search_index=InMemoryIndex(),
-        embedder=DeterministicEmbedder(dim=8),
-        generator=DeterministicGenerator(),
-        store=InMemoryObjectStore(),
-        anonymizer=_FakeAnonymizer(),
-        key_provider=_FakeKeyProvider(),
-        grant_store=_FakeGrantStore(),
-        anonymizer_factory=lambda s: _FakeAnonymizer(),
-        key_provider_factory=lambda s: _FakeKeyProvider(),
-        grant_store_factory=lambda s: _FakeGrantStore(),
-        api_keys={"klezer": "lezer", "kuitgever": "uitgever", "kderde": "derde"},
-        corpus_read_labels=["lezer"],
-        grant_issuer_labels=["uitgever"],
-    )
-    kwargs.update(overrides)
-    assert unaccounted_params(create_app, kwargs) == []
-    return create_app(**kwargs)
-
-
-# --- The walk ----------------------------------------------------------------
-
-def test_every_route_has_a_row_and_every_row_has_a_route():
-    routes = collect_routes(_full_app())
-    row_keys = {(r.method, r.path) for r in ROWS}
-    assert set(routes) - row_keys == set()
-    assert row_keys - set(routes) == set()
-
-
-def test_declared_rows_declare_their_gate():
-    routes = collect_routes(_full_app())
-    for row in ROWS:
-        if row.declared and row.policy in ("corpus-read", "grant-read", "grant-admin"):
-            assert gate_name(routes[(row.method, row.path)]) == row.policy, row
-
-
-def test_decorator_and_mount_count_matches_the_inventory():
-    pattern = re.compile(
-        r"@(app|router)\.(get|post|put|patch|delete)\(|\b(app|router)\.mount\(")
-    count = sum(len(pattern.findall(p.read_text()))
-               for p in SRC.glob("*.py"))
-    assert count == len(ROWS) - FRAMEWORK_ROUTES
-
-
-# --- Reach: the walk is only as good as what it sees -------------------------
-
-def test_a_new_optional_parameter_the_fixture_does_not_pass_fails():
-    def fake_create_app(session_factory=None, a_new_backend=None):
-        pass
-
-    missing = unaccounted_params(fake_create_app, {"session_factory": None})
-    assert missing == ["a_new_backend"]
+def test_the_walk_on_the_real_application():
+    routes = collect_routes(full_app())
+    assert missing_rows(routes) == set()
+    assert orphan_rows(routes) == set()
+    assert undeclared_gates(routes) == set()
+    assert registration_mismatch(count_registrations(SRC)) == 0
 
 
 def test_no_route_params_are_real_create_app_parameters():
-    from inspect import signature
-
+    from route_inventory import NO_ROUTE_PARAMS
     assert set(NO_ROUTE_PARAMS) <= set(signature(create_app).parameters)
 
 
-def test_descends_into_included_router_and_mounted_application():
-    inner = FastAPI()
+# (a) a new optional create_app parameter the fixture does not pass
+def test_a_new_create_app_parameter_fails():
+    def scratch_create_app(*, a_new_backend=None, **kwargs):
+        return create_app(**kwargs)
+
+    params = list(signature(create_app).parameters.values())
+    scratch_create_app.__signature__ = signature(create_app).replace(parameters=[
+        *params, Parameter("a_new_backend", Parameter.KEYWORD_ONLY, default=None)])
+    with pytest.raises(UnmountedParameter, match="a_new_backend"):
+        full_app(factory=scratch_create_app)
+
+
+# (b) a registration in src/, also in a subpackage, without a row
+@pytest.mark.parametrize("where", [
+    "api.py", "eval/scratch.py"], ids=["module", "subpackage"])
+@pytest.mark.parametrize("line", [
+    '@app.api_route("/scratch", methods=["GET"])',
+    'app.add_api_route("/scratch", f)', 'app.add_route("/scratch", f)',
+    '@router.websocket("/scratch")', 'app.mount("/scratch", other)'])
+def test_a_registration_without_a_row_fails_the_count(tmp_path, where, line):
+    copy = tmp_path / "wordsworth"
+    shutil.copytree(SRC, copy, ignore=shutil.ignore_patterns("__pycache__"))
+    target = copy / where
+    target.write_text((target.read_text() if target.exists() else "") + f"\n{line}\n")
+    assert registration_mismatch(count_registrations(copy)) == 1
+
+
+# (c) a route on a second included router, and inside a mounted application
+def test_a_second_router_and_a_mounted_app_are_walked_with_their_prefix():
+    app = full_app()
+    second = APIRouter(prefix="/second")
+
+    @second.get("/x")
+    def x():
+        return {}
+
+    inner = FastAPI(openapi_url=None)
 
     @inner.get("/deep")
     def deep():
         return {}
 
-    outer = FastAPI()
-    outer.mount("/sub", inner)
-    routes = collect_routes(outer)
-    assert ("GET", "/deep") in routes
+    app.include_router(second, prefix="/v2")
+    app.mount("/sub", inner)
+    assert missing_rows(collect_routes(app)) == {("GET", "/v2/second/x"),
+                                                ("GET", "/sub/deep")}
 
 
-def test_a_static_mount_is_one_row():
-    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-    app.mount("/assets", StaticFiles(directory=str(Path(__file__).parent)))
-    routes = collect_routes(app)
-    assert ("GET", "/assets") in routes
-    assert len(routes) == 1
-
-
+# (d) an object of an unknown type, at the top and inside an included router
 def test_an_unknown_route_object_fails():
-    app = FastAPI()
+    app = full_app()
     app.router.routes.append(object())
     with pytest.raises(UnknownRouteType):
         collect_routes(app)
 
 
+def test_an_unknown_route_object_inside_the_console_router_fails():
+    app = full_app()
+    console = next(r for r in app.routes if hasattr(r, "original_router"))
+    console.original_router.routes.append(object())
+    with pytest.raises(UnknownRouteType):
+        collect_routes(app)
+
+
+def test_a_route_answering_every_method_fails():
+    class RawAsgi:   # an ASGI app, not a function: Starlette sets methods=None
+        async def __call__(self, scope, receive, send):
+            pass
+
+    app = full_app()
+    app.router.routes.append(Route("/raw", endpoint=RawAsgi()))
+    with pytest.raises(AnyMethodRoute):
+        collect_routes(app)
+
+
+# (e) a WebSocketRoute: the auth middleware passes non-HTTP scopes through
 def test_a_websocket_route_fails():
-    app = FastAPI()
+    app = full_app()
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket):
@@ -176,131 +127,45 @@ def test_a_websocket_route_fails():
         collect_routes(app)
 
 
-def test_head_folds_into_get_of_the_same_route_object():
-    app = FastAPI()
-
-    @app.get("/both")
-    def both():
-        return {}
-
-    @app.api_route("/head-only", methods=["HEAD"])
-    def head_only():
-        return {}
-
-    routes = collect_routes(app)
-    # FastAPI's APIRoute does not auto-add HEAD to a GET-only route (unlike
-    # Starlette's raw Route) -- confirmed against the framework's schema
-    # routes, which do. A route answering HEAD only needs its own row.
-    assert ("GET", "/both") in routes
-    assert ("HEAD", "/head-only") in routes or ("GET", "/head-only") in routes
-
-
-def test_a_scratch_route_without_a_row_fails_the_suite():
-    app = _full_app()
+# (f) a scratch route without a row; the gate off /search; a row without a route
+def test_a_scratch_route_without_a_row_fails():
+    app = full_app()
 
     @app.get("/scratch-undeclared")
     def scratch():
         return {}
 
-    routes = collect_routes(app)
-    row_keys = {(r.method, r.path) for r in ROWS}
-    assert ("GET", "/scratch-undeclared") in set(routes) - row_keys
+    assert missing_rows(collect_routes(app)) == {("GET", "/scratch-undeclared")}
 
 
-def test_removing_the_gate_from_search_fails_the_suite():
-    app = FastAPI()
+def test_removing_the_gate_from_search_fails():
+    assert undeclared_gates(collect_routes(ungated_search_app())) == {
+        ("GET", "/search")}
 
-    @app.get("/search")
-    def search():
+
+def test_a_row_for_a_route_that_does_not_exist_fails():
+    rows = ROWS + [Row("GET", "/no/such/route", "corpus-read", "scratch")]
+    assert orphan_rows(collect_routes(full_app()), rows) == {("GET", "/no/such/route")}
+
+
+def test_a_static_mount_is_one_row_with_its_prefix():
+    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    sub = FastAPI(openapi_url=None)
+    sub.mount("/assets", StaticFiles(directory=str(Path(__file__).parent)))
+    app.mount("/outer", sub)
+    assert set(collect_routes(app)) == {("GET", "/outer/assets")}
+
+
+def test_head_folds_into_get_and_a_head_only_route_has_its_own_row():
+    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+
+    async def both(request):
+        pass
+
+    app.router.routes.append(Route("/both", endpoint=both))   # GET + HEAD
+
+    @app.api_route("/head-only", methods=["HEAD"])
+    def head_only():
         return {}
 
-    routes = collect_routes(app)
-    assert gate_name(routes[("GET", "/search")]) is None
-
-
-def test_a_row_for_a_route_that_does_not_exist_fails_the_suite():
-    routes = collect_routes(_full_app())
-    assert ("GET", "/no/such/route") not in routes
-
-
-# --- Refusal -------------------------------------------------------------------
-
-_STATUS_FOR_POLICY = {
-    "corpus-read": 403, "grant-read": 403, "grant-admin": 403, "delete": 403,
-}
-#: Any syntactically-valid id works for a DECLARED gate: it runs before
-#: path/query validation (design.md, "A corpus-read refusal comes before the
-#: lookup"), so even an id that does not exist is refused rather than 404. A
-#: body-call guard (`declared=False`) only runs once FastAPI has already
-#: validated the request, so those rows need a well-formed body too — not a
-#: proof of the design's claim, just what it takes to reach the guard at all.
-_VALID_ID = "11111111-1111-1111-1111-111111111111"
-_PLACEHOLDER = re.compile(r"\{[a-z_]+\}")
-_BODY_OVERRIDES = {
-    ("POST", "/roles"): {"json": {"name": "x", "allowed_types": ["PERSON"]}},
-    ("PUT", "/roles/{name}/types"): {"json": {"allowed_types": ["PERSON"]}},
-    ("POST", "/roles/{name}/deactivate"): {"json": {"reason": "x"}},
-    ("POST", "/roles/{name}/activate"): {"json": {"reason": "x"}},
-    ("POST", "/grants"): {"json": {"recipient": "x", "allowed_types": ["PERSON"]}},
-    ("POST", "/console/topics"): {"data": {"dossier": "x"}},
-    ("POST", "/console/topics/{topic_id}/label"): {"data": {"dossier": "x"}},
-    ("POST", "/console/combinations"): {"data": {"types": "PERSON"}},
-    ("POST", "/console/roles"): {"data": {"name": "x"}},
-    ("POST", "/console/roles/switch"): {"data": {"name": "x", "aan": "true"}},
-}
-
-
-def _call(client, row):
-    path = _PLACEHOLDER.sub(_VALID_ID, row.path)
-    override = _BODY_OVERRIDES.get((row.method, row.path), {})
-    headers = {"X-API-Key": "kderde"}
-    if "data" in override:
-        return client.request(row.method, path, data=override["data"], headers=headers)
-    json_body = override.get(
-        "json", {} if row.method in ("POST", "PATCH", "PUT") else None)
-    return client.request(row.method, path, json=json_body, headers=headers)
-
-
-@pytest.mark.parametrize("row", [r for r in ROWS if r.policy in _STATUS_FOR_POLICY],
-                        ids=lambda r: f"{r.method} {r.path}")
-def test_a_caller_on_no_list_is_refused(row):
-    client = TestClient(_full_app(), raise_server_exceptions=False)
-    resp = _call(client, row)
-    assert resp.status_code == _STATUS_FOR_POLICY[row.policy], resp.text
-
-
-@pytest.mark.parametrize("row", [r for r in ROWS if r.policy in ("any-key", "open")],
-                        ids=lambda r: f"{r.method} {r.path}")
-def test_any_key_and_open_rows_are_not_refused(row):
-    client = TestClient(_full_app(), raise_server_exceptions=False)
-    resp = _call(client, row)
-    assert resp.status_code not in (401, 403), resp.text
-
-
-def test_a_refused_feedback_write_leaves_no_trace():
-    client = TestClient(_full_app())
-    doc_id = "11111111-1111-1111-1111-111111111111"
-    resp = client.post(f"/documents/{doc_id}/feedback",
-                       json={"kind": "false_positive", "type": "PERSON",
-                             "token": "t"},
-                       headers={"X-API-Key": "kderde"})
-    assert resp.status_code == 403
-
-
-def test_empty_read_list_stops_refusing_corpus_read_rows():
-    client = TestClient(_full_app(corpus_read_labels=[]), raise_server_exceptions=False)
-    resp = client.get("/documents/11111111-1111-1111-1111-111111111111/state",
-                      headers={"X-API-Key": "kderde"})
-    assert resp.status_code != 403
-
-
-def test_gate_of_a_corpus_read_route_reads_the_declared_name():
-    app = FastAPI()
-    gate = corpus_read(["lezer"])
-
-    @app.get("/x", dependencies=[Depends(gate)])
-    def x():
-        return {}
-
-    route = next(r for r in app.routes if getattr(r, "path", None) == "/x")
-    assert gate_name(route) == "corpus-read"
+    assert set(collect_routes(app)) == {("GET", "/both"), ("HEAD", "/head-only")}

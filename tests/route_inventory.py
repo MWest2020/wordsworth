@@ -1,126 +1,34 @@
 # SPDX-License-Identifier: MIT
-"""The 55-route inventory (api-corpus-read-gate, design.md "Inventory") as
-data, and the walker that compares it against a running application.
+"""The walker that holds a running application against the inventory in
+``route_rows.py`` (api-corpus-read-gate, design.md "The test that keeps the
+inventory true"), and the checks the tests assert on.
 
-A policy names the check a route requires: ``corpus-read``, ``grant-read``,
-``grant-admin`` and ``delete`` are declared or body-called guards that answer
-403; ``grant`` is decided by the grant presented, not by who the caller is;
-``any-key`` is any authenticated caller (or, with auth off, anybody);
-``open`` needs no key at all.
+Each check returns what is wrong instead of asserting, so the same function
+runs on the real application (must come back empty) and on an application
+with a scratch change (must not): that is how a test shows the walk would
+catch the change, rather than restating what it walks.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from inspect import Parameter, signature
+from pathlib import Path
 from typing import Callable
 
 from fastapi.routing import APIRoute
 from starlette.routing import Mount, Route, WebSocketRoute
 
+from route_rows import ROWS, Row  # noqa: F401  (re-exported for the tests)
 from wordsworth import read_gate
 
+#: The framework's own schema routes (`/openapi.json`, `/docs`,
+#: `/docs/oauth2-redirect`, `/redoc`): rows, but no registration of ours.
+FRAMEWORK_ROUTES = 4
 
-@dataclass(frozen=True)
-class Row:
-    method: str
-    path: str
-    policy: str
-    reason: str
-    #: Whether the policy is declared on the route (`dependencies=[Depends(...)]`,
-    #: visible to `read_gate.gate_of`) rather than called from the route's body.
-    #: Only corpus-read, grant-read and the one declared grant-admin row are;
-    #: the ten routes that keep calling `_guard_grant_admin` from their body are
-    #: not, and declaration is not meaningful for any other policy.
-    declared: bool = True
-
-
-# --- API -------------------------------------------------------------------
-_API_READ = [
-    Row("GET", "/documents/{document_id}/state", "corpus-read", "which documents exist"),
-    Row("GET", "/documents/{document_id}", "corpus-read", "every audit payload"),
-    Row("GET", "/documents/{document_id}/anonymized", "corpus-read", "the text"),
-    Row("GET", "/documents/{document_id}/redacted.pdf", "corpus-read", "the document"),
-    Row("GET", "/export/anonymized.zip", "corpus-read", "every text"),
-    Row("GET", "/search", "corpus-read", "ids, scores, object keys, passage"),
-    Row("GET", "/hybrid", "corpus-read", "same"),
-    Row("GET", "/ask", "corpus-read", "a generated answer with citations"),
-    Row("GET", "/export/ranking.csv", "corpus-read", "rank, id, score, object key"),
-    Row("GET", "/dossiers/{dossier_id}/topics", "corpus-read", "what a dossier is about"),
-    Row("GET", "/grants/{grant_id}", "grant-read", "recipient, types, document id"),
-]
-_API_WRITE = [
-    Row("POST", "/documents/{document_id}/feedback", "corpus-read", "writes on the audit chain"),
-    Row("POST", "/dossiers/{dossier_id}/topics", "corpus-read", "replaces every topic"),
-    Row("PATCH", "/topics/{topic_id}", "corpus-read", "renames what every reader sees"),
-    Row("POST", "/topics/{topic_id}/label", "corpus-read", "labels one topic"),
-    Row("POST", "/dossiers/{dossier_id}/summaries", "corpus-read", "makes summaries"),
-    Row("POST", "/reprocess", "corpus-read", "problems keyed by document id"),
-]
-_API_OTHER = [
-    Row("GET", "/roles", "grant-admin", "roles decide what a grant reveals",
-        declared=False),
-    Row("POST", "/roles", "grant-admin", "same", declared=False),
-    Row("PUT", "/roles/{name}/types", "grant-admin", "same", declared=False),
-    Row("POST", "/roles/{name}/deactivate", "grant-admin", "same", declared=False),
-    Row("POST", "/roles/{name}/activate", "grant-admin", "same", declared=False),
-    Row("POST", "/grants", "grant-admin", "mints a grant", declared=False),
-    Row("POST", "/grants/{grant_id}/revoke", "grant-admin", "revokes a grant",
-        declared=False),
-    Row("POST", "/datasets/pseudonymize", "grant-admin", "a token lookup"),
-    Row("DELETE", "/documents/{document_id}", "delete", "irreversible"),
-    Row("DELETE", "/dossiers/{dossier_id}", "delete", "irreversible"),
-    Row("POST", "/documents/{document_id}/reveal", "grant", "decided by the grant"),
-    Row("POST", "/documents/{document_id}/reveal.pdf", "grant", "decided by the grant"),
-]
-_API_UNDECIDED = [
-    Row("POST", "/ingest", "any-key", "issue #431; not decided here"),
-]
-_API_OPEN = [
-    Row("GET", "/health", "open", "liveness probe"),
-    Row("GET", "/metrics", "open", "ops probe, api-key-auth spec exempt"),
-    Row("GET", "/", "any-key", "redirect or {'detail': 'see /docs'}"),
-    Row("GET", "/openapi.json", "any-key", "describes the routes, not the corpus"),
-    Row("GET", "/docs", "any-key", "same"),
-    Row("GET", "/docs/oauth2-redirect", "any-key", "same"),
-    Row("GET", "/redoc", "any-key", "same"),
-]
-
-# --- Console -----------------------------------------------------------------
-_CONSOLE_READ = [
-    Row("GET", "/console", "corpus-read", "dossier picker", declared=False),
-    Row("GET", "/console/dossier", "corpus-read", "same", declared=False),
-    Row("GET", "/console/documents", "corpus-read", "alle documenten", declared=False),
-    Row("GET", "/console/documents/{document_id}", "corpus-read", "one document",
-        declared=False),
-    Row("GET", "/console/search", "corpus-read", "search page", declared=False),
-    Row("GET", "/console/topics", "corpus-read", "topics page", declared=False),
-    Row("GET", "/console/feedback", "corpus-read", "feedback page", declared=False),
-    Row("POST", "/console/topics", "corpus-read", "recompute topics", declared=False),
-    Row("POST", "/console/topics/{topic_id}/label", "corpus-read", "label a topic",
-        declared=False),
-    Row("GET", "/console/combinations", "corpus-read", "declared combinations + reach",
-        declared=False),
-    Row("POST", "/console/combinations", "corpus-read", "declares one, writes",
-        declared=False),
-]
-_CONSOLE_OTHER = [
-    Row("GET", "/console/roles", "grant-admin", "beheren", declared=False),
-    Row("POST", "/console/roles", "grant-admin", "same", declared=False),
-    Row("POST", "/console/roles/switch", "grant-admin", "same", declared=False),
-]
-_CONSOLE_OPEN = [
-    Row("GET", "/console/login", "open", "nobody can bring a key here"),
-    Row("POST", "/console/login", "open", "same"),
-    Row("GET", "/console/static", "open", "fonts, console.js, login's own assets"),
-    Row("GET", "/console/logout", "any-key", "clears the caller's own cookie"),
-]
-
-ROWS: list[Row] = (_API_READ + _API_WRITE + _API_OTHER + _API_UNDECIDED + _API_OPEN
-                   + _CONSOLE_READ + _CONSOLE_OTHER + _CONSOLE_OPEN)
-
-#: `create_app` parameters that mount no route of their own — either pure
-#: middleware/behaviour knobs, or (access_verifier) one of two equivalent ways
-#: to satisfy a condition the fixture already satisfies with `api_keys`.
+#: `create_app` parameters that mount no route of their own: middleware or
+#: behaviour knobs, or (access_verifier) a second way to satisfy a condition
+#: the fixture already satisfies with `api_keys`.
 NO_ROUTE_PARAMS = {
     "rate_limiters": "adds rate-limit middleware, not a route",
     "key_audit": "where an audit record is written, not whether a route exists",
@@ -134,15 +42,8 @@ NO_ROUTE_PARAMS = {
 }
 
 
-def unaccounted_params(create_app: Callable, passed: dict) -> list[str]:
-    """Which `create_app` parameters neither the fixture passes nor
-    `NO_ROUTE_PARAMS` names — the signature check (design.md, "The walk",
-    first bullet)."""
-    names = [
-        p.name for p in signature(create_app).parameters.values()
-        if p.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)
-    ]
-    return [n for n in names if n not in passed and n not in NO_ROUTE_PARAMS]
+class UnmountedParameter(AssertionError):
+    pass
 
 
 class UnknownRouteType(TypeError):
@@ -153,50 +54,119 @@ class WebSocketRouteFound(TypeError):
     pass
 
 
-def collect_routes(app) -> dict[tuple[str, str], object]:
-    """Every `(method, path)` the application answers, mapped to the route
-    object that declares it. Descends into every included router and every
-    `Mount` of an application; a `Mount` of a plain ASGI app (static files) is
-    one row. `HEAD` folds into `GET` of the same route object. Raises on a
-    route object of an unknown type or a `WebSocketRoute` — both mean the walk
-    stopped seeing, which is worse than a wrong expectation."""
-    out: dict[tuple[str, str], object] = {}
+class AnyMethodRoute(TypeError):
+    """A Starlette `Route` whose endpoint is an ASGI app (`methods=None`): it
+    answers every method, so no row keyed by method can describe it."""
 
-    def walk(routes) -> None:
+
+def unaccounted_params(create_app: Callable, passed: dict) -> list[str]:
+    """`create_app` parameters neither passed nor named in `NO_ROUTE_PARAMS`."""
+    names = [p.name for p in signature(create_app).parameters.values()
+             if p.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)]
+    return [n for n in names if n not in passed and n not in NO_ROUTE_PARAMS]
+
+
+def require_every_param(create_app: Callable, passed: dict) -> None:
+    missing = unaccounted_params(create_app, passed)
+    if missing:
+        raise UnmountedParameter(f"create_app parameters the fixture does not "
+                                 f"pass and NO_ROUTE_PARAMS does not name: {missing}")
+
+
+@dataclass(frozen=True)
+class Found:
+    """A route as the application serves it: the route object, and the
+    dependencies of every `include_router` it sits under."""
+    route: object
+    include_dependencies: tuple = field(default=())
+
+
+def _methods(route, path: str) -> list[str]:
+    if route.methods is None:
+        raise AnyMethodRoute(path)
+    methods = set(route.methods)
+    return [m for m in methods
+            if m != "OPTIONS" and not (m == "HEAD" and "GET" in methods)]
+
+
+def collect_routes(app) -> dict[tuple[str, str], Found]:
+    """Every `(method, path)` the application answers, with the full path: the
+    prefix of every `Mount` and every `include_router` it sits under is kept.
+    Descends into included routers and mounted applications; a `Mount` of a
+    plain ASGI app (static files) is one row. `HEAD` folds into `GET` of the
+    same route object. Raises on an unknown route type, a `WebSocketRoute` and
+    a route answering every method: each means the walk stopped seeing."""
+    out: dict[tuple[str, str], Found] = {}
+
+    def walk(routes, prefix: str, deps: tuple) -> None:
         for route in routes:
             if isinstance(route, WebSocketRoute):
-                raise WebSocketRouteFound(route.path)
-            if isinstance(route, APIRoute):
-                methods = set(route.methods)
-                has_get = "GET" in methods
-                for method in methods:
-                    if method == "OPTIONS" or (method == "HEAD" and has_get):
-                        continue
-                    out[(method, route.path)] = route
-                continue
-            if isinstance(route, Mount):
+                raise WebSocketRouteFound(prefix + route.path)
+            if isinstance(route, (APIRoute, Route)):
+                path = prefix + route.path
+                for method in _methods(route, path):
+                    out[(method, path)] = Found(route, deps)
+            elif isinstance(route, Mount):
                 if hasattr(route.app, "routes"):
-                    walk(route.app.routes)
+                    walk(route.app.routes, prefix + route.path, deps)
                 else:
-                    out[("GET", route.path)] = route
-                continue
-            if isinstance(route, Route):
-                methods = set(route.methods or ())
-                has_get = "GET" in methods
-                for method in methods:
-                    if method == "OPTIONS" or (method == "HEAD" and has_get):
-                        continue
-                    out[(method, route.path)] = route
-                continue
-            original_router = getattr(route, "original_router", None)
-            if original_router is not None:
-                walk(original_router.routes)
-                continue
-            raise UnknownRouteType(f"{type(route).__name__} at {route!r}")
+                    out[("GET", prefix + route.path)] = Found(route, deps)
+            elif getattr(route, "original_router", None) is not None:
+                ctx = route.include_context
+                walk(route.original_router.routes, prefix + ctx.prefix,
+                     deps + tuple(ctx.dependencies))
+            else:
+                raise UnknownRouteType(f"{type(route).__name__} at {route!r}")
 
-    walk(app.routes)
+    walk(app.routes, "", ())
     return out
 
 
-def gate_name(route) -> str | None:
-    return read_gate.gate_of(route)
+def gate_name(found: Found) -> str | None:
+    """The gate a route declares, on itself or on a router it is included by."""
+    name = read_gate.gate_of(found.route)
+    if name is not None:
+        return name
+    for dep in found.include_dependencies:
+        if isinstance(dep.dependency, read_gate.Gate):
+            return dep.dependency.name
+    return None
+
+
+def missing_rows(routes: dict, rows=ROWS) -> set:
+    """Routes the application answers that have no row."""
+    return set(routes) - {(r.method, r.path) for r in rows}
+
+
+def orphan_rows(routes: dict, rows=ROWS) -> set:
+    """Rows for which the application answers no route."""
+    return {(r.method, r.path) for r in rows} - set(routes)
+
+
+def undeclared_gates(routes: dict, rows=ROWS) -> set:
+    """Rows that promise a declared gate their route does not declare."""
+    return {(r.method, r.path) for r in rows
+            if r.declared and r.policy in ("corpus-read", "grant-read", "grant-admin")
+            and (r.method, r.path) in routes
+            and gate_name(routes[(r.method, r.path)]) != r.policy}
+
+
+_REGISTRATION = re.compile(
+    r"@[\w.]+\.(get|post|put|patch|delete|head|options|trace|api_route"
+    r"|websocket|websocket_route|route)\("
+    r"|\b[\w.]+\.(add_api_route|add_route|add_websocket_route"
+    r"|add_api_websocket_route)\("
+    # `app.mount("/path", ...)`; not the console modules' own `mount(router, ...)`.
+    r"|\.mount\(\s*[\"']")
+
+
+def count_registrations(src: Path) -> int:
+    """Route decorators, `add_*route` calls and path mounts in every `.py`
+    file under `src`, subpackages included."""
+    return sum(len(_REGISTRATION.findall(p.read_text()))
+               for p in sorted(src.rglob("*.py")))
+
+
+def registration_mismatch(count: int, rows=ROWS) -> int:
+    """How far the source count is from the rows minus the framework's own."""
+    return count - (len(rows) - FRAMEWORK_ROUTES)
