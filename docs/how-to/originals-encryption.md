@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-11
+last_reviewed: 2026-11-15
 ---
 
 # Runbook: originals encryption
@@ -75,3 +75,62 @@ preconditions in *that* PR, not build tasks in this change:
 Without them, a lost key row or KEK makes a sealed original unreadable for
 good. Default if that evidence isn't there: the image is not rolled out, and
 new documents stay plaintext until it is.
+
+## Sealing the existing corpus (`originals-encrypt-existing`)
+
+`originals-ingest-switch` only covers documents ingested from then on. The
+corpus that existed before it (about 420 objects on the homelab) was still
+plaintext. `wordsworth-seal-originals` seals those, one object at a time,
+without ever losing a document:
+
+```bash
+wordsworth-seal-originals --dry-run          # lists what it would seal, changes nothing
+wordsworth-seal-originals                    # seals every candidate, one object at a time
+wordsworth-seal-originals --ids <uuid> ...   # only these documents (still live)
+wordsworth-seal-originals --verify           # read-only: any live legacy original left?
+```
+
+Always run `--dry-run` first and read the report before dropping the flag.
+The report's `before`/`after`
+sections carry object counts, sealed/legacy counts and total bytes --
+separately for `originals` and `scans` -- and `results` lists, per document, a
+status and an object key (a content hash, never a filename or any text).
+
+For each legacy original: mint its data key and commit that row before
+writing anything, seal the plaintext under a temporary key, verify it opens
+to the SHA-256 named in the object key, only then overwrite the real object,
+verify again, then drop the temporary copy. **A failed verify leaves the
+plaintext exactly where it was** and the document reported `failed` -- nothing
+is lost, and nothing is silently retried as something else. Investigate a
+`failed` document by hand (read the temporary `sealing/<sha256>` object if it
+is still there, check the `document_keys` row, check the key service) before
+re-running; re-running is safe either way, since every step resumes from
+whatever the row and the store hold.
+
+The original scan of a live document recovered by OCR (named in its
+recovering `ocr` audit record) is sealed the same way and counted under
+`scans` rather than the plain object count -- it is still a legacy plaintext
+original, just not the document's current one.
+
+### `gone`: a scan that is no longer in the store
+
+A recovered document's scan can have been cleaned up already (an orphan
+sweep, a manual removal) without that being this command's business: a scan
+missing from the store, or one that raises on read between being listed and
+being sealed, is reported with the status `gone`, counted as **neither**
+sealed nor failed, and never turns the run's exit status non-zero. There was
+nothing to seal, so there is nothing to investigate.
+
+### Checking the migration finished
+
+`--verify` re-lists every live document's original and every live recovered
+document's scan and reports whether any of them is still legacy plaintext,
+without changing anything:
+
+```json
+{"ok": true, "legacy": [], "gone": []}
+```
+
+`"ok": false` means `"legacy"` names at least one object key still to seal --
+run `wordsworth-seal-originals` again. Run it repeatedly and on a schedule if
+useful: a fully sealed corpus reports `sealed: 0, failed: 0` every time.
