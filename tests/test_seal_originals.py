@@ -88,7 +88,7 @@ def test_rerun_after_sealing_reports_already_sealed_and_touches_nothing(
     sealed_bytes = mem_store.get_raw(doc.object_key)
 
     second = run(session_factory, mem_store, keys, dry_run=False)
-    assert second["done"] == {"sealed": 0, "scans": 0, "already_sealed": 1, "scan_gone": 0,
+    assert second["done"] == {"sealed": 0, "scans": 0, "already_sealed": 1, "gone": 0,
                               "skipped_deleted": 0, "skipped_moved": 0, "failed": 0}
     assert mem_store.get_raw(doc.object_key) == sealed_bytes
 

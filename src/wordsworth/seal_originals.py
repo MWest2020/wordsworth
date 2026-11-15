@@ -40,7 +40,7 @@ def run(session_factory, store: ObjectStore, keys, *,
         return {"dry_run": True, "before": before, "would_seal": would_seal}
 
     results = []
-    done = {"sealed": 0, "scans": 0, "already_sealed": 0, "scan_gone": 0,
+    done = {"sealed": 0, "scans": 0, "already_sealed": 0, "gone": 0,
             "skipped_deleted": 0, "skipped_moved": 0, "failed": 0}
     for c in work:
         try:
@@ -49,17 +49,13 @@ def run(session_factory, store: ObjectStore, keys, *,
         except Exception as exc:  # one object's failure never ends the run
             outcome = {"status": "failed", "error": type(exc).__name__}
         status = outcome["status"]
-        if status == "scan_gone":
-            # A scan no longer in the store (removed with an old copy, by
-            # sealed-orphans, ...) is nothing to seal and nothing failed (spec:
-            # "A scan that is already sealed or gone is left alone").
-            done["scan_gone"] += 1
-            continue
         results.append({"document_id": str(c.document_id), "object_key": c.object_key,
                         "kind": c.kind, **outcome})
         if status == "sealed":
             done["scans" if c.kind == "scan" else "sealed"] += 1
-        elif status in ("already_sealed", "skipped_deleted", "skipped_moved"):
+        elif status in ("already_sealed", "gone", "skipped_deleted", "skipped_moved"):
+            # `gone`: a scan no longer in the store (removed with an old copy,
+            # by sealed-orphans, ...) -- nothing to seal, nothing failed (spec).
             done[status] += 1
         else:
             done["failed"] += 1

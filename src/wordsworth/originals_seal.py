@@ -145,7 +145,7 @@ def seal_one(session, store: ObjectStore, keys: DocumentKeys, document_id: UUID,
              object_key: str, kind: str = "original") -> dict:
     """Seal one object. Returns ``{"status": ...}``: ``"sealed"`` (+ bytes),
     ``"already_sealed"``, ``"skipped_deleted"``, ``"skipped_moved"``,
-    ``"scan_gone"`` or
+    ``"gone"`` (a scan no longer in the store) or
     ``"failed"`` (+ a fixed ``"error"`` text) -- never the document's bytes or
     anything derived from its content. Raises on what it cannot classify (a
     key service down, a store write error); the caller reports that."""
@@ -161,7 +161,7 @@ def seal_one(session, store: ObjectStore, keys: DocumentKeys, document_id: UUID,
     except ObjectStoreError:
         if kind == "scan":
             session.rollback()
-            return {"status": "scan_gone"}
+            return {"status": "gone"}
         return _failed(session, "missing")
     if is_sealed(stored):
         return _resume(session, store, keys, row, object_key, temp_key, digest, stored)

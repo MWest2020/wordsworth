@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 """`wordsworth-seal-originals` and the original scan of an OCR-recovered
 document that is not deleted (#473): sealed too, counted separately as a
-scan; left alone when already sealed or gone; and a superseded copy's scan
+scan; left alone when already sealed, `gone` when the store no longer has
+it; and a superseded copy's scan
 counts, as the spec counts a superseded copy as not deleted (review of #484)."""
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import pytest
 from scan_setup import recover_document, recover_now
 
 from wordsworth.document_keys import DocumentKeyRecord, DocumentKeys
+from wordsworth.object_store import InMemoryObjectStore, ObjectStoreError
 from wordsworth.originals_envelope import HEADER_MAGIC, seal as envelope_seal
 from wordsworth.pipeline import ingest, register
 from wordsworth.seal_originals import run
@@ -61,17 +63,38 @@ def test_scan_already_sealed_is_left_alone(session_factory, mem_store, keys, sca
     assert mem_store.get_raw(scan_key) == sealed_before
 
 
-def test_scan_no_longer_in_the_store_is_left_alone(session_factory, mem_store, keys, scanned_pdf):
-    """Review of the build (#481): a live recovered document whose scan is gone
-    from the store is nothing to seal and nothing failed."""
-    with session_factory() as session:
-        _doc_id, scan_key, _ocr_key = recover_document(session, mem_store, scanned_pdf)
-    mem_store.delete(scan_key)
+class _UnreadableStore(InMemoryObjectStore):
+    """The object is listed (`exists`) but every read of it fails."""
 
-    report = run(session_factory, mem_store, keys, dry_run=False)
+    def __init__(self, unreadable: str):
+        super().__init__()
+        self.unreadable = unreadable
+
+    def get_raw(self, key):
+        if key == self.unreadable:
+            raise ObjectStoreError(f"get {key!r} failed: unreachable")
+        return super().get_raw(key)
+
+
+@pytest.mark.parametrize("how", ["deleted", "unreadable"])
+def test_scan_no_longer_in_the_store_is_gone(session_factory, keys, scanned_pdf, how):
+    """Amended spec (#483): a live recovered document's scan that the store no
+    longer has -- it does not exist, or reading it raises an object-store
+    error -- is reported `gone`, neither sealed nor failed."""
+    store = _UnreadableStore("")
+    with session_factory() as session:
+        _doc_id, scan_key, _ocr_key = recover_document(session, store, scanned_pdf)
+    if how == "deleted":
+        store.delete(scan_key)
+    else:
+        store.unreadable = scan_key
+
+    report = run(session_factory, store, keys, dry_run=False)
     assert report["failed"] == 0
-    assert report["done"]["scan_gone"] == 1
-    assert not any(r["object_key"] == scan_key for r in report["results"])
+    assert report["done"]["gone"] == 1
+    assert report["done"]["sealed"] == 1  # the OCR'd original only
+    assert report["done"]["scans"] == 0
+    assert [r["status"] for r in report["results"] if r["object_key"] == scan_key] == ["gone"]
 
 
 def test_scan_of_a_superseded_recovered_copy_is_sealed(legacy_copies, mem_store, keys,

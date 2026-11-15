@@ -123,8 +123,9 @@ never takes the audit chain's lock.
 **Idempotent and resumable.** A document already sealed (`sealed_at` set) is
 reported `"already_sealed"` and its object is not touched (a leftover
 temporary copy is removed). The original scan of a live recovered document
-that is no longer in the store is skipped and counted as `scan_gone`, not as
-failed. A run interrupted between the overwrite and the `sealed_at` commit
+that the store no longer has (it does not exist, or reading it raises an
+object-store error) is reported with the status `"gone"` and counted under
+`gone`: neither sealed nor failed, and the exit status stays clean. A run interrupted between the overwrite and the `sealed_at` commit
 leaves a sealed object with no `sealed_at` yet; a rerun finds exactly that
 state, verifies it -- restoring it from `sealing/<sha256>` if it does not
 open -- and finishes the commit; it never re-reads a plaintext that is

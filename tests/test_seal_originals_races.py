@@ -49,7 +49,7 @@ def test_a_deletion_during_the_seal_keeps_the_document_deleted(session_factory, 
     assert_stayed_deleted(session_factory, store, document_id, object_key)
 
 
-def test_a_deletion_while_its_scan_is_sealed_keeps_the_scan_gone(
+def test_a_deletion_while_its_scan_is_sealed_keeps_the_scan_deleted(
         session_factory, scanned_pdf):
     store = DeletingStore(session_factory)
     with session_factory() as s:
