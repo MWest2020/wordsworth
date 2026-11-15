@@ -190,8 +190,9 @@ def _busy_body(e: urllib.error.HTTPError) -> tuple[str, list[dict]]:
     the API's JSON (a proxy's error page)."""
     try:
         body = json.loads(e.read())
-        return str(body.get("detail") or ""), list(body.get("results") or [])
-    except (ValueError, AttributeError, OSError):
+        results = [r for r in body.get("results") or [] if isinstance(r, dict)]
+        return str(body.get("detail") or ""), results
+    except (ValueError, AttributeError, TypeError, OSError):
         return "", []
 
 
