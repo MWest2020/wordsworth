@@ -40,17 +40,16 @@ from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
 from .roles import ADMIN as ROLES_ADMIN
 from .keys import DEFAULT_DOMAIN, KeyProvider
-from . import dossiers as dossiers_mod
 from .models import AuditRecord, Document, Dossier
 from .object_store import ObjectStore
 from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
 from .ingest_lock import IngestRaceError
-from . import read_gate
+from . import ingest_existing, read_gate
 from .pipeline import (
     current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
-    live_document_for, process, register_live,
+    process, register_live,
 )
 from .rate_limit import (
     EXEMPT_PATHS,
@@ -1060,41 +1059,11 @@ def create_app(
             from .mapping_store import PostgresMappingStore
 
             key = "documents/" + hashlib.sha256(data).hexdigest()
-            if search_index.has_object_key(key):
-                # Already processed — but a delivery into ANOTHER dossier still
-                # has to add that membership, or the skip would silently swallow
-                # the one thing this request was actually asking for.
-                with session_factory() as session:
-                    # The live one: a superseded copy has the same key, and a
-                    # membership added to it would vanish from every scope.
-                    doc = live_document_for(session, key)
-                    # Actor "ingest": nobody moved this, it arrived. There is no
-                    # endpoint that changes a membership by hand, so a caller
-                    # identity would be borrowed from a different act.
-                    added = bool(doc and dossier and dossiers_mod.add(
-                        session, dossiers_mod.ensure(session, dossier).id, doc.id,
-                        actor="ingest"))
-                    if doc is None:
-                        # The index knows this content but the document row is
-                        # gone. Nothing to add a membership to, and reporting
-                        # "skipped" would claim a success this request did not
-                        # have.
-                        raise HTTPException(
-                            status_code=409,
-                            detail="content is indexed but its document is gone; "
-                                   "reindex before ingesting it again")
-                    if added:
-                        # A membership change touches ONLY the dossiers. Writing
-                        # the whole document back would drop the embedding of
-                        # any caller who forgets `vector=` — which is exactly
-                        # what cost 770 documents their vectors on 2026-09-18.
-                        session.commit()
-                        search_index.set_dossiers(
-                            str(doc.id), dossiers_of(session, doc.id))
-                    else:
-                        session.commit()
-                    return {"state": "added_to_dossier" if added else "skipped",
-                            "document_id": str(doc.id)}
+            # Already processed: only a membership to add (`ingest_existing`).
+            existing = ingest_existing.deliver(session_factory, search_index,
+                                               key, dossier)
+            if existing is not None:
+                return existing
             with session_factory() as session:
                 # Reversible mode binds a fresh session-scoped anonymizer (durable
                 # keys + mapping store) per document; default mode uses the shared
@@ -1299,7 +1268,7 @@ def create_app(
             from . import audit
             from .datasets import (DatasetRun, Profile, load_profile,
                                    validate_unselected)
-            from .mapping_store import PostgresMappingStore
+            from .mapping_store import PostgresMappingStore, write_pending
             from .pseudonymizer import Pseudonymizer
 
             if (profile is None) == (profile_name is None):
@@ -1346,6 +1315,7 @@ def create_app(
                 doc = register_live(session, key, prof.domain)
                 state = current_state(session, doc.id)
                 stats = run.stats()
+                write_pending(session)  # the mappings; the chain lock from here
                 rec = audit.append(session, document_id=doc.id,
                                    from_state=state.value, to_state=state.value,
                                    step="dataset_pseudonymize",
