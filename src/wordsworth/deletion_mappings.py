@@ -7,18 +7,20 @@ A document's `document_pseudonyms` rows are its own and always go. The
 pseudonym.
 
 "No other document" is decided under the audit chain lock. Another document
-being anonymised right now has `put` the same value (finding the row, taking
-no lock) and has not committed its own links yet; a check without the lock did
-not see them and removed the row, so that document's token could never be
-revealed. `pseudonym_registry.link` takes the same lock before it links, so
-either its links are committed and the check below sees them, or it links
-after this deletion committed and stores the mapping again
-(`mapping_store.pin`).
+being anonymised right now mints the same value and has not committed its own
+links yet; a check without the lock did not see them and removed the row, so
+that document's token could never be revealed. `pseudonym_registry.link`
+stores its mappings and links under the same lock, so either its links are
+committed and the check below sees them, or it links after this deletion
+committed and stores the mapping again (`mapping_store.write_pending`).
 
 Lock order (`docs/reference/lock-order.md`): the document rows and key rows
-are held already (`deletion_keys.doomed`); pending deletes are flushed before
-the chain lock, so no other row lock is first asked for under it; the mapping
-rows come last, in pseudonym order. A dry run takes no lock.
+are held already (`deletion_keys.doomed`); `audit.lock_chain` flushes the
+pending deletes (text, grants) before it locks; the mapping rows come last,
+in pseudonym order. That holds for the first document a transaction deletes.
+A dossier deletion's later members are deleted with the chain lock already
+held, so their text and grant rows are asked for under it (#512). A dry run
+takes no lock.
 """
 from __future__ import annotations
 
@@ -47,7 +49,6 @@ def remove(session: Session, document_id: UUID, counts: DeletionCounts, *,
     if not pseudonyms:
         return
     if not dry_run:
-        session.flush()
         audit.lock_chain(session)
     linked_elsewhere = set(session.execute(
         select(DocumentPseudonym.pseudonym)

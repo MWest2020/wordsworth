@@ -47,16 +47,16 @@ def release(session, document_id: UUID, former_key: str) -> bool:
     """Release the key; False when it no longer is ``former_key``.
 
     The row first, the audit chain lock after (`docs/reference/lock-order.md`,
-    #466): locked FOR NO KEY UPDATE and read again, then the UPDATE flushed
-    before `audit.append`. Appending first took the chain lock and only then
-    asked for the row, which a rerun of `delete_document` on this document
-    holds while it waits for the chain lock."""
+    #466): locked FOR NO KEY UPDATE and read again before anything is
+    appended. It used to append first, and the chain lock was taken before
+    the pending UPDATE asked for the row -- which a rerun of
+    `delete_document` on this document holds while it waits for the chain
+    lock. (`audit.lock_chain` now also flushes before it locks.)"""
     doc = session.get(Document, document_id, populate_existing=True,
                       with_for_update={"key_share": True})
     if doc.object_key != former_key:
         return False  # released while this waited; nothing left to record
     doc.object_key = released_object_key(document_id)
-    session.flush()
     audit.append(session, document_id=document_id, from_state=State.DELETED.value,
                  to_state=State.DELETED.value, step="release-key",
                  payload={"released_object_key": former_key})

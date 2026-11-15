@@ -106,8 +106,9 @@ def one(session_factory, document_id: UUID, *, make_anonymizer,
         store, search_index=None, embedder=None,
         resolve_key_provider=None) -> tuple[str, str | None, dict | None]:
     """(outcome, problem detail, entity counts); counts only when reanonymized.
-    A document skipped because its state changed under the run carries that
-    state as its detail; one that never was a candidate carries none."""
+    A document whose state changed under the run (deleted while it waited) is
+    `skipped` like one that never was a candidate, plus a `reprocess_skipped`
+    log line with the state found."""
     with session_factory() as session:
         state = current_state(session, document_id)
         if state not in (State.INDEXED, State.ANONYMIZED):
@@ -128,9 +129,11 @@ def one(session_factory, document_id: UUID, *, make_anonymizer,
                             key_provider=key_provider, mapping_store=mapping_store)
         if after not in (State.INDEXED, State.ANONYMIZED):
             # A deletion committed while `reanonymize` waited for the row
-            # (#463): it wrote nothing, so this run reanonymized nothing (#469).
-            # The reason is the state it found, e.g. `deleted`.
-            return "skipped", after.value, None
+            # (#463): it wrote nothing, so this run reanonymized nothing
+            # (#469). Not a problem to report -- `problems` is failures only
+            # -- so the state it found goes to the log.
+            reprocess_counts.log_skipped(document_id, after.value)
+            return "skipped", None, None
         entity_counts = reprocess_counts.compare(  # the text about to be committed
             before, reprocess_counts.stored_text(session, document_id))
         session.commit()

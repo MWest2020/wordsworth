@@ -101,3 +101,41 @@ def test_a_delivery_does_not_join_a_document_being_deleted(
         assert [str(m) for m in members] == [str(new.id)]
         assert index.exists(str(new.id)) and not index.exists(old_id)
         assert verify_chain(s) == (True, None)
+
+
+def test_a_deleted_document_still_holding_its_key_names_the_way_out(
+        session_factory, mem_store, born_digital_pii_pdf, fake_embedder):
+    """#466 review: "attempts exhausted" is not "no document". A document
+    deleted before deletions released the object key, with its content still
+    in the index, is refused with the text that names the remedy -- not
+    ingested again over a key it cannot have."""
+    import hashlib
+
+    from wordsworth.deletion import delete_document
+    from wordsworth.ingest_lock import IngestRaceError
+
+    index = InMemoryIndex()
+    client = TestClient(create_app(
+        session_factory=session_factory, store=mem_store, search_index=index,
+        embedder=fake_embedder, anonymizer=DeterministicAnonymizer()))
+    files = {"files": ("a.pdf", born_digital_pii_pdf, "application/pdf")}
+    first = client.post("/ingest", params={"dossier": "zaak-a"}, files=files)
+    doc_id = first.json()["results"][0]["document_id"]
+    key = "documents/" + hashlib.sha256(born_digital_pii_pdf).hexdigest()
+    with session_factory() as s:
+        delete_document(s, doc_id, mem_store, index, actor="t")
+        s.commit()
+        s.get(Document, doc_id).object_key = key  # as before the release
+        s.commit()
+    index.index(doc_id, "tekst", key)  # and the index still knows the content
+    with session_factory() as s:
+        before = s.execute(select(DossierDocument.dossier_id)).scalars().all()
+
+    r = client.post("/ingest", params={"dossier": "zaak-b"}, files={
+        "files": ("a.pdf", born_digital_pii_pdf, "application/pdf")})
+    assert r.status_code == 200, r.text
+    result = r.json()["results"][0]
+    assert (result["state"], result["error"]) == ("error", IngestRaceError.public)
+    assert "wordsworth-release-deleted-keys" in result["error"]
+    with session_factory() as s:
+        assert s.execute(select(DossierDocument.dossier_id)).scalars().all() == before

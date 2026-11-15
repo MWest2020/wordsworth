@@ -4,9 +4,9 @@
 
 The mapping store is global: one value is one token everywhere. Document A is
 the last committed holder of the token for a BSN; document B, with the same
-BSN, is being anonymised. B's `put` finds the row and inserts nothing, and B's
-own `document_pseudonyms` rows are not committed yet, so A's deletion saw the
-row as orphaned and removed it -- B's token could then never be revealed.
+BSN, is being anonymised. B's own `document_pseudonyms` rows are not committed
+yet, so A's deletion saw the row as orphaned and removed it -- B's token could
+then never be revealed.
 
 Two interleavings, one per order the two can take the audit chain lock in
 (`docs/reference/lock-order.md`): linking and removing both happen under it."""
@@ -43,8 +43,8 @@ def _bounded(session) -> None:
 
 
 class _PausesAfterAnonymize(ReversibleAnonymizer):
-    """Holds right after `anonymize`: every `put` is done (a no-op for a
-    value another document already minted), nothing is linked yet."""
+    """Holds right after `anonymize`: every value is `put` (buffered),
+    nothing is stored or linked yet."""
 
     paused: threading.Event
     resume: threading.Event
@@ -145,8 +145,7 @@ def test_a_mapping_deleted_before_the_link_is_put_back(
         session_factory, fake_embedder):
     """`reanonymize` of B holds no chain lock while it anonymises, so the
     deletion of A runs to its end in between and removes the mapping B's
-    `put` had found. B notices when it links, under the chain lock, and
-    stores the mapping again."""
+    token points at. B stores it again when it links, under the chain lock."""
     store, index, kp = InMemoryObjectStore(), InMemoryIndex(), new_key_provider()
     a = _processed(session_factory, store, index, fake_embedder, kp, A_LINE)
     with session_factory() as s:

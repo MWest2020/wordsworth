@@ -89,6 +89,14 @@ def log(document_id: UUID | str, counts: dict[str, dict[str, int]]) -> str:
     logger.log(logging.INFO, line)
     return line
 
+def log_skipped(document_id: UUID | str, state: str) -> str:
+    """One JSON line for a document `reprocess` skipped because its state
+    changed under the run (#469): the id and the state found, e.g. `deleted`."""
+    line = json.dumps({"event": "reprocess_skipped", "document_id": str(document_id),
+                       "state": state, "level": "info"}, sort_keys=True)
+    logger.log(logging.INFO, line)
+    return line
+
 
 def value_not_located_detail(session, document_id: UUID) -> str | None:
     """The `problems` text for this document, if the run just finished ended

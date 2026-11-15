@@ -72,17 +72,22 @@ def lock_live(session: Session, document_id: UUID, object_key: str) -> bool:
 
 def lock_live_for(session: Session, object_key: str) -> Document | None:
     """The live document for ``object_key`` with its row locked (`lock_live`),
-    or None when there is none, or none that stayed live while this waited
-    for it. For a caller that adds to an existing document without `ingest`
-    (the API's already-indexed path, #466): what it adds then cannot land on
-    a document a deletion in flight is removing."""
+    or None when there is none (any more): never ingested, or deleted or
+    superseded while this waited for the row. For a caller that adds to an
+    existing document without `ingest` (`ingest_existing`, #466): what it
+    adds then cannot land on a document a deletion in flight is removing.
+
+    Raises `IngestRaceError`, as `ingest` does, when a row keeps holding the
+    key without being live: a document deleted before deletions released the
+    object key. That is not "no document" -- the bytes cannot be ingested
+    until `wordsworth-release-deleted-keys` has run, and the error says so."""
     from .pipeline import live_document_for  # deferred: pipeline imports this module
 
     for _ in range(LIVE_ATTEMPTS):
         doc = live_document_for(session, object_key)
         if doc is None or lock_live(session, doc.id, object_key):
             return doc
-    return None
+    raise IngestRaceError(doc.id, object_key)
 
 
 def lock_for_process(session: Session, document_id: UUID) -> Document | None:

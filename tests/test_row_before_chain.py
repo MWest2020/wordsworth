@@ -17,7 +17,7 @@ from wordsworth.audit import current_state, verify_chain
 from wordsworth.dedupe import run as dedupe_run
 from wordsworth.deletion import released_object_key
 from wordsworth.dossier_deletion import delete_dossier
-from wordsworth.models import Document, DossierDocument
+from wordsworth.models import AuditRecord, Document, DossierDocument
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import ingest, register, transition
 from wordsworth.search_index import InMemoryIndex
@@ -102,19 +102,41 @@ def test_release_waits_for_the_row_without_the_chain_lock(session_factory):
 
 
 def test_release_skips_a_key_released_while_it_waited(session_factory):
-    """Read again under the lock: a document whose key was released in
-    between gets no second `release-key` record."""
+    """Two releases of one document at once (two runs of the command). The
+    second has the row in its session already, waits for the first, and has
+    to read the row again under the lock: without that it releases a key
+    that is released, and writes a second `release-key` record."""
     key = "documents/" + "ef" * 32
     with session_factory() as s:
         doc_id = register(s, key).id
         transition(s, doc_id, State.DELETED, step="delete")
         s.commit()
-        assert release_deleted.release(s, doc_id, key) is True
-        s.commit()
-        assert release_deleted.release(s, doc_id, key) is False
-        s.commit()
-    report = release_deleted.run(session_factory, apply=True)
-    assert report["released"] == []
+    errors, result = {}, {}
+
+    def second():
+        with session_factory() as s:
+            _bounded(s)
+            assert s.get(Document, doc_id).object_key == key  # as found, stale soon
+            result["released"] = release_deleted.release(s, doc_id, key)
+            s.commit()
+
+    with session_factory() as first:
+        _bounded(first)
+        assert release_deleted.release(first, doc_id, key) is True  # not committed
+        worker = run(errors, "second", second)
+        wait_for_a_lock_waiter(session_factory)
+        first.commit()
+    worker.join(30)
+
+    assert not errors, errors
+    assert result["released"] is False
+    with session_factory() as s:
+        steps = s.execute(select(AuditRecord.step).where(
+            AuditRecord.document_id == doc_id)).scalars().all()
+        assert steps.count("release-key") == 1
+        assert s.get(Document, doc_id).object_key == released_object_key(doc_id)
+        assert verify_chain(s) == (True, None)
+    assert release_deleted.run(session_factory, apply=True)["released"] == []
 
 
 def test_dedupe_locks_every_copy_before_its_first_record(legacy_copies,

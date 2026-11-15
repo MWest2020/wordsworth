@@ -6,10 +6,11 @@ from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from . import audit
 from .crypto import decrypt, encrypt
 from .keys import KeyProvider
 from .models import PiiMapping
@@ -33,29 +34,43 @@ class MappingStore(Protocol):
 
 
 class PostgresMappingStore:
-    """Separated store in PostgreSQL. `put` is idempotent: one row per pseudonym."""
+    """Separated store in PostgreSQL. `put` is idempotent: one row per pseudonym.
+
+    `put` writes nothing yet: it buffers the row on the session, and
+    `write_pending` stores the buffered rows under the audit chain lock, in
+    pseudonym order (`docs/reference/lock-order.md`). An anonymizer calls
+    `put` in the order values appear in a text, long before its run holds the
+    chain lock; rows inserted then, uncommitted, made two runs minting the
+    same new values wait for each other in a circle (#465, #504). `process`
+    and `reanonymize` write through `pseudonym_registry.link`, the dataset
+    run calls `write_pending` before its audit record; whatever is still
+    buffered at commit is written then (`_write_at_commit`), so a `put` is
+    never silently lost."""
 
     def __init__(self, session: Session):
         self._session = session
 
     def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
             norm_version: str | None = None) -> None:
-        # One statement, not read-then-insert. Two requests pseudonymising the
-        # same value at once -- two threads in one pod, or two replicas -- both
-        # saw "absent", and the second insert failed its whole ingest on the
-        # primary key. Both rows encrypt the same value, so the first one wins.
-        values = dict(pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
-                      key_id=key_id, norm_version=norm_version,
-                      created_at=datetime.now(timezone.utc))
-        _insert(self._session, values)
-        # Kept for `pin`: a row found here can be gone again before this
-        # transaction links it to a document (#465).
-        self._session.info.setdefault(_PUTS, {})[pseudonym] = values
+        # The first `put` of a pseudonym wins, as the first row does in the
+        # table: both encrypt the same value.
+        # Inside a transaction, so the buffer ends with it: stored at its
+        # commit at the latest, dropped at its rollback (the two listeners
+        # below). Begins one if none is open; no statement is sent.
+        self._session.connection()
+        self._session.info.setdefault(_PENDING, {}).setdefault(pseudonym, dict(
+            pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
+            key_id=key_id, norm_version=norm_version,
+            created_at=datetime.now(timezone.utc)))
 
     def get(self, pseudonym: str) -> Mapping | None:
         row = self._session.get(PiiMapping, pseudonym)
         if row is None:
-            return None
+            pending = self._session.info.get(_PENDING, {}).get(pseudonym)
+            if pending is None:
+                return None
+            return Mapping(pseudonym, pending["ciphertext"], pending["nonce"],
+                           pending["key_id"], pending["norm_version"])
         return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id,
                        row.norm_version)
 
@@ -78,45 +93,58 @@ class PostgresMappingStore:
         return len(rows)
 
 
-#: `Session.info` key: what this session `put`, by pseudonym, so `pin` can
-#: store a row again. Ciphertext only, as the table itself.
-_PUTS = "pii_mapping_puts"
+#: `Session.info` key: the rows `put` buffered and `write_pending` has not
+#: stored yet, by pseudonym. On the session, not on the store, because the
+#: writer (`pseudonym_registry.link`) has the session and not the store the
+#: anonymizer was built on. Emptied by every `write_pending`.
+_PENDING = "pii_mappings_pending"
 
 
-def _insert(session: Session, values: dict) -> None:
-    session.execute(pg_insert(PiiMapping).values(**values)
-                    .on_conflict_do_nothing(index_elements=["pseudonym"]))
+def write_pending(session: Session, only: set[str] | None = None) -> None:
+    """Store the buffered mapping rows and hold them until the transaction
+    ends. Under the audit chain lock, taken here (it flushes first), in
+    pseudonym order: `INSERT ... ON CONFLICT DO NOTHING`, then FOR KEY SHARE.
 
+    A deletion removes a mapping no document is linked to, and decides that
+    under the same lock (`deletion_mappings`), so a row stored or found here
+    cannot go before this transaction's links commit (#465). Every writer of
+    `pii_mappings` being under the chain lock also means an insert here never
+    waits for another transaction's uncommitted insert.
 
-def pin(session: Session, pseudonyms: set[str]) -> None:
-    """Make sure the mapping rows this session `put` for ``pseudonyms`` exist,
-    and hold them FOR KEY SHARE until the transaction ends (#465).
-
-    `put` inserts nothing when another document already minted the value, and
-    takes no lock on the row it found; a deletion of that document, the last
-    committed holder, removes the row. The caller holds the audit chain lock
-    (`pseudonym_registry.link`), which a deletion takes before it removes a
-    mapping, so a row found or stored here stays. A pseudonym this session
-    never `put` (irreversible mode, a non-Postgres store) is not looked at.
-    The clever pitfall: the remembered values live on `Session.info`, so this
-    only works on the session the store was built on -- which is the one
-    `process` runs on."""
-    put = session.info.get(_PUTS, {})
-    wanted = sorted(set(pseudonyms) & put.keys())
-    if not wanted:
+    ``only``: the pseudonyms the caller links (the tokens of the text it
+    keeps). Buffered rows outside it are dropped, not stored -- nothing would
+    refer to them; rows of ``only`` that were not buffered (another run
+    minted them earlier) are only held. Without ``only`` everything buffered
+    is stored."""
+    pending = session.info.pop(_PENDING, {})
+    names = sorted(pending if only is None else only)
+    audit.lock_chain(session)
+    if not names:
         return
-    for _ in range(2):
-        held = set(session.execute(
-            select(PiiMapping.pseudonym).where(PiiMapping.pseudonym.in_(wanted))
-            .order_by(PiiMapping.pseudonym).with_for_update(key_share=True, read=True)
-        ).scalars().all())
-        missing = [p for p in wanted if p not in held]
-        if not missing:
-            return
-        for pseudonym in missing:
-            _insert(session, put[pseudonym])
-    raise RuntimeError(f"{len(missing)} pii_mappings rows could not be stored "
-                       "again; nothing is linked, a rerun finishes the work")
+    rows = [pending[name] for name in names if name in pending]
+    if rows:
+        session.execute(pg_insert(PiiMapping)
+                        .on_conflict_do_nothing(index_elements=["pseudonym"]), rows)
+    session.execute(select(PiiMapping.pseudonym)
+                    .where(PiiMapping.pseudonym.in_(names))
+                    .order_by(PiiMapping.pseudonym)
+                    .with_for_update(key_share=True, read=True))
+
+
+@event.listens_for(Session, "before_commit")
+def _write_at_commit(session: Session) -> None:
+    """The net under every `put`: rows still buffered when the transaction
+    commits are stored first, the same way. A caller that appends an audit
+    record after its `put`s holds the chain lock by then already."""
+    if session.info.get(_PENDING):
+        write_pending(session)
+
+
+@event.listens_for(Session, "after_rollback")
+def _drop_at_rollback(session: Session) -> None:
+    """A rolled-back run stores nothing, its buffered rows included. (A
+    savepoint rolling back is not this event.)"""
+    session.info.pop(_PENDING, None)
 
 
 def remove_orphans(session: Session, pseudonyms: list[str]) -> None:

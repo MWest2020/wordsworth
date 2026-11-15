@@ -4,23 +4,31 @@
 
 ### Fixed
 
-- **Concurrency fixes around deletion** (#460, #465, #466, #469); the one
-  lock order is now written down in `docs/reference/lock-order.md`.
+- **Concurrency fixes around deletion** (#460, #465, #466, #469, #504); the
+  one lock order is now written down in `docs/reference/lock-order.md`.
   - A deletion could remove a `pii_mappings` row that another document, being
     anonymised at that moment, was about to rely on; that document's token
-    could then never be revealed (#465). Linking a pseudonym to a document
-    and removing a mapping now both happen under the audit chain lock, and a
-    run that finds its mapping gone stores it again.
+    could then never be revealed (#465). Mappings are now stored, linked and
+    removed under the audit chain lock only: `PostgresMappingStore.put`
+    buffers, and the rows are written in pseudonym order once the lock is
+    held (at the link, before a dataset run's record, or at commit). The
+    pseudonym backfill links the same way, one transaction per document.
+  - That also ends the deadlock between two runs minting the same new value
+    (#504): no mapping row is held before the chain lock any more.
   - The API's already-indexed ingest path added a dossier membership without
     locking the document; a dossier deletion in flight still deleted it,
     leaving a deleted document as a member (#466). It now locks the row and
-    checks again; bytes whose document was deleted meanwhile are ingested as
-    a new document.
+    checks again (`ingest_existing.py`); bytes whose document was deleted
+    meanwhile are ingested as a new document, and a deleted document still
+    holding its key is refused with the text naming
+    `wordsworth-release-deleted-keys`.
   - `wordsworth-release-deleted-keys` and `wordsworth-dedupe` took the audit
     chain lock before a document row and could deadlock with a deletion or
-    an ingest (#466). Both lock the rows first.
+    an ingest (#466). Both lock the rows first; `audit.lock_chain` flushes
+    pending row changes before it locks.
   - `reprocess` counted a document deleted mid-run as `reanonymized` (#469);
-    it is now `skipped`, with `deleted` as the reason in the problems list.
+    it is now `skipped`, with a `reprocess_skipped` log line naming the state
+    found. `problems` stays failures only.
   - The dossier-deletion lock-order inversion (#460) was fixed with #462;
     this adds the test the issue asked for.
 

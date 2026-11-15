@@ -32,9 +32,14 @@ def lock_chain(session: Session) -> None:
     """Take the chain's advisory lock now, until the transaction ends.
 
     `append` takes it by itself. A caller takes it earlier when something has
-    to be decided under it: linking a pseudonym to a document and removing a
-    `pii_mappings` row both are (#465, `docs/reference/lock-order.md`).
-    Re-entrant within one transaction."""
+    to be decided under it: writing, linking and removing `pii_mappings` rows
+    are (#465, `docs/reference/lock-order.md`). Re-entrant within one
+    transaction.
+
+    Flushes first. The lock is a plain statement, which does not autoflush,
+    so a pending row change would otherwise reach the database after it --
+    a row lock asked for under the chain lock, the wrong way round (#466)."""
+    session.flush()
     session.execute(
         text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK_KEY}
     )

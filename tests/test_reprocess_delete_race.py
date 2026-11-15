@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """#469: a document deleted while `reprocess.one` waits for its row is
-reported `skipped` (reason `deleted`), not `reanonymized`.
+reported `skipped`, not `reanonymized`; the state found goes to the log.
 
 `reprocess.one` reads the state without a lock and then calls `reanonymize`,
 which locks the row (#463). A deletion in flight commits first; `reanonymize`
@@ -8,6 +8,8 @@ then reads `deleted` and writes nothing -- and the run used to count the
 document as reanonymized all the same."""
 from __future__ import annotations
 
+import json
+import logging
 import threading
 
 from sqlalchemy import select, text
@@ -23,6 +25,18 @@ from wordsworth.search_index import InMemoryIndex
 from wordsworth.states import State
 
 
+def _skip_lines(caplog) -> list[dict]:
+    lines = []
+    for rec in caplog.records:
+        try:
+            parsed = json.loads(rec.getMessage())
+        except ValueError:
+            continue
+        if isinstance(parsed, dict) and parsed.get("event") == "reprocess_skipped":
+            lines.append(parsed)
+    return lines
+
+
 def _one(session_factory, doc_id, store, index, embedder):
     return reprocess.one(session_factory, doc_id,
                          make_anonymizer=lambda s, domain: DeterministicAnonymizer(),
@@ -30,7 +44,8 @@ def _one(session_factory, doc_id, store, index, embedder):
 
 
 def test_a_document_deleted_mid_run_is_skipped_not_reanonymized(
-        session_factory, born_digital_pii_pdf, fake_embedder):
+        session_factory, born_digital_pii_pdf, fake_embedder, caplog):
+    caplog.set_level(logging.INFO, logger="wordsworth.pipeline")
     store, index = _HoldingStore(), InMemoryIndex()
     doc_id = _indexed(session_factory, store, index, born_digital_pii_pdf,
                       fake_embedder)
@@ -62,7 +77,9 @@ def test_a_document_deleted_mid_run_is_skipped_not_reanonymized(
         repr_.join(30)
 
     assert not errors, errors
-    assert result["one"] == ("skipped", "deleted", None)
+    assert result["one"] == ("skipped", None, None)
+    assert _skip_lines(caplog) == [{"event": "reprocess_skipped", "level": "info",
+                                    "document_id": str(doc_id), "state": "deleted"}]
     with session_factory() as s:
         assert current_state(s, doc_id) == State.DELETED
         steps = s.execute(select(AuditRecord.step).where(
@@ -72,8 +89,8 @@ def test_a_document_deleted_mid_run_is_skipped_not_reanonymized(
 
 def test_run_counts_it_as_skipped_and_names_the_reason(
         session_factory, born_digital_pii_pdf, fake_embedder, monkeypatch):
-    """The same through `run`: one skipped, none reanonymized, and the reason
-    where the run reports what it did not do."""
+    """The same through `run`: one skipped, none reanonymized, and nothing in
+    `problems`, which holds failures only."""
     store, index = _HoldingStore(), InMemoryIndex()
     doc_id = _indexed(session_factory, store, index, born_digital_pii_pdf,
                       fake_embedder)
@@ -94,13 +111,14 @@ def test_run_counts_it_as_skipped_and_names_the_reason(
         store=store, search_index=index, embedder=fake_embedder,
         entity_counts=per_type)
     assert counts == {"reanonymized": 0, "skipped": 1, "retryable": 0, "failed": 0}
-    assert problems == {str(doc_id): "deleted"}
+    assert problems == {}
     assert per_type == {}
 
 
-def test_a_document_that_is_simply_not_indexed_is_skipped_without_a_reason(
-        session_factory, born_digital_pdf, fake_embedder):
-    """Unchanged: a state `one` reads itself needs no explanation."""
+def test_a_document_that_is_simply_not_indexed_is_skipped_without_a_log_line(
+        session_factory, born_digital_pdf, fake_embedder, caplog):
+    """Unchanged: a state `one` reads itself is not a race to report."""
+    caplog.set_level(logging.INFO, logger="wordsworth.pipeline")
     from wordsworth.pipeline import ingest
     store, index = _HoldingStore(), InMemoryIndex()
     with session_factory() as s:
@@ -108,3 +126,4 @@ def test_a_document_that_is_simply_not_indexed_is_skipped_without_a_reason(
         s.commit()
     assert _one(session_factory, doc_id, store, index, fake_embedder) == (
         "skipped", None, None)
+    assert _skip_lines(caplog) == []
