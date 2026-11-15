@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import originals_envelope
 from .document_keys import DocumentKeyRecord, DocumentKeys
-from .object_store import ObjectStore, ObjectStoreError, SealedObjectError
+from .object_store import ObjectMissingError, ObjectStore, SealedObjectError
 
 if TYPE_CHECKING:
     from .document_keys import DataKey
@@ -99,8 +99,8 @@ class OriginalsStore:
         row = session.get(DocumentKeyRecord, object_key)
         try:
             stored = self.objects.get_raw(object_key)
-        except ObjectStoreError:
-            stored = None
+        except ObjectMissingError:  # only "not there" is absent; any other read
+            stored = None           # error propagates -- rules 2 and 3 overwrite
         stored_sealed = stored is not None and _is_sealed(stored)
 
         if row is not None and stored_sealed:

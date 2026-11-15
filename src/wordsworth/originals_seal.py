@@ -145,8 +145,8 @@ def seal_one(session, store: ObjectStore, keys: DocumentKeys, document_id: UUID,
     """Seal one object. Returns ``{"status": ...}``: ``"sealed"`` (+ bytes),
     ``"already_sealed"``, ``"skipped_deleted"``, ``"skipped_moved"``,
     ``"gone"`` (a scan no longer in the store) or ``"failed"`` (+ a fixed
-    ``"error"`` text: ``"missing"``, ``"unreadable"``, ...) -- never the
-    document's bytes or anything derived from its content. Raises on what it cannot classify (a
+    ``"error"``: ``"missing"``, ``"unreadable"``, ...) -- never the document's
+    bytes or anything derived from them. Raises on what it cannot classify (a
     key service down, a store write error); the caller reports that."""
     digest = _digest_of(object_key)
     temp_key = f"{TEMP_PREFIX}{digest}"

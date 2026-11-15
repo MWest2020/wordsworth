@@ -16,7 +16,7 @@ from collections.abc import Iterator
 from datetime import datetime
 
 from .config import settings
-from .object_store import (
+from .object_store_base import (
     ObjectMissingError,
     ObjectStoreError,
     SealedObjectError,

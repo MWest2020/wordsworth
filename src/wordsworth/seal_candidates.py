@@ -109,6 +109,8 @@ def probe(store: ObjectStore, object_key: str) -> tuple[str, int | None, bytes]:
         size = store.size(object_key)
         if size is None:
             return "missing", None, b""
+        if size == 0:
+            return "legacy", 0, b""  # no header to read: never sealed
         head = store.get_head(object_key, originals_envelope.HEADER_LEN)
     except ObjectMissingError:  # gone between the HEAD and the read
         return "missing", None, b""
@@ -122,7 +124,8 @@ def object_state(store: ObjectStore, object_key: str) -> tuple[str, int | None]:
     return probe(store, object_key)[:2]
 
 
-def classify(store: ObjectStore, work: list[Candidate]) -> dict[str, tuple[str, int | None]]:
+def classify(store: ObjectStore,
+             work: list[Candidate]) -> dict[str, tuple[str, int | None]]:
     return {c.object_key: object_state(store, c.object_key) for c in work}
 
 

@@ -13,29 +13,13 @@ from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
 
-#: The sealed-object header's magic bytes (originals_envelope.HEADER_MAGIC),
-#: duplicated here on purpose: this is the lower layer, and it must never
-#: import originals_envelope to find out whether an object is sealed.
-_SEALED_MAGIC = b"WWENC"
-
-
-class ObjectStoreError(Exception):
-    """Raised when an object cannot be stored or fetched (e.g. a missing key)."""
-
-
-class ObjectMissingError(ObjectStoreError):
-    """The store answered, and the object is not there. Every other read error
-    (a broken connection, a timeout, a 5xx) is a plain ObjectStoreError: the
-    object may well exist, and a report must never call it missing."""
-
-
-class SealedObjectError(ObjectStoreError):
-    """Raised by the plain `get` when the object carries the sealed header:
-    ciphertext must never be handed back to a caller expecting a PDF."""
-
-
-def _is_sealed(data: bytes) -> bool:
-    return data[:len(_SEALED_MAGIC)] == _SEALED_MAGIC
+from .object_store_base import (  # noqa: F401 -- re-exported, the public names
+    _SEALED_MAGIC,
+    ObjectMissingError,
+    ObjectStoreError,
+    SealedObjectError,
+    _is_sealed,
+)
 
 
 @runtime_checkable
@@ -110,5 +94,6 @@ class InMemoryObjectStore:
 
 
 # The S3 driver lives in its own module (the file-size rule); importing it from
-# here keeps `from wordsworth.object_store import S3ObjectStore` working.
+# here keeps `from wordsworth.object_store import S3ObjectStore` working. It
+# imports only object_store_base, so either module can be imported first.
 from .object_store_s3 import S3ObjectStore  # noqa: E402,F401

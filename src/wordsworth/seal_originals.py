@@ -9,10 +9,10 @@ A run without flags seals for real; ``--dry-run`` reports what would be
 sealed and changes nothing. Classifying an object (the counts, the dry run,
 ``--verify``) reads its size and its sealed header, never the whole object:
 only a real seal reads an object in full. An object that cannot be read is
-reported ``unreadable``, never ``missing``. ``--verify`` (`seal_verify.py`) checks the outcome
-of a real run (or a deploy before one): it fails while any live document or
-scan is still a legacy plaintext original, or a sealed object has no usable
-key row.
+reported ``unreadable``, never ``missing``. ``--verify`` (`seal_verify.py`)
+checks the outcome of a real run (or a deploy before one): it fails while any
+live document or scan is still a legacy plaintext original, or a sealed object
+has no usable key row.
 
 Every object is its own attempt: an exception sealing one (the key service
 unavailable, a store error) is reported as ``failed`` with the exception's
