@@ -33,6 +33,17 @@
       `test_scan_no_longer_in_the_store_is_gone[deleted|unreadable]` and
       `test_scan_already_sealed_is_left_alone` in
       `tests/test_seal_originals_scans.py`.)
+- [x] A scan OCR recovery retired as a copy (`supersede(..., as_object=...)`)
+      is a candidate of kind `scan`: the retired document keeps its own
+      object, and no `ocr` record names it (#486). Proved by:
+      `tests/test_seal_originals_retired.py` (sealed and verified through the
+      real `recover`; a deleted one stays deleted, also beside a running
+      deletion; `gone`; an ordinary copy adds no candidate).
+- [x] A rerun reads only the header of an object that is sealed and committed
+      (#491). Proved by: `test_a_rerun_reads_only_the_header_of_a_sealed_object`
+      (S3 driver: no full GET) and
+      `test_a_rerun_still_reads_what_is_not_sealed_and_committed` in
+      `tests/test_seal_originals_reads.py`.
 - [x] Docs: `docs/how-to/originals-encryption.md` (the migration, the dry run,
       verification, what to do on a failed document; the `gone` status for a
       scan that is no longer in the store, and that it is not a failure).

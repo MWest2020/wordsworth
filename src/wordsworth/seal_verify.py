@@ -3,8 +3,9 @@
 real run left behind, read fresh from the store and the key rows. Object keys
 and ids only, never content; needs no key service.
 
-It fails when a live document's original or a live recovered document's
-scan is still legacy plaintext (the spec's pass condition), and also when a
+It fails when a live document's original or a scan (a live recovered
+document's, or one retired as a copy, #486) is still legacy plaintext (the
+spec's pass condition), and also when a
 sealed object cannot be opened by anyone: it has no key row, or its header
 names a key id other than its row's, or when a live document's original
 is missing from the store (that is data loss, not a pass), or when a live

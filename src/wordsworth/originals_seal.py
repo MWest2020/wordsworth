@@ -29,7 +29,9 @@ final key verifies; if that fails too, the temporary copy is kept and the
 object reported `failed`. A crash between the overwrite and the `sealed_at`
 commit leaves a sealed object with no `sealed_at` -- `get_original` still
 reads it, its guard keys off the header -- and a rerun verifies it (repairing
-it from `sealing/<sha256>` if it does not open) and finishes the commit."""
+it from `sealing/<sha256>` if it does not open) and finishes the commit. An
+object whose row has `sealed_at` and that carries the sealed header is done:
+a rerun reads its header only, never the object (#491)."""
 from __future__ import annotations
 
 import hashlib
@@ -44,7 +46,7 @@ from .deletion_keys import _object_claimed_elsewhere
 from .document_keys import DataKey, DocumentKeyRecord, DocumentKeys
 from .object_store import ObjectMissingError, ObjectStore, ObjectStoreError
 from .pipeline import current_state, document_domain
-from .seal_candidates import is_sealed, key_row, lock_claim, read_full
+from .seal_candidates import is_sealed, key_row, lock_claim, read_full, sealed_header
 from .states import State
 
 TEMP_PREFIX = "sealing/"
@@ -67,8 +69,7 @@ def _opened_size(key: DataKey, object_key: str, data: bytes, digest: str) -> int
     return len(opened) if hashlib.sha256(opened).hexdigest() == digest else None
 
 
-def _read_verified(store: ObjectStore, key: DataKey, object_key: str, at: str,
-                   digest: str) -> int | None:
+def _read_verified(store, key: DataKey, object_key: str, at: str, digest: str) -> int | None:
     try:
         data = store.get_raw(at)
     except ObjectStoreError:
@@ -76,8 +77,7 @@ def _read_verified(store: ObjectStore, key: DataKey, object_key: str, at: str,
     return _opened_size(key, object_key, data, digest)
 
 
-def _restore_final(store: ObjectStore, key: DataKey, object_key: str, temp_key: str,
-                   digest: str) -> int | None:
+def _restore_final(store, key: DataKey, object_key: str, temp_key: str, digest: str) -> int | None:
     """Put the temporary copy back at the final key if it opens to ``digest``,
     and verify the final key again. None when either check fails."""
     try:
@@ -95,8 +95,7 @@ def _failed(session, error: str) -> dict:
     return {"status": "failed", "error": error}
 
 
-def _skipped(session, store: ObjectStore, document_id: UUID, object_key: str,
-             temp_key: str) -> dict:
+def _skipped(session, store, document_id: UUID, object_key: str, temp_key: str) -> dict:
     """The claim failed: write nothing at the final key. Deleted: remove a
     temporary copy unless another document still claims the object (then it
     may be that object's only good copy, for that claimant's run). Not
@@ -112,8 +111,7 @@ def _skipped(session, store: ObjectStore, document_id: UUID, object_key: str,
     return {"status": "skipped_deleted"}
 
 
-def _commit_sealed(session, store: ObjectStore, row: DocumentKeyRecord, temp_key: str,
-                   size: int) -> dict:
+def _commit_sealed(session, store, row: DocumentKeyRecord, temp_key: str, size: int) -> dict:
     row.sealed_at = datetime.now(timezone.utc)
     session.flush()
     session.commit()
@@ -155,6 +153,8 @@ def seal_one(session, store: ObjectStore, keys: DocumentKeys, document_id: UUID,
     if not lock_claim(session, document_id, object_key, kind):
         return _skipped(session, store, document_id, object_key, temp_key)
     row = key_row(session, object_key)
+    if row is not None and row.sealed_at is not None and sealed_header(store, object_key):
+        return _resume(session, store, keys, row, object_key, temp_key, digest, b"")
     try:
         stored = read_full(store, object_key)  # the one full read, retried once
     except ObjectStoreError as exc:
