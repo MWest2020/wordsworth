@@ -178,3 +178,48 @@ def test_a_503_body_past_the_limit_counts_as_no_body(tmp_path, monkeypatch, caps
     rc, _ = _run(tmp_path, monkeypatch, urlopen, "--retries", "1")
     out = capsys.readouterr().out
     assert rc == 1 and "a.pdf: NOT INGESTED (server busy)" in out
+
+
+HOSTILE = ("\x1b[2J", "\x1b]0;owned\x07", "\x1b]8;;http://evil\x1b\\", "\x1b(B",
+           "\x9b31m", "\x9d0;owned\x9c", "\u202e", "\x1b", "\x07", "\r")
+
+
+def test_printable_drops_whole_sequences_not_only_their_first_byte():
+    assert client._printable("a\x1b[1;31mb\x1b[0mc") == "abc"
+    assert client._printable("a\x1b]0;title\x07b") == "ab"          # OSC ... BEL
+    assert client._printable("a\x1b]8;;http://x\x1b\\b") == "ab"    # OSC ... ST
+    assert client._printable("a\x1b(Bb") == "ab"                    # charset designator
+    assert client._printable("a\x9b31mb") == "ab"                   # C1 CSI
+    assert client._printable("a\x1b]0;never closed") == "a"
+    assert client._printable("abc\u202edef\u2066") == "abcdef"      # bidi
+    assert client._printable("x" * 300) == "x" * 200
+
+
+def test_no_string_of_a_503_result_reaches_the_terminal_raw(
+        tmp_path, monkeypatch, capsys):
+    """`results` is from the same body as `detail`: filename, state, error and
+    the names in `counts` are all printed, and all cleaned first."""
+    _files(tmp_path, "a.pdf", "b.pdf", "c.pdf")
+    dirt = "".join(HOSTILE)
+    body = json.dumps({"detail": "busy", "results": [
+        {"filename": f"a{dirt}.pdf", "state": f"err{dirt}or",
+         "error": f"Value{dirt}Error" + "e" * 500},
+        {"filename": "b.pdf", "state": "indexed", "duration_ms": 1200,
+         "counts": {f"per{dirt}son": 2, "bsn": f"{dirt}9"}},
+        {"filename": "c.pdf", "state": f"ind{dirt}exed", "duration_ms": f"{dirt}12"},
+    ]}).encode()
+
+    def urlopen(req, timeout=0):
+        raise _busy(body)
+
+    rc, _ = _run(tmp_path, monkeypatch, urlopen, "--retries", "1")
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert not [c for c in out if c != "\n" and not c.isprintable()]
+    for leftover in ("owned", "evil", "[2J", "31m", "(B"):
+        assert leftover not in out
+    assert "a.pdf: error (ValueError" in out and "e" * 201 not in out
+    assert "  - a.pdf: ValueError" in out                    # the failures list too
+    assert "b.pdf: indexed (1.2s, person=2)" in out          # a count that is no number is dropped
+    assert "c.pdf: indexed" in out                           # as is such a duration
+    assert "NOT INGESTED" not in out                         # each result found its file

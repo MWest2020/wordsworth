@@ -189,22 +189,54 @@ class _ServerBusy(Exception):
 #: A 503 can come from anything on the path, so its body is read up to this many
 #: bytes and no further. A longer one does not parse and counts as no body.
 _BUSY_BODY_MAX = 64 * 1024
-_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# What a terminal would act on rather than show, whole sequences first so their
+# parameters go with them: OSC (ESC ] or C1 0x9d, up to BEL, ST or the end), CSI
+# (ESC [ or C1 0x9b), charset designators (ESC ( B), any other two-byte escape.
+_ANSI = re.compile(
+    r"(?:\x1b\]|\x9d).*?(?:\x07|\x1b\\|\x9c|$)"
+    r"|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]?"
+    r"|\x1b[()*+\-./][ -~]?"
+    r"|\x1b[ -~]?", re.DOTALL)
+_NAME_MAX = 255      # a file name is at most 255 bytes on the systems we walk
 
 
 def _printable(text: str, limit: int = 200) -> str:
-    """``text`` without ANSI sequences or control characters, cut to ``limit``:
-    a server's words go to the terminal, and may not move the cursor there."""
+    """``text`` without escape sequences, control characters or format
+    characters (bidi overrides among them), cut to ``limit``: a server's words
+    go to the terminal, and may not move the cursor or reorder the line there."""
     text = _ANSI.sub("", text)
     return "".join(c for c in text if c.isprintable())[:limit]
 
 
+def _clean_result(r: dict) -> dict:
+    """One per-file result from a 503 body, rebuilt from the fields this client
+    prints and nothing else: strings through ``_printable``, ``duration_ms``
+    only when it is a number, ``counts`` only as name -> whole number."""
+    def number(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+    out: dict = {}
+    for field, limit in (("filename", _NAME_MAX), ("state", 40), ("error", 200),
+                         ("document_id", 64)):
+        if r.get(field) is not None:
+            out[field] = _printable(str(r[field]), limit)
+    if number(r.get("duration_ms")):
+        out["duration_ms"] = r["duration_ms"]
+    counts = r.get("counts")
+    if isinstance(counts, dict):
+        out["counts"] = {_printable(str(k), 40): v for k, v in counts.items()
+                         if isinstance(v, int) and not isinstance(v, bool)}
+    return out
+
+
 def _busy_body(e: urllib.error.HTTPError) -> tuple[str, list[dict]]:
     """``detail`` and ``results`` of a 503 body, or empty ones when it is not
-    the API's JSON (a proxy's error page)."""
+    the API's JSON (a proxy's error page). Everything in it is untrusted: a 503
+    can come from anything on the path, so no string leaves here uncleaned."""
     try:
         body = json.loads(e.read(_BUSY_BODY_MAX))
-        results = [r for r in body.get("results") or [] if isinstance(r, dict)]
+        results = [_clean_result(r) for r in body.get("results") or []
+                   if isinstance(r, dict)]
         return _printable(str(body.get("detail") or "")), results
     except (ValueError, AttributeError, TypeError, OSError):
         return "", []
@@ -294,8 +326,9 @@ def _cmd_ingest(args) -> int:
             resp = {"results": busy.results}
             done = [r.get("filename") for r in busy.results]
             for p in files[i:]:
-                if p.name in done:
-                    done.remove(p.name)   # one result accounts for one file
+                name = _printable(p.name, _NAME_MAX)   # as _busy_body cleaned it
+                if name in done:
+                    done.remove(name)     # one result accounts for one file
                 else:
                     not_ingested.append(p.name)
                     print(f"{p.name}: NOT INGESTED (server busy)", flush=True)

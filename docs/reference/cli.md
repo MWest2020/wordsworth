@@ -141,9 +141,12 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   other file is printed as `NOT INGESTED (server busy)` and counted in the
   summary as `N not ingested (server busy)`, not as failed. Run the same
   command again later: files already indexed come back as `skipped`.
-  Of a `503` body the client reads at most 64 KB, and it prints the body's
-  `detail` without control characters or ANSI sequences, cut to 200
-  characters: a `503` can come from anything between the client and the API.
+  Of a `503` body the client reads at most 64 KB, and nothing from it is
+  printed as sent: `detail` and every per-file field (`filename`, `state`,
+  `error`, the names in `counts`) lose their escape sequences, control
+  characters and bidi overrides and are cut to a fixed length; a `duration_ms`
+  or a count that is not a number is dropped. A `503` can come from anything
+  between the client and the API.
   Any other `5xx` or a dropped connection is still retried and then reported
   as a failed batch, and the run goes on with the next batch
   ([#403](https://github.com/MWest2020/wordsworth/issues/403)).
