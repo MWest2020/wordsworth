@@ -102,19 +102,20 @@ def test_source_character_boxes_lie_inside_the_rects():
 
 
 def test_pixels_under_the_box_are_the_box_colour():
+    """Read from the page raster inside the output, not from a render of the
+    page: the label is drawn in white over the box (#448), so a rendered pixel
+    in a box can be label. The raster is what the label lies on."""
     out, boxes = _redacted()
-    pdf = pdfium.PdfDocument(out)
-    page = pdf[0]
-    height = page.get_height()
-    scale = 300 / 72
-    image = page.render(scale=scale).to_pil().convert("RGB")
+    page = pypdf.PdfReader(io.BytesIO(out)).pages[0]
+    height = float(page.mediabox.height)
+    image = page.images[0].image.convert("RGB")
+    scale = image.width / float(page.mediabox.width)
+    assert scale == pytest.approx(300 / 72, rel=0.01)
     for b in boxes:
         r = b.rect
         cx = int(((r.x0 + r.x1) / 2) * scale)
         cy = int((height - (r.y0 + r.y1) / 2) * scale)
-        assert image.getpixel((cx, cy)) == (0, 0, 0)
-    page.close()
-    pdf.close()
+        assert max(image.getpixel((cx, cy))) <= 8      # black, within JPEG's reach
 
 
 def test_label_is_placed_on_its_box():

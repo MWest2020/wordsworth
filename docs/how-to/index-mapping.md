@@ -25,7 +25,7 @@ nothing in production while `dossier=alle` returned nine.
 
 `ensure_ready()` also **adds fields the mapping has gained** since the index was
 created (`indices.put_mapping`) — additive and idempotent, the same shape as the
-column migrations in `db.py`.
+column migrations `db.py` applies (the list itself is `db_migrations.py`).
 
 A field that already exists with the **wrong type** raises `MappingConflict`.
 Deliberately hard: a field cannot be retyped in place, and carrying on would
