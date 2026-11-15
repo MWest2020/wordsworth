@@ -39,3 +39,11 @@ scan is counted separately (`scans`).
   longer in the store
 - **THEN** the seal run does nothing for it and reports nothing as failed
 
+#### Scenario: A scan that is no longer in the store is skipped as gone
+
+- **WHEN** the scan of a live recovered document is named in its `ocr` record
+  but the store no longer has the object (it does not exist, or reading it
+  raises an object-store error)
+- **THEN** the seal run reports it with the status `gone`, counts it as neither
+  sealed nor failed, and the run's exit status does not signal a failure
+

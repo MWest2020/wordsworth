@@ -16,5 +16,18 @@
       sealed by the same run when it is still plaintext, counted as `scans`
       (#473). Proved by: a test with a recovered document whose scan is
       plaintext, and one whose scan is already sealed.
+- [ ] A live recovered document's scan that is no longer in the store is
+      skipped, not failed (reviewer finding on build #481, blocking):
+      `candidates()` in `originals_seal.py` adds every `old_object_key` from
+      `deletion_scans.scan_keys` without checking existence, and `seal_one()`
+      turns the `ObjectStoreError` on read into a failure. Check
+      `store.exists` for scan candidates and treat an `ObjectStoreError` on
+      read of a scan as absent; report the status `gone`, counted as neither
+      sealed nor failed, and keep the exit status clean. Proved by: a test for
+      "already sealed OR no longer in the store → nothing done, nothing
+      failed", with a recovered document whose scan is missing from the store
+      (and one where reading raises `ObjectStoreError`), asserting status
+      `gone`, `failed == 0` and `sealed` unchanged.
 - [ ] Docs: `docs/how-to/originals-encryption.md` (the migration, the dry run,
-      verification, what to do on a failed document).
+      verification, what to do on a failed document; the `gone` status for a
+      scan that is no longer in the store, and that it is not a failure).
