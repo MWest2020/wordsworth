@@ -13,11 +13,12 @@ inside a function body cannot be seen without executing it.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable
 
 from fastapi import HTTPException, Request
 
-from .auth import authorize_corpus_read, authorize_grant_issue
+from .auth import authorize_corpus_read, authorize_delete, authorize_grant_issue
 
 
 class Gate:
@@ -75,3 +76,59 @@ def gate_of(route) -> str | None:
         if isinstance(call, Gate):
             return call.name
     return None
+
+
+@dataclass(frozen=True)
+class Gates:
+    """Every caller check ``create_app`` hands its routes, built once from the
+    resolved label lists, so no route can close over a list still ``None``."""
+
+    auth_enabled: bool
+    corpus_read: Gate
+    grant_read: Gate
+    grant_admin: Gate
+    delete: Callable[[Request, object], None]
+
+
+def build(*, keys, identity, corpus_read_labels: list[str] | None,
+          grant_issuer_labels: list[str] | None, grants_configured: bool,
+          settings) -> Gates:
+    """Resolve the two label lists against ``settings`` and build the gates.
+
+    ``auth_enabled`` follows exactly what the auth middleware mounts on
+    (``keys or identity is not None``). S1: when the two drifted apart, an
+    installation with only an identity provider was authenticated while the
+    recipient binding was off -- every grant a bearer token again, and anyone
+    could mint one. One source for "is there a caller to decide about".
+
+    With authentication and a grant store on and the read list empty, this
+    logs one warning: the scope is off and every authenticated caller reads
+    the corpus. Legal, so not a refusal to start; but more likely forgotten
+    than chosen where somebody is deciding who sees what."""
+    readers = (settings.corpus_read_labels if corpus_read_labels is None
+               else corpus_read_labels)
+    issuers = (settings.grant_issuer_labels if grant_issuer_labels is None
+               else grant_issuer_labels)
+    auth_enabled = bool(keys) or identity is not None
+    if auth_enabled and grants_configured and not readers:
+        from .structured_log import log_empty_corpus_read_scope
+
+        log_empty_corpus_read_scope()
+
+    def delete(request: Request, session) -> None:
+        """Deleting is irreversible: the admin role or a named issuer label
+        only. The role is resolved here because ``authorize_delete`` touches
+        no database."""
+        from .grants import caller_holds_role
+        from .roles import ADMIN
+
+        caller = getattr(request.state, "caller", None)
+        beheerder = bool(caller) and caller_holds_role(session, caller, ADMIN)
+        if not authorize_delete(caller, issuers, auth_enabled,
+                                is_beheerder=beheerder):
+            raise HTTPException(status_code=403,
+                                detail="caller not authorized to delete")
+
+    return Gates(auth_enabled=auth_enabled, corpus_read=corpus_read(readers),
+                 grant_read=grant_read(readers, issuers, auth_enabled),
+                 grant_admin=grant_admin(issuers, auth_enabled), delete=delete)
