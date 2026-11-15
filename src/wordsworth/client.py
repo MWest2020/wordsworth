@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -185,13 +186,26 @@ class _ServerBusy(Exception):
         self.detail, self.results = detail, results
 
 
+#: A 503 can come from anything on the path, so its body is read up to this many
+#: bytes and no further. A longer one does not parse and counts as no body.
+_BUSY_BODY_MAX = 64 * 1024
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
+
+def _printable(text: str, limit: int = 200) -> str:
+    """``text`` without ANSI sequences or control characters, cut to ``limit``:
+    a server's words go to the terminal, and may not move the cursor there."""
+    text = _ANSI.sub("", text)
+    return "".join(c for c in text if c.isprintable())[:limit]
+
+
 def _busy_body(e: urllib.error.HTTPError) -> tuple[str, list[dict]]:
     """``detail`` and ``results`` of a 503 body, or empty ones when it is not
     the API's JSON (a proxy's error page)."""
     try:
-        body = json.loads(e.read())
+        body = json.loads(e.read(_BUSY_BODY_MAX))
         results = [r for r in body.get("results") or [] if isinstance(r, dict)]
-        return str(body.get("detail") or ""), results
+        return _printable(str(body.get("detail") or "")), results
     except (ValueError, AttributeError, TypeError, OSError):
         return "", []
 
@@ -264,6 +278,7 @@ def _cmd_ingest(args) -> int:
     indexed = skipped = 0
     failures: list[tuple[str, str]] = []  # (filename, reason)
     not_ingested: list[str] = []          # server busy: says nothing about the file
+    server_busy = False
     print(f"ingesting {total} file(s) in batches of {args.batch}...", flush=True)
     for i in range(0, total, args.batch):
         chunk = files[i:i + args.batch]
@@ -275,6 +290,7 @@ def _cmd_ingest(args) -> int:
             # Later batches would meet the same server: stop here. What the
             # last 503 reported as finished is counted below as usual; the rest
             # of this batch and every later file was not ingested.
+            server_busy = True
             resp = {"results": busy.results}
             done = [r.get("filename") for r in busy.results]
             for p in files[i:]:
@@ -299,8 +315,8 @@ def _cmd_ingest(args) -> int:
             else:
                 failures.append((r.get("filename"), r.get("error") or state))
             print(f"{r.get('filename')}: {state}{_result_extra(r)}", flush=True)
-        if not_ingested:
-            break
+        if server_busy:
+            break      # on the 503 itself, also when it left no file unfinished
     tail = f", {skipped} skipped" if skipped else ""
     busy_tail = (f", {len(not_ingested)} not ingested (server busy)"
                  if not_ingested else "")
@@ -309,11 +325,11 @@ def _cmd_ingest(args) -> int:
         print("failed files:")
         for name, reason in failures:
             print(f"  - {name}: {reason}")
-    if not_ingested:
+    if server_busy:
         print("the server was busy (HTTP 503) after every attempt; nothing is "
               "wrong with these files.\nRun the same command again later: files "
               "already indexed are skipped.")
-    return 0 if not (failures or not_ingested) else 1
+    return 0 if not (failures or server_busy) else 1
 
 
 def _result_extra(r: dict) -> str:

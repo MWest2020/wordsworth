@@ -128,7 +128,8 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   non-zero PII counts on success (e.g. `2130276.pdf: indexed (1.8s, bsn=1
   person=2)`), or the error class on failure — and a final `X/Y indexed, Z failed`
   summary. A file that fails does **not** abort the batch. Exit code is
-  non-zero if any file failed or was not ingested.
+  non-zero if any file failed or was not ingested, and whenever the run
+  ended on a `503`, also when that `503` reported every file as finished.
 - **A `503` is the server, not the files.** The API answers `503` when it is
   busy or a service it needs is away; the one it sends itself is `key service
   unavailable`, which stops that HTTP batch early (see
@@ -140,6 +141,9 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
   other file is printed as `NOT INGESTED (server busy)` and counted in the
   summary as `N not ingested (server busy)`, not as failed. Run the same
   command again later: files already indexed come back as `skipped`.
+  Of a `503` body the client reads at most 64 KB, and it prints the body's
+  `detail` without control characters or ANSI sequences, cut to 200
+  characters: a `503` can come from anything between the client and the API.
   Any other `5xx` or a dropped connection is still retried and then reported
   as a failed batch, and the run goes on with the next batch
   ([#403](https://github.com/MWest2020/wordsworth/issues/403)).

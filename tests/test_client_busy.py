@@ -119,3 +119,62 @@ def test_another_5xx_is_still_a_failed_batch_and_the_run_goes_on(
     assert rc == 1 and len(calls) == 4     # both batches tried, as before
     assert "a.pdf: FAILED" in out and "b.pdf: FAILED" in out
     assert "not ingested" not in out
+
+
+def test_a_503_that_lists_every_file_as_finished_still_stops_the_run(
+        tmp_path, monkeypatch, capsys):
+    """The stop is on the 503, not on there being a file left unfinished: a
+    run whose last answer was a 503 did not end well, whatever the body says."""
+    _files(tmp_path, "a.pdf")
+    calls = []
+    body = json.dumps({"detail": "key service unavailable",
+                       "results": [{"filename": "a.pdf", "state": "indexed"}]}).encode()
+
+    def urlopen(req, timeout=0):
+        calls.append(req)
+        raise _busy(body)
+
+    rc, _ = _run(tmp_path, monkeypatch, urlopen, "--batch", "1", "--retries", "2")
+    out = capsys.readouterr().out
+    assert rc == 1 and len(calls) == 2     # one batch, two attempts
+    assert "a.pdf: indexed" in out and "NOT INGESTED" not in out
+    assert "1/1 indexed, 0 failed" in out
+    assert "Run the same command again later" in out
+
+
+def test_the_503_body_is_read_to_a_limit_and_its_detail_cannot_drive_the_terminal(
+        tmp_path, monkeypatch, capsys):
+    _files(tmp_path, "a.pdf")
+    reads = []
+
+    class Body(io.BytesIO):
+        def read(self, n=-1):
+            reads.append(n)
+            return super().read(n)
+
+    detail = "\x1b[2J\x1b[31mkey service\r\n\x07 unavailable\x1b]0;t\x07" + "x" * 500
+    payload = json.dumps({"detail": detail, "results": []}).encode()
+
+    def urlopen(req, timeout=0):
+        raise urllib.error.HTTPError("http://api/ingest", 503, "Service Unavailable",
+                                     email.message.Message(), Body(payload))
+
+    rc, _ = _run(tmp_path, monkeypatch, urlopen, "--retries", "1")
+    out = capsys.readouterr().out
+    assert rc == 1 and reads == [client._BUSY_BODY_MAX]
+    assert "key service unavailable" in out
+    assert not [c for c in out if c != "\n" and not c.isprintable()]
+    assert "x" * 201 not in out            # the detail is cut, too
+
+
+def test_a_503_body_past_the_limit_counts_as_no_body(tmp_path, monkeypatch, capsys):
+    _files(tmp_path, "a.pdf")
+    huge = json.dumps({"detail": "busy", "results": [
+        {"filename": "a.pdf", "state": "indexed", "pad": "p" * client._BUSY_BODY_MAX}]})
+
+    def urlopen(req, timeout=0):
+        raise _busy(huge.encode())
+
+    rc, _ = _run(tmp_path, monkeypatch, urlopen, "--retries", "1")
+    out = capsys.readouterr().out
+    assert rc == 1 and "a.pdf: NOT INGESTED (server busy)" in out
