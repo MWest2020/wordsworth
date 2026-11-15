@@ -60,6 +60,7 @@ wordsworth-measure-combinations = "wordsworth.measure_combinations:main"
 wordsworth-delete = "wordsworth.delete_cli:main"
 wordsworth-sealed-orphans = "wordsworth.sealed_orphans:main"
 wordsworth-release-deleted-keys = "wordsworth.release_deleted:main"
+wordsworth-seal-originals = "wordsworth.seal_originals:main"
 
 [build-system]
 requires = ["uv_build>=0.11.15,<0.12.0"]

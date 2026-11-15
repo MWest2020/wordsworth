@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-11
+last_reviewed: 2026-11-15
 ---
 
 # Runbook: originals encryption
@@ -61,6 +61,92 @@ content-addressed key, with a `document_keys` row for the recovered document.
 The scan object it was read from keeps its own key and row unchanged. If the
 repoint of `object_key` or the state transition fails after a fresh write, the
 written object is deleted so a retry starts clean.
+
+## Sealing the existing corpus
+
+`originals-ingest-switch` only covers new originals. The ~420 objects already
+on the homelab, ingested before that change, stay legacy plaintext until
+`wordsworth-seal-originals` (ADR-0008, `originals-encrypt-existing`) runs
+against them:
+
+```bash
+wordsworth-seal-originals --dry-run          # reports what would be sealed; changes nothing
+wordsworth-seal-originals                    # a real run: seals everything it finds
+wordsworth-seal-originals --ids <uuid> <uuid> # a real run, limited to named documents
+wordsworth-seal-originals --verify           # checks only: fails if a live document or its
+                                              # scan is still legacy plaintext, or a sealed
+                                              # object has no usable key row
+```
+
+A run without flags seals for real; `--dry-run` is the flag to pass first.
+The dry run reports counts (`objects`, `sealed`, `legacy`, `missing`,
+`bytes`) and the keys it would seal, and changes nothing. A real run seals
+every legacy original it finds for a live document, and the original scan
+(`old_object_key` in its recovering `ocr` audit record,
+`deletion_scans.scan_keys`) of every document that is not deleted --
+superseded copies included -- when that scan is itself still plaintext; these
+are counted separately in the report, under `scans`.
+
+**Never without a readable copy.** Per object: the sealed bytes are written
+first under a temporary key (`sealing/<sha256>`) and verified to open to the
+object's recorded SHA-256 *before* the plaintext at `documents/<sha256>` is
+ever overwritten. A sealed copy that fails that check leaves the plaintext in
+place and the document reported `"failed"`, never `"sealed"`. After the
+overwrite the final key is verified again; if it does not open (a corrupted
+write, a read error), the verified temporary copy is put back at the final
+key and verified once more, and the temporary copy is deleted only once the
+final key verifies. If it still does not, the object is reported `"failed"`
+and `sealing/<sha256>` is kept: by then it is the readable copy. `put_original`
+is deliberately not used for this: it refuses to replace a legacy object,
+which is right for ingest and wrong for this migration.
+
+**One object never ends the run.** Any exception while sealing one object
+(the key service unavailable, a store error) is reported as `"failed"` with
+the exception's class name only (e.g. `OriginalsKeyUnavailable`), never its
+message, and the run moves on to the next object.
+
+**Beside a deletion.** The seal runs alongside the service, so a document can
+be deleted while the run is underway. Each object is sealed in two
+transactions (read and mint the key row; then write, verify and set
+`sealed_at`), each holding the document's row `FOR SHARE` and re-checking
+first that the document is not deleted and still claims the object. A
+deletion that starts during either waits for it to commit and then removes
+what it wrote, key row included; a deletion that committed before either is
+found by the re-check: the object is reported `"skipped_deleted"` (counted
+under `skipped_deleted`, not as failed), nothing is written at
+`documents/<sha256>`, and a temporary copy no other document claims is
+removed. A claim that moved without a deletion (OCR recovery repointed the
+document while the run was underway) is reported `"skipped_moved"` and left
+for the next run, which finds the object as the document's scan. The run
+never takes the audit chain's lock.
+
+**Idempotent and resumable.** A document already sealed (`sealed_at` set) is
+reported `"already_sealed"` and its object is not touched (a leftover
+temporary copy is removed). The original scan of a live recovered document
+that the store no longer has (it does not exist, or reading it raises an
+object-store error) is reported with the status `"gone"` and counted under
+`gone`: neither sealed nor failed, and the exit status stays clean. A run interrupted between the overwrite and the `sealed_at` commit
+leaves a sealed object with no `sealed_at` yet; a rerun finds exactly that
+state, verifies it -- restoring it from `sealing/<sha256>` if it does not
+open -- and finishes the commit; it never re-reads a plaintext that is
+already gone. A run interrupted after the key row was minted and before
+anything was written reuses that row. Safe to run repeatedly, including on a
+schedule, until `--verify` reports `"verified": true`.
+
+**What `--verify` checks.** It fails (exit 1) while a live document's
+original or a scan is still legacy plaintext, or while a sealed object can
+be opened by no one: it has no key row (`no_key_row`) or its header names
+another key id than its row (`key_id_mismatch`), or while a live document's
+original is missing from the store (`missing`: data loss, never a pass; a
+temporary read error fails it too, which is the safe side). It also lists,
+without failing on them, pending objects -- sealed, `sealed_at` still NULL
+(`pending`), which a rerun finishes. **Run one seal at a time:** two runs at
+once share the temporary `sealing/<sha>` copies. Object keys and ids only, never content; it needs no key service.
+
+**On a failed document.** The report names the object key and an error, never
+document content. Investigate the object directly (is it reachable, does the
+key service answer) and rerun -- a prior failure does not block any other
+document, and rerunning retries only what is still legacy or still pending.
 
 ## Deploy precondition
 
