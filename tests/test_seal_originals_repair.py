@@ -137,6 +137,7 @@ def test_an_original_missing_from_the_store_is_failed_and_listed(session_factory
     with session_factory() as s:
         checked = verify(s, mem_store)
     assert [e["object_key"] for e in checked["missing"]] == [object_key]
+    assert checked["verified"] is False   # a missing live original is data loss
 
 
 def test_a_crash_after_the_mint_before_the_temporary_write_reruns_clean(

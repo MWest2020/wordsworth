@@ -136,10 +136,12 @@ schedule, until `--verify` reports `"verified": true`.
 **What `--verify` checks.** It fails (exit 1) while a live document's
 original or a scan is still legacy plaintext, or while a sealed object can
 be opened by no one: it has no key row (`no_key_row`) or its header names
-another key id than its row (`key_id_mismatch`). It also lists, without
-failing on them, live originals missing from the store (`missing`) and
-pending objects -- sealed, `sealed_at` still NULL (`pending`), which a rerun
-finishes. Object keys and ids only, never content; it needs no key service.
+another key id than its row (`key_id_mismatch`), or while a live document's
+original is missing from the store (`missing`: data loss, never a pass; a
+temporary read error fails it too, which is the safe side). It also lists,
+without failing on them, pending objects -- sealed, `sealed_at` still NULL
+(`pending`), which a rerun finishes. **Run one seal at a time:** two runs at
+once share the temporary `sealing/<sha>` copies. Object keys and ids only, never content; it needs no key service.
 
 **On a failed document.** The report names the object key and an error, never
 document content. Investigate the object directly (is it reachable, does the

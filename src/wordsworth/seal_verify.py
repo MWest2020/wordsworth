@@ -6,9 +6,10 @@ and ids only, never content; needs no key service.
 It fails when a live document's original or a live recovered document's
 scan is still legacy plaintext (the spec's pass condition), and also when a
 sealed object cannot be opened by anyone: it has no key row, or its header
-names a key id other than its row's. It lists, without failing on them,
-live originals missing from the store and pending objects (sealed, with
-`sealed_at` still NULL: a rerun finishes them)."""
+names a key id other than its row's, or when a live document's original
+is missing from the store (that is data loss, not a pass). It lists, without
+failing on them, pending objects (sealed, with `sealed_at` still NULL: a
+rerun finishes them). A scan that is gone stays out of the check (spec)."""
 from __future__ import annotations
 
 from uuid import UUID
@@ -52,5 +53,6 @@ def verify(session: Session, store: ObjectStore, ids: list[UUID] | None = None) 
             out["key_id_mismatch"].append(entry)
         elif row.sealed_at is None:
             out["pending"].append(entry)
-    verified = not (out["legacy"] or out["no_key_row"] or out["key_id_mismatch"])
+    verified = not (out["legacy"] or out["missing"] or out["no_key_row"]
+                    or out["key_id_mismatch"])
     return {"verified": verified, **out}
