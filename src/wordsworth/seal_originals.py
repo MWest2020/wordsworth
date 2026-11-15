@@ -31,8 +31,14 @@ def run(session_factory, store: ObjectStore, keys, *,
         return {"dry_run": True, "before": before, "would_seal": would_seal}
 
     results = []
-    done = {"sealed": 0, "scans": 0, "already_sealed": 0, "failed": 0}
+    done = {"sealed": 0, "scans": 0, "already_sealed": 0, "scan_gone": 0, "failed": 0}
     for c in work:
+        if c.kind == "scan" and object_state(store, c.object_key)[0] == "missing":
+            # A scan no longer in the store (removed with an old copy, by
+            # sealed-orphans, ...) is nothing to seal and nothing failed (spec:
+            # "A scan that is already sealed or gone is left alone").
+            done["scan_gone"] += 1
+            continue
         with session_factory() as session:
             outcome = seal_one(session, store, keys, c.document_id, c.object_key)
         results.append({"document_id": str(c.document_id), "object_key": c.object_key,

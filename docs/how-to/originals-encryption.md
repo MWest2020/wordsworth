@@ -96,7 +96,9 @@ replace a legacy object, which is right for ingest and wrong for this
 migration.
 
 **Idempotent and resumable.** A document already sealed (`sealed_at` set) is
-reported `"already_sealed"` and touched not at all. A run interrupted between
+reported `"already_sealed"` and touched not at all. The original scan of a
+live recovered document that is no longer in the store is skipped and counted
+as `scan_gone`, not as failed. A run interrupted between
 the overwrite and the `sealed_at` commit leaves a sealed object with no
 `sealed_at` yet; a rerun finds exactly that state, verifies it, and finishes
 the commit -- it never re-reads a plaintext that is already gone. Safe to

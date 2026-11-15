@@ -103,7 +103,7 @@ def test_rerun_after_sealing_reports_already_sealed_and_touches_nothing(
     sealed_bytes = mem_store.get_raw(doc.object_key)
 
     second = run(session_factory, mem_store, keys, dry_run=False)
-    assert second["done"] == {"sealed": 0, "scans": 0, "already_sealed": 1, "failed": 0}
+    assert second["done"] == {"sealed": 0, "scans": 0, "already_sealed": 1, "scan_gone": 0, "failed": 0}
     assert mem_store.get_raw(doc.object_key) == sealed_bytes
 
 
@@ -198,3 +198,16 @@ def test_scan_already_sealed_is_left_alone(session_factory, mem_store, keys, sca
     scan_result = next(r for r in report["results"] if r["object_key"] == scan_key)
     assert scan_result["status"] == "already_sealed"
     assert mem_store.get_raw(scan_key) == sealed_before
+
+
+def test_scan_no_longer_in_the_store_is_left_alone(session_factory, mem_store, keys, scanned_pdf):
+    """Review of the build (#481): a live recovered document whose scan is gone
+    from the store is nothing to seal and nothing failed."""
+    with session_factory() as session:
+        _doc_id, scan_key, _ocr_key = recover_document(session, mem_store, scanned_pdf)
+    mem_store.delete(scan_key)
+
+    report = run(session_factory, mem_store, keys, dry_run=False)
+    assert report["failed"] == 0
+    assert report["done"]["scan_gone"] == 1
+    assert not any(r["object_key"] == scan_key for r in report["results"])
