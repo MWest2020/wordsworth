@@ -9,8 +9,11 @@ Three things make it legible, and each was once missing (#448):
   outlives the text object that set it. The invisible text layer
   (`pdf_render._draw_invisible_layer`) sets mode 3 and did not set it back, so
   the labels drawn after it were in the file, findable, and invisible on every
-  box. The layer now ends in mode 0; reportlab only writes a mode *change*, so
-  asking for mode 0 here would write nothing and guard nothing.
+  box. The layer now ends by setting mode 0 on its own text object, and
+  reportlab writes that as `0 Tr`, because for that object it is a change
+  (3 to 0). A new text object starts out believing it is at 0, so the same
+  call on the label's text object here writes nothing; that is why the reset
+  is in the layer and not here.
 - **It fits the box.** The size follows the box height, then shrinks until the
   label is no wider than the box: white text past the edge of a black box is
   white on the page, which reads as a label cut off mid-word.
