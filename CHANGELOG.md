@@ -4,6 +4,21 @@
 
 ### Fixed
 
+- **The labels on a redacted PDF's boxes could not be seen** (#448). The
+  invisible text layer left the PDF text render mode at 3, and the labels
+  drawn after it inherited it: `[PERSOON 1]` was in the file and findable,
+  and invisible on every box. The layer now sets the mode back. A label also
+  shrinks to the width of its box and is clipped to it, so none runs out in
+  white over the page. `RENDER_VERSION` is 2: redacted PDFs cached under
+  version 1 are rendered anew on their next request.
+
+- **`wordsworth ingest` reported every file as failed when the API answered
+  503** (#403). A 503 is the server, not the files: the client still retries
+  the batch (honouring `Retry-After`), and when the last attempt is a 503 it
+  stops the run, counts what that 503 reported as finished, and lists the
+  rest as `NOT INGESTED (server busy)` instead of `FAILED`. Other 5xx
+  answers are handled as before.
+
 - **A deletion racing `reanonymize` put the document back in the index**
   (#463). `reanonymize` (the `reprocess` backfill) read the state without a
   lock; a deletion that committed before it wrote the index entry and the

@@ -175,13 +175,46 @@ def _iter_files(root: Path, include_all: bool) -> list[Path]:
     return sorted(p for p in root.rglob(pattern) if p.is_file())
 
 
+class _ServerBusy(Exception):
+    """The API still answered 503 after every attempt: it is busy or a service
+    it needs is away, which says nothing about the files. ``results`` holds the
+    per-file results the last 503 carried (files finished before it stopped)."""
+
+    def __init__(self, detail: str, results: list[dict]):
+        super().__init__(detail)
+        self.detail, self.results = detail, results
+
+
+def _busy_body(e: urllib.error.HTTPError) -> tuple[str, list[dict]]:
+    """``detail`` and ``results`` of a 503 body, or empty ones when it is not
+    the API's JSON (a proxy's error page)."""
+    try:
+        body = json.loads(e.read())
+        results = [r for r in body.get("results") or [] if isinstance(r, dict)]
+        return str(body.get("detail") or ""), results
+    except (ValueError, AttributeError, TypeError, OSError):
+        return "", []
+
+
+def _retry_after(e: urllib.error.HTTPError, delay: int) -> int:
+    """The server's Retry-After in whole seconds when it sends one (at most 60),
+    else our own backoff."""
+    try:
+        return max(1, min(int(e.headers.get("Retry-After")), 60))
+    except (TypeError, ValueError, AttributeError):
+        return delay
+
+
 def _post_batch_with_retry(url, chunk, timeout, retries, index,
                            domain: str | None = None, dossier: str | None = None):
     """POST one batch, retrying on transport errors / 5xx (transient: a server
     worker recycle drops the in-flight connection). Returns the parsed response,
-    or None if every attempt failed. Prints each attempt's failure visibly."""
+    or None if every attempt failed. Prints each attempt's failure visibly.
+    A 503 that outlasts every attempt raises ``_ServerBusy`` instead (#403)."""
     delay = 3
     for attempt in range(1, retries + 1):
+        busy = None
+        pause = delay
         try:
             # keyword only when set, so a domain-unaware seam/test double still fits
             extra = {k: v for k, v in (("domain", domain), ("dossier", dossier))
@@ -192,6 +225,10 @@ def _post_batch_with_retry(url, chunk, timeout, retries, index,
                 raise  # no key / wrong key: every batch would fail the same way
             transient = e.code >= 500
             reason = f"HTTP {e.code} {e.reason}"
+            if e.code == 503:
+                busy = _ServerBusy(*_busy_body(e))
+                pause = _retry_after(e, delay)
+                reason += f" ({busy.detail})" if busy.detail else ""
         except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
             transient = True
             reason = str(getattr(e, "reason", e))
@@ -202,9 +239,12 @@ def _post_batch_with_retry(url, chunk, timeout, retries, index,
             reason = f"invalid response ({e})"
         tag = f"batch @{index} (attempt {attempt}/{retries})"
         if transient and attempt < retries:
-            print(f"  ! {tag}: {reason} — retrying in {delay}s", flush=True)
-            time.sleep(delay)
+            print(f"  ! {tag}: {reason} — retrying in {pause}s", flush=True)
+            time.sleep(pause)
             delay = min(delay * 2, 30)
+        elif busy is not None:
+            print(f"  ! {tag}: {reason} — server busy, stopping the run", flush=True)
+            raise busy
         else:
             print(f"  ! {tag}: {reason} — giving up on this batch", flush=True)
             return None
@@ -223,12 +263,26 @@ def _cmd_ingest(args) -> int:
     total = len(files)
     indexed = skipped = 0
     failures: list[tuple[str, str]] = []  # (filename, reason)
+    not_ingested: list[str] = []          # server busy: says nothing about the file
     print(f"ingesting {total} file(s) in batches of {args.batch}...", flush=True)
     for i in range(0, total, args.batch):
         chunk = files[i:i + args.batch]
-        resp = _post_batch_with_retry(args.url, chunk, args.timeout,
-                                      args.retries, i, domain=args.domain,
-                                      dossier=args.dossier)
+        try:
+            resp = _post_batch_with_retry(args.url, chunk, args.timeout,
+                                          args.retries, i, domain=args.domain,
+                                          dossier=args.dossier)
+        except _ServerBusy as busy:
+            # Later batches would meet the same server: stop here. What the
+            # last 503 reported as finished is counted below as usual; the rest
+            # of this batch and every later file was not ingested.
+            resp = {"results": busy.results}
+            done = [r.get("filename") for r in busy.results]
+            for p in files[i:]:
+                if p.name in done:
+                    done.remove(p.name)   # one result accounts for one file
+                else:
+                    not_ingested.append(p.name)
+                    print(f"{p.name}: NOT INGESTED (server busy)", flush=True)
         if resp is None:
             # Whole batch failed after retries — the server may or may not have
             # processed some; report each file so nothing fails silently.
@@ -245,13 +299,21 @@ def _cmd_ingest(args) -> int:
             else:
                 failures.append((r.get("filename"), r.get("error") or state))
             print(f"{r.get('filename')}: {state}{_result_extra(r)}", flush=True)
+        if not_ingested:
+            break
     tail = f", {skipped} skipped" if skipped else ""
-    print(f"\n{indexed}/{total} indexed{tail}, {len(failures)} failed")
+    busy_tail = (f", {len(not_ingested)} not ingested (server busy)"
+                 if not_ingested else "")
+    print(f"\n{indexed}/{total} indexed{tail}, {len(failures)} failed{busy_tail}")
     if failures:
         print("failed files:")
         for name, reason in failures:
             print(f"  - {name}: {reason}")
-    return 0 if not failures else 1
+    if not_ingested:
+        print("the server was busy (HTTP 503) after every attempt; nothing is "
+              "wrong with these files.\nRun the same command again later: files "
+              "already indexed are skipped.")
+    return 0 if not (failures or not_ingested) else 1
 
 
 def _result_extra(r: dict) -> str:

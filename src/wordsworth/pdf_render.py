@@ -21,6 +21,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .pdf_boxes import Box, Rect
+from .pdf_labels import draw_labels
 from .pdf_text import char_box
 
 # A box thinner or narrower than this hides nothing at any useful zoom.
@@ -29,14 +30,14 @@ _MIN_BOX_PT = 0.5
 DPI = 300
 _SCALE = DPI / 72
 _BOX_RGB = (0, 0, 0)
-_LABEL_RGB = (1, 1, 1)
 
 # JPEG, not FlateDecode (reportlab's default): flate barely shrinks a 300
 # dpi page raster, which is why one document came out at 151 MB.
 _JPEG_QUALITY = 80
 
-# Bumped by hand with every change to this module; part of the cache key.
-RENDER_VERSION = 1
+# Bumped by hand with every change to this module or to `pdf_labels`; part of
+# the cache key. 2: the labels became visible (#448).
+RENDER_VERSION = 2
 
 
 def _by_page(boxes: list[Box]) -> dict[int, list[Box]]:
@@ -83,20 +84,6 @@ def _encode(image) -> ImageReader:
     return ImageReader(buf)
 
 
-def _label_size(rect: Rect) -> float:
-    return max(5.0, min((rect.y1 - rect.y0) * 0.8, 10.0))
-
-
-def _draw_labels(c: canvas.Canvas, boxes: list[Box], labels: dict[str, str]) -> None:
-    c.setFillColorRGB(*_LABEL_RGB)
-    for b in boxes:
-        label = labels.get(b.token, b.token)
-        size = _label_size(b.rect)
-        c.setFont("Helvetica", size)
-        c.drawString(b.rect.x0 + 1, b.rect.y0 + (b.rect.y1 - b.rect.y0 - size) / 2 + 1,
-                    label)
-
-
 def _contains(rect: Rect, point_box: Rect, eps: float = 0.5) -> bool:
     cx = (point_box.x0 + point_box.x1) / 2
     cy = (point_box.y0 + point_box.y1) / 2
@@ -115,7 +102,7 @@ def _draw_invisible_layer(c: canvas.Canvas, textpage, boxes: list[Box]) -> None:
     """Reconstruct the page's NON-redacted text as invisible (render-mode 3)
     runs, so search/copy keep working for everything the page still shows. A
     redacted span is skipped here entirely — the vector label drawn on its
-    box (`_draw_labels`) is itself ordinary fill-mode text, so it already is
+    box (`pdf_labels.draw_labels`) is itself ordinary fill-mode text, so it already is
     the searchable/copyable replacement for that span; emitting it a second
     time here would only duplicate it.
 
@@ -158,6 +145,9 @@ def _draw_invisible_layer(c: canvas.Canvas, textpage, boxes: list[Box]) -> None:
             origin = (char_rect.x0, char_rect.y0)
         run.append(ch)
     flush()
+    # The render mode is graphics state and outlives this text object: left at
+    # 3 it made every label drawn after it invisible too (#448).
+    t.setTextRenderMode(0)
     c.drawText(t)
 
 
@@ -191,7 +181,7 @@ def render(pdf_bytes: bytes, boxes: list[Box], labels: dict[str, str]) -> bytes:
                 _draw_invisible_layer(c, textpage, page_boxes)
             finally:
                 textpage.close()
-            _draw_labels(c, page_boxes, labels)
+            draw_labels(c, page_boxes, labels)
             c.showPage()
             page.close()
         c.save()

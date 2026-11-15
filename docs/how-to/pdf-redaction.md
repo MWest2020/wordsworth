@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-13
+last_reviewed: 2026-11-15
 ---
 
 # Runbook: the redacted PDF
@@ -152,6 +152,25 @@ numbering — the same as `?view=legible` on `/documents/{id}/anonymized`) plus
 an invisible text layer for everything that is *not* redacted, so search and
 copy keep working for the rest of the page. Nothing is copied from the source
 document: no metadata, no annotations, no outline.
+
+### The label on a box
+
+The label is white Helvetica on the black box (`pdf_labels.py`), sized to the
+box: 80% of the box height, at most 10 pt, and smaller when the label would
+otherwise be wider than the box (`[POSTCODE 1]` over `6601 AB`). It does not
+go under 4 pt; a label that still does not fit, as over a pair of initials, is
+clipped to its box, so no white text runs out over the page. The full label is
+in the text layer either way, so search and copy find it.
+
+Until render version 2 the labels were in the file but could not be seen
+(#448). The invisible text layer is drawn first, in PDF text render mode 3,
+and that mode is graphics state: it stayed on for the labels drawn after it.
+Search found `[PERSOON 1]`, the eye found a black box. The layer now ends by
+setting the mode back, and `tests/test_pdf_labels.py` looks at the pixels of
+each box at 96 dpi (a browser's 100%) rather than at the text layer, which is
+the check that would have caught it. `RENDER_VERSION` is part of the cache key
+of a redacted PDF, so renders cached under version 1 are not served again: the
+first request after the upgrade renders anew.
 
 Scanned documents use the existing OCR text layer
 (`object_key` repointed by the OCR recovery step) — there is no separate OCR

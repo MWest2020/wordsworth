@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-14
+last_reviewed: 2026-11-15
 ---
 
 # CLI reference — `wordsworth`
@@ -127,16 +127,22 @@ wordsworth ingest <file-or-directory> [--all] [--batch N] [--timeout SECONDS]
 - Prints a per-file line — `filename: state`, with the processing duration and
   non-zero PII counts on success (e.g. `2130276.pdf: indexed (1.8s, bsn=1
   person=2)`), or the error class on failure — and a final `X/Y indexed, Z failed`
-  summary. A file that fails does **not** abort the batch, with one exception:
-  when the key service refuses while an original is being sealed, the API
-  stops that HTTP batch early and answers `503` with `detail` `key service
-  unavailable` (see `docs/reference/ingest.md`). This CLI does not yet stop
-  the whole run on that signal: `client.py`'s retry handling
-  (`_post_batch_with_retry`) treats a batch that still fails after retries as a
-  generic batch failure and moves on to the next batch, the same as any other
-  5xx. This is not fixed here. Follow-up issue:
-  [#403](https://github.com/MWest2020/wordsworth/issues/403). Exit
-  code is non-zero if any file failed.
+  summary. A file that fails does **not** abort the batch. Exit code is
+  non-zero if any file failed or was not ingested.
+- **A `503` is the server, not the files.** The API answers `503` when it is
+  busy or a service it needs is away; the one it sends itself is `key service
+  unavailable`, which stops that HTTP batch early (see
+  `docs/reference/ingest.md`). The client retries the batch up to `--retries`
+  times (default 3), waiting the server's `Retry-After` when it sends one (at
+  most 60 s) and otherwise 3 s, 6 s, 12 s … up to 30 s. If the last attempt is
+  still a `503`, the run stops there: later batches are not sent. Files the
+  last `503` reported as finished are printed and counted as usual; every
+  other file is printed as `NOT INGESTED (server busy)` and counted in the
+  summary as `N not ingested (server busy)`, not as failed. Run the same
+  command again later: files already indexed come back as `skipped`.
+  Any other `5xx` or a dropped connection is still retried and then reported
+  as a failed batch, and the run goes on with the next batch
+  ([#403](https://github.com/MWest2020/wordsworth/issues/403)).
 - The pipeline is **PDF-only**; non-PDF files come back as `error`.
 
 ## `wordsworth-ingest`
