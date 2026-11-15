@@ -22,6 +22,7 @@ advisory lock at all, so the codebase's lock order (row first, chain after)
 cannot be inverted here."""
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -32,8 +33,12 @@ from . import deletion_scans, originals_envelope
 from .audit import current_state
 from .document_keys import DocumentKeyRecord
 from .models import Document
-from .object_store import ObjectStore, ObjectStoreError
+from .object_store import ObjectMissingError, ObjectStore, ObjectStoreError
 from .states import State
+
+
+#: Seconds between a failed full read and its one retry.
+RETRY_PAUSE = 1.0
 
 
 def is_sealed(data: bytes) -> bool:
@@ -92,20 +97,58 @@ def key_row(session: Session, object_key: str) -> DocumentKeyRecord | None:
     ).scalar_one_or_none()
 
 
-def object_state(store: ObjectStore, object_key: str) -> tuple[str, int | None]:
-    """``("sealed" | "legacy" | "missing", size)`` for this object key, read
-    fresh from the store -- never from a row, which can disagree with it."""
+def probe(store: ObjectStore, object_key: str) -> tuple[str, int | None, bytes]:
+    """``(state, size, header)`` for this object key, read fresh from the
+    store -- never from a row, which can disagree with it -- by a HEAD and a
+    ranged read of the sealed header only, never a full download. ``state``:
+    ``"sealed"``, ``"legacy"``, ``"missing"`` (the store says it does not
+    exist) or ``"unreadable"`` (any other error: it may exist, so it is never
+    reported as missing). Never raises: one object never ends a report."""
+    size = None
     try:
-        data = store.get_raw(object_key)
-    except ObjectStoreError:
-        return "missing", None
-    return ("sealed" if is_sealed(data) else "legacy"), len(data)
+        size = store.size(object_key)
+        if size is None:
+            return "missing", None, b""
+        if size == 0:
+            return "legacy", 0, b""  # no header to read: never sealed
+        head = store.get_head(object_key, originals_envelope.HEADER_LEN)
+    except ObjectMissingError:  # gone between the HEAD and the read
+        return "missing", None, b""
+    except Exception:  # reported as unreadable, never swallowed
+        return "unreadable", size, b""
+    return ("sealed" if is_sealed(head) else "legacy"), size, head
 
 
-def counts(store: ObjectStore, work: list[Candidate]) -> dict:
-    out = {"objects": len(work), "sealed": 0, "legacy": 0, "missing": 0, "bytes": 0}
+def object_state(store: ObjectStore, object_key: str) -> tuple[str, int | None]:
+    """``("sealed" | "legacy" | "missing" | "unreadable", size)`` (`probe`)."""
+    return probe(store, object_key)[:2]
+
+
+def classify(store: ObjectStore,
+             work: list[Candidate]) -> dict[str, tuple[str, int | None]]:
+    return {c.object_key: object_state(store, c.object_key) for c in work}
+
+
+def counts(store: ObjectStore, work: list[Candidate],
+           states: dict[str, tuple[str, int | None]] | None = None) -> dict:
+    states = classify(store, work) if states is None else states
+    out = {"objects": len(work), "sealed": 0, "legacy": 0, "missing": 0,
+           "unreadable": 0, "bytes": 0}
     for c in work:
-        state, size = object_state(store, c.object_key)
+        state, size = states[c.object_key]
         out[state] += 1
         out["bytes"] += size or 0
     return out
+
+
+def read_full(store: ObjectStore, object_key: str) -> bytes:
+    """The one full read of an object a seal needs, retried once on a
+    transient read error (a broken stream, a timeout). A missing object is
+    not retried: the store has answered."""
+    try:
+        return store.get_raw(object_key)
+    except ObjectMissingError:
+        raise
+    except ObjectStoreError:
+        time.sleep(RETRY_PAUSE)
+        return store.get_raw(object_key)

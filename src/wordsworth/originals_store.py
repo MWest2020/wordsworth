@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import originals_envelope
 from .document_keys import DocumentKeyRecord, DocumentKeys
-from .object_store import ObjectStore, ObjectStoreError, SealedObjectError
+from .object_store import ObjectMissingError, ObjectStore, SealedObjectError
 
 if TYPE_CHECKING:
     from .document_keys import DataKey
@@ -72,6 +72,12 @@ class OriginalsStore:
     def get_raw(self, key: str) -> bytes:
         return self.objects.get_raw(key)
 
+    def get_head(self, key: str, n: int) -> bytes:
+        return self.objects.get_head(key, n)
+
+    def size(self, key: str) -> int | None:
+        return self.objects.size(key)
+
     def iter_objects(self, prefix: str) -> Iterator[tuple[str, datetime]]:
         return self.objects.iter_objects(prefix)
 
@@ -93,8 +99,8 @@ class OriginalsStore:
         row = session.get(DocumentKeyRecord, object_key)
         try:
             stored = self.objects.get_raw(object_key)
-        except ObjectStoreError:
-            stored = None
+        except ObjectMissingError:  # only "not there" is absent; any other read
+            stored = None           # error propagates -- rules 2 and 3 overwrite
         stored_sealed = stored is not None and _is_sealed(stored)
 
         if row is not None and stored_sealed:

@@ -6,10 +6,13 @@ OCR. The per-object mechanics (verify-before-replace, resumability) live in
 `originals_seal.py`; this module is the report and the CLI.
 
 A run without flags seals for real; ``--dry-run`` reports what would be
-sealed and changes nothing. ``--verify`` (`seal_verify.py`) checks the outcome
-of a real run (or a deploy before one): it fails while any live document or
-scan is still a legacy plaintext original, or a sealed object has no usable
-key row.
+sealed and changes nothing. Classifying an object (the counts, the dry run,
+``--verify``) reads its size and its sealed header, never the whole object:
+only a real seal reads an object in full. An object that cannot be read is
+reported ``unreadable``, never ``missing``. ``--verify`` (`seal_verify.py`)
+checks the outcome of a real run (or a deploy before one): it fails while any
+live document or scan is still a legacy plaintext original, or a sealed object
+has no usable key row.
 
 Every object is its own attempt: an exception sealing one (the key service
 unavailable, a store error) is reported as ``failed`` with the exception's
@@ -25,7 +28,7 @@ from uuid import UUID
 
 from .object_store import ObjectStore
 from .originals_seal import seal_one
-from .seal_candidates import candidates, counts, object_state
+from .seal_candidates import candidates, classify, counts
 from .seal_verify import verify
 
 
@@ -33,11 +36,14 @@ def run(session_factory, store: ObjectStore, keys, *,
        dry_run: bool, ids: list[UUID] | None = None) -> dict:
     with session_factory() as session:
         work = candidates(session, ids)
-    before = counts(store, work)
+    states = classify(store, work)  # HEAD + header reads only, never a full GET
+    before = counts(store, work, states)
 
     if dry_run:
-        would_seal = [c.object_key for c in work if object_state(store, c.object_key)[0] == "legacy"]
-        return {"dry_run": True, "before": before, "would_seal": would_seal}
+        def keys_in(state: str) -> list[str]:
+            return [c.object_key for c in work if states[c.object_key][0] == state]
+        return {"dry_run": True, "before": before, "would_seal": keys_in("legacy"),
+                "unreadable": keys_in("unreadable")}
 
     results = []
     done = {"sealed": 0, "scans": 0, "already_sealed": 0, "gone": 0,

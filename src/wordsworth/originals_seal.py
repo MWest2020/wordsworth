@@ -20,9 +20,8 @@ A deletion that commits between the two, or before the first, makes the
 claim fail: the object is reported `skipped_deleted`, `documents/<sha256>` is
 never written, and a temporary copy no one else claims is removed (a claim
 that moved without a deletion -- OCR recovery repointed the row -- is
-`skipped_moved`, left for the next run). A
-deletion that starts while a lock is held waits for the commit, then removes
-what the seal wrote, key row included.
+`skipped_moved`, left for the next run). A deletion that starts while a lock
+is held waits for the commit, then removes what the seal wrote, key row included.
 
 A final key that does not verify (a corrupted write, a read error) is
 repaired from the verified temporary copy, which is deleted only once the
@@ -43,9 +42,9 @@ from cryptography.exceptions import InvalidTag
 from . import originals_envelope
 from .deletion_keys import _object_claimed_elsewhere
 from .document_keys import DataKey, DocumentKeyRecord, DocumentKeys
-from .object_store import ObjectStore, ObjectStoreError
+from .object_store import ObjectMissingError, ObjectStore, ObjectStoreError
 from .pipeline import current_state, document_domain
-from .seal_candidates import is_sealed, key_row, lock_claim
+from .seal_candidates import is_sealed, key_row, lock_claim, read_full
 from .states import State
 
 TEMP_PREFIX = "sealing/"
@@ -145,9 +144,9 @@ def seal_one(session, store: ObjectStore, keys: DocumentKeys, document_id: UUID,
              object_key: str, kind: str = "original") -> dict:
     """Seal one object. Returns ``{"status": ...}``: ``"sealed"`` (+ bytes),
     ``"already_sealed"``, ``"skipped_deleted"``, ``"skipped_moved"``,
-    ``"gone"`` (a scan no longer in the store) or
-    ``"failed"`` (+ a fixed ``"error"`` text) -- never the document's bytes or
-    anything derived from its content. Raises on what it cannot classify (a
+    ``"gone"`` (a scan no longer in the store) or ``"failed"`` (+ a fixed
+    ``"error"``: ``"missing"``, ``"unreadable"``, ...) -- never the document's
+    bytes or anything derived from them. Raises on what it cannot classify (a
     key service down, a store write error); the caller reports that."""
     digest = _digest_of(object_key)
     temp_key = f"{TEMP_PREFIX}{digest}"
@@ -157,12 +156,13 @@ def seal_one(session, store: ObjectStore, keys: DocumentKeys, document_id: UUID,
         return _skipped(session, store, document_id, object_key, temp_key)
     row = key_row(session, object_key)
     try:
-        stored = store.get_raw(object_key)
-    except ObjectStoreError:
-        if kind == "scan":
+        stored = read_full(store, object_key)  # the one full read, retried once
+    except ObjectStoreError as exc:
+        if kind == "scan":  # not there, or unreadable twice: `gone` (spec, #483)
             session.rollback()
             return {"status": "gone"}
-        return _failed(session, "missing")
+        return _failed(session, "missing" if isinstance(exc, ObjectMissingError)
+                       else "unreadable")
     if is_sealed(stored):
         return _resume(session, store, keys, row, object_key, temp_key, digest, stored)
     if row is not None and row.sealed_at is not None:

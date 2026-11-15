@@ -11,6 +11,9 @@ repairs.
 
 - **Dry run by default.** It prints what it would do and changes nothing.
 - **Older than one hour only**, so a write in flight is never touched.
+- **The header only.** Each object is classified by its first
+  `HEADER_LEN` bytes (a ranged read on S3), never downloaded. Only an object
+  the store says is gone is skipped; any other read error ends the sweep.
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 from . import originals_envelope
 from .document_keys import DocumentKeyRecord
-from .object_store import ObjectStore, ObjectStoreError
+from .object_store import ObjectMissingError, ObjectStore
 
 PREFIX = "documents/"
 MIN_AGE = timedelta(hours=1)
@@ -40,10 +43,11 @@ def find_orphans(session, objects: ObjectStore, *,
     for key, last_modified in objects.iter_objects(PREFIX):
         if now - last_modified < MIN_AGE:
             continue  # a write in flight -- never touched
-        try:
-            data = objects.get_raw(key)
-        except ObjectStoreError:
-            continue  # removed between listing and inspection
+        try:  # the header only, never a download (a ranged read on S3)
+            data = objects.get_head(key, originals_envelope.HEADER_LEN)
+        except ObjectMissingError:
+            continue  # removed between listing and inspection; any other
+                      # read error propagates -- never a silent skip
         if not _is_sealed(data):
             continue  # legacy plaintext, never our business
         try:
