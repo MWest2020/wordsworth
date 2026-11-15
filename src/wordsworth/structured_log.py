@@ -106,6 +106,25 @@ def log_topic_label(*, topic_id: UUID | str, outcome: str,
     return line
 
 
+def log_empty_corpus_read_scope() -> str:
+    """One JSON line at startup (api-corpus-read-gate) when caller
+    authentication and a grant store are both on and the corpus-read list is
+    empty: the scope is off and every authenticated caller reads the corpus.
+    Legal configuration, so a warning and not a refusal to start -- but with
+    both authentication and grants on, somebody is deciding who sees what, and
+    an empty list there is more likely forgotten than chosen."""
+    line = json.dumps(
+        {
+            "event": "empty_corpus_read_scope",
+            "level": "warning",
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    logger.warning(line)
+    return line
+
+
 def log_ingest_refused(*, document_id: UUID | str, object_key: str,
                        attempts: int) -> str:
     """One JSON line when `ingest` refuses because the document for these

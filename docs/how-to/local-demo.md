@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-11-13
+last_reviewed: 2026-11-15
 ---
 
 # The local demo: the console on synthetic data
@@ -83,8 +83,16 @@ nobody, the IBANs are on a test bank code, the names come from a fixed list.
 
 That is 31 document rows: 28 live, 2 deleted, 1 superseded.
 
-Callers: `mark` reads the corpus and issues grants; `gast` is logged in and is
-refused both, which shows the "geen toegang" page.
+Callers: `mark` reads the corpus and issues grants, and keeps every route;
+`gast` is logged in and is on neither list. In the browser that shows the "geen
+toegang" page. Through the API `gast` gets 403 on every corpus-read route: the
+searches (`/search`, `/hybrid`, `/ask`, `/export/*`), a document's metadata,
+state, text and redacted PDF, the topics, feedback, labels and summaries, and
+the console's combinations. The 403 comes before any lookup, so
+`GET /documents/<unknown>/state` is 403 too, not 404: `gast` cannot tell which
+documents exist. `gast` also gets 403 on `GET /grants/<id>` and on the issuer
+routes (roles, grants, deletes). What `gast` keeps: `/health`, `/metrics`, the
+login and logout pages, `/openapi.json` and `/docs`.
 
 ## A walk with curl
 

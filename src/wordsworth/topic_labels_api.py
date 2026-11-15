@@ -17,10 +17,9 @@ daar geen algemene vertaling voor, dus die staat hier.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Callable
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
 from .generator import GenerationError, Generator
@@ -46,17 +45,15 @@ class TopicLabelResponse(BaseModel):
 
 
 def mount(app: FastAPI, session_factory, search_index: SearchIndex,
-          generator: Generator | None,
-          guard: Callable[[Request], None]) -> None:
+          generator: Generator | None, gate) -> None:
     """Zet de route op de app zelf: een `include_router` laat in deze
     FastAPI-versie een route zonder `path` achter in `app.routes`."""
 
     @app.post("/topics/{topic_id}/label", summary="Label één onderwerp",
-              tags=["write"])
-    def label_one(request: Request, topic_id: UUID) -> TopicLabelResponse:
+              tags=["write"], dependencies=[Depends(gate)])
+    def label_one(topic_id: UUID) -> TopicLabelResponse:
         """Laat het taalmodel in het cluster dit onderwerp een label en één
         zin uitleg geven. Duurt ongeveer twee minuten."""
-        guard(request)
         if generator is None:
             raise HTTPException(status_code=503,
                                 detail="language model not configured")

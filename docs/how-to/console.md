@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-13
+last_reviewed: 2026-11-15
 ---
 
 # Reading the console
@@ -339,10 +339,21 @@ half a document's work.
 
 ## What it deliberately cannot do
 
-It reads the corpus through the same gate as `/documents/{id}/anonymized` and
-`/export`: a caller that `WORDSWORTH_CORPUS_READ_LABELS` refuses there is refused
-here. Until 2026-09-18 it was not, which made the console precisely the second
-door its own docstring forbids.
+It reads the corpus through the same gate as the API: a caller that
+`WORDSWORTH_CORPUS_READ_LABELS` refuses on `/search`, `/documents/{id}` or
+`/export` is refused on every console page that shows the corpus, and the other
+way round. Until 2026-09-18 the console did not check at all, which made it
+precisely the second door its own docstring forbids. Since
+`api-corpus-read-gate` (2026-11) the list covers the API's search, metadata,
+state, topic and feedback routes too, not only the full text, and
+`/console/combinations` (the list and the form) is behind it as well; see
+[api-auth](api-auth.md#effect) for every route.
+
+**An empty list means the scope is off**: every logged-in caller reads the whole
+corpus, in the console and through the API. That is the default for an
+installation inside a trusted boundary. With authentication and a grant store
+on, the API logs an `empty_corpus_read_scope` warning at startup, because there
+an empty list is more likely lost than chosen.
 
 ### Een vraag stellen, niet een trefwoord typen
 

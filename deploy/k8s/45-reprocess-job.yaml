@@ -52,6 +52,11 @@ spec:
               # Auth is opt-in; zonder sleutels draait de api open en hoort er
               # geen header bij. Een lege header sturen zou een 401 geven op een
               # installatie die juist GEEN auth gebruikt.
+              #
+              # Sinds api-corpus-read-gate vereist /reprocess corpus-leesrecht:
+              # de sleutel hier moet op WORDSWORTH_CORPUS_READ_LABELS staan.
+              # "console" staat in productie op die lijst; de terugval op "de
+              # eerste sleutel" krijgt 403 zodra dát label geen lezer is.
               sleutels = parse_api_keys(os.environ.get("WORDSWORTH_API_KEYS", ""))
               if sleutels:
                   kop["X-API-Key"] = next(

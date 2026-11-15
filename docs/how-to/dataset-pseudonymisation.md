@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-09-03
+last_reviewed: 2026-11-15
 ---
 
 # Runbook: dataset (CSV) pseudonymisation
@@ -46,6 +46,18 @@ wordsworth pseudonymize-dataset in.csv --profile ./my-profile.json > out.csv
 HTTP: `POST /datasets/pseudonymize` multipart `file` (CSV, header row) + exactly
 one of `profile` (inline JSON) / `profile_name`. Response: `csv`, `rows`,
 `columns`, `unique_pseudonyms`, `warnings`, `dataset_id`, `audit_seq`.
+
+**Who may run it: grant issuers only.** With authentication on, the route takes
+a label on `WORDSWORTH_GRANT_ISSUER_LABELS`; every other caller, a corpus reader
+included, gets 403 before a cell is pseudonymised, and nothing is written: no
+dataset row, no `dataset_pseudonymize` record, no mapping. The reason is that a
+run is a lookup. It uses the corpus's own keys and mapping store, so the same
+value in the same domain gets the same token in a cell as in a document. Upload
+a column of guessed names, read back the tokens, compare them with the tokens
+on a document page: that resolves a token, which is what a grant is for. The
+callers who lose nothing by having the lookup are the ones who can issue
+themselves a grant. With authentication off there is no caller to decide about
+and the route stays open, as the grant routes do.
 
 ## Audit
 

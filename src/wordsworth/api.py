@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import (Depends, FastAPI, File, Form, HTTPException, Request,
+                     Response, UploadFile)
 from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -26,8 +27,7 @@ from .anonymizer import Anonymizer
 from starlette.middleware.cors import CORSMiddleware
 
 from .console_headers import ConsoleSafety
-from .auth import (ApiKeyAuthMiddleware, authorize_corpus_read,
-                   authorize_delete, authorize_grant_issue)
+from .auth import ApiKeyAuthMiddleware
 from .vc import VcError, apply_vc_gate, load_public_key_pem
 from .config import settings as default_settings
 from .deletion import DeletionError, delete_document
@@ -35,7 +35,7 @@ from .deletion_keys import keys_of
 from .dossier_deletion import DossierDeletionError, delete_dossier
 from .embedder import Embedder
 from .generator import Generator
-from .grants import GrantStore, caller_holds_role
+from .grants import GrantStore
 from .key_audit import KeyLifecycleAudit
 from .legible import to_legible
 from .roles import ADMIN as ROLES_ADMIN
@@ -47,6 +47,7 @@ from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
 from .ingest_lock import IngestRaceError
+from . import read_gate
 from .pipeline import (
     current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
     live_document_for, process, register_live,
@@ -452,27 +453,17 @@ def create_app(
         staat er dat ook."""
         return getattr(request.state, "caller", None) or "onbekend"
 
-    def _guard_grant_admin(request: Request) -> None:
-        """Uitgeven/intrekken van een grant is het zwaarste recht hier: het levert
-        de sleutel tot klare PII. Met auth aan mag alleen een expliciet genoemd
-        label het; zonder auth blijft het gedrag zoals gedocumenteerd."""
-        caller = getattr(request.state, "caller", None)
-        if not authorize_grant_issue(caller, grant_issuer_labels, auth_enabled):
-            raise HTTPException(
-                status_code=403,
-                detail="caller not authorized to issue or revoke grants")
-
-    def _guard_delete(request: Request, session: Session) -> None:
-        """Verwijderen is onomkeerbaar: alleen de beheerdersrol of een expliciet
-        genoemd issuer-label mag het, voor zowel de documenten- als de
-        dossier-route. `is_beheerder` wordt hier opgelost (de caller is
-        recipient van een actieve grant op naam van `roles.ADMIN`) omdat
-        `authorize_delete` zelf geen database raakt."""
-        caller = getattr(request.state, "caller", None)
-        beheerder = bool(caller) and caller_holds_role(session, caller, ROLES_ADMIN)
-        if not authorize_delete(caller, grant_issuer_labels, auth_enabled,
-                                is_beheerder=beheerder):
-            raise HTTPException(status_code=403, detail="caller not authorized to delete")
+    # The caller checks, built once from the resolved label lists. The read
+    # gates are declared on a route (`dependencies=[Depends(...)]`), so they
+    # refuse before validation and before any lookup (api-corpus-read-gate).
+    # Issuing/revoking a grant is the heaviest right here: it yields the key
+    # to clear PII; with auth on only a named label may.
+    gates = read_gate.build(
+        keys=keys, identity=identity, corpus_read_labels=corpus_read_labels,
+        grant_issuer_labels=grant_issuer_labels, settings=default_settings,
+        grants_configured=grant_store is not None or grant_store_factory is not None)
+    auth_enabled = gates.auth_enabled
+    _guard_grant_admin = gates.grant_admin
 
     def _resolve_audit(session) -> KeyLifecycleAudit:
         """The key-lifecycle stream, bound to the caller's session.
@@ -496,11 +487,10 @@ def create_app(
             return key_provider_factory(session)
         return key_provider
 
-    def _guard_corpus_read(request: Request) -> None:
-        caller = getattr(request.state, "caller", None)
-        if not authorize_corpus_read(caller, corpus_read_labels):
-            raise HTTPException(
-                status_code=403, detail="caller not authorized for corpus read")
+    # Whether an unscoped grant may authorize reveal on every document. Default
+    # false (see config): the broad capability is opt-in per deployment.
+    if allow_global_grants is None:
+        allow_global_grants = default_settings.allow_global_grants
 
     # The reading console (document-console). Mounted only WITH api-key auth:
     # a screen listing every document and its PII types is not something to hang
@@ -520,7 +510,7 @@ def create_app(
         # record op te leveren als via de API. Twee wegen naar dezelfde
         # handeling met maar één spoor eronder is hoe een spoor gaten krijgt.
         app.include_router(build_router(session_factory, keys, search_index,
-                                        _guard_corpus_read, _guard_grant_admin,
+                                        gates.corpus_read, _guard_grant_admin,
                                         _resolve_audit, embedder, identity,
                                         generator=generator,
                                         pdf_views=store is not None))
@@ -618,30 +608,6 @@ def create_app(
     if vc_required is None:
         vc_required = default_settings.vc_required
 
-    # Opt-in corpus-read scope: which caller labels may read FULL de-identified
-    # document text (/documents/{id}/anonymized + /export/anonymized.zip). Empty
-    # (default) → any authenticated caller may read (unchanged). When set, other
-    # callers get 403 — least privilege for the full-text surface.
-    if corpus_read_labels is None:
-        corpus_read_labels = default_settings.corpus_read_labels
-
-    # Whether an unscoped grant may authorize reveal on every document. Default
-    # false (see config): the broad capability is opt-in per deployment.
-    if allow_global_grants is None:
-        allow_global_grants = default_settings.allow_global_grants
-    if grant_issuer_labels is None:
-        grant_issuer_labels = default_settings.grant_issuer_labels
-    # Auth aan? Dan is er een caller om op te beslissen en geldt de issuer-scope.
-    # S1: dit moet meebewegen met waaróp de middleware mount (zie boven:
-    # `keys or identity is not None`). Deed het niet, en dan is een installatie
-    # met alléén een identiteitsprovider geauthenticeerd terwijl de
-    # recipient-binding uit staat: elke grant wordt weer een bearer-token en
-    # iedereen mag er minten. Precies wat bind-reveal-to-recipient repareerde.
-    #
-    # Eén bron voor "is er een beller om over te beslissen", niet twee die uit
-    # elkaar kunnen lopen.
-    auth_enabled = bool(keys) or identity is not None
-
     def _check_view(view: str) -> None:
         if view not in ("tokens", "legible"):
             raise HTTPException(status_code=400, detail="view must be tokens|legible")
@@ -654,7 +620,8 @@ def create_app(
     if session_factory is not None:
 
         @app.get("/documents/{document_id}/state",
-                 summary="Current pipeline state of a document", tags=["read"])
+                 summary="Current pipeline state of a document", tags=["read"],
+                 dependencies=[Depends(gates.corpus_read)])
         def document_state(document_id: UUID) -> dict[str, str]:
             """Derived state (registered → extractable/unprocessable_ocr →
             extracted → anonymized → indexed) from the audit chain."""
@@ -673,8 +640,8 @@ def create_app(
         @app.get("/documents/{document_id}/anonymized",
                  response_model=AnonymizedResponse,
                  summary="De-identified (pseudonymised) document text",
-                 tags=["read"])
-        def document_anonymized(document_id: UUID, request: Request,
+                 tags=["read"], dependencies=[Depends(gates.corpus_read)])
+        def document_anonymized(document_id: UUID,
                                 view: str = "tokens") -> AnonymizedResponse:
             """The stored, de-identified text — the same pseudonymised text that
             backs the index and the export ZIP, never clear PII. 404 if the
@@ -682,7 +649,6 @@ def create_app(
             Gated by the opt-in corpus-read scope (403 if the caller lacks it).
             ``view=legible`` renders tokens as numbered Dutch placeholders
             (``[PERSOON 1]``) with a legend; the stored text is unchanged."""
-            _guard_corpus_read(request)
             _check_view(view)
             with session_factory() as session:
                 if current_state(session, document_id) is None:
@@ -705,8 +671,8 @@ def create_app(
             @app.get("/documents/{document_id}/redacted.pdf",
                      summary="Redacted PDF: layout intact, PII gone from "
                              "pixels and text",
-                     tags=["read"])
-            def redacted_pdf(document_id: UUID, request: Request) -> Response:
+                     tags=["read"], dependencies=[Depends(gates.corpus_read)])
+            def redacted_pdf(document_id: UUID) -> Response:
                 """The document's redacted PDF — rasterised, boxes painted
                 over every detected value, a typed label on each box, cached
                 under ``redacted/<doc>/<render_version>/<boxmap_hash>``. 409 if
@@ -718,7 +684,6 @@ def create_app(
                 superseded copy (fetch the survivor). 404 if the document is
                 unknown, 410 if it is deleted -- checked before the cache, so a
                 render left behind is never served (#451)."""
-                _guard_corpus_read(request)
                 from .document_keys import OriginalsKeyUnavailable
                 from .originals_io import read_original
                 from .pdf_redaction import (NO_BOX_MAP, box_map_status, boxes_of,
@@ -785,7 +750,7 @@ def create_app(
 
         @app.get("/documents/{document_id}",
                  summary="Document metadata (state, timing, PII counts, trail)",
-                 tags=["read"])
+                 tags=["read"], dependencies=[Depends(gates.corpus_read)])
         def document_meta(document_id: UUID) -> dict:
             """State, total + per-step processing duration, PII redaction counts,
             page/byte metrics and the audit-step trail — all derived from the
@@ -798,7 +763,7 @@ def create_app(
 
         @app.post("/documents/{document_id}/feedback", status_code=201,
                   summary="Record detection feedback (false positive / negative)",
-                  tags=["write"])
+                  tags=["write"], dependencies=[Depends(gates.corpus_read)])
         def document_feedback(document_id: UUID, body: FeedbackRequest,
                               request: Request) -> dict:
             """Append a ``detection_feedback`` access event (from == to state) to
@@ -838,7 +803,7 @@ def create_app(
                 issuer label may call this; anyone else gets 403 and nothing is
                 removed. 404 for an unknown document. There is no undo."""
                 with session_factory() as session:
-                    _guard_delete(request, session)
+                    gates.delete(request, session)
                     try:
                         counts = delete_document(
                             session, document_id, store, search_index,
@@ -861,7 +826,7 @@ def create_app(
                 issuer label may call this, 403 for anyone else, 404 for an
                 unknown dossier. There is no undo."""
                 with session_factory() as session:
-                    _guard_delete(request, session)
+                    gates.delete(request, session)
                     try:
                         report = delete_dossier(
                             session, dossier_id, store, search_index,
@@ -874,16 +839,14 @@ def create_app(
 
         @app.get("/export/anonymized.zip",
                  summary="Export de-identified document texts as a ZIP",
-                 tags=["export"])
-        def export_anonymized(request: Request,
-                              document_ids: str | None = None,
+                 tags=["export"], dependencies=[Depends(gates.corpus_read)])
+        def export_anonymized(document_ids: str | None = None,
                               view: str = "tokens") -> Response:
             """A ZIP of the stored de-identified texts (one ``{id}.txt`` per
             document), for all INDEXED documents or the given comma-separated
             subset. Only the index-bound anonymized text is written — never clear
             PII, never original bytes. Gated by the opt-in corpus-read scope.
             ``view=legible`` renders each text with numbered placeholders."""
-            _guard_corpus_read(request)
             _check_view(view)
             ids = None
             if document_ids:
@@ -915,7 +878,8 @@ def create_app(
                 return None
             return _scope_with(session_factory, dossier)
 
-        @app.get("/search", summary="Lexical (BM25) search", tags=["read"])
+        @app.get("/search", summary="Lexical (BM25) search", tags=["read"],
+                 dependencies=[Depends(gates.corpus_read)])
         def search(q: str, size: int = 10, dossier: str | None = None,
                    topic: str | None = None) -> dict:
             """Full-text search over the anonymized corpus, within a dossier.
@@ -948,7 +912,7 @@ def create_app(
 
             @app.post("/dossiers/{dossier_id}/topics",
                       summary="Bereken de onderwerpen van een dossier",
-                      tags=["read"])
+                      tags=["read"], dependencies=[Depends(gates.corpus_read)])
             def compute_topics(dossier_id: UUID) -> TopicsResponse:
                 """Groepeer dit dossier opnieuw en zet de groepen op de
                 documenten.
@@ -978,7 +942,8 @@ def create_app(
                 return out
 
             @app.get("/dossiers/{dossier_id}/topics",
-                     summary="De onderwerpen van een dossier", tags=["read"])
+                     summary="De onderwerpen van een dossier", tags=["read"],
+                     dependencies=[Depends(gates.corpus_read)])
             def list_topics(dossier_id: UUID) -> TopicsResponse:
                 """Wat er bij de laatste berekening uitkwam, met het moment
                 erbij. Geen onderwerpen betekent: nog niet berekend."""
@@ -992,7 +957,7 @@ def create_app(
                         topics=[_topic_out(t) for t in listing(session, dossier_id)])
 
             @app.patch("/topics/{topic_id}", summary="Hernoem een onderwerp",
-                       tags=["read"])
+                       tags=["read"], dependencies=[Depends(gates.corpus_read)])
             def rename_topic(topic_id: UUID, body: RenameTopicRequest
                              ) -> TopicResponse:
                 """Geef een onderwerp een naam van een mens. De berekende naam
@@ -1010,10 +975,10 @@ def create_app(
 
             from .topic_labels_api import mount as _mount_labels
             _mount_labels(app, session_factory, search_index, generator,
-                          _guard_corpus_read)
+                          gates.corpus_read)
 
         @app.get("/export/ranking.csv", summary="Export a ranking as CSV",
-                 tags=["export"])
+                 tags=["export"], dependencies=[Depends(gates.corpus_read)])
         def export_ranking(query: str, k: int = 50) -> Response:
             """The lexical ranking for a query as CSV (Excel-openable): one row
             per hit with rank, document id and score — de-identified metadata
@@ -1026,7 +991,7 @@ def create_app(
         if embedder is not None:
 
             @app.get("/hybrid", summary="Hybrid (BM25 + kNN) search",
-                     tags=["read"])
+                     tags=["read"], dependencies=[Depends(gates.corpus_read)])
             def hybrid(q: str, size: int = 10, dossier: str | None = None,
                        topic: str | None = None) -> dict:
                 """RRF recall over BM25 + vector kNN, ranked by cosine. Takes the
@@ -1041,7 +1006,8 @@ def create_app(
 
             if generator is not None:
 
-                @app.get("/ask", summary="RAG question answering", tags=["read"])
+                @app.get("/ask", summary="RAG question answering", tags=["read"],
+                         dependencies=[Depends(gates.corpus_read)])
                 def ask(q: str, k: int = 5) -> dict:
                     """Retrieve top-k passages and answer with the local LLM
                     (no cloud in the critical path)."""
@@ -1273,7 +1239,7 @@ def create_app(
         if anonymizer_factory is not None:
 
             @app.post("/reprocess", response_model=ReprocessResponse,
-                      tags=["write"],
+                      tags=["write"], dependencies=[Depends(gates.corpus_read)],
                       summary="Backfill: re-de-identify documents reversibly")
             def reprocess(body: ReprocessRequest | None = None) -> ReprocessResponse:
                 """Re-run the (reversible) de-identify over the given documents,
@@ -1316,7 +1282,7 @@ def create_app(
             and (key_provider is not None or key_provider_factory is not None)):
 
         @app.post("/datasets/pseudonymize", response_model=DatasetResponse,
-                  tags=["write"],
+                  tags=["write"], dependencies=[Depends(gates.grant_admin)],
                   summary="Pseudonymise selected CSV columns by profile")
         def datasets_pseudonymize(
             file: UploadFile = File(..., description="CSV with a header row"),
@@ -1663,8 +1629,8 @@ def create_app(
 
         @app.post("/dossiers/{dossier_id}/summaries",
                   summary="Maak de ontbrekende samenvattingen",
-                  tags=["write"])
-        def compute_summaries(request: Request, dossier_id: UUID,
+                  tags=["write"], dependencies=[Depends(gates.corpus_read)])
+        def compute_summaries(dossier_id: UUID,
                               extractief: bool = False) -> SummariesResponse:
             """Maakt wat er nog niet is; bestaande blijven staan.
 
@@ -1675,7 +1641,6 @@ def create_app(
             document over gaat, en dat is dezelfde soort kennis als de
             opgeslagen tekst.
             """
-            _guard_corpus_read(request)
             from .dossiers import documents_in
             from .summaries import compute
 
@@ -1885,7 +1850,7 @@ def create_app(
                 return _grant_response(grant)
 
         @app.get("/grants/{grant_id}", response_model=GrantResponse, tags=["admin"],
-                 summary="Inspect a grant")
+                 summary="Inspect a grant", dependencies=[Depends(gates.grant_read)])
         def grant_show(grant_id: str) -> GrantResponse:
             with session_factory() as session:
                 grant = _grant_store(session).get(grant_id)
