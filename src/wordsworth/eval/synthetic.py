@@ -42,13 +42,56 @@ def bsn(rng: random.Random) -> str:
 
 
 def iban(rng: random.Random) -> str:
-    """A Dutch IBAN passing mod-97, on a test bank code."""
+    """A Dutch IBAN passing mod-97, on bank code INGB (ING) -- a real bank, kept
+    unchanged so the 500-document corpus stays comparable with earlier
+    measurements. For a bank code that belongs to nobody, use `iban_fake_bank`.
+    """
     account = f"{rng.randrange(10**9, 10**10):010d}"
     # mod-97 is computed over the rearranged form: bank + account + country + "00"
     rearranged = f"INGB{account}NL00"
     numeric = "".join(str(ord(c) - 55) if c.isalpha() else c for c in rearranged)
     check = 98 - (int(numeric) % 97)
     return f"NL{check:02d}INGB{account}"
+
+
+def bsn_test_range(rng: random.Random) -> str:
+    """A BSN in the published Logius test range 999990000-999999999, still
+    passing the elfproef: nobody's real BSN starts with five nines.
+
+    The first five digits are fixed to 9, contributing 9*(9+8+7+6+5) = 315 to
+    the weighted sum; the remaining three free digits (weights 4, 3, 2) are
+    searched for a check digit that makes the elfproef hold.
+    """
+    fixed = 9 * (9 + 8 + 7 + 6 + 5)
+    while True:
+        tail = [rng.randint(0, 9) for _ in range(3)]
+        weighted = fixed + sum(d * w for d, w in zip(tail, (4, 3, 2)))
+        check = weighted % 11
+        if check > 9:                     # no ninth digit makes this one work
+            continue
+        candidate = "99999" + "".join(map(str, tail)) + str(check)
+        if "11" in candidate:
+            # Helvetica's "1" glyph is narrower than its advance width, so two
+            # adjacent "1"s read to pdf_text.page_text's gap heuristic as a
+            # missing word space -- the long-corpus generator plants this
+            # value, then draws it as one run and looks it up again in the
+            # page it rendered to, and a split value is never found.
+            continue
+        return candidate
+
+
+def iban_fake_bank(rng: random.Random) -> str:
+    """A Dutch IBAN passing mod-97, on bank code ZZZZ -- no Dutch bank is coded
+    that way, so this value cannot be mistaken for a real account."""
+    while True:
+        account = f"{rng.randrange(10**9, 10**10):010d}"
+        rearranged = f"ZZZZ{account}NL00"
+        numeric = "".join(str(ord(c) - 55) if c.isalpha() else c for c in rearranged)
+        check = 98 - (int(numeric) % 97)
+        candidate = f"NL{check:02d}ZZZZ{account}"
+        if "11" in candidate:          # see bsn_test_range: two adjacent "1"s
+            continue                   # read as a missing word space on extraction
+        return candidate
 
 
 def postcode(rng: random.Random) -> str:

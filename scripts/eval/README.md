@@ -73,6 +73,38 @@ als FAILED in het rapport.
 - **Resources.** ~1–2k documenten embedden op CPU duurt eerder uren dan
   minuten; bge-m3 + OpenSearch + Postgres samen willen comfortabel >4 GB.
 
+## Lange synthetische corpus (page-level gold, scanned pagina's)
+
+`generate_long_corpus.py` genereert een corpus van lange born-digital PDF's
+(standaard 30 documenten van 30 pagina's) met per-pagina ground truth —
+precies wat de 500-korte-documenten-generator (`generate_ground_truth.py`)
+niet test: paginagrenzen, lange-documentranking en pagina's zonder
+tekstlaag. Zie `docs/reference/synthetic-long-corpus.md` voor het volledige
+contract.
+
+```bash
+uv run python scripts/eval/generate_long_corpus.py /tmp/longcorpus \
+    --docs 30 --pages 30 --seed 20261115 [--scanned 0.1]
+
+# het getal dat je citeert: de deterministische laag over de born-digital
+# pagina's
+uv run python -m wordsworth.eval.pii_run /tmp/longcorpus/gold.jsonl \
+    --layers deterministic
+
+# lange-documentranking: elke query is de verbatim geplante zin op pagina
+# ≥ 20
+uv run python -m wordsworth.eval.run \
+    --qrels /tmp/longcorpus/qrels.txt --queries /tmp/longcorpus/queries.tsv \
+    --config bm25,hybrid --k 10
+```
+
+`gold_scanned.jsonl` (de pagina's die als afbeelding zijn ingebed, zonder
+tekstlaag) hoort **niet** bij het getal dat je citeert: `pii_run` detecteert
+over de gold-tekst en opent nooit een PDF, dus een score daarover zou een
+pagina die de pijplijn niet kan zien tellen als perfect geëxtraheerd. Die
+pagina's zijn met opzet verloren — zo test dit corpus wat
+`profile_pdf` mist zonder OCR aan te roepen.
+
 ## Smoke-collectie
 
 `make_smoke_collection.py` genereert de synthetische mini-collectie opnieuw

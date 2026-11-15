@@ -19,6 +19,9 @@ under `openspec/`.
   invariants, stack, and configuration.
   - [evaluation](reference/evaluation.md) — the IR evaluation run: CLI,
     id-matching precondition (`object_key` = qrels doc ids), runtime needs.
+  - [synthetic-long-corpus](reference/synthetic-long-corpus.md) — the long
+    synthetic PDF corpus generator: page-level gold, scanned pages, the
+    long-document ranking query.
   - [cli](reference/cli.md) — the `wordsworth` API client: install, commands,
     ingesting a directory.
   - [originals-ingest-seam](reference/originals-ingest-seam.md) —
