@@ -42,6 +42,10 @@ every refusal the same way", accepted under Mark's standing "defaults ok" of
   on both routes) or superseded (409 naming the survivor, as before).
 - A refusal writes no audit record and no log line that names its cause, the
   document's state or a survivor id.
+- The domain binding and, where configured, the VC gate are decided before
+  any 410 or 409, so a holder of an unscoped grant from another domain, or
+  one without a required credential, hears nothing about deletion or
+  supersession.
 - The two routes call one gate, so they cannot drift apart again.
 
 Status codes that change, for a caller the grant does not cover:
@@ -60,8 +64,9 @@ is no longer covered and gets the 403.
 
 ## What does not change
 
-- What a covered caller can reveal, the types, the VC gate, the audit record
-  of a successful reveal, `by_legal_basis`.
+- What a covered caller can reveal, the types, what the VC gate decides and
+  its `vc rejected` answer, the audit record of a successful reveal,
+  `by_legal_basis`.
 - 401 for a missing or wrong key and 422 for a malformed id or body still come
   first: they say nothing about the corpus.
 - The grants spec: `authorize()` stays a pure decision and is not modified.
