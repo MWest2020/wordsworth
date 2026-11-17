@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-14
+last_reviewed: 2026-11-17
 ---
 
 # Runbook: reveal grants
@@ -173,6 +173,45 @@ changes — the documented tailnet-internal mode.
 > the active grants before this goes live:
 > `curl $API/grants/<id>` and compare `recipient` with the label behind the key
 > that uses it.
+
+## A refusal says nothing
+
+Since #487 (`reveal-authorize-first`), `/reveal` and `/reveal.pdf` decide the
+grant **before** reading anything about the document. Every caller the grant
+does not cover gets the same answer, whatever the reason:
+
+| cause | answer |
+|---|---|
+| unknown grant id | 403 `{"detail": "grant not applicable"}` |
+| revoked, expired, wrong-recipient or wrong-domain grant | same 403 |
+| grant scoped to a different document | same 403 |
+| unknown document id | same 403 |
+| superseded document, grant does not cover it | same 403 (no survivor named) |
+| deleted document, grant does not cover it | same 403 (not 410) |
+| superseded document, grant covers it | 409, naming the surviving document |
+| deleted document, grant covers it | 410 |
+| document not yet de-identified (or, `reveal.pdf`, no box map yet), grant covers it | 409 |
+
+Before this, the two routes answered about the document — 404 for an unknown
+grant or document, 409 naming a survivor, 410 for `reveal.pdf` on a deleted
+document — ahead of the grant decision. Anyone holding any grant id, not
+necessarily their own, could use that to learn which document ids exist,
+which are deleted, and which live copy a superseded one points to. Once a
+grant id can reach someone who is not its recipient — which is exactly what
+sharing a grant (`share-recipient-read`, `console-share`) does — that oracle
+is reachable by a wider circle than "whoever operates this deployment".
+
+A refusal never writes an audit record, a key-lifecycle event, or a log line
+naming its cause. An operator who needs to know why a reveal was refused uses
+the routes that have their own gate instead: `GET /grants/{id}` (reader or
+issuer) for the grant's own state, `GET /documents/{id}/state` (reader) for
+the document's.
+
+> **Deploy-stap.** A client that expected 404 `unknown grant` or 404 `unknown
+> document` from a reveal route now gets 403 `grant not applicable`. A client
+> that revealed a document, then deleted it, and expected 410 on its
+> document-scoped grant now gets 403 too: the deletion removes that grant
+> along with the document, so its former recipient is no longer covered.
 
 ## A token only resolves for its own document
 

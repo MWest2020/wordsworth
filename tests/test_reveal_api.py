@@ -36,9 +36,9 @@ def _prepare(session_factory, mem_store, mem_index, fake_embedder, pdf):
         return kp, doc.id
 
 
-def _client(session_factory, kp, gs):
+def _client(session_factory, kp, gs, **kw):
     return TestClient(create_app(session_factory=session_factory,
-                                 key_provider=kp, grant_store=gs))
+                                 key_provider=kp, grant_store=gs, **kw))
 
 
 def test_reveal_only_granted_type(session_factory, mem_store, mem_index,
@@ -85,26 +85,35 @@ def test_revoked_grant_forbidden(session_factory, mem_store, mem_index,
     r = _client(session_factory, kp, gs).post(
         f"/documents/{doc_id}/reveal", json={"grant_id": grant.grant_id})
     assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
 
 
-def test_unknown_grant_is_404(session_factory, mem_store, mem_index,
-                              fake_embedder, born_digital_pii_pdf):
+def test_unknown_grant_is_not_a_404(session_factory, mem_store, mem_index,
+                                    fake_embedder, born_digital_pii_pdf):
+    """reveal-authorize-first: an unknown grant id is the uniform refusal,
+    on an existing document and on an unknown one -- never a 404 that would
+    tell an unknown grant id apart from an existing one."""
     kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
                           born_digital_pii_pdf)
-    r = _client(session_factory, kp, InMemoryGrantStore()).post(
-        f"/documents/{doc_id}/reveal", json={"grant_id": "nope"})
-    assert r.status_code == 404
+    c = _client(session_factory, kp, InMemoryGrantStore())
+    for target in (doc_id, uuid4()):
+        r = c.post(f"/documents/{target}/reveal", json={"grant_id": "nope"})
+        assert r.status_code == 403
+        assert r.json() == {"detail": "grant not applicable"}
 
 
-def test_unknown_document_is_404(session_factory, mem_store, mem_index,
-                                 fake_embedder, born_digital_pii_pdf):
+def test_unknown_document_is_not_a_404(session_factory, mem_store, mem_index,
+                                       fake_embedder, born_digital_pii_pdf):
+    """reveal-authorize-first: a grant that would cover any document does
+    not cover one that does not exist -- the uniform refusal, not 404."""
     kp, _ = _prepare(session_factory, mem_store, mem_index, fake_embedder,
                      born_digital_pii_pdf)
     gs = InMemoryGrantStore()
     grant = gs.issue("agent-x", ["EMAIL"], actor="mark")
-    r = _client(session_factory, kp, gs).post(
+    r = _client(session_factory, kp, gs, allow_global_grants=True).post(
         f"/documents/{uuid4()}/reveal", json={"grant_id": grant.grant_id})
-    assert r.status_code == 404
+    assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
 
 
 def test_grant_for_other_document_forbidden(session_factory, mem_store, mem_index,
@@ -116,6 +125,7 @@ def test_grant_for_other_document_forbidden(session_factory, mem_store, mem_inde
     r = _client(session_factory, kp, gs).post(
         f"/documents/{doc_id}/reveal", json={"grant_id": grant.grant_id})
     assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
 
 
 def test_reveal_is_audited(session_factory, mem_store, mem_index, fake_embedder,

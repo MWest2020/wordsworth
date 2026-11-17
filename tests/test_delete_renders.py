@@ -93,10 +93,15 @@ def test_delete_after_a_render_removes_it_and_the_routes_answer_410(
     got = client.get(f"/documents/{doc_id}/redacted.pdf")
     assert got.status_code == 410
     assert _renders(mem_store, doc_id) == []  # refused before any re-render
-    # 410 whatever the grant -- not 404 "unknown grant" for the removed one
-    assert client.post(f"/documents/{doc_id}/reveal.pdf", json=reveal).status_code == 410
-    assert client.post(f"/documents/{doc_id}/reveal.pdf",
-                       json={"grant_id": "no-such-grant"}).status_code == 410
+    # reveal-authorize-first: the deletion removed this grant along with the
+    # document, so its former recipient is no longer covered -- the uniform
+    # refusal, not 410 (he learns nothing he did not know: the grant is gone).
+    # Same for a grant id that never existed. `redacted.pdf` above is behind
+    # corpus read and keeps its 410 -- a reader may know.
+    for body in (reveal, {"grant_id": "no-such-grant"}):
+        r = client.post(f"/documents/{doc_id}/reveal.pdf", json=body)
+        assert r.status_code == 403
+        assert r.json() == {"detail": "grant not applicable"}
 
 
 def test_a_render_left_in_the_cache_is_not_served(session_factory, mem_store):

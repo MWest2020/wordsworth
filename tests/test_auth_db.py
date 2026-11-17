@@ -49,9 +49,11 @@ def test_reveal_requires_key_and_records_caller(
     # En het lek dat dit dichtzet: een geldige sleutel met een grant die aan
     # iemand anders is uitgegeven. Dat gaf klare PII tot 2026-09-17.
     andermans = gs.issue("agent-x", ["EMAIL"], actor="mark", document_id=did)
-    assert c.post(f"/documents/{did}/reveal",
-                  json={"grant_id": andermans.grant_id},
-                  headers={"X-API-Key": "sk_v"}).status_code == 403
+    r2 = c.post(f"/documents/{did}/reveal",
+                json={"grant_id": andermans.grant_id},
+                headers={"X-API-Key": "sk_v"})
+    assert r2.status_code == 403
+    assert r2.json() == {"detail": "grant not applicable"}
     with session_factory() as s:
         rec = s.execute(
             select(AuditRecord).where(AuditRecord.step == "deanonymize")

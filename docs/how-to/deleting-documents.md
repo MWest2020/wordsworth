@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-14
+last_reviewed: 2026-11-17
 ---
 
 # Runbook: deleting a document
@@ -193,11 +193,19 @@ The renders are listed before anything irreversible happens: if listing
 fails (say the S3 identity lacks `ListObjectsV2`), the deletion fails with
 nothing removed and the document in its previous state.
 
-For a deleted document, `GET /documents/{id}/redacted.pdf` and
-`POST /documents/{id}/reveal.pdf` answer **410 Gone**, checked before the
-cache is looked at: a render left behind is never served. 410 rather than
-404 because the id is known and its absence is deliberate and permanent;
-404 stays "unknown id", 409 stays "not yet / stale, `reanonymize` fixes it".
+For a deleted document, `GET /documents/{id}/redacted.pdf` answers **410
+Gone**, checked before the cache is looked at: a render left behind is never
+served. 410 rather than 404 because the id is known and its absence is
+deliberate and permanent; 404 stays "unknown id", 409 stays "not yet / stale,
+`reanonymize` fixes it". `redacted.pdf` is behind corpus read, so a reader may
+know this.
+
+`POST /documents/{id}/reveal.pdf` only answers 410 to a caller its grant
+covers (reveal-authorize-first, #487) — the same 410 as before, but the
+deletion also removes that document's own grants, so its former recipient no
+longer qualifies and gets the uniform refusal (403 `grant not applicable`)
+instead. Anyone else got that refusal already. See
+[grants: a refusal says nothing](grants.md#a-refusal-says-nothing).
 
 **Leftovers.** Documents deleted before #451 kept both, and a request that was
 rendering while the deletion committed can still write one object afterwards.

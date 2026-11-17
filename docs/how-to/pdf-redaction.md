@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-15
+last_reviewed: 2026-11-17
 ---
 
 # Runbook: the redacted PDF
@@ -59,8 +59,12 @@ curl -XPOST $API/documents/<doc>/reveal.pdf -H 'content-type: application/json' 
   -d '{"grant_id":"<grant_id>","types":["PERSON"]}' -o reveal.pdf
 ```
 
-The same grant and the same gates as [`/reveal`](grants.md) — a document that
-has no box map yet also answers 409 here, a deleted one 410. The granted type is drawn in clear,
+The same grant and the same gates as [`/reveal`](grants.md): the grant is
+judged before anything about the document is read, and a caller it does not
+cover gets the same 403 whatever the reason (see
+[grants: a refusal says nothing](grants.md#a-refusal-says-nothing)). Only to a
+caller the grant covers — a document that has no box map yet also answers 409
+here, a deleted one 410. The granted type is drawn in clear,
 straight from the original page (nothing is decrypted to render it: the box
 for that type is simply left unpainted, so the original pixels and the
 original invisible text pass through); every other type keeps its box and

@@ -28,7 +28,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from .console_headers import ConsoleSafety
 from .auth import ApiKeyAuthMiddleware
-from .vc import VcError, apply_vc_gate, load_public_key_pem
+from .vc import load_public_key_pem
 from .config import settings as default_settings
 from .deletion import DeletionError, delete_document
 from .deletion_keys import keys_of
@@ -49,7 +49,7 @@ from .pii_categories import (
 from .ingest_lock import IngestRaceError
 from . import read_gate
 from .pipeline import (
-    current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
+    current_state, dossiers_of, get_anonymized_text, ingest,
     live_document_for, process, register_live,
 )
 from .rate_limit import (
@@ -1370,12 +1370,18 @@ def create_app(
                   summary="Reveal a document's PII, gated per type by a grant")
         def reveal(document_id: UUID, body: RevealRequest, request: Request) -> RevealResponse:
             """Reveal the PII types a grant authorises; every other type stays
-            pseudonymised. 404 if the document or grant is unknown, 403 if the
-            grant is revoked, expired, or scoped to another document."""
+            pseudonymised. The grant is judged before anything about the
+            document is read; a caller it does not cover gets the uniform
+            refusal (403 "grant not applicable") whether the grant is unknown,
+            revoked, expired, scoped elsewhere, or the document is unknown,
+            superseded or deleted. A covered caller hears 410 if the document
+            is deleted, 409 naming the survivor if it is superseded, or 409 if
+            it is not yet de-identified."""
+            from . import roles as roles_mod
             from .grants import authorize
             from .mapping_store import PostgresMappingStore
-            from .pipeline import get_anonymized_text
             from .pseudonymizer import deanonymize
+            from .reveal_gate import decide
 
             now = datetime.now(timezone.utc)
             with session_factory() as session:
@@ -1383,53 +1389,39 @@ def create_app(
                 # built per request from their factory; singletons win otherwise.
                 gs = grant_store_factory(session) if grant_store_factory else grant_store
                 kp = key_provider_factory(session) if key_provider_factory else key_provider
-
-                grant = gs.get(body.grant_id)
-                if grant is None:
-                    raise HTTPException(status_code=404, detail="unknown grant")
-                if current_state(session, document_id) is None:
-                    raise HTTPException(status_code=404, detail="unknown document")
-                copy = session.get(Document, document_id)
-                if copy is not None and copy.superseded_by is not None:
-                    # A copy is not a second door to the same pseudonyms.
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"document is superseded by {copy.superseded_by}; "
-                               "reveal on that one")
-                dom = document_domain(session, document_id)
                 # De geauthenticeerde caller, nodig vóór de autorisatie: een
                 # grant noemt WIE mag onthullen, en dat kunnen we pas toetsen als
                 # we weten wie er belt. Zonder auth is dit None en verandert er
                 # niets (tailnet-interne modus).
                 caller = getattr(request.state, "caller", None)
-                # A grant that authorises none of its own types here is revoked,
-                # expired, scoped to another document, bound to another domain, or
-                # presented by someone other than its recipient → explicit denial.
+
                 # rollen: de rol wordt HIER opgelost, op het moment van
                 # beslissen. Dat is wat een rol uitzetten onmiddellijk laat
                 # werken zonder dat er één grant verandert.
-                from . import roles as roles_mod
-                from .grants import permitted_types
-
                 def _resolve_role(naam: str) -> set[str]:
                     return set(roles_mod.resolve(session, naam).types)
 
                 rol_gaten = {"resolve_role": _resolve_role,
                              "global_roles": {roles_mod.ADMIN}}
-                if not authorize(grant, document_id,
-                                 permitted_types(grant, _resolve_role),
-                                 now, dom, allow_global_grants, caller,
-                                 auth_enabled, **rol_gaten):
-                    raise HTTPException(status_code=403, detail="grant not applicable")
-                pseudo_text = get_anonymized_text(session, document_id)
-                if pseudo_text is None:
-                    raise HTTPException(
-                        status_code=409, detail="document not yet de-identified")
+                decision = decide(
+                    session, gs, body.grant_id, document_id, caller=caller,
+                    auth_enabled=auth_enabled, allow_global=allow_global_grants,
+                    now=now, pdf=False, x_vc=request.headers.get("x-vc"),
+                    vc_public_key=vc_public_key, vc_expected_vct=vc_expected_vct,
+                    vc_expected_issuer=vc_expected_issuer, vc_required=vc_required,
+                    **rol_gaten,
+                )
+                grant = decision.grant
                 requested = (body.types if body.types
-                             else sorted(permitted_types(grant, _resolve_role)))
-                allowed = authorize(grant, document_id, set(requested), now, dom,
-                                    allow_global_grants, caller, auth_enabled,
-                                    **rol_gaten)
+                             else sorted(decision.permitted))
+                allowed = authorize(grant, document_id, set(requested), now,
+                                    decision.domain, allow_global_grants, caller,
+                                    auth_enabled, **rol_gaten)
+                # The VC gate already ran once, inside decide(); intersecting
+                # with its narrowing here is the same answer apply_vc_gate
+                # would give this request's own `allowed`, without verifying
+                # the credential twice.
+                allowed &= decision.vc_allowed
                 # De caller staat los in de audit van de recipient: met auth aan
                 # zijn ze nu gelijk, maar het spoor moet blijven zeggen wie er
                 # belde en niet alleen wie het mocht.
@@ -1443,23 +1435,9 @@ def create_app(
                     extra_audit["role"] = grant.role
                     if grant.document_id is None:
                         extra_audit["global_by_role"] = True
-                # EUDI-aligned VC gate (opt-in): a presented X-VC credential can
-                # only NARROW what the grant allows (intersection), never widen
-                # it. Off unless an issuer key is configured; then a valid VC is
-                # required only if WORDSWORTH_VC_REQUIRED. Denials are 403.
-                try:
-                    allowed, vc_audit = apply_vc_gate(
-                        allowed, request.headers.get("x-vc"),
-                        public_key=vc_public_key,
-                        expected_vct=vc_expected_vct,
-                        expected_issuer=vc_expected_issuer,
-                        required=vc_required, now=now,
-                    )
-                except VcError as exc:
-                    raise HTTPException(status_code=403, detail=f"vc rejected: {exc}")
-                extra_audit.update(vc_audit)
+                extra_audit.update(decision.vc_audit)
                 revealed_text = deanonymize(
-                    session, document_id, pseudo_text, kp,
+                    session, document_id, decision.pseudo_text, kp,
                     PostgresMappingStore(session), actor=grant.recipient,
                     allowed_types=allowed,
                     extra_audit=extra_audit,
@@ -1504,48 +1482,28 @@ def create_app(
                 clear, straight from the original page — every other type
                 keeps its box and label. Never cached or stored (a fresh
                 render every call); audited exactly like `/reveal`, with
-                `view=pdf` and no clear value in the audit trail. 409 if the
-                document has no box map yet, 410 if it is deleted; otherwise
-                the same 404/403 as `/reveal`."""
-                from .document_keys import OriginalsKeyUnavailable
-                from .grants import authorize, permitted_types
+                `view=pdf` and no clear value in the audit trail. The grant is
+                judged before anything about the document is read; a caller
+                it does not cover gets the uniform refusal (403 "grant not
+                applicable") whether the grant is unknown, revoked, expired,
+                scoped elsewhere, or the document is unknown, superseded or
+                deleted. A covered caller hears 410 if the document is
+                deleted, 409 naming the survivor if it is superseded, or 409
+                if it has no box map yet or is not yet de-identified."""
                 from . import roles as roles_mod
+                from .document_keys import OriginalsKeyUnavailable
+                from .grants import authorize
                 from .mapping_store import PostgresMappingStore
-                from .models import BoxMap
                 from .originals_io import read_original
                 from .pdf_redaction import boxes_of
                 from .pdf_render import DegenerateBoxError, render as render_pdf
                 from .pseudonymizer import deanonymize
+                from .reveal_gate import decide
 
                 now = datetime.now(timezone.utc)
                 with session_factory() as session:
-                    # Before the grant: deleting a document removes its own
-                    # grants, so a grant lookup would answer 404 "unknown
-                    # grant" for exactly the grant the caller still holds.
-                    state = current_state(session, document_id)
-                    if state == State.DELETED:
-                        raise HTTPException(status_code=410, detail="document deleted")
                     gs = grant_store_factory(session) if grant_store_factory else grant_store
                     kp = _resolve_key_provider(session)
-
-                    grant = gs.get(body.grant_id)
-                    if grant is None:
-                        raise HTTPException(status_code=404, detail="unknown grant")
-                    if state is None:
-                        raise HTTPException(status_code=404, detail="unknown document")
-                    copy = session.get(Document, document_id)
-                    if copy is not None and copy.superseded_by is not None:
-                        raise HTTPException(
-                            status_code=409,
-                            detail=f"document is superseded by {copy.superseded_by}; "
-                                   "reveal on that one")
-                    box_map = session.get(BoxMap, document_id)
-                    if box_map is None:
-                        raise HTTPException(
-                            status_code=409,
-                            detail="no box map yet (reversible mode required; "
-                                   "reanonymize to build one)")
-                    dom = document_domain(session, document_id)
                     caller = getattr(request.state, "caller", None)
 
                     def _resolve_role(naam: str) -> set[str]:
@@ -1553,20 +1511,21 @@ def create_app(
 
                     rol_gaten = {"resolve_role": _resolve_role,
                                  "global_roles": {roles_mod.ADMIN}}
-                    if not authorize(grant, document_id,
-                                     permitted_types(grant, _resolve_role),
-                                     now, dom, allow_global_grants, caller,
-                                     auth_enabled, **rol_gaten):
-                        raise HTTPException(status_code=403, detail="grant not applicable")
-                    pseudo_text = get_anonymized_text(session, document_id)
-                    if pseudo_text is None:
-                        raise HTTPException(
-                            status_code=409, detail="document not yet de-identified")
+                    decision = decide(
+                        session, gs, body.grant_id, document_id, caller=caller,
+                        auth_enabled=auth_enabled, allow_global=allow_global_grants,
+                        now=now, pdf=True, x_vc=request.headers.get("x-vc"),
+                        vc_public_key=vc_public_key, vc_expected_vct=vc_expected_vct,
+                        vc_expected_issuer=vc_expected_issuer, vc_required=vc_required,
+                        **rol_gaten,
+                    )
+                    grant = decision.grant
                     requested = (body.types if body.types
-                                 else sorted(permitted_types(grant, _resolve_role)))
-                    allowed = authorize(grant, document_id, set(requested), now, dom,
-                                        allow_global_grants, caller, auth_enabled,
-                                        **rol_gaten)
+                                 else sorted(decision.permitted))
+                    allowed = authorize(grant, document_id, set(requested), now,
+                                        decision.domain, allow_global_grants, caller,
+                                        auth_enabled, **rol_gaten)
+                    allowed &= decision.vc_allowed
                     extra_audit = {"grant_id": body.grant_id, "view": "pdf"}
                     if caller:
                         extra_audit["caller"] = caller
@@ -1574,24 +1533,14 @@ def create_app(
                         extra_audit["role"] = grant.role
                         if grant.document_id is None:
                             extra_audit["global_by_role"] = True
-                    try:
-                        allowed, vc_audit = apply_vc_gate(
-                            allowed, request.headers.get("x-vc"),
-                            public_key=vc_public_key,
-                            expected_vct=vc_expected_vct,
-                            expected_issuer=vc_expected_issuer,
-                            required=vc_required, now=now,
-                        )
-                    except VcError as exc:
-                        raise HTTPException(status_code=403, detail=f"vc rejected: {exc}")
-                    extra_audit.update(vc_audit)
+                    extra_audit.update(decision.vc_audit)
                     # deanonymize() writes the audit record this endpoint needs
                     # (types + resolved pseudonyms, no clear value); its
                     # returned TEXT is not used here — the PDF is rendered
                     # straight from the original page, never from decrypted
                     # values held in this frame.
                     deanonymize(
-                        session, document_id, pseudo_text, kp,
+                        session, document_id, decision.pseudo_text, kp,
                         PostgresMappingStore(session), actor=grant.recipient,
                         allowed_types=allowed, extra_audit=extra_audit,
                     )
@@ -1604,9 +1553,9 @@ def create_app(
                     # redaction list entirely: its box is never painted, so
                     # the original pixels AND the original invisible text
                     # pass straight through — no clear value is handled here.
-                    boxes = [b for b in boxes_of(box_map)
+                    boxes = [b for b in boxes_of(decision.box_map)
                             if b.token not in resolved_pseudonyms]
-                    _, legend = to_legible(pseudo_text)
+                    _, legend = to_legible(decision.pseudo_text)
                     labels = {token: placeholder for placeholder, token in legend.items()}
                     doc = session.get(Document, document_id)
                     try:

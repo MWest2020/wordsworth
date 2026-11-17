@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Security
+
+- **`reveal` and `reveal.pdf` answered about a document before the grant had
+  decided anything** (#487). Anyone holding a key and any grant id, not
+  necessarily their own, could tell which document ids exist (404 vs 403),
+  which are deleted (410), and which live copy a superseded one points to.
+  Both routes now judge the grant first, on its own domain, before reading
+  anything about the document; a caller the grant does not cover gets one
+  answer regardless of cause (403 `grant not applicable`), and a refusal
+  writes no audit record and logs nothing about its cause. See
+  [grants: a refusal says nothing](docs/how-to/grants.md#a-refusal-says-nothing).
+
 ### Fixed
 
 - **The labels on a redacted PDF's boxes could not be seen** (#448). The
