@@ -28,6 +28,17 @@ def _tail_hash(session: Session) -> str:
     return tail or GENESIS_HASH
 
 
+def lock_chain(session: Session) -> None:
+    """Take the transaction-scoped advisory lock the chain serialises writers
+    on (``append`` takes it too, so there is one spelling of the lock).
+    Re-entrant per session: taking it twice in one transaction returns at
+    once, so a route that locks and then appends does not block itself. A
+    second session's call waits until the first commits or rolls back."""
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK_KEY}
+    )
+
+
 def append(
     session: Session,
     *,
@@ -38,9 +49,7 @@ def append(
     payload: dict[str, Any] | None = None,
     ts: datetime | None = None,
 ) -> AuditRecord:
-    session.execute(
-        text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK_KEY}
-    )
+    lock_chain(session)
     payload = payload or {}
     ts = ts or datetime.now(timezone.utc)
     prev = _tail_hash(session)

@@ -1,9 +1,11 @@
 import json
+import threading
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DatabaseError
 
+from race_setup import run, wait_for_a_lock_waiter
 from wordsworth import audit
 from wordsworth.hashing import GENESIS_HASH
 from wordsworth.models import Document
@@ -74,3 +76,44 @@ def test_verify_detects_tamper(session):
     session.commit()
     ok, bad = audit.verify_chain(session)
     assert ok is False and bad is not None
+
+
+def test_lock_chain_then_append_in_one_session_returns(session):
+    """Re-entrant per session (deleted-document-answers-410, task 1.2): a
+    route that locks and then appends does not block itself."""
+    did = _doc(session)
+    audit.lock_chain(session)
+    audit.append(session, document_id=did, from_state=None,
+                to_state="registered", step="register")
+    session.commit()  # would hang on a non-re-entrant lock
+
+
+def test_a_second_sessions_lock_chain_waits_for_the_first(session_factory):
+    errors, result = {}, {}
+    paused, resume = threading.Event(), threading.Event()
+
+    def holder():
+        with session_factory() as s:
+            audit.lock_chain(s)
+            paused.set()
+            assert resume.wait(30), "never resumed"
+            s.commit()
+
+    def waiter():
+        with session_factory() as s:
+            audit.lock_chain(s)
+            result["locked"] = True
+            s.commit()
+
+    first = run(errors, "holder", holder)
+    assert paused.wait(10)
+    second = run(errors, "waiter", waiter)
+    try:
+        wait_for_a_lock_waiter(session_factory)
+    finally:
+        resume.set()
+        first.join(30)
+        second.join(30)
+
+    assert not errors, errors
+    assert result["locked"] is True
