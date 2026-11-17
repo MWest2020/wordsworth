@@ -165,6 +165,15 @@ class RoleSwitchRequest(BaseModel):
     reason: str
 
 
+class GroupRoleResponse(BaseModel):
+    """Eén koppeling: leden van `group` houden `role` (keycloak-groups-to-roles)."""
+
+    group: str
+    role: str
+    created_by: str
+    created_at: datetime
+
+
 class TopicResponse(BaseModel):
     """Eén onderwerp: een groep documenten binnen één dossier.
 
@@ -1707,6 +1716,51 @@ def create_app(
                 out = _role_out(role)
                 session.commit()
             return out
+
+        # keycloak-groups-to-roles: group -> role, behind the same gate as
+        # /roles. Wie bepaalt welke groep welke rol krijgt, bepaalt wat elk lid
+        # van die groep mag zien -- geen lichter recht dan een rol beheren.
+        from . import group_roles as group_roles_mod
+
+        def _group_role_out(row) -> GroupRoleResponse:
+            return GroupRoleResponse(group=row.group, role=row.role,
+                                     created_by=row.created_by,
+                                     created_at=row.created_at)
+
+        @app.get("/group-roles", summary="De group->rol koppelingen", tags=["read"])
+        def list_group_roles(request: Request) -> list[GroupRoleResponse]:
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                return [_group_role_out(r) for r in group_roles_mod.listing(session)]
+
+        @app.put("/group-roles/{group}/{role}", summary="Koppel een groep aan een rol",
+                 tags=["write"])
+        def put_group_role(request: Request, group: str, role: str) -> GroupRoleResponse:
+            """Idempotent: een bestaand paar opnieuw koppelen verandert niets en
+            schrijft geen event. 404 voor een onbekende rol, zoals
+            `PUT /roles/{name}/types`."""
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                try:
+                    result = group_roles_mod.map_role(
+                        session, group, role, actor=_actor(request),
+                        audit=_resolve_audit(session))
+                except group_roles_mod.GroupRoleError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc))
+                out = _group_role_out(result.row)
+                session.commit()
+            return out
+
+        @app.delete("/group-roles/{group}/{role}",
+                   summary="Ontkoppel een groep van een rol (idempotent)",
+                   tags=["write"], status_code=204)
+        def delete_group_role(request: Request, group: str, role: str) -> None:
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                group_roles_mod.unmap_role(session, group, role,
+                                           actor=_actor(request),
+                                           audit=_resolve_audit(session))
+                session.commit()
 
     # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
     # grant store (no key provider) — mounts wherever grants are configured.

@@ -165,16 +165,19 @@ def test_a_presented_key_wins_over_an_injected_assertion(session_factory, key):
     from wordsworth.search_index import InMemoryIndex
 
     class _Ident:
-        def caller(self, request, now=None):
+        def resolve(self, request, now=None):
             from wordsworth.access_identity import public_keys
             tok = request.headers.get("cf-access-jwt-assertion", "")
             if not tok:
-                return None
+                return None, ()
             try:
                 return email_from(tok, public_keys(VERIFIER, lambda u: _jwks(key)),
-                                  VERIFIER, NU)
+                                  VERIFIER, NU), ()
             except Exception:
-                return None
+                return None, ()
+
+        def caller(self, request, now=None):
+            return self.resolve(request, now)[0]
 
     index = InMemoryIndex()
     index.index("a", "vergunning", "ka")

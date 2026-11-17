@@ -29,8 +29,9 @@ from sqlalchemy.orm import Session
 
 from .hashing import GENESIS_HASH, compute_hash
 from .key_audit import (DOSSIER_RENAMED_ACTION, GRANT_ISSUED_ACTION,
-                        GRANT_REVOKED_ACTION, ROLE_ACTION, ROTATION_ACTION,
-                        STREAM)
+                        GRANT_REVOKED_ACTION, GROUP_ROLE_MAPPED_ACTION,
+                        GROUP_ROLE_UNMAPPED_ACTION, ROLE_ACTION,
+                        ROTATION_ACTION, STREAM)
 from .models import KeyLifecycleEvent
 
 #: Not the document chain's key (4771): two chains, two locks. Sharing one would
@@ -123,6 +124,12 @@ class PostgresKeyLifecycleAudit:
     def dossier_renamed(self, *, dossier_id, old, new, documents, actor) -> None:
         self._event(DOSSIER_RENAMED_ACTION, actor, dossier_id=dossier_id,
                     old=old, new=new, documents=documents)
+
+    def group_role_mapped(self, *, group, role, actor) -> None:
+        self._event(GROUP_ROLE_MAPPED_ACTION, actor, group=group, role=role)
+
+    def group_role_unmapped(self, *, group, role, actor) -> None:
+        self._event(GROUP_ROLE_UNMAPPED_ACTION, actor, group=group, role=role)
 
     def events(self) -> list[dict[str, Any]]:
         return [as_dict(ev) for ev in self._session.execute(

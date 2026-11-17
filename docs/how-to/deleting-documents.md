@@ -170,9 +170,14 @@ Only a caller with role `beheerder`, or one carrying a label in
 anything is read or removed, and a refusal writes no `deleted` record.
 
 A caller **holds** `beheerder` by being the recipient of an active, unexpired
-grant that names the role — the same fact [grants](grants.md) already uses to
-resolve a role-granted reveal, read here as yes/no instead of a type set.
-There is no separate identity-to-role table (see
+grant that names the role, or — since keycloak-groups-to-roles — by one of
+the caller's verified groups mapping to it
+(`docs/how-to/roles.md#groepen-keycloak-groups-to-roles`). Either way the role
+must also be active: a switched-off `beheerder` opens this gate for nobody,
+whether a grant or a group named it. An API key or the console cookie carries
+no groups, so a caller who only holds `beheerder` through a group and signs
+in with a key or the console cookie is refused here — "no groups; use a
+personal grant or label". There is no separate identity-to-role table (see
 [roles](roles.md#wat-hier-niet-woont)): "who someone is" comes from sign-on,
 "what they may do" is decided here, at the one place every delete passes
 through.
