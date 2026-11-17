@@ -32,9 +32,21 @@ class _Fake:
         return None
 
 
+class _EmptyScalars:
+    """Enough of SQLAlchemy's `ScalarResult` for a body-call guard: iterable
+    and `.first()`, both empty (`caller_holds_role` reads a `Role` this way
+    before a grant or a group, keycloak-groups-to-roles)."""
+
+    def __iter__(self):
+        return iter(())
+
+    def first(self):
+        return None
+
+
 class _EmptyResult:
     def scalars(self):
-        return iter(())
+        return _EmptyScalars()
 
     def scalar_one(self):
         return None
@@ -102,6 +114,8 @@ BODIES = {
     ("POST", "/console/combinations"): {"data": {"types": "PERSON"}},
     ("POST", "/console/roles"): {"data": {"name": "x"}},
     ("POST", "/console/roles/switch"): {"data": {"name": "x", "aan": "true"}},
+    ("POST", "/console/group-roles"): {"data": {"group": "x", "role": "x"}},
+    ("POST", "/console/group-roles/delete"): {"data": {"group": "x", "role": "x"}},
 }
 
 

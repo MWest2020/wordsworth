@@ -356,6 +356,27 @@ class Role(Base):
     created_by: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class GroupRole(Base):
+    """keycloak-groups-to-roles: one row says "members of `group` hold `role`".
+
+    `group` comes only from the verified assertion's `groups` claim (Keycloak's
+    group membership mapper) — never from a header, never from an API key or
+    console cookie. The mapping is data, not a second place a role is decided:
+    `caller_holds_role` is the only function that reads this table, and it
+    checks `Role.active` first regardless of which source (grant or group)
+    named the role.
+    """
+
+    __tablename__ = "group_roles"
+
+    group: Mapped[str] = mapped_column(String, primary_key=True)
+    role: Mapped[str] = mapped_column(String, primary_key=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))
+
+
 class BoxMap(Base):
     """Where each redaction goes on the page: page, rectangle and pseudonym
     token, per document (pdf-redaction). Derived working data like

@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from wordsworth import grants as grants_mod
 from wordsworth import roles
 from wordsworth.api import create_app
+from wordsworth.bootstrap import ensure_admin_role
 from wordsworth.audit import current_state, verify_chain
 from wordsworth.deletion import DeletionError, delete_document
 from wordsworth.models import (
@@ -309,6 +310,7 @@ def _app(session_factory, **kw):
 
 def test_a_beheerder_deletes(session_factory):
     with session_factory() as s:
+        ensure_admin_role(s)
         doc = register(s, KEY)
         s.flush()
         s.add(_grant("beheerder-caller", role=roles.ADMIN))

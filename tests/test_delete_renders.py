@@ -14,6 +14,7 @@ from sqlalchemy import select
 from wordsworth import dossiers, grants as grants_mod, roles
 from wordsworth.api import create_app
 from wordsworth.audit import current_state, verify_chain
+from wordsworth.bootstrap import ensure_admin_role
 from wordsworth.delete_cli import main
 from wordsworth.deletion import delete_document
 from wordsworth.dossier_deletion import delete_dossier
@@ -146,6 +147,7 @@ def test_dry_run_counts_renders_and_box_map_and_removes_nothing(
         session_factory, capsys):
     store, index = InMemoryObjectStore(), InMemoryIndex()
     with session_factory() as s:
+        ensure_admin_role(s)
         doc = register(s, KEY)
         s.flush()
         _seed_render(s, store, doc.id, versions=(1, 2))
