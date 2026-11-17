@@ -96,6 +96,9 @@ def test_the_audit_names_the_person_and_not_the_keyring(session_factory, key):
             except Exception:
                 return None
 
+        def caller_and_groups(self, request, now=None):
+            return self.caller(request, now), ()
+
     app = create_app(session_factory=session_factory, api_keys={"k": "console"},
                      key_provider=kp, grant_store=gs)
     # reach into the mounted middleware rather than re-building the app: the

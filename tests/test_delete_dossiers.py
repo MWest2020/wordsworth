@@ -21,7 +21,9 @@ from wordsworth import dossiers, grants as grants_mod, roles
 from wordsworth.api import create_app
 from wordsworth.audit import current_state, verify_chain
 from wordsworth.dossier_deletion import DossierDeletionError, delete_dossier
-from wordsworth.models import AuditRecord, Dossier, DossierDocument, GrantRecord, Topic
+from wordsworth.models import (
+    AuditRecord, Dossier, DossierDocument, GrantRecord, Role, Topic,
+)
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import dossiers_of, register
 from wordsworth.search_index import InMemoryIndex
@@ -244,6 +246,7 @@ def _app(session_factory, **kw):
 def test_a_beheerder_deletes_a_dossier(session_factory):
     with session_factory() as s:
         dossier = dossiers.ensure(s, "zaak")
+        s.add(Role(name=roles.ADMIN, allowed_types=[], active=True, created_by="t"))
         s.add(_grant("beheerder-caller", role=roles.ADMIN))
         s.commit()
         dossier_id = dossier.id

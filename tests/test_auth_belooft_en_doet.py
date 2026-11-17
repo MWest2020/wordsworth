@@ -19,6 +19,9 @@ class _Ident:
     def caller(self, request, now=None):
         return request.headers.get("x-wie") or None
 
+    def caller_and_groups(self, request, now=None):
+        return self.caller(request, now), ()
+
 
 # --- S1: de recipient-binding viel stil zodra er geen sleutels waren ---------
 

@@ -171,11 +171,24 @@ anything is read or removed, and a refusal writes no `deleted` record.
 
 A caller **holds** `beheerder` by being the recipient of an active, unexpired
 grant that names the role — the same fact [grants](grants.md) already uses to
-resolve a role-granted reveal, read here as yes/no instead of a type set.
-There is no separate identity-to-role table (see
-[roles](roles.md#wat-hier-niet-woont)): "who someone is" comes from sign-on,
-"what they may do" is decided here, at the one place every delete passes
-through.
+resolve a role-granted reveal, read here as yes/no instead of a type set — OR
+by a group in their verified assertion that maps to `beheerder`
+(keycloak-groups-to-roles, [roles](roles.md#een-rol-houden-via-een-groep)).
+The delete gate is today the one place that decides by "does this caller
+hold this role", so it is the one gate a group-held role opens; a reveal
+still needs a grant naming the caller (below), never a group.
+
+A caller authenticated by API key or the console cookie carries no groups —
+"no groups; use a personal grant or label"
+([access-identity](access-identity.md#keycloak-groepen-naar-rollen)).
+
+Either way, `beheerder` must be **active**: a switched-off role opens the
+delete gate for nobody, whether held through a grant or through a group, and
+switching it back on restores both without anything else changing. There is
+no separate identity-to-role table (see
+[roles](roles.md#wat-hier-niet-woont)): "who someone is" and "which groups
+they are in" come from sign-on, "what they may do" is decided here, at the
+one place every delete passes through.
 
 ## Delete a document
 

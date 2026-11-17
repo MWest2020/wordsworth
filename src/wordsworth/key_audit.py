@@ -26,6 +26,11 @@ GRANT_REVOKED_ACTION = "grant_revoked"
 #: duizend documenten, en een record per document zou de keten volschrijven met
 #: duizend kopieën van hetzelfde feit.
 ROLE_ACTION = "role_changed"
+#: keycloak-groups-to-roles: a group → role mapping added or removed. Here
+#: and not in the document hash-chain, for the same reason as a role: a
+#: global authorisation fact with no document of its own.
+GROUP_ROLE_MAPPED_ACTION = "group_role_mapped"
+GROUP_ROLE_UNMAPPED_ACTION = "group_role_unmapped"
 #: dossiers: hernoemen. Een hernoeming verplaatst geen document en verandert geen
 #: lidmaatschap -- hij verandert een etiket dat duizend documenten delen. Daarom
 #: hier en niet in de document-hashketen, om exact dezelfde reden als een rol.
@@ -84,6 +89,10 @@ class KeyLifecycleAudit(Protocol):
         actor: str,
         reason: str | None = None,
     ) -> None: ...
+
+    def group_role_mapped(self, *, group: str, role: str, actor: str) -> None: ...
+
+    def group_role_unmapped(self, *, group: str, role: str, actor: str) -> None: ...
 
 
 class JsonlKeyLifecycleAudit:
@@ -155,6 +164,14 @@ class JsonlKeyLifecycleAudit:
             role=role, change=change, allowed_types=list(allowed_types),
             active=active, actor=actor, reason=reason,
         )
+
+    def group_role_mapped(self, *, group, role, actor) -> None:
+        self._log.event(STREAM, GROUP_ROLE_MAPPED_ACTION, group=group, role=role,
+                        actor=actor)
+
+    def group_role_unmapped(self, *, group, role, actor) -> None:
+        self._log.event(STREAM, GROUP_ROLE_UNMAPPED_ACTION, group=group, role=role,
+                        actor=actor)
 
     def dossier_renamed(self, *, dossier_id, old, new, documents, actor) -> None:
         """Hoe een dossier ging heten, en hoe ver dat reikte.

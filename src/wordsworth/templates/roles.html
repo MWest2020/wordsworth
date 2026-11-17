@@ -60,6 +60,49 @@ het toekennen, dus bij de grant. Dezelfde rol kan aan de een gegeven worden voor
  </form>
 </div>
 
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Groepen</h3>
+   <span class="badge">{{ groepen|length }}</span></div>
+ {% if groepen %}
+ <table><thead><tr><th>groep</th><th>rol</th><th></th></tr></thead>
+ <tbody>
+ {% for g in groepen %}
+ <tr>
+  <td><b>{{ g.group }}</b></td>
+  <td><span class="pill">{{ g.role }}</span>
+    <div class="note" style="font-size:.76rem">gekoppeld door {{ g.created_by }}</div></td>
+  <td>
+   <form method="post" action="/console/roles/groups/remove">
+    <input type="hidden" name="group" value="{{ g.group }}">
+    <input type="hidden" name="role" value="{{ g.role }}">
+    <button class="btn" type="submit" style="padding:7px 14px">Ontkoppel</button>
+   </form>
+  </td>
+ </tr>
+ {% endfor %}
+ </tbody></table>
+ {% else %}<p class="empty">Nog geen groep gekoppeld.</p>{% endif %}
+</div>
+
+<div class="card" style="margin-top:22px">
+ <div class="panel-head"><span class="dot"></span><h3>Koppel een groep aan een rol</h3></div>
+ <form method="post" action="/console/roles/groups" style="padding:16px">
+  <div class="field">
+   <label for="groepnaam">Groep</label>
+   <input type="text" id="groepnaam" name="group" placeholder="ict" required>
+  </div>
+  <div class="field">
+   <label for="groeprol">Rol</label>
+   <select id="groeprol" name="role" required>
+    {% for r in rollen %}
+    <option value="{{ r.name }}">{{ r.name }}</option>
+    {% endfor %}
+   </select>
+  </div>
+  <button class="btn" type="submit">Koppel</button>
+ </form>
+</div>
+
 <div class="sovereign">
  <p>Een rol uitzetten werkt <b>onmiddellijk</b> en raakt geen enkele grant aan:
  elke grant die de rol noemt autoriseert vanaf dat moment niets. Dat is de reden
@@ -69,5 +112,9 @@ het toekennen, dus bij de grant. Dezelfde rol kan aan de een gegeven worden voor
  <p class="note" style="margin-top:10px">Wat er eerder onthuld is, verandert
  hierdoor niet. Dat is gebeurd en staat in het auditspoor. "Vanaf nu niet meer"
  is iets anders dan "is nooit gezien".</p>
+ <p class="note" style="margin-top:10px">Een groep opent dezelfde deuren als een
+ grant — behalve een onthulling. Die vraagt altijd een grant op naam; wie zijn
+ enige <code>beheerder</code> via een groep heeft en inlogt met een sleutel of
+ het console-cookie, draagt geen groepen en komt niet door de verwijdergate.</p>
 </div>
 {% endblock %}

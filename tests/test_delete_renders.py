@@ -20,7 +20,7 @@ from wordsworth.dossier_deletion import delete_dossier
 from wordsworth.grants import PostgresGrantStore
 from wordsworth.keys import InMemoryKeyProvider
 from wordsworth.mapping_store import PostgresMappingStore
-from wordsworth.models import AuditRecord, BoxMap, GrantRecord
+from wordsworth.models import AuditRecord, BoxMap, GrantRecord, Role
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pdf_redaction import redacted_cache_key, redacted_prefix
 from wordsworth.pipeline import ingest, process, register
@@ -140,6 +140,7 @@ def test_dry_run_counts_renders_and_box_map_and_removes_nothing(
         doc = register(s, KEY)
         s.flush()
         _seed_render(s, store, doc.id, versions=(1, 2))
+        s.add(Role(name=roles.ADMIN, allowed_types=[], active=True, created_by="t"))
         s.add(GrantRecord(
             grant_id=uuid4().hex, recipient="operator", allowed_types=[],
             document_id=None, status=grants_mod.ACTIVE,

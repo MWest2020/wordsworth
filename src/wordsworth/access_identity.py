@@ -155,10 +155,11 @@ def _fetch(url: str) -> dict:
         return json.loads(resp.read())
 
 
-def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = None):
-    """The verified email in this assertion, or raise. Every check here is a
-    refusal, never a warning — there is no partial trust."""
-    now = time.time() if now is None else now
+def _verify_body(token: str, keys: dict, verifier: Verifier, now: float) -> dict:
+    """The verified claims of ``token``, or raise. Every check here is a
+    refusal, never a warning — there is no partial trust. Shared by every
+    reader of a claim (`email_from`, `groups_from`): a claim from a token that
+    fails any of these checks is not read at all, not even to answer "no"."""
     try:
         head_raw, body_raw, sig_raw = token.split(".")
         head = json.loads(_b64(head_raw))
@@ -199,6 +200,10 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         raise AccessError("assertion has an unreadable expiry")
     if verloopt <= now:
         raise AccessError("assertion has expired")
+    return body
+
+
+def _email_from_body(body: dict, verifier: Verifier) -> str:
     email = body.get("email")
     if not isinstance(email, str) or not email.strip():
         # A non-string would flow into the caller label and the audit trail.
@@ -210,6 +215,24 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         # sets this flag, so it is unaffected.
         raise AccessError("assertion's address is not verified")
     return email
+
+
+def groups_from(body: dict) -> tuple[str, ...]:
+    """The ``groups`` claim of an ALREADY VERIFIED body (keycloak-groups-to-
+    roles), as a tuple of strings. Missing, or not a list of strings, yields
+    no groups — that is a shape the claim can simply not carry, not a reason
+    to refuse the caller it rode in with."""
+    raw = body.get("groups")
+    if not isinstance(raw, list):
+        return ()
+    return tuple(g for g in raw if isinstance(g, str))
+
+
+def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = None):
+    """The verified email in this assertion, or raise."""
+    now = time.time() if now is None else now
+    body = _verify_body(token, keys, verifier, now)
+    return _email_from_body(body, verifier)
 
 
 class Identity:
@@ -240,16 +263,29 @@ class Identity:
             self._at = now - self._ttl + self._backoff
         return self._keys
 
-    def caller(self, request, now: float | None = None):
-        """The verified email on this request, or None. Never reads the
-        readable email header: it arrives on every path, including ones
-        that skip the provider."""
+    def caller_and_groups(self, request, now: float | None = None):
+        """The verified email and ``groups`` claim of the SAME verified token
+        (keycloak-groups-to-roles), or ``(None, ())``. Never reads the readable
+        email header: it arrives on every path, including ones that skip the
+        provider. An expired, badly signed or wrong-audience token — or one
+        naming no usable/verified email — yields no label AND no groups: a
+        group claim is never read from a token that failed any other check."""
+        now = time.time() if now is None else now
         auth = request.headers.get(BEARER_HEADER, "")
         token = (auth[len(BEARER_PREFIX):].strip() if auth.startswith(BEARER_PREFIX)
                  else request.headers.get(JWT_HEADER, ""))
         if not token:
-            return None
+            return None, ()
         try:
-            return email_from(token, self.keys(now), self.verifier, now)
+            body = _verify_body(token, self.keys(now), self.verifier, now)
+            email = _email_from_body(body, self.verifier)
         except AccessError:
-            return None
+            return None, ()
+        return email, groups_from(body)
+
+    def caller(self, request, now: float | None = None):
+        """The verified email on this request, or None. Never reads the
+        readable email header: it arrives on every path, including ones
+        that skip the provider."""
+        label, _ = self.caller_and_groups(request, now)
+        return label

@@ -356,6 +356,28 @@ class Role(Base):
     created_by: Mapped[str] = mapped_column(String, nullable=False)
 
 
+class GroupRole(Base):
+    """Group → role mapping (group-roles): a caller holds a role not only
+    through a grant naming them, but also through membership of a group
+    mapped here, read from the verified identity assertion's `groups` claim.
+
+    One row per pair, keyed on the pair itself: mapping an already-mapped pair
+    is idempotent, and so is removing one that is not there. `group` is
+    matched against the assertion's claim exactly -- no normalisation, no
+    nesting. The actor who changed a mapping is a person (`created_by`), never
+    the group or the role.
+    """
+
+    __tablename__ = "group_roles"
+
+    group: Mapped[str] = mapped_column(String, primary_key=True)
+    role: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+        default=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+
+
 class BoxMap(Base):
     """Where each redaction goes on the page: page, rectangle and pseudonym
     token, per document (pdf-redaction). Derived working data like

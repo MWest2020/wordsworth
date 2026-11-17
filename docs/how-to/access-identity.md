@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-11-15
+last_reviewed: 2026-11-17
 ---
 
 # Logging in as a person instead of a keyring
@@ -82,6 +82,34 @@ console behind Keycloak (the `console` key remains the way in).
 
 Cloudflare Access is not affected: its assertion carries no such claim, and
 Access establishes the address itself.
+
+## Keycloak groepen naar rollen
+
+A role may be held not only through a grant but through membership of a
+group in Keycloak (keycloak-groups-to-roles), mapped to the role as data (see
+[roles](roles.md#een-rol-houden-via-een-groep)). This reads the `groups`
+claim of the **same verified token** `email_from` already checks — nothing
+new to configure on the wordsworth side, but the realm must put groups on the
+token:
+
+In the Keycloak admin console, add a **Group Membership** protocol mapper to
+the client used for `WORDSWORTH_OIDC_AUDIENCE`: client → *Client scopes* →
+the client's dedicated scope → *Add mapper* → *By configuration* → *Group
+Membership*. Set the token claim name to `groups`, "Full group path" off (a
+plain group name, not `/parent/child`), and add it to the access token.
+
+The claim is read exactly like the email: only from a verified assertion,
+never from a header, and never remembered beyond the request. A `groups`
+claim that is missing or not a list of strings yields no groups — not a
+refusal of the caller, since not holding a role is an ordinary "no". An
+expired, badly signed or wrong-audience token yields no caller AND no
+groups, the same refusal as today.
+
+**A key or the console cookie carries no groups** — even when a verified
+assertion with groups rides along on the same request, because a credential
+you send beats one that rides along (below), and that includes what it
+brings with it. A label has no groups: "no groups; use a personal grant or
+label" is the whole story for a key or cookie caller.
 
 ## Turning it on — Cloudflare Access
 

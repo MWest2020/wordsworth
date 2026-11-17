@@ -165,6 +165,18 @@ class RoleSwitchRequest(BaseModel):
     reason: str
 
 
+class GroupRoleResponse(BaseModel):
+    """Een group→rol-koppeling (keycloak-groups-to-roles): een groep uit de
+    geverifieerde identiteitsassertie die een rol opent, zonder dat daar een
+    grant voor nodig is. Opent nooit een onthulling — die vraagt altijd een
+    grant op naam (`grants.authorize` blijft ongewijzigd)."""
+
+    group: str
+    role: str
+    created_at: datetime
+    created_by: str
+
+
 class TopicResponse(BaseModel):
     """Eén onderwerp: een groep documenten binnen één dossier.
 
@@ -1755,6 +1767,56 @@ def create_app(
                 out = _role_out(role)
                 session.commit()
             return out
+
+        # Group → role mapping (keycloak-groups-to-roles): behind the same
+        # gate as `/roles`. A group-held role counts only where the system
+        # already decides by whether a caller holds a role (today: the delete
+        # gate) — never a reveal, which stays grant-only.
+        from . import group_roles as group_roles_mod
+
+        def _group_role_out(gr) -> GroupRoleResponse:
+            return GroupRoleResponse(group=gr.group, role=gr.role,
+                                     created_at=gr.created_at,
+                                     created_by=gr.created_by)
+
+        @app.get("/group-roles", summary="De group→rol-koppelingen", tags=["read"])
+        def list_group_roles(request: Request) -> list[GroupRoleResponse]:
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                return [_group_role_out(gr)
+                       for gr in group_roles_mod.listing(session)]
+
+        @app.put("/group-roles/{group}/{role}",
+                 summary="Koppel een group aan een rol", tags=["write"])
+        def map_group_role(request: Request, group: str,
+                           role: str) -> GroupRoleResponse:
+            """Idempotent: een al gekoppeld paar verandert niets en schrijft
+            geen event. 404 voor een onbekende rol, net als `PUT
+            /roles/{name}/types`."""
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                try:
+                    gr = group_roles_mod.map_group(session, group, role,
+                                                   actor=_actor(request),
+                                                   audit=_resolve_audit(session))
+                except group_roles_mod.GroupRoleError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc))
+                out = _group_role_out(gr)
+                session.commit()
+            return out
+
+        @app.delete("/group-roles/{group}/{role}",
+                    summary="Verwijder een group→rol-koppeling", tags=["write"])
+        def unmap_group_role(request: Request, group: str, role: str) -> dict:
+            """Idempotent: een afwezig paar verandert niets en schrijft geen
+            event."""
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                group_roles_mod.unmap_group(session, group, role,
+                                            actor=_actor(request),
+                                            audit=_resolve_audit(session))
+                session.commit()
+            return {"group": group, "role": role}
 
     # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
     # grant store (no key provider) — mounts wherever grants are configured.

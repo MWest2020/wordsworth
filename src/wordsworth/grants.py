@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from .key_audit import KeyLifecycleAudit
 from .keys import DEFAULT_DOMAIN
-from .models import GrantRecord
+from .models import GrantRecord, GroupRole, Role
 
 ACTIVE = "active"
 REVOKED = "revoked"
@@ -163,18 +163,29 @@ def permitted_types(grant: Grant, resolve_role=None) -> set[str]:
     return {t.upper() for t in grant.allowed_types}
 
 
-def caller_holds_role(session: Session, caller: str | None, role: str) -> bool:
-    """Does ``caller`` currently hold ``role``?
+def caller_holds_role(session: Session, caller: str | None, role: str,
+                      groups: Iterable[str] = ()) -> bool:
+    """Does ``caller`` currently hold ``role`` — by grant, or through a group?
 
     There is no identity-to-role table in this system (`roles.py`'s docstring:
-    "wie iemand is" lives in the sign-on, not here). The one place a caller
-    identity is already tied to a role name is a grant: ``recipient`` names who,
-    ``role`` names which. So "holds the role" means "is the recipient of an
-    active, unexpired grant naming it" — the same fact `authorize()` already
-    reads when a role-granted reveal is resolved, read here for a yes/no instead
-    of a type set. A revoked or expired grant answers no, like everywhere else.
+    "wie iemand is" lives in the sign-on, not here). A caller identity is tied
+    to a role name in two places: a grant (``recipient`` names who, ``role``
+    names which — the same fact `authorize()` already reads when a
+    role-granted reveal is resolved), or a `group_roles` mapping matched
+    against ``groups`` (keycloak-groups-to-roles), itself read only from the
+    verified identity assertion of the current request.
+
+    The role itself is checked FIRST, for both sources: an unknown or inactive
+    role (`Role.active` False) is held by nobody, whatever a grant or a group
+    says — a switched-off `beheerder` must not keep opening the delete gate
+    just because some grant still names it. A revoked or expired grant answers
+    no, like everywhere else.
     """
     if not caller:
+        return False
+    role_row = session.execute(
+        select(Role).where(Role.name == role)).scalars().first()
+    if role_row is None or not role_row.active:
         return False
     now = _now()
     rows = session.execute(
@@ -190,6 +201,14 @@ def caller_holds_role(session: Session, caller: str | None, role: str) -> bool:
             if now >= expires:
                 continue
         return True
+    group_set = {g for g in groups if g}
+    if group_set:
+        mapped = session.execute(
+            select(GroupRole).where(GroupRole.role == role,
+                                    GroupRole.group.in_(group_set))
+        ).first()
+        if mapped is not None:
+            return True
     return False
 
 

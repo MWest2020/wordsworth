@@ -8,14 +8,15 @@ OIDC discovery) is injected.
 """
 import base64
 import json
+from types import SimpleNamespace
 
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from wordsworth.access_identity import (AccessError, DiscoveryError, Verifier,
-                                        discover_jwks_url, email_from,
-                                        public_keys)
+from wordsworth.access_identity import (AccessError, DiscoveryError, Identity,
+                                        Verifier, discover_jwks_url, email_from,
+                                        groups_from, public_keys)
 
 TEAM = "raspy-wood-e123.cloudflareaccess.com"
 AUD = "320841be57b2e469adbef09614573240756da5f3a188df87b6fb761d40e65d65"
@@ -282,3 +283,67 @@ def test_a_cloudflare_access_assertion_without_email_verified_is_accepted(key, k
     unaffected by the OIDC-only check."""
     token = _token(key)
     assert email_from(token, keys, VERIFIER, NU) == "mark@westerweel.work"
+
+
+# --- keycloak-groups-to-roles: the ``groups`` claim -------------------------
+
+def _identity(key):
+    """An `Identity` whose keys are preseeded so a test never touches the
+    network, same shape as `keys`/`public_keys` above."""
+    identity = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    identity._keys, identity._at = public_keys(VERIFIER, fetch=lambda url: _jwks(key)), NU
+    return identity
+
+
+def _bearer_request(token: str):
+    return SimpleNamespace(headers={"authorization": f"Bearer {token}"})
+
+
+def test_groups_from_reads_an_already_verified_body():
+    assert groups_from({"groups": ["ict", "beheer"]}) == ("ict", "beheer")
+    assert groups_from({"groups": ["ict", 1, "beheer"]}) == ("ict", "beheer")
+    assert groups_from({"groups": "ict"}) == ()        # not a list -- no groups
+    assert groups_from({}) == ()                        # no claim -- no groups
+
+
+def test_a_valid_assertion_yields_the_caller_and_its_groups(key):
+    token = _token(key, groups=["ict", "beheer"])
+    assert _identity(key).caller_and_groups(_bearer_request(token), NU) == (
+        "mark@westerweel.work", ("ict", "beheer"))
+
+
+def test_a_missing_groups_claim_yields_no_groups_not_a_refusal(key):
+    token = _token(key)
+    label, groups = _identity(key).caller_and_groups(_bearer_request(token), NU)
+    assert label == "mark@westerweel.work" and groups == ()
+
+
+def test_a_forged_group_header_is_never_read(key):
+    """The header is never a source -- groups come only from the verified
+    token, same as the caller label."""
+    token = _token(key)
+    req = SimpleNamespace(headers={"authorization": f"Bearer {token}",
+                                   "x-groups": "beheerder"})
+    label, groups = _identity(key).caller_and_groups(req, NU)
+    assert label == "mark@westerweel.work" and groups == ()
+
+
+def test_an_unsigned_token_yields_no_caller_and_no_groups(key):
+    head = _b64(json.dumps({"alg": "none", "kid": "k1"}).encode())
+    payload = _b64(json.dumps({"email": "x@y.nl", "aud": [AUD],
+                               "groups": ["ict"]}).encode())
+    token = f"{head}.{payload}."
+    assert _identity(key).caller_and_groups(_bearer_request(token), NU) == (None, ())
+
+
+def test_an_expired_assertion_yields_no_caller_and_no_groups(key):
+    token = _token(key, exp=NU - 1, groups=["ict"])
+    assert _identity(key).caller_and_groups(_bearer_request(token), NU) == (None, ())
+
+
+def test_an_assertion_signed_by_an_unknown_key_yields_no_groups_either(key):
+    identity = Identity(VERIFIER, fetch=lambda url: _jwks(_key(), kid="anders"))
+    identity._keys = public_keys(VERIFIER, fetch=lambda url: _jwks(_key(), kid="anders"))
+    identity._at = NU
+    token = _token(key, groups=["ict"])
+    assert identity.caller_and_groups(_bearer_request(token), NU) == (None, ())

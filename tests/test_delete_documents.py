@@ -18,9 +18,12 @@ from wordsworth import grants as grants_mod
 from wordsworth import roles
 from wordsworth.api import create_app
 from wordsworth.audit import current_state, verify_chain
+from wordsworth.auth import CONSOLE_COOKIE
 from wordsworth.deletion import DeletionError, delete_document
+from wordsworth.key_audit_pg import PostgresKeyLifecycleAudit
 from wordsworth.models import (
-    AuditRecord, Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping,
+    AuditRecord, Document, DocumentPseudonym, DocumentText, GrantRecord, GroupRole,
+    PiiMapping, Role,
 )
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import register
@@ -40,6 +43,10 @@ def _grant(recipient, *, document_id=None, role=None):
         document_id=document_id, status=grants_mod.ACTIVE, created_at=_now(),
         revoked_at=None, expires_at=None, actor="t", domain=None, role=role,
     )
+
+
+def _active_role(name=roles.ADMIN):
+    return Role(name=name, allowed_types=[], active=True, created_by="t")
 
 
 class _FlakyIndex(InMemoryIndex):
@@ -311,6 +318,7 @@ def test_a_beheerder_deletes(session_factory):
     with session_factory() as s:
         doc = register(s, KEY)
         s.flush()
+        s.add(_active_role())
         s.add(_grant("beheerder-caller", role=roles.ADMIN))
         s.commit()
         doc_id = doc.id
@@ -370,3 +378,143 @@ def test_delete_unknown_document_is_404(session_factory):
     r = _app(session_factory).delete(f"/documents/{uuid4()}",
                                      headers={"X-API-Key": "k-issuer"})
     assert r.status_code == 404
+
+
+# --- keycloak-groups-to-roles: a role held through a group ------------------
+
+def _with_identity(app, identity):
+    """Swap in a test identity after mounting (test_access_resolver.py's
+    pattern) -- the point is that the SAME middleware accepts an identity."""
+    for m in app.user_middleware:
+        if m.cls.__name__ == "ApiKeyAuthMiddleware":
+            m.kwargs["identity"] = identity
+    return app
+
+
+class _GroupIdent:
+    """The ASGI-level stand-in for a verified OIDC assertion naming ``email``
+    with ``groups`` -- present only when the request carries the marker
+    header. The verifier itself (signature, groups claim) is tested in
+    test_access_identity.py; this exercises the wiring from a verified
+    identity through to the delete gate."""
+
+    def __init__(self, email, groups):
+        self.email, self.groups = email, groups
+
+    def caller_and_groups(self, request, now=None):
+        if request.headers.get("x-assertion"):
+            return self.email, self.groups
+        return None, ()
+
+
+def _app_with_group_role(session_factory, groups, *, email="mens@gemeente.nl"):
+    app = create_app(session_factory=session_factory, store=InMemoryObjectStore(),
+                     search_index=InMemoryIndex(),
+                     api_keys={"k-nobody": "nobody-caller"}, grant_issuer_labels=[])
+    return _with_identity(app, _GroupIdent(email, groups))
+
+
+def test_a_group_held_beheerder_deletes_and_the_record_names_the_person(
+        session_factory):
+    with session_factory() as s:
+        roles.create(s, roles.ADMIN, [], actor="mark",
+                    audit=PostgresKeyLifecycleAudit(s))
+        s.add(GroupRole(group="ict", role=roles.ADMIN, created_by="mark"))
+        doc = register(s, KEY)
+        s.commit()
+        doc_id = doc.id
+
+    r = TestClient(_app_with_group_role(session_factory, ("ict",))).delete(
+        f"/documents/{doc_id}", headers={"x-assertion": "1"})
+
+    assert r.status_code == 200
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.DELETED
+        rec = s.execute(
+            select(AuditRecord).where(AuditRecord.document_id == doc_id,
+                                      AuditRecord.step == "delete")
+        ).scalar_one()
+        assert rec.payload.get("actor") == "mens@gemeente.nl"  # the person, not the group
+
+
+def test_a_group_no_longer_in_the_assertion_is_refused(session_factory):
+    with session_factory() as s:
+        roles.create(s, roles.ADMIN, [], actor="mark",
+                    audit=PostgresKeyLifecycleAudit(s))
+        s.add(GroupRole(group="ict", role=roles.ADMIN, created_by="mark"))
+        doc = register(s, KEY)
+        s.commit()
+        doc_id = doc.id
+
+    r = TestClient(_app_with_group_role(session_factory, ())).delete(
+        f"/documents/{doc_id}", headers={"x-assertion": "1"})
+
+    assert r.status_code == 403
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.REGISTERED
+
+
+def test_a_switched_off_role_via_a_group_opens_nothing_then_restores(
+        session_factory):
+    with session_factory() as s:
+        ka = PostgresKeyLifecycleAudit(s)
+        roles.create(s, roles.ADMIN, [], actor="mark", audit=ka)
+        s.add(GroupRole(group="ict", role=roles.ADMIN, created_by="mark"))
+        doc = register(s, KEY)
+        s.commit()
+        roles.deactivate(s, roles.ADMIN, actor="mark", reason="lek", audit=ka)
+        s.commit()
+        doc_id = doc.id
+
+    app = _app_with_group_role(session_factory, ("ict",))
+    assert TestClient(app).delete(f"/documents/{doc_id}",
+                                  headers={"x-assertion": "1"}).status_code == 403
+    with session_factory() as s:
+        roles.activate(s, roles.ADMIN, actor="mark", reason="terug",
+                       audit=PostgresKeyLifecycleAudit(s))
+        s.commit()
+    r = TestClient(app).delete(f"/documents/{doc_id}", headers={"x-assertion": "1"})
+    assert r.status_code == 200
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.DELETED
+
+
+def test_a_key_caller_carries_no_groups(session_factory):
+    """A valid key wins (a credential sent beats one that rides along) and a
+    key names a label, which has no groups -- even with the group-mapped
+    assertion on the same request."""
+    with session_factory() as s:
+        roles.create(s, roles.ADMIN, [], actor="mark",
+                    audit=PostgresKeyLifecycleAudit(s))
+        s.add(GroupRole(group="ict", role=roles.ADMIN, created_by="mark"))
+        doc = register(s, KEY)
+        s.commit()
+        doc_id = doc.id
+
+    app = _app_with_group_role(session_factory, ("ict",), email="nobody-caller")
+    r = TestClient(app).delete(
+        f"/documents/{doc_id}",
+        headers={"X-API-Key": "k-nobody", "x-assertion": "1"})
+
+    assert r.status_code == 403
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.REGISTERED
+
+
+def test_a_console_cookie_caller_carries_no_groups(session_factory):
+    with session_factory() as s:
+        roles.create(s, roles.ADMIN, [], actor="mark",
+                    audit=PostgresKeyLifecycleAudit(s))
+        s.add(GroupRole(group="ict", role=roles.ADMIN, created_by="mark"))
+        doc = register(s, KEY)
+        s.commit()
+        doc_id = doc.id
+
+    app = _app_with_group_role(session_factory, ("ict",), email="nobody-caller")
+    client = TestClient(app)
+    client.cookies.set(CONSOLE_COOKIE, "k-nobody")
+    r = client.delete(f"/documents/{doc_id}", headers={"x-assertion": "1"})
+
+    assert r.status_code == 403
+    with session_factory() as s:
+        assert current_state(s, doc_id) == State.REGISTERED

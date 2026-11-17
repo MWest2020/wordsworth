@@ -29,7 +29,8 @@ from sqlalchemy.orm import Session
 
 from .hashing import GENESIS_HASH, compute_hash
 from .key_audit import (DOSSIER_RENAMED_ACTION, GRANT_ISSUED_ACTION,
-                        GRANT_REVOKED_ACTION, ROLE_ACTION, ROTATION_ACTION,
+                        GRANT_REVOKED_ACTION, GROUP_ROLE_MAPPED_ACTION,
+                        GROUP_ROLE_UNMAPPED_ACTION, ROLE_ACTION, ROTATION_ACTION,
                         STREAM)
 from .models import KeyLifecycleEvent
 
@@ -119,6 +120,12 @@ class PostgresKeyLifecycleAudit:
                      reason=None) -> None:
         self._event(ROLE_ACTION, actor, role=role, change=change,
                     allowed_types=list(allowed_types), active=active, reason=reason)
+
+    def group_role_mapped(self, *, group, role, actor) -> None:
+        self._event(GROUP_ROLE_MAPPED_ACTION, actor, group=group, role=role)
+
+    def group_role_unmapped(self, *, group, role, actor) -> None:
+        self._event(GROUP_ROLE_UNMAPPED_ACTION, actor, group=group, role=role)
 
     def dossier_renamed(self, *, dossier_id, old, new, documents, actor) -> None:
         self._event(DOSSIER_RENAMED_ACTION, actor, dossier_id=dossier_id,

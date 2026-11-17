@@ -57,6 +57,10 @@ _API_OTHER = [
     Row("PUT", "/roles/{name}/types", "grant-admin", "same", declared=False),
     Row("POST", "/roles/{name}/deactivate", "grant-admin", "same", declared=False),
     Row("POST", "/roles/{name}/activate", "grant-admin", "same", declared=False),
+    Row("GET", "/group-roles", "grant-admin", "a group-held role, same as a grant",
+        declared=False),
+    Row("PUT", "/group-roles/{group}/{role}", "grant-admin", "same", declared=False),
+    Row("DELETE", "/group-roles/{group}/{role}", "grant-admin", "same", declared=False),
     Row("POST", "/grants", "grant-admin", "mints a grant", declared=False),
     Row("POST", "/grants/{grant_id}/revoke", "grant-admin", "revokes a grant",
         declared=False),
@@ -101,6 +105,8 @@ _CONSOLE_OTHER = [
     Row("GET", "/console/roles", "grant-admin", "beheren", declared=False),
     Row("POST", "/console/roles", "grant-admin", "same", declared=False),
     Row("POST", "/console/roles/switch", "grant-admin", "same", declared=False),
+    Row("POST", "/console/roles/groups", "grant-admin", "same", declared=False),
+    Row("POST", "/console/roles/groups/remove", "grant-admin", "same", declared=False),
 ]
 _CONSOLE_OPEN = [
     Row("GET", "/console/login", "open", "nobody can bring a key here"),

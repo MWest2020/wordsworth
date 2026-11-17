@@ -176,6 +176,9 @@ def test_a_presented_key_wins_over_an_injected_assertion(session_factory, key):
             except Exception:
                 return None
 
+        def caller_and_groups(self, request, now=None):
+            return self.caller(request, now), ()
+
     index = InMemoryIndex()
     index.index("a", "vergunning", "ka")
     app = create_app(session_factory=session_factory, api_keys={"k": "cli"},
@@ -212,6 +215,9 @@ def test_the_key_form_stays_reachable_from_behind_a_provider(session_factory, ke
         def caller(self, request, now=None):
             return "mark@westerweel.work" if request.headers.get(
                 "cf-access-jwt-assertion") else None
+
+        def caller_and_groups(self, request, now=None):
+            return self.caller(request, now), ()
 
     app = create_app(session_factory=session_factory, api_keys={"k": "console"})
     for m in app.user_middleware:

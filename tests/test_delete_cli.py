@@ -18,7 +18,9 @@ from wordsworth import dossiers, grants as grants_mod
 from wordsworth import roles
 from wordsworth.audit import current_state
 from wordsworth.delete_cli import main
-from wordsworth.models import AuditRecord, Dossier, DocumentText, GrantRecord, Topic
+from wordsworth.models import (
+    AuditRecord, Dossier, DocumentText, GrantRecord, Role, Topic,
+)
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
@@ -28,6 +30,10 @@ KEY = "documents/" + "ce" * 32
 
 
 def _make_beheerder(session, label):
+    if session.execute(
+            select(Role).where(Role.name == roles.ADMIN)).scalar_one_or_none() is None:
+        session.add(Role(name=roles.ADMIN, allowed_types=[], active=True,
+                         created_by="t"))
     session.add(GrantRecord(
         grant_id=uuid4().hex, recipient=label, allowed_types=[], document_id=None,
         status=grants_mod.ACTIVE, created_at=datetime.now(timezone.utc),

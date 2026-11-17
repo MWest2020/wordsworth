@@ -19,7 +19,9 @@ from wordsworth.delete_cli import main
 from wordsworth.deletion import delete_document
 from wordsworth.dossier_deletion import delete_dossier
 from wordsworth.keys import InMemoryKeyProvider
-from wordsworth.models import AuditRecord, DocumentSummary, DocumentText, GrantRecord
+from wordsworth.models import (
+    AuditRecord, DocumentSummary, DocumentText, GrantRecord, Role,
+)
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import register
 from wordsworth.search_index import InMemoryIndex
@@ -91,6 +93,7 @@ def test_dry_run_counts_the_summary_and_removes_nothing(session_factory, capsys)
     store, index = InMemoryObjectStore(), InMemoryIndex()
     with session_factory() as s:
         doc_id = _summarised(s, KEY).id
+        s.add(Role(name=roles.ADMIN, allowed_types=[], active=True, created_by="t"))
         s.add(GrantRecord(
             grant_id=uuid4().hex, recipient="operator", allowed_types=[],
             document_id=None, status=grants_mod.ACTIVE,

@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-09-19
+last_reviewed: 2026-11-17
 ---
 
 # Rollen: wie ziet welke PII
@@ -94,6 +94,43 @@ Wat er eerder onthuld is, verandert hierdoor niet. Dat is gebeurd en staat in
 het spoor. **"Vanaf nu niet meer" is iets anders dan "is nooit gezien"** — de
 console zegt dat er met zoveel woorden bij.
 
+## Een rol houden via een groep
+
+Rechten die bij een rol lopen, mogen ook volgen uit groepslidmaatschap in de
+identiteitsprovider (Keycloak), zonder dat daar een grant voor nodig is
+(keycloak-groups-to-roles). De koppeling is **data** — een `group` → `role`
+regel — en staat achter dezelfde poort als `/roles`:
+
+```sh
+curl -XPUT $API/group-roles/ict/beheerder -H 'content-type: application/json'
+curl $API/group-roles
+curl -XDELETE $API/group-roles/ict/beheerder
+```
+
+`PUT` op een onbekende rol geeft 404, net als `PUT /roles/{name}/types`. Een
+al gekoppeld paar koppelen, of een afwezig paar ontkoppelen, verandert niets en
+schrijft geen event — hetzelfde idempotente gedrag als elders. Groepen komen
+**alleen** uit de geverifieerde identiteitsassertie (zie
+[access-identity](access-identity.md#keycloak-groepen-naar-rollen)); een
+groep in een header of een niet-geverifieerd token levert niets op.
+
+Een rol via een groep telt alleen waar het systeem al besluit op basis van
+"houdt deze caller deze rol" — vandaag alleen de verwijdergate
+([deleting documents](deleting-documents.md#wie-mag)). Niet bij `/roles`, de
+leeslijst of grant-admin: die blijven beslissen op basis van hun eigen
+labellijst.
+
+**Een groep opent nooit een onthulling.** Een onthulling blijft uitsluitend
+geautoriseerd door een grant die de aanroeper zelf als ontvanger noemt
+(`grants.authorize`, ongewijzigd). Wie zijn enige `beheerder` via een groep
+heeft en inlogt met een API-sleutel of het console-cookie, draagt geen
+groepen — "geen groepen; gebruik een persoonlijke grant of een label" (zie
+[access-identity](access-identity.md)).
+
+Een uitgezette rol opent niets, via een grant **of** via een groep: beide
+paden gaan door dezelfde `caller_holds_role`-controle, die een onbekende of
+uitgezette rol eerst afvangt.
+
 ## De beheerdersrol
 
 `wordsworth-init` maakt hem aan bij de installatie, met alle types die het
@@ -114,10 +151,13 @@ minst bekeken.
 
 ## Wat hier niet woont
 
-**Wie iemand is.** Dat komt uit de aanmelding: nu Cloudflare Access (het
-geverifieerde e-mailadres is het callerlabel), later mogelijk Keycloak. Deze
-laag kent alleen namen die daarvandaan komen, zodat de dag dat rollidmaatschap
-ergens anders vandaan komt, alléén dat punt verandert en niet de beslissing.
+**Wie iemand is.** Dat komt uit de aanmelding: Cloudflare Access of Keycloak
+(het geverifieerde e-mailadres is het callerlabel). Groepslidmaatschap komt
+uit dezelfde aanmelding — de `groups`-claim van Keycloak's group-membership-
+mapper — en wordt hier alleen opgezocht in de `group_roles`-tabel, nooit
+bepaald. Deze laag kent alleen namen die daarvandaan komen, zodat de dag dat
+rollidmaatschap ergens anders vandaan komt, alléén dat punt verandert en niet
+de beslissing.
 
 Zie ook [grants](grants.md), [api-auth](api-auth.md) en
 [deleting documents](deleting-documents.md) — die laatste leunt op precies
