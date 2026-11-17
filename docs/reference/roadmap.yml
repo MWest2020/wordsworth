@@ -4,6 +4,8 @@
 # only with evidence (a PR, issue or doc); everything else is "open".
 # Schema: project, goal, current (a phase id), phases [id, name, summary], and
 # done_means for the current phase [item, status done|open, evidence].
+# Optional `nl:` (goal, phase, next): the Dutch text for westerweel.work/nu/,
+# written in the first person, without issue numbers, names or client names.
 project: wordsworth
 goal: "A sovereign pipeline that turns large volumes of Dutch government documents into a searchable, privacy-safe corpus with layered, audited de-anonymisation."
 current: pilot
@@ -40,3 +42,11 @@ done_means:
   - {item: "Only corpus readers reach the corpus over the API and the console: every route has a recorded check, and a logged-in caller on no read list is refused (the deploy gate for sharing): merged (#485) and deployed with an empty list (homelab#63, behaviour unchanged); the rollout (tasks 6.1-6.4) is next", status: open, evidence: "https://github.com/MWest2020/wordsworth/pull/485"}
   - {item: "Documents survive a node (storage on two nodes, proven)", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/193#issuecomment-6714219091"}
   - {item: "The tailnet ingress runs on two nodes and survives losing one proxy", status: done, evidence: "https://github.com/MWest2020/wordsworth/issues/192"}
+nl:
+  goal: "Een soevereine pijplijn die grote hoeveelheden Nederlandse overheidsdocumenten omzet in een doorzoekbaar, privacyveilig corpus, met gelaagde de-anonimisering waarvan elke inzage wordt vastgelegd."
+  phase: "Pilot bij een gemeente"
+  next:
+    - "Geen namen meer die niet vervangen zijn, ook niet met tussenvoegsels als ter of van der"
+    - "Een gelakte PDF voor elk omkeerbaar document in het dossier"
+    - "Leesbare onderwerpen, en zoeken dat de passage toont waar het om gaat"
+    - "Delen vanuit de console met gelaagde anonimisering"
