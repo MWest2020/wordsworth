@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-14
+last_reviewed: 2026-11-17
 ---
 
 # Runbook: reveal grants
@@ -173,6 +173,48 @@ changes — the documented tailnet-internal mode.
 > the active grants before this goes live:
 > `curl $API/grants/<id>` and compare `recipient` with the label behind the key
 > that uses it.
+
+## A refusal says nothing
+
+Both reveal routes decide the grant before they read anything about the
+document (`reveal_gate.decide`). A caller the grant does not cover gets one
+answer, whatever the reason:
+
+| caller the grant does not cover | answer |
+|---|---|
+| unknown grant, revoked, expired, wrong document or domain, wrong recipient | 403 `{"detail": "grant not applicable"}` |
+| unknown document | same 403 — a grant covers no document that does not exist |
+| superseded document | same 403 — the survivor's id is not named |
+| deleted document | same 403 — not 410 |
+
+| caller the grant covers | answer |
+|---|---|
+| superseded document | 409 naming the surviving document |
+| deleted document | 410 |
+| not yet de-identified | 409 |
+
+Why: #487, found by the security review of #485. Before this, `reveal` and
+`reveal.pdf` answered 404 for an unknown grant and for an unknown document,
+409 naming the survivor of a superseded one, and `reveal.pdf` 410 for a
+deleted one — for *any* grant id, including one that does not exist. Since
+#485 a caller who is no reader is refused on every corpus-read route before
+any lookup; the two reveal routes were the last way such a caller could learn
+whether a document exists, is deleted, or which copy survives it. That
+matters now that a grant id is something handed to a non-reader at all
+(`share-recipient-read`, `console-share`): a shared `grant_id` is close to a
+bearer token, and it should not double as a way to probe the corpus.
+
+An operator diagnosing *why* a reveal was refused does not read the reveal
+response or its logs — both say the same thing on purpose. Use a route with
+its own gate instead: `GET /grants/{id}` (reader or issuer) for the grant's
+status, recipient, scope and domain; `GET /documents/{id}/state` (reader) for
+whether the document exists, is superseded, or is deleted.
+
+> **Deploy-stap.** A client that branches on 404 `unknown grant` or 404
+> `unknown document` from a reveal route now gets 403 `grant not applicable`
+> instead. And: the former recipient of a grant scoped to a deleted document
+> now gets 403, not 410 — the deletion removes exactly that grant
+> (`PostgresGrantStore`), so there is nothing left that covers him.
 
 ## A token only resolves for its own document
 

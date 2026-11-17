@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Security
+
+- **`reveal` and `reveal.pdf` told an uncovered caller whether a document
+  exists, is deleted, or which copy survives it** (#487, found by the
+  security review of #485). Both routes now decide the grant
+  (`grants.authorize()`, recipient, revocation, expiry, domain and scope)
+  before reading anything about the document; a caller the grant does not
+  cover gets one answer whatever the cause — 403 `{"detail": "grant not
+  applicable"}` — for an unknown grant, a revoked or expired one, one scoped
+  elsewhere, an unknown document, a superseded one and a deleted one alike.
+  Only a caller the grant covers still hears 410 (deleted) or 409 (superseded,
+  naming the survivor). A refusal writes no audit record and logs nothing
+  about its cause. This closes the last existence oracle on a corpus-read
+  route and clears the way for `share-recipient-read` (#439) and
+  `console-share` (#440), which hand a grant id to callers who are not
+  readers.
+
 ### Fixed
 
 - **The labels on a redacted PDF's boxes could not be seen** (#448). The
