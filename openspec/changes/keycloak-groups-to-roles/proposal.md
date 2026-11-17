@@ -32,6 +32,10 @@ is a new amendment, not a builder's call.
 - A group-held role counts only where the system already decides by holding a
   role (`caller_holds_role`). It NEVER authorises a reveal: `authorize()` is
   unchanged, and a reveal still needs a grant naming the person as recipient.
+  Mark (2026-11-17): keep the possibility that a group role authorises a
+  reveal when it is explicitly configured so, but only once there are real
+  users. That is a later amendment with its own opt-in setting; this change
+  builds "never" and adds no such setting.
 - A caller authenticated by API key or console cookie carries no groups (the
   header-is-never-a-source rule: only a verified assertion is a source). This
   is documented: "no groups; use a personal grant or label".
