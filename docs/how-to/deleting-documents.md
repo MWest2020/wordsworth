@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-14
+last_reviewed: 2026-11-17
 ---
 
 # Runbook: deleting a document
@@ -50,6 +50,29 @@ it.
 One `deleted` audit record is written, holding the document id, the actor and
 how many of each kind were removed (`keys_destroyed`, `original_scan` among
 them) — never a filename, a token, a value or key material.
+
+## What each API route answers for a deleted document
+
+| Route | Answer |
+|---|---|
+| `GET /documents/{id}/anonymized` | 410 `document deleted` |
+| `GET /documents/{id}/redacted.pdf` | 410 `document deleted` |
+| `POST /documents/{id}/feedback` | 410 `document deleted`, nothing appended |
+| `GET /documents/{id}/state` | 200, state `deleted` |
+| `GET /documents/{id}` | 200, the trail with its `deleted` record |
+| `DELETE /documents/{id}` | 200, finishes leftover work (above) |
+| `POST /documents/{id}/reveal`, `/reveal.pdf` | governed by `reveal-api` (`reveal-authorize-first`) |
+| `GET /console/documents/{id}` | the page opens (`console`) |
+
+A route that returns or accepts the document's **content** answers 410: the
+content is gone for good. A route that reports the document's **record**
+keeps answering, because the record is what a deletion keeps: the row and the
+earlier audit records stay, so `GET /documents/{id}` and
+`GET /documents/{id}/state` are how a caller with corpus read asks "since
+when, by whom" after a deletion — the trail stays readable, never the
+content. Every 410 is the same body, `{"detail": "document deleted"}`, and
+comes after the route's own caller gate: a caller the gate refuses gets that
+gate's 403, deleted or not; an unknown id still answers 404.
 
 **Deleting releases the object key.** The row's `object_key` becomes the
 placeholder `deleted/<document-id>`, and the former key is recorded in the
@@ -193,11 +216,16 @@ The renders are listed before anything irreversible happens: if listing
 fails (say the S3 identity lacks `ListObjectsV2`), the deletion fails with
 nothing removed and the document in its previous state.
 
-For a deleted document, `GET /documents/{id}/redacted.pdf` and
-`POST /documents/{id}/reveal.pdf` answer **410 Gone**, checked before the
-cache is looked at: a render left behind is never served. 410 rather than
-404 because the id is known and its absence is deliberate and permanent;
-404 stays "unknown id", 409 stays "not yet / stale, `reanonymize` fixes it".
+For a deleted document, `GET /documents/{id}/redacted.pdf` answers **410
+Gone**, checked before the cache is looked at: a render left behind is never
+served. `POST /documents/{id}/reveal.pdf` answers 410 too, governed by the
+`reveal-api` capability (see the table above). 410 rather than 404 because
+the id is known and its absence is deliberate and permanent; 404 stays
+"unknown id", 409 stays "not yet / stale, `reanonymize` fixes it".
+`GET /documents/{id}/anonymized` and `POST /documents/{id}/feedback` answer
+410 the same way (the table above): "not yet de-identified" told a client to
+wait for something that would never come, and feedback on a deleted document
+would otherwise grow a chain that is already terminal.
 
 **Leftovers.** Documents deleted before #451 kept both, and a request that was
 rendering while the deletion committed can still write one object afterwards.

@@ -47,6 +47,7 @@ from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
 from .ingest_lock import IngestRaceError
+from . import document_gone
 from . import read_gate
 from .pipeline import (
     current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
@@ -645,15 +646,14 @@ def create_app(
                                 view: str = "tokens") -> AnonymizedResponse:
             """The stored, de-identified text — the same pseudonymised text that
             backs the index and the export ZIP, never clear PII. 404 if the
-            document is unknown; 409 if it exists but is not yet de-identified.
-            Gated by the opt-in corpus-read scope (403 if the caller lacks it).
-            ``view=legible`` renders tokens as numbered Dutch placeholders
-            (``[PERSOON 1]``) with a legend; the stored text is unchanged."""
+            document is unknown; 410 if it is deleted; 409 if it exists but is
+            not yet de-identified. Gated by the opt-in corpus-read scope (403
+            if the caller lacks it). ``view=legible`` renders tokens as
+            numbered Dutch placeholders (``[PERSOON 1]``) with a legend; the
+            stored text is unchanged."""
             _check_view(view)
             with session_factory() as session:
-                if current_state(session, document_id) is None:
-                    raise HTTPException(status_code=404,
-                                        detail="unknown document")
+                document_gone.check(session, document_id)
                 anonymized_text = get_anonymized_text(session, document_id)
             if anonymized_text is None:
                 raise HTTPException(status_code=409,
@@ -691,13 +691,7 @@ def create_app(
                 from .pdf_render import DegenerateBoxError, RENDER_VERSION, render as render_pdf
 
                 with session_factory() as session:
-                    state = current_state(session, document_id)
-                    if state is None:
-                        raise HTTPException(status_code=404,
-                                            detail="unknown document")
-                    if state == State.DELETED:
-                        raise HTTPException(status_code=410,
-                                            detail="document deleted")
+                    document_gone.check(session, document_id)
                     copy = session.get(Document, document_id)
                     if copy.superseded_by is not None:
                         raise HTTPException(
@@ -769,13 +763,17 @@ def create_app(
             """Append a ``detection_feedback`` access event (from == to state) to
             the document's audit chain: kind, type, token, caller. No clear value
             can be carried (no free text). Lists are NOT modified — updating
-            allow/deny lists is a reviewed git change."""
+            allow/deny lists is a reviewed git change. 410 for a deleted
+            document, nothing appended: the chain lock is taken FIRST, before
+            the state is read, so a deletion racing this request either
+            commits first (this request then sees `deleted` and writes
+            nothing) or waits for this request's commit (deleted-document-
+            answers-410, design.md decision 5)."""
             from . import audit
 
             with session_factory() as session:
-                state = current_state(session, document_id)
-                if state is None:
-                    raise HTTPException(status_code=404, detail="unknown document")
+                audit.lock_chain(session)
+                state = document_gone.check(session, document_id)
                 payload = {"kind": body.kind, "type": body.type.upper(),
                            "token": body.token}
                 caller = getattr(request.state, "caller", None)

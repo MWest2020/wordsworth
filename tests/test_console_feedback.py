@@ -11,6 +11,11 @@ in dragen.
 """
 from __future__ import annotations
 
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from wordsworth.api import create_app
@@ -111,6 +116,19 @@ def test_a_value_is_refused_where_a_token_belongs(session_factory):
         f"/documents/{doc_id}/feedback", headers=KOP,
         json={"kind": "fp", "type": "PERSON", "token": "Jan Jansen"})
     assert r.status_code == 422
+
+
+def test_the_javascript_shows_a_refusal_including_a_410(session_factory):
+    """console.js does not treat a 410 as retryable or as success
+    (deleted-document-answers-410, task 4.1): tested as the real file, in
+    node, like console_pdf.js."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available")
+    suite = Path(__file__).with_name("test_console_feedback.js")
+    r = subprocess.run([node, str(suite)], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "410 getoond" in r.stdout
 
 
 def test_a_miss_needs_no_token(session_factory):
