@@ -4,6 +4,7 @@ tests."""
 from __future__ import annotations
 
 import io
+from uuid import uuid4
 
 import pypdf
 from fastapi.testclient import TestClient
@@ -101,3 +102,50 @@ def test_revoked_grant_forbidden(session_factory, mem_store, mem_index, fake_emb
     r = _client(session_factory, mem_store, kp, gs).post(
         f"/documents/{doc_id}/reveal.pdf", json={"grant_id": grant.grant_id})
     assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
+
+
+def test_unknown_grant_is_the_uniform_refusal(session_factory, mem_store, mem_index,
+                                              fake_embedder, born_digital_pii_pdf):
+    """reveal-authorize-first (#487): an unknown grant is not a 404."""
+    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+                          born_digital_pii_pdf)
+    client = _client(session_factory, mem_store, kp, InMemoryGrantStore())
+    for target in (doc_id, uuid4()):
+        r = client.post(f"/documents/{target}/reveal.pdf", json={"grant_id": "nope"})
+        assert r.status_code == 403
+        assert r.json() == {"detail": "grant not applicable"}
+
+
+def test_unscoped_grant_does_not_cover_a_missing_document(
+        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+    """reveal-authorize-first (#487): a grant that would cover any document
+    still does not cover one that does not exist -- 403, not 404."""
+    kp, _ = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+                     born_digital_pii_pdf)
+    gs = InMemoryGrantStore()
+    grant = gs.issue("agent-x", ["EMAIL"], actor="mark")  # unscoped
+    r = TestClient(create_app(session_factory=session_factory, store=mem_store,
+                              key_provider=kp, grant_store=gs,
+                              allow_global_grants=True)).post(
+        f"/documents/{uuid4()}/reveal.pdf", json={"grant_id": grant.grant_id})
+    assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
+
+
+def test_caller_who_is_not_the_recipient_is_refused(
+        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+                          born_digital_pii_pdf)
+    gs = InMemoryGrantStore()
+    grant = gs.issue("ontvanger", ["EMAIL"], actor="mark", document_id=doc_id)
+    client = TestClient(create_app(
+        session_factory=session_factory, store=mem_store, key_provider=kp,
+        grant_store=gs,
+        api_keys={"kontvanger": "ontvanger", "kderde": "derde"}))
+    r = client.post(f"/documents/{doc_id}/reveal.pdf",
+                    json={"grant_id": grant.grant_id},
+                    headers={"X-API-Key": "kderde"})
+    assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
+    assert PII_EMAIL not in r.text

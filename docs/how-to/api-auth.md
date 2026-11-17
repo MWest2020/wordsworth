@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-15
+last_reviewed: 2026-11-17
 ---
 
 # Runbook — optional API-key authentication
@@ -44,7 +44,10 @@ of them: what a caller may do depends on whether its label is on
   describe the routes, not the corpus;
 - `/console/logout`;
 - `POST /documents/{id}/reveal` and `/reveal.pdf`, which are then decided by the
-  grant presented (recipient, types, scope, expiry), not by the lists.
+  grant presented (recipient, types, scope, expiry), not by the lists — the
+  grant is decided before anything about the document is read, and every
+  refusal to a caller it does not cover is the same 403 (see
+  [grants: a refusal says nothing](grants.md#a-refusal-says-nothing)).
 
 **The read list** (corpus read) guards every route that returns corpus content
 or corpus metadata, or changes what a reader sees:
