@@ -386,3 +386,59 @@ request for that document.
 
 - **WHEN** an operator requests `/console/documents/{id}` for a deleted document
 - **THEN** the page answers as it did before this change
+
+### Requirement: Declared combinations stand behind corpus read
+
+The console page that lists the declared combinations and the action that
+records one SHALL require corpus read, as every other console page that shows
+the corpus does. The page shows in how many documents a combination occurs,
+and a recorded combination appears on every document page. A caller who is not
+on the corpus-read list SHALL get the 403 page, and his submission SHALL store
+nothing and change no existing declaration.
+
+#### Scenario: A caller on no list does not see the combinations
+
+- **WHEN** an authenticated caller who is not on the corpus-read list opens
+  `/console/combinations`
+- **THEN** the answer is 403
+
+#### Scenario: A caller on no list cannot declare or overwrite one
+
+- **WHEN** that caller submits a combination, new or with the types of an
+  existing declaration
+- **THEN** the answer is 403, nothing is stored, and the existing declaration
+  keeps its reason and the name of who declared it
+
+#### Scenario: A reader declares as before
+
+- **WHEN** a caller on the corpus-read list records a combination with a reason
+- **THEN** it is stored and the page shows its reach
+
+### Requirement: The console starts on a dossier
+
+The console home SHALL let the reader choose a dossier, showing for each its
+number of live documents and topics, and SHALL open that dossier directly when
+the installation has exactly one. The dossier page SHALL offer a question box
+that searches that dossier, the dossier's topics with a link that searches within
+each, and its live documents. Deleted and superseded documents SHALL be hidden as
+the hidden-documents rule of the console requires.
+
+#### Scenario: One dossier opens directly
+
+- **WHEN** an operator opens `/console` on an installation with one dossier
+- **THEN** they land on that dossier's page
+
+#### Scenario: The dossier page offers the three ways in
+
+- **WHEN** an operator opens a dossier page
+- **THEN** it shows a question box scoped to the dossier, its topics with search-within links, and only its live documents
+
+#### Scenario: An unknown dossier is named
+
+- **WHEN** an operator opens `/console/dossier?dossier=<name>` for a name that does not exist
+- **THEN** the answer is 404 and lists the dossiers that do
+
+#### Scenario: A dossier name is free text
+
+- **WHEN** an operator opens the page of a dossier whose name contains a slash or a space
+- **THEN** that dossier's page is shown, because the dossier is addressed by the `dossier` query parameter
