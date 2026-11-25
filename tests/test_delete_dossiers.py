@@ -19,6 +19,7 @@ from sqlalchemy import select
 
 from wordsworth import dossiers, grants as grants_mod, roles
 from wordsworth.api import create_app
+from wordsworth.bootstrap import ensure_admin_role
 from wordsworth.audit import current_state, verify_chain
 from wordsworth.dossier_deletion import DossierDeletionError, delete_dossier
 from wordsworth.models import AuditRecord, Dossier, DossierDocument, GrantRecord, Topic
@@ -243,6 +244,7 @@ def _app(session_factory, **kw):
 
 def test_a_beheerder_deletes_a_dossier(session_factory):
     with session_factory() as s:
+        ensure_admin_role(s)
         dossier = dossiers.ensure(s, "zaak")
         s.add(_grant("beheerder-caller", role=roles.ADMIN))
         s.commit()

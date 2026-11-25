@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from .key_audit import KeyLifecycleAudit
 from .keys import DEFAULT_DOMAIN
-from .models import GrantRecord
+from .models import GrantRecord, GroupRole, Role
 
 ACTIVE = "active"
 REVOKED = "revoked"
@@ -163,33 +163,56 @@ def permitted_types(grant: Grant, resolve_role=None) -> set[str]:
     return {t.upper() for t in grant.allowed_types}
 
 
-def caller_holds_role(session: Session, caller: str | None, role: str) -> bool:
-    """Does ``caller`` currently hold ``role``?
+def caller_holds_role(session: Session, caller: str | None, role: str,
+                      groups: Iterable[str] = ()) -> bool:
+    """Does ``caller`` currently hold ``role`` — by a grant, or by one of
+    ``groups`` (keycloak-groups-to-roles)?
 
-    There is no identity-to-role table in this system (`roles.py`'s docstring:
-    "wie iemand is" lives in the sign-on, not here). The one place a caller
-    identity is already tied to a role name is a grant: ``recipient`` names who,
-    ``role`` names which. So "holds the role" means "is the recipient of an
-    active, unexpired grant naming it" — the same fact `authorize()` already
-    reads when a role-granted reveal is resolved, read here for a yes/no instead
-    of a type set. A revoked or expired grant answers no, like everywhere else.
+    The role is checked first, for both sources: an unknown or switched-off
+    role is held by nobody, regardless of how good the grant or the group
+    membership looks. Before this check existed, a grant naming a switched-off
+    ``beheerder`` still opened the delete gate — a bug, since `authorize()`
+    already resolves a role-granted reveal through `roles.resolve`, which has
+    always checked `Role.active`. This function now does the same.
+
+    There is no identity-to-role table beyond that (`roles.py`'s docstring:
+    "wie iemand is" lives in the sign-on, not here). One place ties a caller to
+    a role by name — a grant: ``recipient`` names who, ``role`` names which, the
+    same fact `authorize()` reads when a role-granted reveal is resolved. A
+    revoked or expired grant answers no, like everywhere else.
+
+    The other place is a `group_roles` mapping: ``groups`` names the verified
+    groups on THIS caller's assertion (empty for an API key or console cookie —
+    see `access_identity.py` and `auth.py`), and a row naming one of them and
+    ``role`` answers yes too.
     """
-    if not caller:
+    role_row = session.execute(
+        select(Role).where(Role.name == role)).scalars().first()
+    if role_row is None or not role_row.active:
         return False
     now = _now()
-    rows = session.execute(
-        select(GrantRecord).where(GrantRecord.recipient == caller,
-                                  GrantRecord.role == role,
-                                  GrantRecord.status == ACTIVE)
-    ).scalars()
-    for row in rows:
-        if row.expires_at is not None:
-            expires = row.expires_at
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            if now >= expires:
-                continue
-        return True
+    if caller:
+        rows = session.execute(
+            select(GrantRecord).where(GrantRecord.recipient == caller,
+                                      GrantRecord.role == role,
+                                      GrantRecord.status == ACTIVE)
+        ).scalars()
+        for row in rows:
+            if row.expires_at is not None:
+                expires = row.expires_at
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                if now >= expires:
+                    continue
+            return True
+    groups = tuple(groups)
+    if groups:
+        hit = session.execute(
+            select(GroupRole).where(GroupRole.role == role,
+                                    GroupRole.group.in_(groups))
+        ).scalars().first()
+        if hit is not None:
+            return True
     return False
 
 

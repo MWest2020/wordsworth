@@ -25,6 +25,8 @@ MAIN = {
     ("PUT", "/roles/{name}/types"): 403, ("POST", "/roles/{name}/deactivate"): 403,
     ("POST", "/roles/{name}/activate"): 403, ("POST", "/grants"): 403,
     ("POST", "/grants/{grant_id}/revoke"): 403,
+    ("GET", "/group-roles"): 403, ("PUT", "/group-roles/{group}/{role}"): 403,
+    ("DELETE", "/group-roles/{group}/{role}"): 403,
     ("DELETE", "/documents/{document_id}"): 403,
     ("DELETE", "/dossiers/{dossier_id}"): 403,
     ("POST", "/documents/{document_id}/reveal"): 422,      # no grant in the body
@@ -33,6 +35,7 @@ MAIN = {
     ("GET", "/console"): 303, ("POST", "/console/combinations"): 303,
     ("GET", "/console/roles"): 403, ("POST", "/console/roles"): 403,
     ("POST", "/console/roles/switch"): 403,
+    ("POST", "/console/group-roles"): 403, ("POST", "/console/group-roles/delete"): 403,
     ("POST", "/console/login"): 422, ("GET", "/console/static"): 307,
     ("GET", "/console/logout"): 303,
 }

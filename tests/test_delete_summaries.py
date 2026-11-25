@@ -15,6 +15,7 @@ from sqlalchemy import select
 from wordsworth import dossiers, grants as grants_mod, roles, summaries
 from wordsworth.api import create_app
 from wordsworth.audit import current_state, verify_chain
+from wordsworth.bootstrap import ensure_admin_role
 from wordsworth.delete_cli import main
 from wordsworth.deletion import delete_document
 from wordsworth.dossier_deletion import delete_dossier
@@ -90,6 +91,7 @@ def test_delete_after_a_summary_removes_it_and_counts_it(
 def test_dry_run_counts_the_summary_and_removes_nothing(session_factory, capsys):
     store, index = InMemoryObjectStore(), InMemoryIndex()
     with session_factory() as s:
+        ensure_admin_role(s)
         doc_id = _summarised(s, KEY).id
         s.add(GrantRecord(
             grant_id=uuid4().hex, recipient="operator", allowed_types=[],

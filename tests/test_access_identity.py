@@ -13,9 +13,9 @@ import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from wordsworth.access_identity import (AccessError, DiscoveryError, Verifier,
-                                        discover_jwks_url, email_from,
-                                        public_keys)
+from wordsworth.access_identity import (AccessError, DiscoveryError, Identity,
+                                        Verifier, discover_jwks_url, email_from,
+                                        groups_from, public_keys)
 
 TEAM = "raspy-wood-e123.cloudflareaccess.com"
 AUD = "320841be57b2e469adbef09614573240756da5f3a188df87b6fb761d40e65d65"
@@ -282,3 +282,74 @@ def test_a_cloudflare_access_assertion_without_email_verified_is_accepted(key, k
     unaffected by the OIDC-only check."""
     token = _token(key)
     assert email_from(token, keys, VERIFIER, NU) == "mark@westerweel.work"
+
+
+# --- groups (keycloak-groups-to-roles) --------------------------------------
+
+class _Req:
+    """Enough of a request for `Identity.resolve`: just `.headers.get(...)`."""
+
+    def __init__(self, headers: dict):
+        self.headers = headers
+
+
+def test_groups_from_a_valid_list_claim():
+    assert groups_from({"groups": ["hr-afdeling", "ict"]}) == ("hr-afdeling", "ict")
+
+
+def test_groups_from_a_missing_claim_is_empty():
+    assert groups_from({}) == ()
+
+
+@pytest.mark.parametrize("groups", ["not-a-list", [1, 2], {"a": 1}, None, 3])
+def test_groups_from_anything_but_a_list_of_strings_is_empty(groups):
+    """A malformed claim yields no groups -- never a refusal of the caller."""
+    assert groups_from({"groups": groups}) == ()
+
+
+def _identity(key, keys) -> Identity:
+    identity = Identity(VERIFIER, fetch=lambda url: _jwks(key))
+    # Pre-seed the key cache so `resolve` touches no network.
+    identity._keys, identity._at = keys, NU
+    return identity
+
+
+def test_identity_resolve_reads_the_groups_claim_off_the_verified_assertion(key, keys):
+    token = _token(key, groups=["hr-afdeling", "ict"])
+    email, groups = _identity(key, keys).resolve(
+        _Req({"authorization": f"Bearer {token}"}), NU)
+    assert email == "mark@westerweel.work"
+    assert groups == ("hr-afdeling", "ict")
+
+
+def test_a_groups_header_is_never_read(key, keys):
+    """The header is never a source. A token without a groups claim yields no
+    groups even when a `groups` header rides along on the same request."""
+    token = _token(key)
+    email, groups = _identity(key, keys).resolve(
+        _Req({"authorization": f"Bearer {token}", "groups": "beheerder"}), NU)
+    assert email == "mark@westerweel.work"
+    assert groups == ()
+
+
+def test_an_unsigned_token_yields_no_caller_and_no_groups(keys):
+    head = _b64(json.dumps({"alg": "none", "kid": "k1"}).encode())
+    payload = _b64(json.dumps(
+        {"email": "x@y.nl", "aud": [AUD], "groups": ["beheerder"]}).encode())
+    token = f"{head}.{payload}."
+    identity = _identity(_key(), keys)
+    assert identity.resolve(_Req({"authorization": f"Bearer {token}"}), NU) == (
+        None, ())
+
+
+def test_an_expired_token_yields_no_caller_and_no_groups(key, keys):
+    token = _token(key, exp=NU - 1, groups=["beheerder"])
+    identity = _identity(key, keys)
+    assert identity.resolve(_Req({"authorization": f"Bearer {token}"}), NU) == (
+        None, ())
+
+
+def test_identity_caller_still_returns_only_the_email(key, keys):
+    token = _token(key, groups=["hr-afdeling"])
+    assert _identity(key, keys).caller(
+        _Req({"authorization": f"Bearer {token}"}), NU) == "mark@westerweel.work"

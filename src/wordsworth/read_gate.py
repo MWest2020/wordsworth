@@ -123,7 +123,9 @@ def build(*, keys, identity, corpus_read_labels: list[str] | None,
         from .roles import ADMIN
 
         caller = getattr(request.state, "caller", None)
-        beheerder = bool(caller) and caller_holds_role(session, caller, ADMIN)
+        groups = getattr(request.state, "groups", ()) or ()
+        beheerder = bool(caller or groups) and caller_holds_role(
+            session, caller, ADMIN, groups=groups)
         if not authorize_delete(caller, issuers, auth_enabled,
                                 is_beheerder=beheerder):
             raise HTTPException(status_code=403,

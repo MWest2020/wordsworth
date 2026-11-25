@@ -97,12 +97,17 @@ def test_ingest_binds_domain_and_reveal_is_domain_gated(
         assert document_domain(s, UUID(doc_id)) == "wi"
     assert c.get(f"/documents/{doc_id}").json()["domain"] == "wi"
 
-    # a default-domain grant reveals nothing in domain wi (403: not applicable)
+    # a default-domain grant reveals nothing in domain wi -- the uniform
+    # refusal, decided after the lookup (reveal-authorize-first, #487), on
+    # both routes.
     g_default = c.post("/grants", json={"recipient": "r", "allowed_types": ["EMAIL"],
                                         "document_id": doc_id}).json()
     assert g_default["domain"] == DEFAULT_DOMAIN
-    assert c.post(f"/documents/{doc_id}/reveal",
-                  json={"grant_id": g_default["grant_id"]}).status_code == 403
+    for path in ("/reveal", "/reveal.pdf"):
+        bad = c.post(f"/documents/{doc_id}{path}",
+                     json={"grant_id": g_default["grant_id"]})
+        assert bad.status_code == 403
+        assert bad.json() == {"detail": "grant not applicable"}
     # a wi-bound grant does
     g_wi = c.post("/grants", json={"recipient": "r", "allowed_types": ["EMAIL"],
                                    "domain": "wi", "document_id": doc_id}).json()

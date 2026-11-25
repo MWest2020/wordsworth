@@ -85,16 +85,19 @@ def test_the_audit_names_the_person_and_not_the_keyring(session_factory, key):
                      document_id=doc_id)
 
     class _Ident:
-        def caller(self, request, now=None):
+        def resolve(self, request, now=None):
             from wordsworth.access_identity import email_from, public_keys
             tok = request.headers.get("cf-access-jwt-assertion", "")
             if not tok:
-                return None
+                return None, ()
             try:
                 return email_from(tok, public_keys(VERIFIER, lambda u: _jwks(key)),
-                                  VERIFIER, NU)
+                                  VERIFIER, NU), ()
             except Exception:
-                return None
+                return None, ()
+
+        def caller(self, request, now=None):
+            return self.resolve(request, now)[0]
 
     app = create_app(session_factory=session_factory, api_keys={"k": "console"},
                      key_provider=kp, grant_store=gs)
