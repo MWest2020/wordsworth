@@ -309,13 +309,22 @@ SHALL report counts before and after.
 - **THEN** the store and the database are unchanged and the report lists what
   would be sealed
 
+#### Scenario: A rerun does not download what is sealed and committed
+
+- **WHEN** the seal run meets an object whose key row has `sealed_at` set and
+  whose first bytes are the sealed header
+- **THEN** it reports the object `already_sealed` after reading the header
+  only, never the whole object
+
 ### Requirement: The original scan of a live recovered document is sealed too
 
 The seal run SHALL also seal the original scan of a document that is not
 deleted and was recovered by OCR: the object named as `old_object_key` in its
 recovering `ocr` audit record, when that object is still a legacy plaintext
-original. The same verify-before-replace rule and the same report apply; the
-scan is counted separately (`scans`).
+original. A scan is also the object of a document that OCR recovery retired
+as a copy of another document's object (a `supersede` record carrying
+`as_object`) and that is not deleted. The same verify-before-replace rule and
+the same report apply; the scan is counted separately (`scans`).
 
 #### Scenario: A live recovered document's plaintext scan is sealed
 
@@ -329,6 +338,16 @@ scan is counted separately (`scans`).
 - **WHEN** the scan of a live recovered document is already sealed, or no
   longer in the store
 - **THEN** the seal run does nothing for it and reports nothing as failed
+
+#### Scenario: A scan retired as a copy is sealed too
+
+- **WHEN** OCR recovery retired a scan's document as a copy of another
+  document's object (a `supersede` record carrying `as_object`), that
+  document is not deleted, and its own object -- the scan -- is still stored
+  in plaintext
+- **THEN** the seal run seals that object under the same rules as any other
+  scan (counted under `scans`, `gone` when the store no longer has it), and
+  `--verify` fails while it is still plaintext
 
 #### Scenario: A scan that is no longer in the store is skipped as gone
 

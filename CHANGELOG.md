@@ -21,6 +21,18 @@
 
 ### Fixed
 
+- **The seal run left a scan retired as a copy in plaintext, and a rerun
+  downloaded every sealed object** (#486, #491). When OCR recovery finds the
+  OCR'd PDF is already another document's object, it retires the scan's
+  document as a copy (`supersede` with `as_object`); that document keeps its
+  own object, the scan, and no `ocr` record names it, so the seal run never
+  saw it and `--verify` passed over it. It is now a candidate of kind `scan`
+  (counted under `scans`, `gone` when the store no longer has it), re-checked
+  under the row lock so a deleted document stays deleted. A rerun now reads
+  only the 30-byte header of an object whose key row has `sealed_at` and
+  whose header is sealed, and reports it `already_sealed`; anything else
+  still takes the full read. Spec: `openspec/specs/original-encryption`.
+
 - **Concurrency fixes around deletion** (#460, #465, #466, #469, #504); the
   one lock order is now written down in `docs/reference/lock-order.md`.
   - A deletion could remove a `pii_mappings` row that another document, being

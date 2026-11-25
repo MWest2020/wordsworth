@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: MIT
 """`wordsworth-seal-originals` (ADR-0008, originals-encrypt-existing): seal the
 existing plaintext corpus, verifiably, without losing a document -- every live
-document's original, and the original scan of a live document recovered by
-OCR. The per-object mechanics (verify-before-replace, resumability) live in
+document's original, the original scan of a live document recovered by OCR,
+and a scan OCR recovery retired as a copy (#486). The per-object mechanics (verify-before-replace, resumability) live in
 `originals_seal.py`; this module is the report and the CLI.
 
 A run without flags seals for real; ``--dry-run`` reports what would be
 sealed and changes nothing. Classifying an object (the counts, the dry run,
 ``--verify``) reads its size and its sealed header, never the whole object:
-only a real seal reads an object in full. An object that cannot be read is
+only a real seal reads an object in full, and a rerun reads only the header
+of one that is sealed and committed (#491). An object that cannot be read is
 reported ``unreadable``, never ``missing``. ``--verify`` (`seal_verify.py`)
 checks the outcome of a real run (or a deploy before one): it fails while any
 live document or scan is still a legacy plaintext original, or a sealed object
