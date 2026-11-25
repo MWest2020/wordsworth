@@ -31,6 +31,9 @@ under `openspec/`.
     of an original moved onto `read_original`: what each reads, the 503
     `key service unavailable` mapping on the two PDF routes, and the reads
     that stay plain.
+  - [lock-order](reference/lock-order.md) — the one order every document
+    writer takes its locks in (rows, key rows, audit chain, mappings), what
+    follows from it, and the known exceptions.
 - [explanation/](explanation/nora-gap-analysis.md) — reasoning and decisions.
   - [Key-user review 2026-10-28](explanation/review-key-user-2026-10-28.md) — the
     console against four jobs: find topics, ask, judge relevance, share.

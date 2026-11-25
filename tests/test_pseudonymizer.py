@@ -6,6 +6,7 @@ from wordsworth import audit
 from wordsworth import pseudonym_registry
 from wordsworth.anonymizer import Anonymizer
 from wordsworth.keys import InMemoryKeyProvider, StubKeyProvider
+from wordsworth.mapping_buffer import write_pending
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord
 from wordsworth.pipeline import get_anonymized_text, ingest, process, register
@@ -27,6 +28,7 @@ def test_satisfies_anonymizer_protocol(session):
 
 def test_same_value_yields_same_pseudonym(session):
     result = _pseudo(session).anonymize(f"{PII_BSN} en nogmaals {PII_BSN}")
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
     assert PII_BSN not in result.text
     pseudonyms = re.findall(r"\[BSN:[0-9a-f]{8}\]", result.text)
@@ -39,6 +41,7 @@ def test_roundtrip_and_audit_logged(session):
     result = _pseudo(session).anonymize(
         f"BSN {PII_BSN} IBAN {PII_IBAN} mail {PII_EMAIL}"
     )
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
     for secret in (PII_BSN, PII_IBAN, PII_EMAIL):
         assert secret not in result.text
@@ -77,6 +80,7 @@ def test_selective_reveal_by_type_and_audit(session):
     result = Pseudonymizer(keys, PostgresMappingStore(session)).anonymize(
         f"BSN {PII_BSN} mail {PII_EMAIL}"
     )
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
 
     # De pijplijn registreert de tokens van een document; deze test
@@ -206,6 +210,7 @@ def test_reversible_entity_deanonymize_and_audit(session):
     result = ReversibleAnonymizer(keys, PostgresMappingStore(session), detect=detect).anonymize(
         f"{name} met BSN {PII_BSN}"
     )
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
     assert name not in result.text and PII_BSN not in result.text
     assert "[PERSON:" in result.text and "[BSN:" in result.text

@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from .crypto import decrypt, encrypt
 from .keys import KeyProvider
+from .mapping_buffer import PENDING
 from .models import PiiMapping
 
 
@@ -32,30 +33,36 @@ class MappingStore(Protocol):
 
 
 class PostgresMappingStore:
-    """Separated store in PostgreSQL. `put` is idempotent: one row per pseudonym."""
+    """Separated store in PostgreSQL. `put` is idempotent: one row per pseudonym.
+
+    `put` only buffers the row on the session (`mapping_buffer`);
+    `mapping_buffer.write_pending` stores it under the audit chain lock.
+    `process` and `reanonymize` write through `pseudonym_registry.link`, any
+    other caller calls `write_pending` itself, before its audit record. A
+    commit with rows still buffered raises `UnwrittenMappings`."""
 
     def __init__(self, session: Session):
         self._session = session
 
     def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
             norm_version: str | None = None) -> None:
-        # One statement, not read-then-insert. Two requests pseudonymising the
-        # same value at once -- two threads in one pod, or two replicas -- both
-        # saw "absent", and the second insert failed its whole ingest on the
-        # primary key. Both rows encrypt the same value, so the first one wins.
-        self._session.execute(
-            pg_insert(PiiMapping)
-            .values(pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
-                    key_id=key_id, norm_version=norm_version,
-                    created_at=datetime.now(timezone.utc))
-            .on_conflict_do_nothing(index_elements=["pseudonym"]))
+        # The first `put` of a pseudonym wins (both encrypt the same value).
+        # Inside a transaction, so the buffer ends with it (the listeners in
+        # `mapping_buffer`); begins one if none is open, no statement is sent.
+        self._session.connection()
+        self._session.info.setdefault(PENDING, {}).setdefault(pseudonym, dict(
+            pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
+            key_id=key_id, norm_version=norm_version,
+            created_at=datetime.now(timezone.utc)))
 
     def get(self, pseudonym: str) -> Mapping | None:
         row = self._session.get(PiiMapping, pseudonym)
-        if row is None:
-            return None
-        return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id,
-                       row.norm_version)
+        if row is not None:
+            return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id,
+                           row.norm_version)
+        p = self._session.info.get(PENDING, {}).get(pseudonym)
+        return None if p is None else Mapping(
+            pseudonym, p["ciphertext"], p["nonce"], p["key_id"], p["norm_version"])
 
     def reencrypt(self, old_id: str, new_id: str, key_provider: KeyProvider) -> int:
         """Re-encrypt every entry under ``old_id`` onto ``new_id`` and return the
@@ -74,6 +81,20 @@ class PostgresMappingStore:
             row.key_id = new_id
         self._session.flush()
         return len(rows)
+
+
+def remove_orphans(session: Session, pseudonyms: list[str]) -> None:
+    """Delete these mapping rows, locked FOR UPDATE in pseudonym order first.
+    The caller holds the audit chain lock and has checked, under it, that no
+    other document is linked to them (`deletion_mappings`)."""
+    if not pseudonyms:
+        return
+    session.execute(select(PiiMapping.pseudonym)
+                    .where(PiiMapping.pseudonym.in_(pseudonyms))
+                    .order_by(PiiMapping.pseudonym).with_for_update())
+    session.execute(sa_delete(PiiMapping)
+                    .where(PiiMapping.pseudonym.in_(pseudonyms))
+                    .execution_options(synchronize_session="fetch"))
 
 
 class InMemoryMappingStore:

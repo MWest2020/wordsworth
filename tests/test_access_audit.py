@@ -74,7 +74,7 @@ def test_the_audit_names_the_person_and_not_the_keyring(session_factory, key):
         doc = register(s, "documents/aa", filename="a.pdf")
         s.merge(DocumentText(document_id=doc.id,
                              anonymized_text=f"Aan {token} te Nijmegen."))
-        pseudonym_registry.register(s, doc.id, f"Aan {token} te Nijmegen.")
+        pseudonym_registry.link(s, doc.id, f"Aan {token} te Nijmegen.")
         s.commit()
         doc_id = doc.id
 

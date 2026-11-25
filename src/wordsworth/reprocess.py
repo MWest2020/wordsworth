@@ -20,7 +20,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from . import audit, reprocess_counts
-from .models import AuditRecord, Document
+from .models import Document
 from .pdf_text import TEXT_SOURCE
 from .pipeline import (current_state, document_domain, lists_hash_of,
                        reanonymize, text_source_of)
@@ -98,28 +98,17 @@ def note_failure(session_factory, document_id: UUID, exc: Exception) -> None:
     except Exception:  # noqa: BLE001 — bookkeeping must never
         pass          # take down the run it is bookkeeping for
 
-
-def _value_not_located_detail(session, document_id: UUID) -> str | None:
-    """The `problems` text for this document, if the run just finished ended
-    in `value-not-located` (pdf-redaction-locate) rather than a usable box
-    map. Names the PII type and the counts, never the value -- the same
-    contract the audit record itself keeps."""
-    row = session.execute(
-        select(AuditRecord.step, AuditRecord.payload)
-        .where(AuditRecord.document_id == document_id)
-        .order_by(AuditRecord.seq.desc()).limit(1)
-    ).first()
-    if row is None or row[0] != "value-not-located":
-        return None
-    payload = row[1] or {}
-    return (f"value-not-located: {payload.get('pii_type')} "
-            f"({payload.get('in_positioned')} of {payload.get('in_anonymized')} located)")
+# Lives in `reprocess_counts` (the 200-line limit); read through this name.
+_value_not_located_detail = reprocess_counts.value_not_located_detail
 
 
 def one(session_factory, document_id: UUID, *, make_anonymizer,
         store, search_index=None, embedder=None,
         resolve_key_provider=None) -> tuple[str, str | None, dict | None]:
-    """(outcome, problem detail, entity counts); counts only when reanonymized."""
+    """(outcome, problem detail, entity counts); counts only when reanonymized.
+    A document whose state changed under the run (deleted while it waited) is
+    `skipped` like one that never was a candidate, plus a `reprocess_skipped`
+    log line with the state found."""
     with session_factory() as session:
         state = current_state(session, document_id)
         if state not in (State.INDEXED, State.ANONYMIZED):
@@ -135,9 +124,16 @@ def one(session_factory, document_id: UUID, *, make_anonymizer,
 
             mapping_store = PostgresMappingStore(session)
         before = reprocess_counts.stored_text(session, document_id)
-        reanonymize(session, document_id, store, anonymizer=anon,
-                    search_index=search_index, embedder=embedder,
-                    key_provider=key_provider, mapping_store=mapping_store)
+        after = reanonymize(session, document_id, store, anonymizer=anon,
+                            search_index=search_index, embedder=embedder,
+                            key_provider=key_provider, mapping_store=mapping_store)
+        if after not in (State.INDEXED, State.ANONYMIZED):
+            # A deletion committed while `reanonymize` waited for the row
+            # (#463): it wrote nothing, so this run reanonymized nothing
+            # (#469). Not a problem to report -- `problems` is failures only
+            # -- so the state it found goes to the log.
+            reprocess_counts.log_skipped(document_id, after.value)
+            return "skipped", None, None
         entity_counts = reprocess_counts.compare(  # the text about to be committed
             before, reprocess_counts.stored_text(session, document_id))
         session.commit()

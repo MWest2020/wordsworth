@@ -29,11 +29,17 @@ def _tail_hash(session: Session) -> str:
 
 
 def lock_chain(session: Session) -> None:
-    """Take the transaction-scoped advisory lock the chain serialises writers
-    on (``append`` takes it too, so there is one spelling of the lock).
-    Re-entrant per session: taking it twice in one transaction returns at
-    once, so a route that locks and then appends does not block itself. A
-    second session's call waits until the first commits or rolls back."""
+    """Take the chain's advisory lock now, until the transaction ends.
+
+    `append` takes it by itself. A caller takes it earlier when something has
+    to be decided under it: writing, linking and removing `pii_mappings` rows
+    are (#465, `docs/reference/lock-order.md`). Re-entrant within one
+    transaction.
+
+    Flushes first. The lock is a plain statement, which does not autoflush,
+    so a pending row change would otherwise reach the database after it --
+    a row lock asked for under the chain lock, the wrong way round (#466)."""
+    session.flush()
     session.execute(
         text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CHAIN_LOCK_KEY}
     )

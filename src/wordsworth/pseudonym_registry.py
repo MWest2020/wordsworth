@@ -25,6 +25,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import mapping_buffer
 from .models import DocumentPseudonym
 
 MINTED = "minted"
@@ -64,6 +65,23 @@ def register(session: Session, document_id: UUID, text: str,
         session.add(DocumentPseudonym(document_id=document_id, pseudonym=pseudonym,
                                       source=source, created_at=now))
     return len(nieuw)
+
+
+def link(session: Session, document_id: UUID, text: str,
+         source: str = MINTED) -> int:
+    """`register`, safe beside a deletion (#465): under the audit chain lock,
+    with the mapping rows behind the tokens stored and held first
+    (`mapping_buffer.write_pending`). Every caller that links goes through
+    here: `process`, `reanonymize`, the backfill.
+
+    A deletion removes a mapping no other document is linked to, and decides
+    that under the same lock. So either this link commits first and the
+    deletion sees it, or the deletion commits first and the mapping is
+    stored (again) here. The caller commits soon after: the lock is held
+    until then (`docs/reference/lock-order.md`)."""
+    tokens = tokens_in(text)
+    mapping_buffer.write_pending(session, tokens)
+    return register(session, document_id, text, source=source)
 
 
 def registered(session: Session, document_id: UUID) -> set[str]:

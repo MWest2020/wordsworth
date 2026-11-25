@@ -71,6 +71,11 @@ def run(session_factory, index, *, apply: bool, expect: dict[str, int | None]) -
     done = {"superseded": 0, "moved": 0, "removed": 0, "index_entries": 0}
     for _key, survivor, copies in groups:
         with session_factory() as session:
+            # Every copy's row, in id order, before the first copy's records
+            # take the audit chain lock (#466, docs/reference/lock-order.md):
+            # `supersede` locks one copy at a time, the second one too late.
+            session.execute(select(Document.id).where(Document.id.in_(copies))
+                            .order_by(Document.id).with_for_update(key_share=True))
             outcomes = [supersede(session, c, survivor, actor=ACTOR, batch=batch,
                                   index=index) for c in copies]
             session.commit()

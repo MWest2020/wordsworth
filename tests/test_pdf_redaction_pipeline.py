@@ -6,6 +6,7 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from wordsworth.keys import InMemoryKeyProvider
+from wordsworth.mapping_buffer import write_pending
 from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord, BoxMap
 from wordsworth.pdf_redaction import compute_box_map
@@ -105,6 +106,7 @@ def test_value_not_located_writes_audit_and_persists_no_box_map(
             result.lists_hash, kp, mapping_store,
         )
         assert box_map is None
+        write_pending(s)  # what was put, under the chain lock
         s.commit()
 
         rec = s.execute(

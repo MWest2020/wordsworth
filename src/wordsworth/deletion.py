@@ -24,7 +24,8 @@ token everywhere"), so a pseudonym can be shared by more than one document. A
 document's `document_pseudonyms` rows are always its own and always removed;
 the shared `pii_mappings` row underneath is removed only when no other
 document still references that pseudonym -- removing it while another document
-needs it would make that document's reveal path try to decrypt nothing.
+needs it would make that document's reveal path try to decrypt nothing
+(`deletion_mappings.py`, which decides it under the audit chain lock, #465).
 Similarly `object_key` is content-addressed and a superseded copy keeps its
 former key (one-document-per-object), so the stored object is removed only
 when no other, still-existing document row claims the same key.
@@ -56,14 +57,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import deletion_keys, deletion_scans
+from . import deletion_keys, deletion_mappings, deletion_scans
 from .audit import current_state
 from .document_keys import DocumentKeys
-from .models import Document, DocumentPseudonym, DocumentText, GrantRecord, PiiMapping
+from .models import Document, DocumentText, GrantRecord
 from .deletion_renders import DeletionCounts, plan_renders  # re-exported
 from .object_store import ObjectStore
 from .pipeline import transition
@@ -142,30 +142,6 @@ def delete_document(
     if not dry_run and text_row is not None:
         session.delete(text_row)
 
-    pseudonyms = session.execute(
-        select(DocumentPseudonym.pseudonym)
-        .where(DocumentPseudonym.document_id == document_id)
-    ).scalars().all()
-    counts.pseudonyms = len(pseudonyms)
-    for pseudonym in pseudonyms:
-        orphaned = session.execute(
-            select(DocumentPseudonym.document_id)
-            .where(DocumentPseudonym.pseudonym == pseudonym,
-                   DocumentPseudonym.document_id != document_id)
-            .limit(1)
-        ).first() is None
-        if orphaned and session.get(PiiMapping, pseudonym) is not None:
-            counts.mappings += 1
-        if not dry_run:
-            session.execute(
-                sa_delete(DocumentPseudonym)
-                .where(DocumentPseudonym.document_id == document_id,
-                       DocumentPseudonym.pseudonym == pseudonym))
-            if orphaned:
-                mapping_row = session.get(PiiMapping, pseudonym)
-                if mapping_row is not None:
-                    session.delete(mapping_row)
-
     grant_rows = session.execute(
         select(GrantRecord).where(GrantRecord.document_id == document_id)
     ).scalars().all()
@@ -175,6 +151,7 @@ def delete_document(
             session.delete(row)
 
     counts.keys_destroyed = len(doomed)
+    deletion_mappings.remove(session, document_id, counts, dry_run=dry_run)
     if dry_run:
         return counts
 
