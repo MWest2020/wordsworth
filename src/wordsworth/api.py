@@ -28,7 +28,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from .console_headers import ConsoleSafety
 from .auth import ApiKeyAuthMiddleware
-from .vc import VcError, apply_vc_gate, load_public_key_pem
+from .vc import load_public_key_pem
 from .config import settings as default_settings
 from .deletion import DeletionError, delete_document
 from .deletion_keys import keys_of
@@ -47,9 +47,10 @@ from .pii_categories import (
     counts_by_category, group_by_basis, ppl_of_types, types_for_ppl,
 )
 from .ingest_lock import IngestRaceError
+from . import document_gone
 from . import read_gate
 from .pipeline import (
-    current_state, document_domain, dossiers_of, get_anonymized_text, ingest,
+    current_state, dossiers_of, get_anonymized_text, ingest,
     live_document_for, process, register_live,
 )
 from .rate_limit import (
@@ -162,6 +163,15 @@ class RoleSwitchRequest(BaseModel):
     schakelaar waarvan niemand later kan navertellen waarom hij overging."""
 
     reason: str
+
+
+class GroupRoleResponse(BaseModel):
+    """Eén koppeling: leden van `group` houden `role` (keycloak-groups-to-roles)."""
+
+    group: str
+    role: str
+    created_by: str
+    created_at: datetime
 
 
 class TopicResponse(BaseModel):
@@ -645,15 +655,14 @@ def create_app(
                                 view: str = "tokens") -> AnonymizedResponse:
             """The stored, de-identified text — the same pseudonymised text that
             backs the index and the export ZIP, never clear PII. 404 if the
-            document is unknown; 409 if it exists but is not yet de-identified.
-            Gated by the opt-in corpus-read scope (403 if the caller lacks it).
-            ``view=legible`` renders tokens as numbered Dutch placeholders
-            (``[PERSOON 1]``) with a legend; the stored text is unchanged."""
+            document is unknown; 410 if it is deleted; 409 if it exists but is
+            not yet de-identified. Gated by the opt-in corpus-read scope (403
+            if the caller lacks it). ``view=legible`` renders tokens as
+            numbered Dutch placeholders (``[PERSOON 1]``) with a legend; the
+            stored text is unchanged."""
             _check_view(view)
             with session_factory() as session:
-                if current_state(session, document_id) is None:
-                    raise HTTPException(status_code=404,
-                                        detail="unknown document")
+                document_gone.check(session, document_id)
                 anonymized_text = get_anonymized_text(session, document_id)
             if anonymized_text is None:
                 raise HTTPException(status_code=409,
@@ -691,13 +700,7 @@ def create_app(
                 from .pdf_render import DegenerateBoxError, RENDER_VERSION, render as render_pdf
 
                 with session_factory() as session:
-                    state = current_state(session, document_id)
-                    if state is None:
-                        raise HTTPException(status_code=404,
-                                            detail="unknown document")
-                    if state == State.DELETED:
-                        raise HTTPException(status_code=410,
-                                            detail="document deleted")
+                    document_gone.check(session, document_id)
                     copy = session.get(Document, document_id)
                     if copy.superseded_by is not None:
                         raise HTTPException(
@@ -769,13 +772,17 @@ def create_app(
             """Append a ``detection_feedback`` access event (from == to state) to
             the document's audit chain: kind, type, token, caller. No clear value
             can be carried (no free text). Lists are NOT modified — updating
-            allow/deny lists is a reviewed git change."""
+            allow/deny lists is a reviewed git change. 410 for a deleted
+            document, nothing appended: the chain lock is taken FIRST, before
+            the state is read, so a deletion racing this request either
+            commits first (this request then sees `deleted` and writes
+            nothing) or waits for this request's commit (deleted-document-
+            answers-410, design.md decision 5)."""
             from . import audit
 
             with session_factory() as session:
-                state = current_state(session, document_id)
-                if state is None:
-                    raise HTTPException(status_code=404, detail="unknown document")
+                audit.lock_chain(session)
+                state = document_gone.check(session, document_id)
                 payload = {"kind": body.kind, "type": body.type.upper(),
                            "token": body.token}
                 caller = getattr(request.state, "caller", None)
@@ -1370,11 +1377,16 @@ def create_app(
                   summary="Reveal a document's PII, gated per type by a grant")
         def reveal(document_id: UUID, body: RevealRequest, request: Request) -> RevealResponse:
             """Reveal the PII types a grant authorises; every other type stays
-            pseudonymised. 404 if the document or grant is unknown, 403 if the
-            grant is revoked, expired, or scoped to another document."""
+            pseudonymised. The grant is decided before anything about the
+            document is read; every caller it does not cover -- unknown grant,
+            revoked, expired, wrong document or recipient, unknown document,
+            superseded or deleted -- gets the same 403 (`reveal_gate.decide`).
+            To a caller it covers: 410 deleted, 409 superseded, 409 not yet
+            de-identified, else the reveal."""
             from .grants import authorize
             from .mapping_store import PostgresMappingStore
-            from .pipeline import get_anonymized_text
+            from . import reveal_gate
+            from . import roles as roles_mod
             from .pseudonymizer import deanonymize
 
             now = datetime.now(timezone.utc)
@@ -1383,53 +1395,40 @@ def create_app(
                 # built per request from their factory; singletons win otherwise.
                 gs = grant_store_factory(session) if grant_store_factory else grant_store
                 kp = key_provider_factory(session) if key_provider_factory else key_provider
-
-                grant = gs.get(body.grant_id)
-                if grant is None:
-                    raise HTTPException(status_code=404, detail="unknown grant")
-                if current_state(session, document_id) is None:
-                    raise HTTPException(status_code=404, detail="unknown document")
-                copy = session.get(Document, document_id)
-                if copy is not None and copy.superseded_by is not None:
-                    # A copy is not a second door to the same pseudonyms.
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"document is superseded by {copy.superseded_by}; "
-                               "reveal on that one")
-                dom = document_domain(session, document_id)
                 # De geauthenticeerde caller, nodig vóór de autorisatie: een
                 # grant noemt WIE mag onthullen, en dat kunnen we pas toetsen als
                 # we weten wie er belt. Zonder auth is dit None en verandert er
                 # niets (tailnet-interne modus).
                 caller = getattr(request.state, "caller", None)
-                # A grant that authorises none of its own types here is revoked,
-                # expired, scoped to another document, bound to another domain, or
-                # presented by someone other than its recipient → explicit denial.
                 # rollen: de rol wordt HIER opgelost, op het moment van
                 # beslissen. Dat is wat een rol uitzetten onmiddellijk laat
                 # werken zonder dat er één grant verandert.
-                from . import roles as roles_mod
-                from .grants import permitted_types
 
                 def _resolve_role(naam: str) -> set[str]:
                     return set(roles_mod.resolve(session, naam).types)
 
                 rol_gaten = {"resolve_role": _resolve_role,
                              "global_roles": {roles_mod.ADMIN}}
-                if not authorize(grant, document_id,
-                                 permitted_types(grant, _resolve_role),
-                                 now, dom, allow_global_grants, caller,
-                                 auth_enabled, **rol_gaten):
-                    raise HTTPException(status_code=403, detail="grant not applicable")
-                pseudo_text = get_anonymized_text(session, document_id)
-                if pseudo_text is None:
-                    raise HTTPException(
-                        status_code=409, detail="document not yet de-identified")
+                decision = reveal_gate.decide(
+                    session, gs, body.grant_id, document_id, caller=caller,
+                    auth_enabled=auth_enabled, allow_global=allow_global_grants,
+                    now=now, pdf=False, vc_public_key=vc_public_key,
+                    vc_expected_vct=vc_expected_vct,
+                    vc_expected_issuer=vc_expected_issuer,
+                    vc_required=vc_required, x_vc=request.headers.get("x-vc"),
+                    **rol_gaten,
+                )
+                grant, dom, pseudo_text = (decision.grant, decision.domain,
+                                           decision.pseudo_text)
                 requested = (body.types if body.types
-                             else sorted(permitted_types(grant, _resolve_role)))
+                             else sorted(decision.permitted))
                 allowed = authorize(grant, document_id, set(requested), now, dom,
                                     allow_global_grants, caller, auth_enabled,
                                     **rol_gaten)
+                # The VC gate already ran once, in the gate; here its narrowing
+                # is intersected with what THIS request asked for, rather than
+                # verifying the credential a second time.
+                allowed &= decision.vc_types
                 # De caller staat los in de audit van de recipient: met auth aan
                 # zijn ze nu gelijk, maar het spoor moet blijven zeggen wie er
                 # belde en niet alleen wie het mocht.
@@ -1443,21 +1442,7 @@ def create_app(
                     extra_audit["role"] = grant.role
                     if grant.document_id is None:
                         extra_audit["global_by_role"] = True
-                # EUDI-aligned VC gate (opt-in): a presented X-VC credential can
-                # only NARROW what the grant allows (intersection), never widen
-                # it. Off unless an issuer key is configured; then a valid VC is
-                # required only if WORDSWORTH_VC_REQUIRED. Denials are 403.
-                try:
-                    allowed, vc_audit = apply_vc_gate(
-                        allowed, request.headers.get("x-vc"),
-                        public_key=vc_public_key,
-                        expected_vct=vc_expected_vct,
-                        expected_issuer=vc_expected_issuer,
-                        required=vc_required, now=now,
-                    )
-                except VcError as exc:
-                    raise HTTPException(status_code=403, detail=f"vc rejected: {exc}")
-                extra_audit.update(vc_audit)
+                extra_audit.update(decision.vc_audit)
                 revealed_text = deanonymize(
                     session, document_id, pseudo_text, kp,
                     PostgresMappingStore(session), actor=grant.recipient,
@@ -1504,14 +1489,17 @@ def create_app(
                 clear, straight from the original page — every other type
                 keeps its box and label. Never cached or stored (a fresh
                 render every call); audited exactly like `/reveal`, with
-                `view=pdf` and no clear value in the audit trail. 409 if the
-                document has no box map yet, 410 if it is deleted; otherwise
-                the same 404/403 as `/reveal`."""
+                `view=pdf` and no clear value in the audit trail. The grant is
+                decided before anything about the document is read; every
+                caller it does not cover gets the same 403
+                (`reveal_gate.decide`). To a caller it covers: 410 deleted, 409
+                superseded, 409 no box map, 409 not yet de-identified, else
+                the reveal."""
                 from .document_keys import OriginalsKeyUnavailable
-                from .grants import authorize, permitted_types
+                from .grants import authorize
+                from . import reveal_gate
                 from . import roles as roles_mod
                 from .mapping_store import PostgresMappingStore
-                from .models import BoxMap
                 from .originals_io import read_original
                 from .pdf_redaction import boxes_of
                 from .pdf_render import DegenerateBoxError, render as render_pdf
@@ -1519,33 +1507,8 @@ def create_app(
 
                 now = datetime.now(timezone.utc)
                 with session_factory() as session:
-                    # Before the grant: deleting a document removes its own
-                    # grants, so a grant lookup would answer 404 "unknown
-                    # grant" for exactly the grant the caller still holds.
-                    state = current_state(session, document_id)
-                    if state == State.DELETED:
-                        raise HTTPException(status_code=410, detail="document deleted")
                     gs = grant_store_factory(session) if grant_store_factory else grant_store
                     kp = _resolve_key_provider(session)
-
-                    grant = gs.get(body.grant_id)
-                    if grant is None:
-                        raise HTTPException(status_code=404, detail="unknown grant")
-                    if state is None:
-                        raise HTTPException(status_code=404, detail="unknown document")
-                    copy = session.get(Document, document_id)
-                    if copy is not None and copy.superseded_by is not None:
-                        raise HTTPException(
-                            status_code=409,
-                            detail=f"document is superseded by {copy.superseded_by}; "
-                                   "reveal on that one")
-                    box_map = session.get(BoxMap, document_id)
-                    if box_map is None:
-                        raise HTTPException(
-                            status_code=409,
-                            detail="no box map yet (reversible mode required; "
-                                   "reanonymize to build one)")
-                    dom = document_domain(session, document_id)
                     caller = getattr(request.state, "caller", None)
 
                     def _resolve_role(naam: str) -> set[str]:
@@ -1553,20 +1516,26 @@ def create_app(
 
                     rol_gaten = {"resolve_role": _resolve_role,
                                  "global_roles": {roles_mod.ADMIN}}
-                    if not authorize(grant, document_id,
-                                     permitted_types(grant, _resolve_role),
-                                     now, dom, allow_global_grants, caller,
-                                     auth_enabled, **rol_gaten):
-                        raise HTTPException(status_code=403, detail="grant not applicable")
-                    pseudo_text = get_anonymized_text(session, document_id)
-                    if pseudo_text is None:
-                        raise HTTPException(
-                            status_code=409, detail="document not yet de-identified")
+                    decision = reveal_gate.decide(
+                        session, gs, body.grant_id, document_id, caller=caller,
+                        auth_enabled=auth_enabled, allow_global=allow_global_grants,
+                        now=now, pdf=True, vc_public_key=vc_public_key,
+                        vc_expected_vct=vc_expected_vct,
+                        vc_expected_issuer=vc_expected_issuer,
+                        vc_required=vc_required, x_vc=request.headers.get("x-vc"),
+                        **rol_gaten,
+                    )
+                    grant, dom = decision.grant, decision.domain
+                    pseudo_text, box_map = decision.pseudo_text, decision.box_map
                     requested = (body.types if body.types
-                                 else sorted(permitted_types(grant, _resolve_role)))
+                                 else sorted(decision.permitted))
                     allowed = authorize(grant, document_id, set(requested), now, dom,
                                         allow_global_grants, caller, auth_enabled,
                                         **rol_gaten)
+                    # The VC gate already ran once, in the gate; here its
+                    # narrowing is intersected with what THIS request asked
+                    # for, rather than verifying the credential a second time.
+                    allowed &= decision.vc_types
                     extra_audit = {"grant_id": body.grant_id, "view": "pdf"}
                     if caller:
                         extra_audit["caller"] = caller
@@ -1574,17 +1543,7 @@ def create_app(
                         extra_audit["role"] = grant.role
                         if grant.document_id is None:
                             extra_audit["global_by_role"] = True
-                    try:
-                        allowed, vc_audit = apply_vc_gate(
-                            allowed, request.headers.get("x-vc"),
-                            public_key=vc_public_key,
-                            expected_vct=vc_expected_vct,
-                            expected_issuer=vc_expected_issuer,
-                            required=vc_required, now=now,
-                        )
-                    except VcError as exc:
-                        raise HTTPException(status_code=403, detail=f"vc rejected: {exc}")
-                    extra_audit.update(vc_audit)
+                    extra_audit.update(decision.vc_audit)
                     # deanonymize() writes the audit record this endpoint needs
                     # (types + resolved pseudonyms, no clear value); its
                     # returned TEXT is not used here — the PDF is rendered
@@ -1757,6 +1716,51 @@ def create_app(
                 out = _role_out(role)
                 session.commit()
             return out
+
+        # keycloak-groups-to-roles: group -> role, behind the same gate as
+        # /roles. Wie bepaalt welke groep welke rol krijgt, bepaalt wat elk lid
+        # van die groep mag zien -- geen lichter recht dan een rol beheren.
+        from . import group_roles as group_roles_mod
+
+        def _group_role_out(row) -> GroupRoleResponse:
+            return GroupRoleResponse(group=row.group, role=row.role,
+                                     created_by=row.created_by,
+                                     created_at=row.created_at)
+
+        @app.get("/group-roles", summary="De group->rol koppelingen", tags=["read"])
+        def list_group_roles(request: Request) -> list[GroupRoleResponse]:
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                return [_group_role_out(r) for r in group_roles_mod.listing(session)]
+
+        @app.put("/group-roles/{group}/{role}", summary="Koppel een groep aan een rol",
+                 tags=["write"])
+        def put_group_role(request: Request, group: str, role: str) -> GroupRoleResponse:
+            """Idempotent: een bestaand paar opnieuw koppelen verandert niets en
+            schrijft geen event. 404 voor een onbekende rol, zoals
+            `PUT /roles/{name}/types`."""
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                try:
+                    result = group_roles_mod.map_role(
+                        session, group, role, actor=_actor(request),
+                        audit=_resolve_audit(session))
+                except group_roles_mod.GroupRoleError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc))
+                out = _group_role_out(result.row)
+                session.commit()
+            return out
+
+        @app.delete("/group-roles/{group}/{role}",
+                   summary="Ontkoppel een groep van een rol (idempotent)",
+                   tags=["write"], status_code=204)
+        def delete_group_role(request: Request, group: str, role: str) -> None:
+            _guard_grant_admin(request)
+            with session_factory() as session:
+                group_roles_mod.unmap_role(session, group, role,
+                                           actor=_actor(request),
+                                           audit=_resolve_audit(session))
+                session.commit()
 
     # Grant admin surface: issue / inspect / revoke reveal grants. Needs only a
     # grant store (no key provider) — mounts wherever grants are configured.

@@ -17,6 +17,7 @@ from sqlalchemy import select
 from wordsworth import dossiers, grants as grants_mod
 from wordsworth import roles
 from wordsworth.audit import current_state
+from wordsworth.bootstrap import ensure_admin_role
 from wordsworth.delete_cli import main
 from wordsworth.models import AuditRecord, Dossier, DocumentText, GrantRecord, Topic
 from wordsworth.object_store import InMemoryObjectStore
@@ -28,6 +29,7 @@ KEY = "documents/" + "ce" * 32
 
 
 def _make_beheerder(session, label):
+    ensure_admin_role(session)
     session.add(GrantRecord(
         grant_id=uuid4().hex, recipient=label, allowed_types=[], document_id=None,
         status=grants_mod.ACTIVE, created_at=datetime.now(timezone.utc),

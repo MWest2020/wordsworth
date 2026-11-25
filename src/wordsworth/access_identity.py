@@ -155,10 +155,11 @@ def _fetch(url: str) -> dict:
         return json.loads(resp.read())
 
 
-def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = None):
-    """The verified email in this assertion, or raise. Every check here is a
-    refusal, never a warning — there is no partial trust."""
-    now = time.time() if now is None else now
+def _verified_body(token: str, keys: dict, verifier: Verifier, now: float) -> dict:
+    """The decoded claims of ``token``, once signature, algorithm, audience,
+    issuer and expiry all check out — or raise `AccessError`. Shared by
+    `email_from` and `groups_from`, which read two different claims off the
+    same verified assertion: one token, one verification, two readers."""
     try:
         head_raw, body_raw, sig_raw = token.split(".")
         head = json.loads(_b64(head_raw))
@@ -199,6 +200,10 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         raise AccessError("assertion has an unreadable expiry")
     if verloopt <= now:
         raise AccessError("assertion has expired")
+    return body
+
+
+def _email_from_body(body: dict, verifier: Verifier) -> str:
     email = body.get("email")
     if not isinstance(email, str) or not email.strip():
         # A non-string would flow into the caller label and the audit trail.
@@ -210,6 +215,25 @@ def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = N
         # sets this flag, so it is unaffected.
         raise AccessError("assertion's address is not verified")
     return email
+
+
+def email_from(token: str, keys: dict, verifier: Verifier, now: float | None = None):
+    """The verified email in this assertion, or raise. Every check here is a
+    refusal, never a warning — there is no partial trust."""
+    now = time.time() if now is None else now
+    body = _verified_body(token, keys, verifier, now)
+    return _email_from_body(body, verifier)
+
+
+def groups_from(body: dict) -> tuple[str, ...]:
+    """The ``groups`` claim of a verified assertion (keycloak-groups-to-roles):
+    Keycloak's group membership mapper. Missing, or anything other than a list
+    of strings, yields no groups — never a refusal of the caller, since a
+    caller without groups is simply a caller with no group-held roles."""
+    groups = body.get("groups")
+    if isinstance(groups, list) and all(isinstance(g, str) for g in groups):
+        return tuple(groups)
+    return ()
 
 
 class Identity:
@@ -240,16 +264,29 @@ class Identity:
             self._at = now - self._ttl + self._backoff
         return self._keys
 
-    def caller(self, request, now: float | None = None):
-        """The verified email on this request, or None. Never reads the
-        readable email header: it arrives on every path, including ones
-        that skip the provider."""
+    def resolve(self, request, now: float | None = None):
+        """The verified email and ``groups`` claim of this request's
+        assertion, or ``(None, ())``. Never reads the readable email header:
+        it arrives on every path, including ones that skip the provider.
+
+        One verification, two claims off the same token (keycloak-groups-to-
+        roles): an expired, badly signed or wrong-audience assertion yields
+        neither a label nor groups — there is no partial trust.
+        """
+        now = time.time() if now is None else now
         auth = request.headers.get(BEARER_HEADER, "")
         token = (auth[len(BEARER_PREFIX):].strip() if auth.startswith(BEARER_PREFIX)
                  else request.headers.get(JWT_HEADER, ""))
         if not token:
-            return None
+            return None, ()
         try:
-            return email_from(token, self.keys(now), self.verifier, now)
+            body = _verified_body(token, self.keys(now), self.verifier, now)
+            email = _email_from_body(body, self.verifier)
         except AccessError:
-            return None
+            return None, ()
+        return email, groups_from(body)
+
+    def caller(self, request, now: float | None = None):
+        """The verified email on this request, or None."""
+        email, _ = self.resolve(request, now)
+        return email

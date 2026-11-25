@@ -146,10 +146,16 @@ class ApiKeyAuthMiddleware:
         key = request.headers.get("x-api-key", "") or request.cookies.get(
             CONSOLE_COOKIE, "")
         label = self.keys.get(key)
+        # keycloak-groups-to-roles: groups come ONLY from the verified
+        # assertion. A key or the console cookie names a label, and a label
+        # has no groups — a caller who switches to presenting a credential
+        # loses any group-held role along with it, by the same "no groups;
+        # use a personal grant or label" rule documented for that case.
+        groups: tuple[str, ...] = ()
         if label is None and self.identity is not None:
             # An invalid assertion yields no identity and nothing else — never a
             # reason to refuse a caller who also holds a valid key.
-            label = self.identity.caller(request)
+            label, groups = self.identity.resolve(request)
         if label is None:
             # A person gets a page; a program gets the API error. A 303 to an
             # HTML form is the wrong answer for a client that will try to parse
@@ -163,5 +169,7 @@ class ApiKeyAuthMiddleware:
             await JSONResponse({"detail": "invalid or missing API key"},
                                status_code=401)(scope, receive, send)
             return
-        scope.setdefault("state", {})["caller"] = label
+        state = scope.setdefault("state", {})
+        state["caller"] = label
+        state["groups"] = groups
         await self.app(scope, receive, send)

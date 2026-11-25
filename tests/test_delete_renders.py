@@ -14,6 +14,7 @@ from sqlalchemy import select
 from wordsworth import dossiers, grants as grants_mod, roles
 from wordsworth.api import create_app
 from wordsworth.audit import current_state, verify_chain
+from wordsworth.bootstrap import ensure_admin_role
 from wordsworth.delete_cli import main
 from wordsworth.deletion import delete_document
 from wordsworth.dossier_deletion import delete_dossier
@@ -93,10 +94,19 @@ def test_delete_after_a_render_removes_it_and_the_routes_answer_410(
     got = client.get(f"/documents/{doc_id}/redacted.pdf")
     assert got.status_code == 410
     assert _renders(mem_store, doc_id) == []  # refused before any re-render
-    # 410 whatever the grant -- not 404 "unknown grant" for the removed one
-    assert client.post(f"/documents/{doc_id}/reveal.pdf", json=reveal).status_code == 410
-    assert client.post(f"/documents/{doc_id}/reveal.pdf",
-                       json={"grant_id": "no-such-grant"}).status_code == 410
+    # reveal-authorize-first (#487): the deletion removed this very grant, so
+    # its former recipient gets the uniform refusal, not a 410 -- he held a
+    # grant on this one document, so he learns nothing he did not know.
+    removed = client.post(f"/documents/{doc_id}/reveal.pdf", json=reveal)
+    assert removed.status_code == 403
+    assert removed.json() == {"detail": "grant not applicable"}
+    unknown = client.post(f"/documents/{doc_id}/reveal.pdf",
+                          json={"grant_id": "no-such-grant"})
+    assert unknown.status_code == 403
+    assert unknown.json() == {"detail": "grant not applicable"}
+    # GET /documents/{id}/redacted.pdf is behind corpus read, not the reveal
+    # grant -- it keeps its 410.
+    assert client.get(f"/documents/{doc_id}/redacted.pdf").status_code == 410
 
 
 def test_a_render_left_in_the_cache_is_not_served(session_factory, mem_store):
@@ -137,6 +147,7 @@ def test_dry_run_counts_renders_and_box_map_and_removes_nothing(
         session_factory, capsys):
     store, index = InMemoryObjectStore(), InMemoryIndex()
     with session_factory() as s:
+        ensure_admin_role(s)
         doc = register(s, KEY)
         s.flush()
         _seed_render(s, store, doc.id, versions=(1, 2))

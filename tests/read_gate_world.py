@@ -114,7 +114,8 @@ _Q = "Wanneer krijg ik als bewoner een parkeervergunning?"
 def request_for(world: World, method: str, path: str) -> tuple[str, dict]:
     """A valid request for a row: existing ids, the parameters it needs."""
     ids = {"document_id": world.doc_id, "dossier_id": world.dossier_id,
-           "grant_id": world.grant_id, "name": "beheerder"}
+           "grant_id": world.grant_id, "name": "beheerder",
+           "group": "hr-afdeling", "role": "beheerder"}
     if "{topic_id}" in path:
         ids["topic_id"] = world.topic_id()
     url = _PLACEHOLDER.sub(lambda m: ids[m.group(1)], path)

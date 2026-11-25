@@ -16,8 +16,11 @@ from wordsworth.search_index import InMemoryIndex
 class _Ident:
     """Een identiteitsprovider die iedereen met de header binnenlaat."""
 
+    def resolve(self, request, now=None):
+        return request.headers.get("x-wie") or None, ()
+
     def caller(self, request, now=None):
-        return request.headers.get("x-wie") or None
+        return self.resolve(request, now)[0]
 
 
 # --- S1: de recipient-binding viel stil zodra er geen sleutels waren ---------

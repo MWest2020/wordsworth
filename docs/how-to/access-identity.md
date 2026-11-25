@@ -83,6 +83,31 @@ console behind Keycloak (the `console` key remains the way in).
 Cloudflare Access is not affected: its assertion carries no such claim, and
 Access establishes the address itself.
 
+## Groups (keycloak-groups-to-roles)
+
+With Keycloak in front, configure a **group membership mapper** on the client
+(Keycloak admin console: Client scopes → the client's dedicated scope →
+Mappers → "Group Membership", token claim name `groups`, "Full group path"
+off so the claim carries plain names). Wordsworth reads that `groups` claim —
+and only that claim, off the same verified assertion `email_verified` is
+checked on — to resolve which roles a caller holds via a `group_roles`
+mapping (`docs/how-to/roles.md#groepen-keycloak-groups-to-roles`). A `groups`
+claim that is missing or not a list of strings yields no groups, not a
+refusal of the caller: only `email` and `email_verified` can refuse the whole
+assertion.
+
+**The header is never a source, here either.** A `groups` HTTP header is never
+read; only the signed claim is. An assertion that fails any check — bad
+signature, wrong audience or issuer, expired, unverified email — yields
+neither a caller label nor groups, the same fail-closed rule as everywhere
+else in this document.
+
+**A valid `X-API-Key` or the console cookie carries no groups**, even when a
+valid assertion with groups rides along on the same request: a sent
+credential beats one that rides along (see "Keeping the key route" below),
+and a key or a cookie names a label, and a label has no groups. So: no groups;
+use a personal grant or label.
+
 ## Turning it on — Cloudflare Access
 
 ```bash

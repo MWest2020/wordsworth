@@ -13,7 +13,9 @@ A grant that keeps working until something is cleaned up is a permission you
 cannot actually take back. And issuing and revoking are **audited without key
 material**, which is the rule this whole repository keeps returning to: the
 record proves what happened without becoming a second copy of the secret.
+
 ## Requirements
+
 ### Requirement: Per-type reveal grants
 
 The system SHALL represent authorization to reveal PII as a grant naming a
@@ -94,10 +96,18 @@ documentscope die naar een onbekend document wijst SHALL met 404 geweigerd
 worden, vóór enige write — dezelfde weigering als de andere document-routes
 geven, en niet een databasefout die als 500 naar buiten komt. Uitgeven zonder
 documentscope SHALL met 400 geweigerd worden waar de deployment geen globale
-grants toestaat. Inspecteren of intrekken van een onbekende grant SHALL 404 geven;
-intrekken SHALL idempotent zijn. Elke uitgifte en intrekking SHALL in de
+grants toestaat. Intrekken van een onbekende grant SHALL 404 geven; intrekken
+SHALL idempotent zijn. Elke uitgifte en intrekking SHALL in de
 key-lifecycle-audit terechtkomen. Geen antwoord SHALL sleutelmateriaal of klare
 PII bevatten.
+
+Inspecting a grant (`GET /grants/{id}`) SHALL, when caller authentication is
+on, answer only a caller who may read the corpus or who may issue grants. Any
+other caller SHALL get 403 before the grant is looked up, so that the answer
+does not say whether the grant exists. Being the recipient of a grant SHALL
+NOT by itself admit a caller to inspect it. An admitted caller SHALL get 404
+for an unknown grant. Where no corpus-read list is configured, inspecting
+SHALL behave as before.
 
 #### Scenario: Een geauthenticeerde caller buiten de uitgeverskring mint niets
 
@@ -124,6 +134,19 @@ PII bevatten.
 - **THEN** antwoordt de API met 404 "unknown document" en ontstaat er geen
   grant en geen audit-event
 
+#### Scenario: A caller on no list cannot inspect a grant
+
+- **WHEN** an authenticated caller who is neither on the corpus-read list nor
+  an issuer requests `GET /grants/{id}` for an existing grant and for an
+  unknown id
+- **THEN** both answer 403 with the same body
+
+#### Scenario: An issuer and a reader can inspect
+
+- **WHEN** an issuer, or a caller on the corpus-read list, requests
+  `GET /grants/{id}` for an existing grant
+- **THEN** the answer is 200 with the grant, and 404 for an unknown id
+
 ### Requirement: Grants may be issued by PPL level
 
 `POST /grants` SHALL accept `ppl` (integer 0–3) as an alternative to
@@ -141,4 +164,3 @@ Supplying both or neither SHALL be rejected with 422.
 
 - **WHEN** a grant request carries both `ppl` and `allowed_types`
 - **THEN** the API responds 422 and no grant is created
-

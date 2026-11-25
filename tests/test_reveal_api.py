@@ -85,26 +85,36 @@ def test_revoked_grant_forbidden(session_factory, mem_store, mem_index,
     r = _client(session_factory, kp, gs).post(
         f"/documents/{doc_id}/reveal", json={"grant_id": grant.grant_id})
     assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
 
 
-def test_unknown_grant_is_404(session_factory, mem_store, mem_index,
-                              fake_embedder, born_digital_pii_pdf):
+def test_unknown_grant_is_the_uniform_refusal(session_factory, mem_store, mem_index,
+                                              fake_embedder, born_digital_pii_pdf):
+    """reveal-authorize-first (#487): an unknown grant is not a 404 -- it
+    answers exactly like a grant that does apply but is refused, on an
+    existing document and on one that does not exist."""
     kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
                           born_digital_pii_pdf)
-    r = _client(session_factory, kp, InMemoryGrantStore()).post(
-        f"/documents/{doc_id}/reveal", json={"grant_id": "nope"})
-    assert r.status_code == 404
+    client = _client(session_factory, kp, InMemoryGrantStore())
+    for target in (doc_id, uuid4()):
+        r = client.post(f"/documents/{target}/reveal", json={"grant_id": "nope"})
+        assert r.status_code == 403
+        assert r.json() == {"detail": "grant not applicable"}
 
 
-def test_unknown_document_is_404(session_factory, mem_store, mem_index,
-                                 fake_embedder, born_digital_pii_pdf):
+def test_unscoped_grant_does_not_cover_a_missing_document(
+        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+    """reveal-authorize-first (#487): a grant that would cover any document
+    still does not cover one that does not exist -- 403, not 404."""
     kp, _ = _prepare(session_factory, mem_store, mem_index, fake_embedder,
                      born_digital_pii_pdf)
     gs = InMemoryGrantStore()
-    grant = gs.issue("agent-x", ["EMAIL"], actor="mark")
-    r = _client(session_factory, kp, gs).post(
+    grant = gs.issue("agent-x", ["EMAIL"], actor="mark")  # unscoped
+    r = TestClient(create_app(session_factory=session_factory, key_provider=kp,
+                              grant_store=gs, allow_global_grants=True)).post(
         f"/documents/{uuid4()}/reveal", json={"grant_id": grant.grant_id})
-    assert r.status_code == 404
+    assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
 
 
 def test_grant_for_other_document_forbidden(session_factory, mem_store, mem_index,
@@ -116,6 +126,27 @@ def test_grant_for_other_document_forbidden(session_factory, mem_store, mem_inde
     r = _client(session_factory, kp, gs).post(
         f"/documents/{doc_id}/reveal", json={"grant_id": grant.grant_id})
     assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
+
+
+def test_caller_who_is_not_the_recipient_is_refused(
+        session_factory, mem_store, mem_index, fake_embedder, born_digital_pii_pdf):
+    """A grant names WHO may reveal: with caller authentication enabled, a
+    caller other than the recipient gets the uniform refusal and nothing is
+    revealed (tests/test_reveal_recipient_binding.py pins the pure decision;
+    this pins it through the route)."""
+    kp, doc_id = _prepare(session_factory, mem_store, mem_index, fake_embedder,
+                          born_digital_pii_pdf)
+    gs = InMemoryGrantStore()
+    grant = gs.issue("ontvanger", ["EMAIL"], actor="mark", document_id=doc_id)
+    client = TestClient(create_app(
+        session_factory=session_factory, key_provider=kp, grant_store=gs,
+        api_keys={"kontvanger": "ontvanger", "kderde": "derde"}))
+    r = client.post(f"/documents/{doc_id}/reveal", json={"grant_id": grant.grant_id},
+                    headers={"X-API-Key": "kderde"})
+    assert r.status_code == 403
+    assert r.json() == {"detail": "grant not applicable"}
+    assert PII_EMAIL not in r.text
 
 
 def test_reveal_is_audited(session_factory, mem_store, mem_index, fake_embedder,

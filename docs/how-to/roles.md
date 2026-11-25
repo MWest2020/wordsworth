@@ -112,6 +112,40 @@ ook op hem. Een bijzondere route voor beheerders is de tweede deur die dit
 project nergens heeft — en het is de deur die het meest gebruikt wordt en het
 minst bekeken.
 
+## Groepen (keycloak-groups-to-roles)
+
+Een organisatie beheert mensen vaak in groepen bij de identiteitsprovider, niet
+per persoon. `GET/PUT/DELETE /group-roles` (dezelfde poort als `/roles`, ook een
+sectie op deze consolepagina) koppelt een groep aan een rol: elk lid van die
+groep **houdt** die rol, net als de ontvanger van een grant die hem noemt — en
+precies zo lang die rol actief is. Een rol uitzetten sluit dus ook elke groep
+die hem noemt, onmiddellijk; `PUT` op een onbekende rol is 404.
+
+```sh
+curl -XPUT $API/group-roles/hr-afdeling/HR
+curl -XDELETE $API/group-roles/hr-afdeling/HR
+```
+
+`caller_holds_role` beslist nu over twee bronnen — een grant op naam, of een
+groep op de verzekerde aanmelding — met dezelfde regel voor beide: eerst wordt
+gecontroleerd of de rol bestaat en actief is, pas dan wie hem houdt. Dit gebruikt
+alleen de delete-poort (`beheerder`); geen andere poort beslist via een rol.
+
+**Een groep opent nooit een onthulling.** Een grant blijft op naam van de
+ontvanger — `authorize()` kijkt niet naar groepen en niet naar
+`caller_holds_role`. Een groep die op `beheerder` staat, maakt de ongescopete
+grant uit `roles.md`'s eigen voorbeeld dus niet opeens een sleutel voor iedereen
+in die groep: wie wil onthullen heeft nog steeds een grant nodig die hém met
+naam noemt.
+
+**Alleen de aanmelding, nooit een sleutel of de consolecookie.** De groepen
+komen uit het `groups`-veld van de geverifieerde aanmelding (Keycloak's
+group-membership mapper, zie [access-identity](access-identity.md)) — nooit uit
+een header, nooit uit een niet-ondertekend veld. Wie met een API-sleutel of de
+consolecookie binnenkomt, draagt geen groepen, ook niet als er een geldige
+aanmelding met groepen meelift: **geen groepen; gebruik een persoonlijke grant
+of label.**
+
 ## Wat hier niet woont
 
 **Wie iemand is.** Dat komt uit de aanmelding: nu Cloudflare Access (het
