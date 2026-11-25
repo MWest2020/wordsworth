@@ -28,8 +28,11 @@
     could then never be revealed (#465). Mappings are now stored, linked and
     removed under the audit chain lock only: `PostgresMappingStore.put`
     buffers, and the rows are written in pseudonym order once the lock is
-    held (at the link, before a dataset run's record, or at commit). The
-    pseudonym backfill links the same way, one transaction per document.
+    held (at the link, or before a dataset run's record). Nothing writes
+    them implicitly: a commit with rows still buffered is refused with
+    `UnwrittenMappings`, and a savepoint neither writes nor drops them. The
+    pseudonym backfill links the same way, one transaction per document,
+    under the document's row lock.
   - That also ends the deadlock between two runs minting the same new value
     (#504): no mapping row is held before the chain lock any more.
   - The API's already-indexed ingest path added a dossier membership without

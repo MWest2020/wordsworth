@@ -36,27 +36,23 @@ class MappingStore(Protocol):
 class PostgresMappingStore:
     """Separated store in PostgreSQL. `put` is idempotent: one row per pseudonym.
 
-    `put` writes nothing yet: it buffers the row on the session, and
-    `write_pending` stores the buffered rows under the audit chain lock, in
-    pseudonym order (`docs/reference/lock-order.md`). An anonymizer calls
-    `put` in the order values appear in a text, long before its run holds the
-    chain lock; rows inserted then, uncommitted, made two runs minting the
-    same new values wait for each other in a circle (#465, #504). `process`
-    and `reanonymize` write through `pseudonym_registry.link`, the dataset
-    run calls `write_pending` before its audit record; whatever is still
-    buffered at commit is written then (`_write_at_commit`), so a `put` is
-    never silently lost."""
+    `put` only buffers the row on the session; `write_pending` stores the
+    buffer under the audit chain lock, in pseudonym order
+    (`docs/reference/lock-order.md`). Rows inserted in text order, before the
+    chain lock, made two runs minting the same values wait in a circle (#465,
+    #504). `process` and `reanonymize` write through `pseudonym_registry.link`,
+    any other caller calls `write_pending` itself, before its audit record.
+    Nothing is written implicitly: a commit with rows still buffered raises
+    `UnwrittenMappings`; the end of the transaction drops the buffer."""
 
     def __init__(self, session: Session):
         self._session = session
 
     def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
             norm_version: str | None = None) -> None:
-        # The first `put` of a pseudonym wins, as the first row does in the
-        # table: both encrypt the same value.
-        # Inside a transaction, so the buffer ends with it: stored at its
-        # commit at the latest, dropped at its rollback (the two listeners
-        # below). Begins one if none is open; no statement is sent.
+        # The first `put` of a pseudonym wins (both encrypt the same value).
+        # Inside a transaction, so the buffer ends with it (the listeners
+        # below); begins one if none is open, no statement is sent.
         self._session.connection()
         self._session.info.setdefault(_PENDING, {}).setdefault(pseudonym, dict(
             pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
@@ -65,14 +61,12 @@ class PostgresMappingStore:
 
     def get(self, pseudonym: str) -> Mapping | None:
         row = self._session.get(PiiMapping, pseudonym)
-        if row is None:
-            pending = self._session.info.get(_PENDING, {}).get(pseudonym)
-            if pending is None:
-                return None
-            return Mapping(pseudonym, pending["ciphertext"], pending["nonce"],
-                           pending["key_id"], pending["norm_version"])
-        return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id,
-                       row.norm_version)
+        if row is not None:
+            return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id,
+                           row.norm_version)
+        p = self._session.info.get(_PENDING, {}).get(pseudonym)
+        return None if p is None else Mapping(
+            pseudonym, p["ciphertext"], p["nonce"], p["key_id"], p["norm_version"])
 
     def reencrypt(self, old_id: str, new_id: str, key_provider: KeyProvider) -> int:
         """Re-encrypt every entry under ``old_id`` onto ``new_id`` and return the
@@ -115,7 +109,11 @@ def write_pending(session: Session, only: set[str] | None = None) -> None:
     keeps). Buffered rows outside it are dropped, not stored -- nothing would
     refer to them; rows of ``only`` that were not buffered (another run
     minted them earlier) are only held. Without ``only`` everything buffered
-    is stored."""
+    is stored. Refused inside a savepoint: rolling that back would take the
+    stored rows and the chain lock with it, the buffer already emptied."""
+    if session.in_nested_transaction():
+        raise RuntimeError("mapping_store.write_pending inside a savepoint: "
+                           "a rollback of it would drop the rows it stores")
     pending = session.info.pop(_PENDING, {})
     names = sorted(pending if only is None else only)
     audit.lock_chain(session)
@@ -131,20 +129,34 @@ def write_pending(session: Session, only: set[str] | None = None) -> None:
                     .with_for_update(key_share=True, read=True))
 
 
+class UnwrittenMappings(RuntimeError):
+    """A transaction is committing while `put` rows are still buffered."""
+
+
 @event.listens_for(Session, "before_commit")
-def _write_at_commit(session: Session) -> None:
-    """The net under every `put`: rows still buffered when the transaction
-    commits are stored first, the same way. A caller that appends an audit
-    record after its `put`s holds the chain lock by then already."""
-    if session.info.get(_PENDING):
-        write_pending(session)
+def _nothing_buffered_at_commit(session: Session) -> None:
+    """Refuse a commit that would lose a `put`: the caller forgot
+    `write_pending`. Loud on purpose: nothing is written and no lock is
+    taken here, so the lock order stays where the code shows it. Only the
+    outermost commit: SQLAlchemy fires this for a savepoint release too."""
+    if session.in_nested_transaction():
+        return
+    pending = session.info.get(_PENDING)
+    if pending:
+        raise UnwrittenMappings(
+            f"{len(pending)} pii_mappings rows were put and never written; "
+            "call mapping_store.write_pending(session) before the commit")
 
 
-@event.listens_for(Session, "after_rollback")
-def _drop_at_rollback(session: Session) -> None:
-    """A rolled-back run stores nothing, its buffered rows included. (A
-    savepoint rolling back is not this event.)"""
-    session.info.pop(_PENDING, None)
+@event.listens_for(Session, "after_transaction_end")
+def _drop_at_end(session: Session, transaction) -> None:
+    """The buffer lives as long as the outermost transaction: a commit got
+    here with nothing buffered (above), a rollback or a `close` stores
+    nothing. A savepoint's end is not it -- `register_live` and
+    `dossiers.add` roll one back on a lost race, and the puts made before
+    it belong to the run that goes on."""
+    if transaction.parent is None:
+        session.info.pop(_PENDING, None)
 
 
 def remove_orphans(session: Session, pseudonyms: list[str]) -> None:

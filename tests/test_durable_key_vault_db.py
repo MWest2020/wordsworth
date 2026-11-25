@@ -4,7 +4,7 @@ from __future__ import annotations
 from wordsworth import audit
 from wordsworth import pseudonym_registry
 from wordsworth.keys import DurableKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore
+from wordsworth.mapping_store import PostgresMappingStore, write_pending
 from wordsworth.pipeline import register
 from wordsworth.pseudonymizer import Pseudonymizer, deanonymize
 from wordsworth.transit import FakeTransit, PostgresKeyVaultStore
@@ -34,6 +34,7 @@ def test_reveal_survives_restart_with_postgres_vault(session):
     result = Pseudonymizer(
         DurableKeyProvider(vault, transit), PostgresMappingStore(session)
     ).anonymize(f"BSN {PII_BSN} mail {PII_EMAIL}")
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
     for secret in (PII_BSN, PII_EMAIL):
         assert secret not in result.text

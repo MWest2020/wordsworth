@@ -6,7 +6,8 @@ An anonymizer calls `put` in the order values appear in a text, before its
 run holds the chain lock. While `put` inserted right away, the uncommitted
 row was a lock held ahead of the chain lock, and three interleavings ended in
 `DeadlockDetected`. `put` now only buffers; `write_pending` stores the rows
-once the chain lock is held."""
+once the chain lock is held, and nothing else does
+(`tests/test_mapping_buffer.py`)."""
 from __future__ import annotations
 
 import threading
@@ -20,11 +21,11 @@ from test_mapping_delete_race import (A_LINE, B_LINE, _bsn_token, _delete,
 from test_reanonymize_delete_race import _done_or_waiting
 from wordsworth import pseudonym_registry
 from wordsworth.audit import verify_chain
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import DocumentPseudonym, PiiMapping
 from wordsworth.object_store import InMemoryObjectStore
 from wordsworth.pipeline import ingest, process, reanonymize
-from wordsworth.pseudonymizer import Pseudonymizer, ReversibleAnonymizer
+from wordsworth.pseudonymizer import ReversibleAnonymizer
 from wordsworth.search_index import InMemoryIndex
 from wordsworth.states import State
 
@@ -196,35 +197,3 @@ def test_process_and_reanonymize_minting_the_same_new_value(
 
     assert not errors, errors
     _assert_linked_and_stored(session_factory, [old, new], 1)
-
-
-def test_a_put_is_buffered_written_in_order_and_never_lost(session_factory):
-    """`put` touches no row; `write_pending` stores what is buffered and
-    takes the chain lock; a commit stores what is left; a rollback drops it."""
-    kp = new_key_provider()
-    with session_factory() as s, session_factory() as other:
-        pseudonymizer = Pseudonymizer(kp, PostgresMappingStore(s))
-        first = pseudonymizer.pseudonym("bsn", BSN)
-        assert PostgresMappingStore(s).get(first) is not None  # read your own put
-        assert other.scalar(select(func.count()).select_from(PiiMapping)) == 0
-        assert s.execute(text(
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
-            "AND pid = pg_backend_pid()")).scalar_one() == 0
-        write_pending(s)
-        assert s.execute(text(
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
-            "AND pid = pg_backend_pid()")).scalar_one() == 1
-        second = pseudonymizer.pseudonym("bsn", OTHER_BSN)
-        s.commit()  # the second was still buffered
-        other.rollback()
-        assert set(other.execute(select(PiiMapping.pseudonym)).scalars()) == {
-            first, second}
-
-        s.execute(text("DELETE FROM pii_mappings"))
-        s.commit()
-        pseudonymizer.pseudonym("bsn", BSN)
-        s.rollback()
-        s.commit()
-        other.rollback()
-        assert other.scalar(select(func.count()).select_from(PiiMapping)) == 0
-

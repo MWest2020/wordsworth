@@ -47,7 +47,7 @@ class BrokenIndex:
 def _seed(session, key, text):
     d = register(session, key, filename=key)
     session.merge(DocumentText(document_id=d.id, anonymized_text=text))
-    pseudonym_registry.register(session, d.id, text)
+    pseudonym_registry.link(session, d.id, text)  # stores what was put
     session.commit()
     return d
 

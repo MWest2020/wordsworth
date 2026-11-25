@@ -9,7 +9,7 @@ from wordsworth.escrow import AgeEscrow
 from wordsworth.key_audit import ROTATION_ACTION, STREAM, JsonlKeyLifecycleAudit
 from wordsworth.key_lifecycle import rotate_keys
 from wordsworth.keys import InMemoryKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore
+from wordsworth.mapping_store import PostgresMappingStore, write_pending
 from wordsworth.models import AuditRecord, Document, DocumentText
 from wordsworth.pipeline import register
 from wordsworth.pseudonymizer import Pseudonymizer, deanonymize
@@ -33,6 +33,7 @@ def test_mixed_pre_and_post_rotation_mappings_all_decrypt(session):
     session.commit()
 
     pre = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN}")
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
     old_id = kp.current_key(scope="BSN").id
 
@@ -41,6 +42,7 @@ def test_mixed_pre_and_post_rotation_mappings_all_decrypt(session):
     assert old_id != new_id
 
     post = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN2}")
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
 
     # the two mappings live under different key ids (same scope, pre/post rotation)
@@ -69,6 +71,7 @@ def test_reencrypt_moves_entries_to_new_key_documents_untouched(session):
     result = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN} BSN {PII_BSN2}")
     # the anonymized text is a document artifact — it must not change on rotation
     session.add(DocumentText(document_id=doc.id, anonymized_text=result.text))
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
 
     old_id = kp.current_key(scope="BSN").id
@@ -106,6 +109,7 @@ def test_rotation_writes_key_stream_event_document_chain_unchanged(session, tmp_
     session.commit()
 
     Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN}")
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
     old = kp.current_key(scope="BSN")
 
@@ -163,12 +167,14 @@ def test_no_sentinel_document_and_deanonymize_by_key_id_survives_rotation(
     session.commit()
 
     pre = Pseudonymizer(kp, store).anonymize(f"BSN {PII_BSN}")
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
 
     new = rotate_keys(kp, store, escrow, key_audit, actor="mark", scope="BSN")
     session.commit()
 
     post = Pseudonymizer(kp, store).anonymize(f"IBAN {PII_IBAN}")
+    write_pending(session)  # what was put, under the chain lock
     session.commit()
 
     # no 00000000-… sentinel/system document exists anywhere

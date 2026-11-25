@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from wordsworth.keys import DurableKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore
+from wordsworth.mapping_store import PostgresMappingStore, write_pending
 from wordsworth.pseudonymizer import Pseudonymizer, _reveal
 from wordsworth.transit import (
     FakeTransit,
@@ -59,6 +59,7 @@ def test_reveal_survives_via_singleton_over_session_factory(session_factory):
     kp = DurableKeyProvider(SessionFactoryKeyVaultStore(session_factory), t)
     with session_factory() as s:
         text = Pseudonymizer(kp, PostgresMappingStore(s)).anonymize(f"BSN {PII_BSN}").text
+        write_pending(s)  # what was put, under the chain lock
         s.commit()
     assert PII_BSN not in text
     with session_factory() as s:
