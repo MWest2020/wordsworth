@@ -107,6 +107,23 @@ every legacy original it finds for a live document, and the original scan
 superseded copies included -- when that scan is itself still plaintext; these
 are counted separately in the report, under `scans`.
 
+**A scan retired as a copy is a scan too (#486).** When OCR recovery finds
+that the OCR'd PDF already is another live document's object, it writes
+nothing and supersedes the scan's document (`supersede(..., as_object=...)`).
+That document keeps its own object -- the scan -- which no survivor shares
+and no `ocr` record names. The run takes it as a candidate of kind `"scan"`:
+the object key of every document that is not deleted, is superseded, and has
+a `supersede` audit record carrying `as_object`. It is sealed under that
+document's own row lock and claim (not deleted, its row still points at the
+object), counted under `scans`, reported `"gone"` when the store no longer
+has it, and `--verify` fails while it is still plaintext. Deleting the
+retired document removes the sealed scan and its key row like any other
+original. An ordinary copy, which shares its survivor's key, adds nothing:
+the survivor's original covers it. Before this fix such a scan was no
+candidate at all, so it stayed plaintext and `--verify` passed over it;
+**the object count of a dry run can therefore be higher than it was before
+the fix** -- by exactly these scans.
+
 **Never without a readable copy.** Per object: the sealed bytes are written
 first under a temporary key (`sealing/<sha256>`) and verified to open to the
 object's recorded SHA-256 *before* the plaintext at `documents/<sha256>` is
@@ -142,7 +159,17 @@ never takes the audit chain's lock.
 
 **Idempotent and resumable.** A document already sealed (`sealed_at` set) is
 reported `"already_sealed"` and its object is not touched (a leftover
-temporary copy is removed). The original scan of a live recovered document
+temporary copy is removed). **A rerun does not download it (#491):** when the
+key row has `sealed_at` and a ranged GET of the first 30 bytes shows the
+sealed header, that is the whole check -- under the same row lock as before,
+and the same two facts the run already went by after downloading the object.
+Everything else is still read in full: a plaintext object under a sealed row
+(reported `"failed"`, `key row is sealed but the object is plaintext`), a
+sealed object whose `sealed_at` never committed (verified, then finished),
+and an object whose header cannot be read (the full read then reports it
+`missing` or `unreadable`). A rerun does not open a sealed and committed
+object to check its body; it never did -- `--verify` and reading the
+document are the checks for that. The original scan of a live recovered document
 that the store no longer has (it does not exist, or reading it raises an
 object-store error) is reported with the status `"gone"` and counted under
 `gone`: neither sealed nor failed, and the exit status stays clean. A run interrupted between the overwrite and the `sealed_at` commit
@@ -154,7 +181,7 @@ anything was written reuses that row. Safe to run repeatedly, including on a
 schedule, until `--verify` reports `"verified": true`.
 
 **What `--verify` checks.** It fails (exit 1) while a live document's
-original or a scan is still legacy plaintext, or while a sealed object can
+original or a scan (a retired copy's scan included) is still legacy plaintext, or while a sealed object can
 be opened by no one: it has no key row (`no_key_row`) or its header names
 another key id than its row (`key_id_mismatch`), or while a live document's
 original is missing from the store (`missing`: data loss, never a pass), or
