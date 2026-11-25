@@ -330,6 +330,23 @@ scan is counted separately (`scans`).
   longer in the store
 - **THEN** the seal run does nothing for it and reports nothing as failed
 
+#### Scenario: A scan retired as a copy is sealed too
+
+- **WHEN** OCR recovery retired a scan's document as a copy of another
+  document's object (a `supersede` record carrying `as_object`), that
+  document is not deleted, and its own object -- the scan -- is still stored
+  in plaintext
+- **THEN** the seal run seals that object under the same rules as any other
+  scan (counted under `scans`, `gone` when the store no longer has it), and
+  `--verify` fails while it is still plaintext
+
+#### Scenario: A rerun does not download what is sealed and committed
+
+- **WHEN** the seal run meets an object whose key row has `sealed_at` set and
+  whose first bytes are the sealed header
+- **THEN** it reports the object `already_sealed` after reading the header
+  only, never the whole object
+
 #### Scenario: A scan that is no longer in the store is skipped as gone
 
 - **WHEN** the scan of a live recovered document is named in its `ocr` record
