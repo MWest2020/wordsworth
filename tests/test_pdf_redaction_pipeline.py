@@ -6,7 +6,8 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from wordsworth.keys import InMemoryKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_buffer import write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord, BoxMap
 from wordsworth.pdf_redaction import compute_box_map
 from wordsworth.pipeline import ingest, process, reanonymize

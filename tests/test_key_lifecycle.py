@@ -3,13 +3,13 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from wordsworth import audit
-from wordsworth import pseudonym_registry
+from wordsworth import audit, pseudonym_registry
 from wordsworth.escrow import AgeEscrow
 from wordsworth.key_audit import ROTATION_ACTION, STREAM, JsonlKeyLifecycleAudit
 from wordsworth.key_lifecycle import rotate_keys
 from wordsworth.keys import InMemoryKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_buffer import write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord, Document, DocumentText
 from wordsworth.pipeline import register
 from wordsworth.pseudonymizer import Pseudonymizer, deanonymize
@@ -91,9 +91,7 @@ def test_reencrypt_moves_entries_to_new_key_documents_untouched(session):
     # De pijplijn registreert de tokens van een document; deze test
     # anonimiseert buiten de pijplijn om en doet het daarom zelf.
     pseudonym_registry.register(session, doc.id, result.text)
-    restored = deanonymize(
-        session, doc.id, result.text, kp, store, actor="x"
-    )
+    restored = deanonymize(session, doc.id, result.text, kp, store, actor="x")
     for secret in (PII_BSN, PII_BSN2):
         assert secret in restored
 

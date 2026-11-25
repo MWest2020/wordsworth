@@ -13,7 +13,8 @@ import threading
 from sqlalchemy import func, select
 
 from race_setup import wait_for_a_lock_waiter
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_buffer import write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import PiiMapping
 
 

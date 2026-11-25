@@ -12,7 +12,7 @@ links yet; a check without the lock did not see them and removed the row, so
 that document's token could never be revealed. `pseudonym_registry.link`
 stores its mappings and links under the same lock, so either its links are
 committed and the check below sees them, or it links after this deletion
-committed and stores the mapping again (`mapping_store.write_pending`).
+committed and stores the mapping again (`mapping_buffer.write_pending`).
 
 Lock order (`docs/reference/lock-order.md`): the document rows and key rows
 are held already (`deletion_keys.doomed`); `audit.lock_chain` flushes the

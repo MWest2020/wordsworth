@@ -12,8 +12,9 @@ from sqlalchemy.exc import IntegrityError
 
 from reanon_helpers import BSN, new_key_provider
 from wordsworth import pseudonym_registry
-from wordsworth.mapping_store import (PostgresMappingStore, UnwrittenMappings,
-                                      write_pending)
+from wordsworth.mapping_buffer import (UnwrittenMappings, WriteInSavepoint,
+                                       write_pending)
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import Document, DocumentPseudonym, PiiMapping
 from wordsworth.pipeline import register
 from wordsworth.pseudonymizer import Pseudonymizer
@@ -96,7 +97,7 @@ def test_write_pending_is_refused_inside_a_savepoint(session_factory):
     with session_factory() as s, session_factory() as other:
         token = Pseudonymizer(kp, PostgresMappingStore(s)).pseudonym("bsn", BSN)
         with s.begin_nested():
-            with pytest.raises(RuntimeError, match="savepoint"):
+            with pytest.raises(WriteInSavepoint):
                 write_pending(s)
         assert _advisory_locks(s) == 0
         write_pending(s)

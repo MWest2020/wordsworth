@@ -17,7 +17,7 @@ page; a writer that cannot is a finding, not an exception to add quietly.
 | 1 | `documents` rows, by `id` when several | `FOR NO KEY UPDATE` by a writer that changes or removes the document; `FOR SHARE` by one that only needs it to stay as it is | deletion (`deletion_keys.doomed`), dossier deletion (`dossier_locks.lock_members`), supersession, dedupe, OCR recovery, `release_deleted.release`; `ingest` (`ingest_lock.lock_live`), the API's already-indexed path (`lock_live_for`), `process`, `reanonymize` and the pseudonym backfill (`lock_for_process`) |
 | 2 | `document_keys` rows, by `object_key` | `FOR UPDATE` | deletion (`deletion_keys.doomed`) |
 | 3 | the audit chain's advisory lock (key 4771) | `pg_advisory_xact_lock` | every `audit.append`; `audit.lock_chain` for a writer that decides something under it, and for the detection-feedback route, which takes it before it reads (#515) |
-| 4 | `pii_mappings` rows, by `pseudonym` | inserted (`ON CONFLICT DO NOTHING`) and held `FOR KEY SHARE` by a run that stores or links them; `FOR UPDATE` by a deletion that removes them | `mapping_store.write_pending`, reached through `pseudonym_registry.link` (`process`, `reanonymize`, the pseudonym backfill) and called by the dataset run before its record; `deletion_mappings.remove` |
+| 4 | `pii_mappings` rows, by `pseudonym` | inserted (`ON CONFLICT DO NOTHING`) and held `FOR KEY SHARE` by a run that stores or links them; `FOR UPDATE` by a deletion that removes them | `mapping_buffer.write_pending`, reached through `pseudonym_registry.link` (`process`, `reanonymize`, the pseudonym backfill) and called by the dataset run before its record; `deletion_mappings.remove` |
 
 All of them last until the transaction ends. A writer holds its rows before
 its first audit record, and writes or locks a `pii_mappings` row only once it
@@ -60,10 +60,14 @@ to settle on this page first, not an order to improvise.
   table is global: one value is one token everywhere. An anonymizer meets
   values in text order, long before its run holds the chain lock, so
   `PostgresMappingStore.put` only buffers the row on the session.
-  `mapping_store.write_pending` stores the buffered rows once the chain lock
+  `mapping_buffer.write_pending` stores the buffered rows once the chain lock
   is held, in pseudonym order. A row inserted earlier, uncommitted, was a
   lock ahead of the chain lock: two runs minting the same new values waited
-  for each other in a circle (#504).
+  for each other in a circle (#504). It then holds the rows it linked `FOR
+  KEY SHARE`. That is defence in depth: every deleter decides under the
+  chain lock, which the linking run keeps until it commits, so the chain
+  lock alone keeps the rows; the hold makes a `DELETE` outside that rule
+  wait instead of succeed.
 - **The chain lock also guards the link between a document and a mapping.**
   A deletion removes a mapping only when no other document is linked to it
   (`document_pseudonyms`), and decides that under the chain lock;
@@ -72,7 +76,7 @@ to settle on this page first, not an order to improvise.
   deletion committed first and the linking run stores the mapping again
   (#465). Every caller that links goes through `link`.
 - **A `put` is written explicitly, or the commit is refused.** Only
-  `write_pending` writes buffered rows; nothing writes them at commit. A
+  `write_pending` (`mapping_buffer.py`) writes buffered rows; nothing writes them at commit. A
   caller that appends an audit record after its `put`s calls `write_pending`
   before that record (the dataset run), so the order on this page is visible
   in the code. An outermost commit with rows still buffered raises
@@ -81,15 +85,21 @@ to settle on this page first, not an order to improvise.
   that: its release writes nothing and takes no lock, and its rollback drops
   nothing (`register_live` and `dossiers.add` roll one back on a lost race
   in the middle of a run). `write_pending` itself is refused inside a
-  savepoint, whose rollback would take the stored rows and the chain lock
-  with it.
-- **Chain lock first, then read: only for a writer that locks no row.** The
-  detection-feedback route (`POST /documents/{id}/feedback`, #515) takes the
-  chain lock, then reads the document's state, then appends. A deletion
-  either committed first (the route answers 410 and appends nothing) or
-  waits for the route's commit. That is safe because the route asks for no
-  row lock afterwards; a writer that does must lock its rows before the
-  chain lock, as above.
+  savepoint (`WriteInSavepoint`), whose rollback would take the stored rows
+  and the chain lock with it.
+- **Chain lock first, then read: only for a writer that waits for no row
+  lock afterwards.** The detection-feedback route (`POST
+  /documents/{id}/feedback`, #515) takes the chain lock, then reads the
+  document's state, then appends. A deletion either committed first (the
+  route answers 410 and appends nothing) or waits for the route's commit.
+  The route does take one row lock under the chain lock: like every
+  `audit.append`, its insert into `audit_records` takes `FOR KEY SHARE` on
+  the `documents` row through the foreign key. That lock cannot wait, because
+  it conflicts only with `FOR UPDATE` (or a key change or delete), and
+  nothing takes `FOR UPDATE` on `documents`: writers take `FOR NO KEY
+  UPDATE` or `FOR SHARE` (row 1), and no row is ever deleted. A writer that
+  asks for any stronger row lock must take it before the chain lock, as
+  above; so must anyone who would take `FOR UPDATE` on `documents`.
 - **A reader that waited reads again.** Under READ COMMITTED a statement
   after the wait sees what the other transaction committed. `reanonymize`
   returns the state it found; `reprocess` counts a document that was deleted

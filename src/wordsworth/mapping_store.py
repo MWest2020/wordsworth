@@ -6,13 +6,12 @@ from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import event, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import audit
 from .crypto import decrypt, encrypt
 from .keys import KeyProvider
+from .mapping_buffer import PENDING
 from .models import PiiMapping
 
 
@@ -36,14 +35,11 @@ class MappingStore(Protocol):
 class PostgresMappingStore:
     """Separated store in PostgreSQL. `put` is idempotent: one row per pseudonym.
 
-    `put` only buffers the row on the session; `write_pending` stores the
-    buffer under the audit chain lock, in pseudonym order
-    (`docs/reference/lock-order.md`). Rows inserted in text order, before the
-    chain lock, made two runs minting the same values wait in a circle (#465,
-    #504). `process` and `reanonymize` write through `pseudonym_registry.link`,
-    any other caller calls `write_pending` itself, before its audit record.
-    Nothing is written implicitly: a commit with rows still buffered raises
-    `UnwrittenMappings`; the end of the transaction drops the buffer."""
+    `put` only buffers the row on the session (`mapping_buffer`);
+    `mapping_buffer.write_pending` stores it under the audit chain lock.
+    `process` and `reanonymize` write through `pseudonym_registry.link`, any
+    other caller calls `write_pending` itself, before its audit record. A
+    commit with rows still buffered raises `UnwrittenMappings`."""
 
     def __init__(self, session: Session):
         self._session = session
@@ -51,10 +47,10 @@ class PostgresMappingStore:
     def put(self, pseudonym: str, ciphertext: bytes, nonce: bytes, key_id: str,
             norm_version: str | None = None) -> None:
         # The first `put` of a pseudonym wins (both encrypt the same value).
-        # Inside a transaction, so the buffer ends with it (the listeners
-        # below); begins one if none is open, no statement is sent.
+        # Inside a transaction, so the buffer ends with it (the listeners in
+        # `mapping_buffer`); begins one if none is open, no statement is sent.
         self._session.connection()
-        self._session.info.setdefault(_PENDING, {}).setdefault(pseudonym, dict(
+        self._session.info.setdefault(PENDING, {}).setdefault(pseudonym, dict(
             pseudonym=pseudonym, ciphertext=ciphertext, nonce=nonce,
             key_id=key_id, norm_version=norm_version,
             created_at=datetime.now(timezone.utc)))
@@ -64,7 +60,7 @@ class PostgresMappingStore:
         if row is not None:
             return Mapping(row.pseudonym, row.ciphertext, row.nonce, row.key_id,
                            row.norm_version)
-        p = self._session.info.get(_PENDING, {}).get(pseudonym)
+        p = self._session.info.get(PENDING, {}).get(pseudonym)
         return None if p is None else Mapping(
             pseudonym, p["ciphertext"], p["nonce"], p["key_id"], p["norm_version"])
 
@@ -85,78 +81,6 @@ class PostgresMappingStore:
             row.key_id = new_id
         self._session.flush()
         return len(rows)
-
-
-#: `Session.info` key: the rows `put` buffered and `write_pending` has not
-#: stored yet, by pseudonym. On the session, not on the store, because the
-#: writer (`pseudonym_registry.link`) has the session and not the store the
-#: anonymizer was built on. Emptied by every `write_pending`.
-_PENDING = "pii_mappings_pending"
-
-
-def write_pending(session: Session, only: set[str] | None = None) -> None:
-    """Store the buffered mapping rows and hold them until the transaction
-    ends. Under the audit chain lock, taken here (it flushes first), in
-    pseudonym order: `INSERT ... ON CONFLICT DO NOTHING`, then FOR KEY SHARE.
-
-    A deletion removes a mapping no document is linked to, and decides that
-    under the same lock (`deletion_mappings`), so a row stored or found here
-    cannot go before this transaction's links commit (#465). Every writer of
-    `pii_mappings` being under the chain lock also means an insert here never
-    waits for another transaction's uncommitted insert.
-
-    ``only``: the pseudonyms the caller links (the tokens of the text it
-    keeps). Buffered rows outside it are dropped, not stored -- nothing would
-    refer to them; rows of ``only`` that were not buffered (another run
-    minted them earlier) are only held. Without ``only`` everything buffered
-    is stored. Refused inside a savepoint: rolling that back would take the
-    stored rows and the chain lock with it, the buffer already emptied."""
-    if session.in_nested_transaction():
-        raise RuntimeError("mapping_store.write_pending inside a savepoint: "
-                           "a rollback of it would drop the rows it stores")
-    pending = session.info.pop(_PENDING, {})
-    names = sorted(pending if only is None else only)
-    audit.lock_chain(session)
-    if not names:
-        return
-    rows = [pending[name] for name in names if name in pending]
-    if rows:
-        session.execute(pg_insert(PiiMapping)
-                        .on_conflict_do_nothing(index_elements=["pseudonym"]), rows)
-    session.execute(select(PiiMapping.pseudonym)
-                    .where(PiiMapping.pseudonym.in_(names))
-                    .order_by(PiiMapping.pseudonym)
-                    .with_for_update(key_share=True, read=True))
-
-
-class UnwrittenMappings(RuntimeError):
-    """A transaction is committing while `put` rows are still buffered."""
-
-
-@event.listens_for(Session, "before_commit")
-def _nothing_buffered_at_commit(session: Session) -> None:
-    """Refuse a commit that would lose a `put`: the caller forgot
-    `write_pending`. Loud on purpose: nothing is written and no lock is
-    taken here, so the lock order stays where the code shows it. Only the
-    outermost commit: SQLAlchemy fires this for a savepoint release too."""
-    if session.in_nested_transaction():
-        return
-    pending = session.info.get(_PENDING)
-    if pending:
-        raise UnwrittenMappings(
-            f"{len(pending)} pii_mappings rows were put and never written; "
-            "call mapping_store.write_pending(session) before the commit")
-
-
-@event.listens_for(Session, "after_transaction_end")
-def _drop_at_end(session: Session, transaction) -> None:
-    """The buffer lives as long as the outermost transaction: a commit got
-    here with nothing buffered (above), a rollback or a `close` stores
-    nothing. A savepoint's end is not it -- `register_live` and
-    `dossiers.add` roll one back on a lost race, and the puts made before
-    it belong to the run that goes on."""
-    if transaction.parent is None:
-        session.info.pop(_PENDING, None)
 
 
 def remove_orphans(session: Session, pseudonyms: list[str]) -> None:

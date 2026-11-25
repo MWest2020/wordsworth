@@ -7,7 +7,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from wordsworth.keys import DurableKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_buffer import write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.pseudonymizer import Pseudonymizer, _reveal
 from wordsworth.transit import (
     FakeTransit,

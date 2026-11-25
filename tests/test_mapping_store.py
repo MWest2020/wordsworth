@@ -1,4 +1,5 @@
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_buffer import write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 
 
 def test_put_get_roundtrip(session):

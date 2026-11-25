@@ -1274,7 +1274,8 @@ def create_app(
             from . import audit
             from .datasets import (DatasetRun, Profile, load_profile,
                                    validate_unselected)
-            from .mapping_store import PostgresMappingStore, write_pending
+            from .mapping_buffer import write_pending
+            from .mapping_store import PostgresMappingStore
             from .pseudonymizer import Pseudonymizer
 
             if (profile is None) == (profile_name is None):

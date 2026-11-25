@@ -6,7 +6,8 @@ from wordsworth import audit
 from wordsworth import pseudonym_registry
 from wordsworth.anonymizer import Anonymizer
 from wordsworth.keys import InMemoryKeyProvider, StubKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_buffer import write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.models import AuditRecord
 from wordsworth.pipeline import get_anonymized_text, ingest, process, register
 from wordsworth.pseudonymizer import Pseudonymizer, deanonymize

@@ -25,7 +25,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import mapping_store
+from . import mapping_buffer
 from .models import DocumentPseudonym
 
 MINTED = "minted"
@@ -71,7 +71,7 @@ def link(session: Session, document_id: UUID, text: str,
          source: str = MINTED) -> int:
     """`register`, safe beside a deletion (#465): under the audit chain lock,
     with the mapping rows behind the tokens stored and held first
-    (`mapping_store.write_pending`). Every caller that links goes through
+    (`mapping_buffer.write_pending`). Every caller that links goes through
     here: `process`, `reanonymize`, the backfill.
 
     A deletion removes a mapping no other document is linked to, and decides
@@ -80,7 +80,7 @@ def link(session: Session, document_id: UUID, text: str,
     stored (again) here. The caller commits soon after: the lock is held
     until then (`docs/reference/lock-order.md`)."""
     tokens = tokens_in(text)
-    mapping_store.write_pending(session, tokens)
+    mapping_buffer.write_pending(session, tokens)
     return register(session, document_id, text, source=source)
 
 

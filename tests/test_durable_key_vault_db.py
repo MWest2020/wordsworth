@@ -4,7 +4,8 @@ from __future__ import annotations
 from wordsworth import audit
 from wordsworth import pseudonym_registry
 from wordsworth.keys import DurableKeyProvider
-from wordsworth.mapping_store import PostgresMappingStore, write_pending
+from wordsworth.mapping_buffer import write_pending
+from wordsworth.mapping_store import PostgresMappingStore
 from wordsworth.pipeline import register
 from wordsworth.pseudonymizer import Pseudonymizer, deanonymize
 from wordsworth.transit import FakeTransit, PostgresKeyVaultStore
