@@ -70,7 +70,22 @@ One order inside the service's database, for every writer below:
 3. `document_keys` rows, by `object_key`, `FOR UPDATE`;
 4. `pii_mappings` rows, by token: inserted `ON CONFLICT DO NOTHING` by
    `pseudonymise`, `FOR UPDATE` by a deletion;
-5. the `access_audit` chain lock (its own advisory key, 4782), last.
+5. the `key_lifecycle_events` chain lock (its own advisory key, chosen in the
+   build next to 4781 and 4782 and written on `docs/reference/lock-order.md`),
+   taken by a writer that records a key-lifecycle event;
+6. the `access_audit` chain lock (its own advisory key, 4782), last: the audit
+   stays the terminal leaf, nothing is taken after it.
+
+`DELETE /v1/originals/{id}` and `DELETE /v1/documents/{id}` write both a
+key-lifecycle event (destroyed keys, deleted grants) and an `access_audit`
+record, so they take 5 then 6, in that order, in one transaction. Decided: put
+key lifecycle before the audit. Rejected: audit before key lifecycle, which
+would make the audit a non-terminal lock and every future lifecycle writer
+reason about it; and two transactions (a lifecycle event, then the audit),
+which leaves a destroyed key with no audit record if the second fails.
+`docs/reference/lock-order.md` is settled first (see `tasks.md`): wordsworth's
+page describes the key-lifecycle chain (4772) as "never together with 4771",
+and that sentence is about wordsworth's database, not this one.
 
 This is the service-side twin of #465: a deletion decides "no other document
 holds this token" under lock 1, and a pseudonymise of the same value for
@@ -153,6 +168,13 @@ investigation looks for). The other refusals (`no_key`, `unwrap`, `envelope`)
 stay one record each: they are not caller-driven floods and each says
 something about one object.
 
+Nothing runs when a window closes, so the summary is written lazily: by the
+caller's first refusal in a later window (for the window before it), and for
+windows still open at shutdown by the service's graceful stop. The counter, not
+the summary, is what a crash cannot lose; a summary lost with a crash is the
+accepted cost. Rejected: a background timer writing summaries (a second writer
+under the chain lock for a convenience).
+
 ## `DELETE /v1/originals/{document_id}`
 
 Destroys every `document_keys` row of the document and evicts them from the
@@ -180,11 +202,21 @@ covers a deleted document and hears 410.
 
 ## Volume
 
-`GET /metrics` sits behind the service token like every other route (401
-without it; no values, no document ids in the output). The caller labels and
-purposes it exposes say who opens how much, which is not for anyone who can
-reach the port. Rejected: an open `/metrics` guarded by network policy alone.
-The scraper in the homelab manifest gets a service token of its own. It exposes
+The metrics are mounted at `GET /v1/metrics`, so the existing
+`ServiceTokenMiddleware` (prefix `/v1/`) covers them with no change to the
+middleware: 401 without a token, no values, no document ids in the output. The
+caller labels and purposes they expose say who opens how much, which is not for
+anyone who can reach the port. Rejected: keeping `/metrics` at the root and
+widening the middleware to cover it (a second path rule in the one component
+whose job is to fail closed, and an exemption list that can silently drift);
+an open `/metrics` guarded by network policy alone (the NetworkPolicy is not
+there yet).
+
+The route stays exempt from rate limiting, so monitoring is never refused:
+`rate_limit.EXEMPT_PATHS` (today `{"/health", "/metrics"}`) gains `/v1/metrics`,
+and `tests/test_rate_limit.py` is updated with it. The open-rate limit above is
+per caller on `open` only and does not touch it. The scraper in the homelab
+manifest is pointed at `/v1/metrics` and gets a service token of its own. It exposes
 `keyservice_opens_total{service_caller, purpose}` and
 `keyservice_open_refusals_total{service_caller, reason}`, so an alert on open
 volume can be set. The alert rule itself belongs to the homelab manifest and
@@ -193,7 +225,10 @@ volume" (ADR-0009) is a counter nobody watches.
 
 ## Known residuals
 
-Written into ADR-0009's threat model:
+Written into ADR-0009's threat model, which already carries all three as
+residuals; the task extends those rows (the metrics now behind the service
+token, the coarser audit of 429s, the batch cap) and does not add parallel
+ones:
 
 - `pseudonymise` turns any value into its token for whoever holds a service
   token, so a compromised wordsworth can confirm whether a guessed value

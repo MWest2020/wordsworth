@@ -78,6 +78,22 @@ pseudonymised at the same moment.
 - **THEN** the scoped grant is gone, the unscoped one remains, and the answer
   reports one grant deleted
 
+### Requirement: Volume metrics need the service token and are never rate-limited
+
+The key service SHALL expose its open and refusal counters at `/v1/metrics`,
+under the same service-token check as every other route, and SHALL NOT
+rate-limit that route.
+
+#### Scenario: Metrics without a token
+
+- **WHEN** `GET /v1/metrics` is called without a valid service token
+- **THEN** the service answers 401 and exposes no counter
+
+#### Scenario: Scraping is never refused
+
+- **WHEN** `/v1/metrics` is called repeatedly with a valid token
+- **THEN** no call is answered 429
+
 ### Requirement: Only reveal returns a clear value
 
 No route of the key service other than reveal SHALL return a clear value from

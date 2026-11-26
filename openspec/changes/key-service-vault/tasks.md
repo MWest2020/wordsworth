@@ -3,6 +3,12 @@
 Build B of three. Every test runs against FakeTransit and the service's own
 test database. No traffic from wordsworth.
 
+- [ ] First, settle `docs/reference/lock-order.md`: add the key-lifecycle chain
+      to the order, `key_lifecycle_events` before `access_audit` (the audit
+      stays the terminal leaf), and note that `DELETE /v1/originals` and
+      `DELETE /v1/documents` take both in that order in one transaction.
+      Proved by: the page diff, and a test with two connections that runs the
+      two deletes against each other and a plain `open` and finds no deadlock.
 - [ ] `document_keys.kek_name_for` takes the domain → KEK mapping as an
       argument and the service passes `KEYSERVICE_*` values to it and to
       `DocumentKeys`; wordsworth's call sites behave as before; this change's
@@ -47,9 +53,18 @@ test database. No traffic from wordsworth.
 - [ ] No route of this change returns a clear mapping value: every response
       body across the tests is scanned for the sentinel values. Proved by: a
       test.
-- [ ] `GET /metrics` is behind the service token (401 without) and counts
-      opens and open refusals per caller and purpose or reason, with no value
-      or document id. Proved by: a test with and without a token.
+- [ ] Metrics are mounted at `GET /v1/metrics`, covered by the existing
+      `ServiceTokenMiddleware` (unchanged; 401 without a token) and count opens
+      and open refusals per caller and purpose or reason, with no value or
+      document id. Proved by: a test with and without a token.
+- [ ] `/v1/metrics` stays exempt from rate limiting: `rate_limit.EXEMPT_PATHS`
+      gains it, and the homelab scraper config points at `/v1/metrics` with its
+      own service token. Proved by: `tests/test_rate_limit.py` (the updated
+      `EXEMPT_PATHS` assertion) and a test of more calls than the limit with
+      none answered 429; the scraper config diff in the homelab manifest.
+- [ ] The 429 summary is written lazily (next window's first refusal, or
+      graceful shutdown). Proved by: a test with a clock that moves past the
+      window and one that stops the service with a window open.
 - [ ] The #465 twin: a pseudonymise of a shared value for document B running
       against a deletion of document A leaves B's mapping in place, whichever
       commits first. Proved by: a test with two connections.
@@ -57,9 +72,18 @@ test database. No traffic from wordsworth.
       record holds a value, a key byte or original bytes. Proved by: tests.
 - [ ] No clear value, original byte or key byte in any log line across every
       test in this change. Proved by: a log-capture test with sentinels.
-- [ ] Docs: the five endpoints and `/metrics` (needs the service token) with
+- [ ] Write the three residuals into ADR-0009's threat model
+      (`docs/explanation/adr/0009-separate-key-and-reveal-service.md`),
+      extending the rows already there (open rate and no alert, crypto-shred by
+      the credential alone, `pseudonymise` as guess-confirmation) with the
+      metrics behind the service token, the coarser audit of 429s and the batch
+      cap, not adding parallel rows. Proved by: the ADR diff and a grep for
+      `/v1/metrics` and `open_refused_summary` in it.
+- [ ] Docs: the five endpoints and `/v1/metrics` (needs the service token) with
       their status codes and the batch cap in
       `docs/reference/key-service-api.md`; purposes, the rate limit and its
       defaults, the coarser audit of 429s, that no alert is built yet, and the
-      three residuals in `docs/how-to/key-service.md`. Proved by: the docs
-      check in CI and a grep for the cap and `open_refused_summary` in both.
+      three residuals in `docs/how-to/key-service.md`; the rate-limit exemption
+      for `/v1/metrics` where `docs/how-to/api-auth.md` and the rate-limit
+      docs list exempt paths. Proved by: the docs check in CI and a grep for
+      the cap and `open_refused_summary` in both.
