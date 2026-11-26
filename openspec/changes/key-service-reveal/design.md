@@ -178,7 +178,7 @@ driver:
 2. If the caller has no signed assertion to forward (an API key, the console
    cookie, authentication off): 403 `{"detail": "reveal needs a signed
    identity"}`, before any read and the same whatever the grant or document.
-   This is the default of a question to Mark (see `key-service-cutover`).
+   This is the default of a question to Mark (#524).
 3. Call `/v1/reveal/decide`. No row about the document is read before its
    answer.
 4. Only after a 200: read the state (none → 403 refusal; deleted → 410),

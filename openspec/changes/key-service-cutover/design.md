@@ -23,7 +23,7 @@ from them.
   the verification compares them.
 - **Reveal callers without a signed assertion.** API-key callers, the console
   cookie and the authentication-off mode carry no assertion the service can
-  verify. Default (a question to Mark, `waiting-on-mark`): after the switch
+  verify. Default (a question to Mark, #524): after the switch
   they cannot reveal and get 403 `reveal needs a signed identity`; machine
   clients use a client-credentials token from the identity provider. This
   changes the reveal-api requirement "Without caller authentication nothing

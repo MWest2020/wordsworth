@@ -178,6 +178,9 @@ findings touched this ADR:
   `pseudonymise` as a guess-confirmation for the service credential, and the
   one-time registry copy are now written down.
 
+Open for Mark, with defaults the builds proceed on: the residuals as written
+(#525), and reveal requiring a signed identity after the cutover (#524).
+
 Added endpoint: `DELETE /v1/documents/{document_id}`, because removing a
 document's registry rows and orphaned mappings is now the service's work.
 
