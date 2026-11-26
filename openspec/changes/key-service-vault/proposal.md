@@ -25,7 +25,7 @@ wordsworth supplies (ADR-0009, amended 2026-11-26).
   tombstone keeps id and domain).
 - No route here returns a clear value: only reveal does, and it needs a
   person (`key-service-reveal`).
-- Open counts as metrics, so an alert on volume can be set (the alert itself
+- Open counts as metrics at `GET /v1/metrics` (behind the service token), so an alert on volume can be set (the alert itself
   is a homelab follow-up).
 - The service's own audit stream (`access_audit`) for all of the above.
 - Docs: these endpoints in `docs/reference/key-service-api.md`, the rate limit
@@ -34,20 +34,24 @@ wordsworth supplies (ADR-0009, amended 2026-11-26).
 ## Amended after architect FAIL (wordsworth#532)
 
 Decided: 429 refusals are counted in metrics and audited once per caller per
-window; `/metrics` is behind the service token; the pseudonymise batch is
-capped at 1 000 by default so lock 4781 is not held long, with the hold time
-measured at cutover.
+window; the pseudonymise batch is capped at 1 000 by default so lock 4781 is
+not held long, with the hold time measured at cutover.
+
+Amended again after the second architect FAIL (wordsworth#534): the metrics
+move to `/v1/metrics`, so the existing service-token middleware covers them
+and the route stays exempt from rate limiting; `docs/reference/lock-order.md`
+is settled first with the key-lifecycle chain ordered before the audit chain;
+the three residuals are written into ADR-0009's existing threat-model rows.
 
 ## Open questions
 
-- The architect's verdict names eight points where a builder has to guess. The
-  finding is cut off in issue #532 and the branch
-  `habitat/architect/key-service-vault-20261126-113937-12838` could not be
-  fetched from this session (not on origin, no local copy), so the eight points
-  are not yet listed or resolved in `design.md` and `tasks.md`. A session that
-  can read that branch and its verdict file must list them and resolve each
-  with a decision and the rejected alternative. Default: the builder does not
-  start until this is done.
+- The seven objectives in the architect's second verdict
+  (`habitat/architect/key-service-vault-20261126-115709-26181`) were not read
+  by this session (the branch could not be fetched). `design.md` resolves what
+  the channel decided and the gaps found while amending (lock order, metrics,
+  429 summary mechanics); an objective outside those is not yet resolved.
+  Default: the build goes ahead on this change, and the architect's next
+  verdict names any objective still open.
 
 ## Out of scope
 
