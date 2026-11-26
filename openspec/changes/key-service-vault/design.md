@@ -6,12 +6,13 @@ label); no person is involved and no user assertion is read. Request logging
 drops the body and the response of every route here: no value, original byte
 or key byte reaches a log.
 
-Modules (each ≤ 200 lines): `api_pseudonymise.py`, `api_originals.py`,
-`api_documents.py`, `stores.py` (the service's mapping store, key vault and
+Modules (each ≤ 200 lines): `api_pseudonymise.py`, `api_originals.py` (seal and
+delete; `key-service-open` adds `open` to it or to a sibling), `api_documents.py`,
+`api_metrics.py`, `stores.py` (the service's mapping store, key vault and
 document keys over `KeyServiceBase`, implementing the same protocols as
 wordsworth's: `MappingStore`, `KeyProvider`, `DocumentKeys`' interface),
-`audit.py`, `rate_limit.py`. The token derivation, normalisation and
-encryption are wordsworth's own functions (`Pseudonymizer.pseudonym`,
+`audit.py`, `state.py` (`service_state`). The token derivation, normalisation
+and encryption are wordsworth's own functions (`Pseudonymizer.pseudonym`,
 `normalization`, `crypto`, `originals_envelope`), called with the service's
 stores; nothing about how a token is made changes. The import rules of
 `key-service-skeleton` ("Reuse and imports") apply: `document_keys.kek_name_for`
@@ -22,15 +23,58 @@ size and TTL from the service's settings (`KEYSERVICE_ORIGINALS_KEK`,
 the tests of this change run under the fixture that makes `config.settings`
 raise.
 
+## The split
+
+The architect's third verdict (too big for one build) is met by moving `open`
+out, because `open` is what drags in the purposes list, the rate limiter, the
+429 audit mechanics and the refusal counter: four things that share nothing
+with the registry. Rejected: moving `seal` and the deletes too (a smaller
+vault, but then the registry has no deletion and `known_documents` no
+tombstone, and the #465 twin cannot be tested here); keeping `open` and only
+cutting the 429 audit (the other three stay). `key-service-open` depends on
+this change: it needs the lock order, `service_state` and `/v1/metrics` below.
+
 ## Only reveal returns a clear value
 
 No route of the service returns a clear mapping value to a calling service
-without a verified person. The routes here return tokens, sealed bytes, opened
-originals (for processing, audited and rate-limited) and counts; the only
-route that returns mapping values is `/v1/reveal` (`key-service-reveal`), and
-it needs a person's assertion and a grant. A later need for clear values
-without a person (the box map, `key-service-cutover`) is met from the values
-in memory during processing, not by a new route.
+without a verified person. The routes here return tokens, sealed bytes and
+counts; the only route that returns mapping values is `/v1/reveal`
+(`key-service-reveal`), and it needs a person's assertion and a grant. A later
+need for clear values without a person (the box map, `key-service-cutover`) is
+met from the values in memory during processing, not by a new route.
+
+## Service-only state: `service_state`
+
+State that only the service has and that is not a copy of a wordsworth table
+and not derived from `access_audit` lives in one table, `service_state`:
+`kind` text, `key` text, `counter` bigint NOT NULL default 0, `data` JSONB
+NULL, `updated_at`; primary key (`kind`, `key`). `kind` is `counter` (a metric
+such as `keyservice_open_refusals_total`, `key` the label set) or `rate_bucket`
+(the 429 window state, what `rate_limit_buckets` was meant to hold, `key` the
+caller label). `state.py` is the only module that writes it.
+
+Why a table and not memory: a counter that restarts at zero on a crash hides
+exactly the burst an investigation looks for. Why not derive it from
+`access_audit`: the audit gets one record per window, not per refusal, so a
+count rebuilt from it would be wrong by design. Rejected: keeping
+`rate_limit_buckets` as a table copied from wordsworth's `RateLimitBucket` (it
+is service state, not a mapping the cutover copies, and the copy would sit in
+the drift test as if wordsworth's shape governed it); one table per kind (two
+homes to keep out of the audit and out of wordsworth); an in-process counter
+flushed at shutdown (a crash loses it).
+
+The skeleton's schema table lists `rate_limit_buckets` as copied from
+`RateLimitBucket`. That row goes: the service has no table of that name and
+`RateLimitBucket` leaves `_COPIED_PAIRS` in `test_drift.py`. Wordsworth's own
+`rate_limit_buckets` and `rate_limit_pg.py` are untouched.
+
+A second test, `tests/keyservice/test_service_state_drift.py`, next to
+`test_drift.py`, pins the shape and the boundary: `service_state` has exactly
+the columns above; every table of `KeyServiceBase.metadata` is either in
+`_COPIED_PAIRS`, one of the service's own tables (`known_documents`,
+`document_tokens`, `access_audit`, `service_state`), and no table holds a
+counter or window column outside `service_state`; `service_state` is absent
+from wordsworth's metadata; and nothing in `state.py` reads `access_audit`.
 
 ## The token registry
 
@@ -62,7 +106,8 @@ judges a grant against; wordsworth cannot change it afterwards.
 
 ## Locks
 
-One order inside the service's database, for every writer below:
+One order inside the service's database, for every writer, written first on
+`docs/reference/lock-order.md`:
 
 1. the registry advisory lock (`pg_advisory_xact_lock(4781)`, the service's
    own key) — taken by `pseudonymise`, `seal` and `DELETE /v1/documents`;
@@ -70,11 +115,14 @@ One order inside the service's database, for every writer below:
 3. `document_keys` rows, by `object_key`, `FOR UPDATE`;
 4. `pii_mappings` rows, by token: inserted `ON CONFLICT DO NOTHING` by
    `pseudonymise`, `FOR UPDATE` by a deletion;
-5. the `key_lifecycle_events` chain lock (its own advisory key, chosen in the
-   build next to 4781 and 4782 and written on `docs/reference/lock-order.md`),
-   taken by a writer that records a key-lifecycle event;
-6. the `access_audit` chain lock (its own advisory key, 4782), last: the audit
-   stays the terminal leaf, nothing is taken after it.
+5. the `key_lifecycle_events` chain lock, advisory key **4783**, taken by a
+   writer that records a key-lifecycle event;
+6. the `access_audit` chain lock, advisory key 4782, last: the audit stays the
+   terminal leaf, nothing is taken after it.
+
+The key 4783 is fixed here, not left to the build: 4781 and 4782 are the
+service's, 4783 is the next free one in the service's range (wordsworth's
+are 4771 and 4772 and are another database).
 
 `DELETE /v1/originals/{id}` and `DELETE /v1/documents/{id}` write both a
 key-lifecycle event (destroyed keys, deleted grants) and an `access_audit`
@@ -83,9 +131,14 @@ key lifecycle before the audit. Rejected: audit before key lifecycle, which
 would make the audit a non-terminal lock and every future lifecycle writer
 reason about it; and two transactions (a lifecycle event, then the audit),
 which leaves a destroyed key with no audit record if the second fails.
-`docs/reference/lock-order.md` is settled first (see `tasks.md`): wordsworth's
-page describes the key-lifecycle chain (4772) as "never together with 4771",
-and that sentence is about wordsworth's database, not this one.
+wordsworth's page describes the key-lifecycle chain (4772) as "never together
+with 4771"; that sentence is about wordsworth's database, not this one, and
+the page says so after this change.
+
+`service_state` rows are updated by single statements (`INSERT ... ON CONFLICT
+DO UPDATE`) and take no advisory lock; a writer holds no row lock of it while
+waiting for any lock above. `key-service-open` takes its row after, and
+independently of, lock 6 is released.
 
 This is the service-side twin of #465: a deletion decides "no other document
 holds this token" under lock 1, and a pseudonymise of the same value for
@@ -131,56 +184,12 @@ response is the sealed bytes (`application/octet-stream`, header `X-Key-Id`),
 and wordsworth stores them. 503 when Transit is unreachable. Audit:
 `event = "seal"`, document, `object_key`, key id.
 
-## `POST /v1/originals/{document_id}/open`
-
-Request: the sealed bytes as `application/octet-stream`; query `object_key`
-and `purpose`. The purpose is one of `process`, `reanonymize`,
-`ocr_recovery`, `redacted_pdf`, `reveal_pdf`, `seal_verify` (the readers of
-`docs/reference/originals-readers.md` plus verification).
-
-Order and answers:
-
-| Case | Status | Audit |
-|---|---|---|
-| no or unknown service token | 401 | none |
-| purpose missing or not in the list; malformed query | 422 | none |
-| over the caller's rate | 429, `Retry-After` | one `open_refused` record per caller per 60-second window, with `reason = "rate"` and the number of refusals so far in that window (see below) |
-| no key row for `object_key` under this document | 404 `{"detail": "no key for this object"}` | `open_refused`, `reason = "no_key"` |
-| Transit unreachable or sealed | 503 `{"detail": "key service unavailable"}` | none (nothing was decided) |
-| the wrapped key does not unwrap, or the envelope does not authenticate (tampered) | 409 `{"detail": "sealed object does not open"}` | `open_failed`, `reason = "unwrap"` or `"envelope"` |
-| otherwise | 200, the plaintext | `open`, document, `object_key`, purpose |
-
-The rate limit is a token bucket per service caller
-(`KEYSERVICE_OPEN_RATE_PER_MINUTE`, default 120; `KEYSERVICE_OPEN_BURST`,
-default 30), in the service's own `rate_limit_buckets`, keyed on the caller
-label, not the path. A 404 here is no oracle: only a calling service with a
-token reaches this route, and it is the one that stored the object.
-
-A 429 costs no hash-chained write per refusal: a caller hammering the route
-would otherwise turn every refusal into a write under the chain lock (4782),
-slowing the audit for everyone. Every refusal is counted in
-`keyservice_open_refusals_total`; the audit gets the first refusal of a caller
-in a window as an `open_refused` record, and the window's final count is
-written into one `open_refused_summary` record when the window closes or the
-caller's next window opens. Rejected: one record per refusal (the write
-amplification above); no audit at all (a refused burst is the signal an
-investigation looks for). The other refusals (`no_key`, `unwrap`, `envelope`)
-stay one record each: they are not caller-driven floods and each says
-something about one object.
-
-Nothing runs when a window closes, so the summary is written lazily: by the
-caller's first refusal in a later window (for the window before it), and for
-windows still open at shutdown by the service's graceful stop. The counter, not
-the summary, is what a crash cannot lose; a summary lost with a crash is the
-accepted cost. Rejected: a background timer writing summaries (a second writer
-under the chain lock for a convenience).
-
 ## `DELETE /v1/originals/{document_id}`
 
 Destroys every `document_keys` row of the document and evicts them from the
 unwrap cache (crypto-shredding, ADR-0008). 200 `{"destroyed": n}`; idempotent
-(n = 0 the second time). A key-lifecycle event records the count. After it,
-`open` answers 404.
+(n = 0 the second time). A key-lifecycle event records the count. After it, a
+sealed object of the document cannot be opened (`key-service-open` answers 404).
 
 ## `DELETE /v1/documents/{document_id}`
 
@@ -200,42 +209,49 @@ of a grant on a deleted document gets the uniform 403, not 410. Only a grant
 that survives the deletion (unscoped where allowed, or under a global role)
 covers a deleted document and hears 410.
 
-## Volume
+## `GET /v1/metrics`
 
-The metrics are mounted at `GET /v1/metrics`, so the existing
-`ServiceTokenMiddleware` (prefix `/v1/`) covers them with no change to the
-middleware: 401 without a token, no values, no document ids in the output. The
-caller labels and purposes they expose say who opens how much, which is not for
-anyone who can reach the port. Rejected: keeping `/metrics` at the root and
-widening the middleware to cover it (a second path rule in the one component
-whose job is to fail closed, and an exemption list that can silently drift);
-an open `/metrics` guarded by network policy alone (the NetworkPolicy is not
-there yet).
+Mounted at `/v1/metrics`, so the existing `ServiceTokenMiddleware` (prefix
+`/v1/`) covers it with no change to the middleware: 401 without a token, no
+values, no document ids in the output. It renders the `counter` rows of
+`service_state` in Prometheus text format. The caller labels and purposes that
+`key-service-open` adds say who opens how much, which is not for anyone who
+can reach the port. Rejected: keeping `/metrics` at the root and widening the
+middleware to cover it (a second path rule in the one component whose job is to
+fail closed, and an exemption list that can silently drift); an open
+`/metrics` guarded by network policy alone (the NetworkPolicy is not there
+yet).
 
-The route stays exempt from rate limiting, so monitoring is never refused:
-`rate_limit.EXEMPT_PATHS` (today `{"/health", "/metrics"}`) gains `/v1/metrics`,
-and `tests/test_rate_limit.py` is updated with it. The open-rate limit above is
-per caller on `open` only and does not touch it. The scraper in the homelab
-manifest is pointed at `/v1/metrics` and gets a service token of its own. It exposes
-`keyservice_opens_total{service_caller, purpose}` and
-`keyservice_open_refusals_total{service_caller, reason}`, so an alert on open
-volume can be set. The alert rule itself belongs to the homelab manifest and
-is not built in any of the key-service changes; until it exists, "alerting on
-volume" (ADR-0009) is a counter nobody watches.
+That the route is exempt from rate limiting, and the scraper's own service
+token and manifest change, belong to `key-service-open`, which builds the
+limiter. Until then there is no limiter to exempt it from. The alert on open
+volume belongs to the homelab manifest and is built in none of the
+key-service changes.
 
 ## Known residuals
 
-Written into ADR-0009's threat model, which already carries all three as
-residuals; the task extends those rows (the metrics now behind the service
-token, the coarser audit of 429s, the batch cap) and does not add parallel
-ones:
+Written into ADR-0009's threat model, which already carries the first three as
+residuals; the task extends those rows and adds one risk line, and does not
+add parallel ones:
 
 - `pseudonymise` turns any value into its token for whoever holds a service
   token, so a compromised wordsworth can confirm whether a guessed value
   occurs in its own index. Audited; not prevented, because ingest needs it.
+  The batch is capped (1 000 by default).
 - At the default rate a service caller can open about 170 000 originals a day
-  (120 a minute). Audited and counted; bounded, not prevented.
+  (120 a minute). Audited and counted; bounded, not prevented. The metrics are
+  behind the service token; the audit of refused opens is coarser (one record
+  per caller per window).
 - The service credential alone can crypto-shred any document
   (`DELETE /v1/originals`, `DELETE /v1/documents`): no person is asked.
   Audited; recovery is only from a backup of the service database taken
   before.
+- **The wire.** `open` returns the original in plaintext over HTTP on the
+  link between wordsworth and the service, and `seal` receives it the same way.
+  Whoever can read that link reads the originals in transit; the service's
+  encryption at rest does not cover it. The link is a transport the deployment
+  chooses (ADR-0009 names mutual TLS or a service token; the token alone does
+  not encrypt). Not prevented by this change: it is a risk line, with the
+  deployment's TLS as the mitigation. Rejected: leaving it out because the
+  skeleton already says "mutual TLS or a service token", which reads as if the
+  wire were covered.
