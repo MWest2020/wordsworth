@@ -139,3 +139,17 @@ def test_a_reader_declares_a_combination_and_sees_its_reach(world, client):
     page = client.get("/console/combinations", headers=headers)
     assert page.status_code == 200 and "lezer verklaart" in page.text
     assert re.search(r'<span class="state">\d+</span>', page.text)   # its reach
+
+
+@pytest.mark.parametrize("label", ["derde", "uitgever"])
+def test_an_upload_is_refused_to_a_non_reader_and_writes_nothing(world, client, label):
+    """#526: on the seeded corpus, into its existing dossier, a PDF upload by a
+    caller who is no reader leaves every table and the object store as they
+    were."""
+    before, objects = world.snapshot(), dict(world.stand_ins.store._data)
+    resp = client.post("/ingest", params={"dossier": world.dossier_name},
+                       files={"files": ("a.pdf", b"%PDF-1.4", "application/pdf")},
+                       headers={"X-API-Key": KEY_OF[label]})
+    assert (resp.status_code, resp.json()) == (403, CORPUS_READ)
+    assert world.snapshot() == before
+    assert world.stand_ins.store._data == objects

@@ -67,8 +67,8 @@ def scope_off_client(world):
 READ_ROWS = [r for r in ROWS if r.policy in ("corpus-read", "grant-read")]
 
 
-def test_there_are_28_reader_rows():
-    assert len(READ_ROWS) == 28
+def test_there_are_29_reader_rows():
+    assert len(READ_ROWS) == 29     # 28, and POST /ingest since #526
 
 
 @pytest.mark.parametrize("row", READ_ROWS, ids=lambda r: f"{r.method} {r.path}")

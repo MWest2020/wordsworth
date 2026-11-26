@@ -1106,8 +1106,6 @@ def create_app(
                 meta = _document_meta(session, document_id)
             return meta or {"document_id": str(document_id), "state": state.value}
 
-        @app.post("/ingest", response_model=IngestResponse, tags=["write"],
-                  summary="Ingest one or more PDFs through the full straat")
         def ingest_documents(
             files: list[UploadFile] = File(..., description="One or more PDF files"),
             domain: str | None = None,
@@ -1206,6 +1204,16 @@ def create_app(
             indexed = sum(1 for r in results if r.state == "indexed")
             return IngestResponse(total=len(results), indexed=indexed,
                                   results=results)
+
+        # Corpus read, checked before the upload is read (#526,
+        # ingest-requires-corpus-read): `GateFirst` runs the gate ahead of
+        # FastAPI's form parsing, which a plain declared gate does not.
+        app.router.add_api_route(
+            "/ingest", ingest_documents, methods=["POST"],
+            response_model=IngestResponse, tags=["write"],
+            summary="Ingest one or more PDFs through the full straat",
+            dependencies=[Depends(gates.corpus_read)],
+            route_class_override=read_gate.GateFirst)
 
         # Backfill: re-run the reversible de-identify over already-processed
         # documents (e.g. a corpus first indexed irreversibly). Mounted only in

@@ -151,6 +151,27 @@ def undeclared_gates(routes: dict, rows=ROWS) -> set:
             and gate_name(routes[(r.method, r.path)]) != r.policy}
 
 
+#: Policies under which a route refuses a caller on no list (403), or is
+#: decided by the grant presented.
+REFUSING = ("corpus-read", "grant-read", "grant-admin", "delete", "grant")
+
+#: The only writing routes no check refuses, each with its reason.
+OPEN_WRITES = {
+    ("POST", "/console/login"): "nobody can bring a key to the page that asks for one",
+}
+
+
+def ungated_writes(routes: dict, rows=ROWS) -> set:
+    """Writing routes (any method but GET and HEAD) whose row names no refusing
+    policy and that `OPEN_WRITES` does not name (ingest-requires-corpus-read):
+    a write route answering any authenticated caller has to be a decision
+    written down here, not a row nobody looked at."""
+    return {(r.method, r.path) for r in rows
+            if r.method not in ("GET", "HEAD") and r.policy not in REFUSING
+            and (r.method, r.path) in routes
+            and (r.method, r.path) not in OPEN_WRITES}
+
+
 _REGISTRATION = re.compile(
     r"@[\w.]+\.(get|post|put|patch|delete|head|options|trace|api_route"
     r"|websocket|websocket_route|route)\("

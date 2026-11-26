@@ -49,6 +49,8 @@ _API_WRITE = [
     Row("POST", "/topics/{topic_id}/label", "corpus-read", "labels one topic"),
     Row("POST", "/dossiers/{dossier_id}/summaries", "corpus-read", "makes summaries"),
     Row("POST", "/reprocess", "corpus-read", "problems keyed by document id"),
+    Row("POST", "/ingest", "corpus-read",
+        "writes documents and dossier memberships readers see (#526)"),
 ]
 _API_OTHER = [
     Row("GET", "/roles", "grant-admin", "roles decide what a grant reveals",
@@ -70,9 +72,6 @@ _API_OTHER = [
     Row("DELETE", "/dossiers/{dossier_id}", "delete", "irreversible"),
     Row("POST", "/documents/{document_id}/reveal", "grant", "decided by the grant"),
     Row("POST", "/documents/{document_id}/reveal.pdf", "grant", "decided by the grant"),
-]
-_API_UNDECIDED = [
-    Row("POST", "/ingest", "any-key", "issue #431; not decided here"),
 ]
 _API_OPEN = [
     Row("GET", "/health", "open", "liveness probe"),
@@ -118,5 +117,5 @@ _CONSOLE_OPEN = [
     Row("GET", "/console/logout", "any-key", "clears the caller's own cookie"),
 ]
 
-ROWS: list[Row] = (_API_READ + _API_WRITE + _API_OTHER + _API_UNDECIDED + _API_OPEN
+ROWS: list[Row] = (_API_READ + _API_WRITE + _API_OTHER + _API_OPEN
                    + _CONSOLE_READ + _CONSOLE_OTHER + _CONSOLE_OPEN)

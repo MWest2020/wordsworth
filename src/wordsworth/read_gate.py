@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from fastapi import HTTPException, Request
+from fastapi.routing import APIRoute
 
 from .auth import authorize_corpus_read, authorize_delete, authorize_grant_issue
 
@@ -76,6 +77,30 @@ def gate_of(route) -> str | None:
         if isinstance(call, Gate):
             return call.name
     return None
+
+
+class GateFirst(APIRoute):
+    """A route whose declared gates run before FastAPI reads the request body.
+
+    A declared gate already runs before validation, but FastAPI parses a form
+    body before it resolves any dependency: for an upload, a caller without
+    the right still had his files read and spooled to disk before the 403
+    (ingest-requires-corpus-read). This route class runs the same `Gate`
+    objects first, then the normal handler, which runs them once more."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+        gates = [d.call for d in self.dependant.dependencies
+                 if isinstance(d.call, Gate)]
+        if not gates:
+            raise TypeError(f"GateFirst on {self.path} without a declared gate")
+
+        async def gate_first(request: Request):
+            for gate in gates:
+                gate(request)
+            return await handler(request)
+
+        return gate_first
 
 
 @dataclass(frozen=True)

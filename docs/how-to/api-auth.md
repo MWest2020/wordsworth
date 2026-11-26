@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-17
+last_reviewed: 2026-11-26
 ---
 
 # Runbook — optional API-key authentication
@@ -39,7 +39,6 @@ of them: what a caller may do depends on whether its label is on
 
 **A key alone opens:**
 
-- `POST /ingest` (whether ingest needs its own label is issue #431);
 - `/`, `/openapi.json`, `/docs`, `/docs/oauth2-redirect`, `/redoc`: they
   describe the routes, not the corpus;
 - `/console/logout`;
@@ -58,7 +57,9 @@ or corpus metadata, or changes what a reader sees:
   `/dossiers/{id}/topics`;
 - writes: `POST /documents/{id}/feedback`, `POST /dossiers/{id}/topics`,
   `PATCH /topics/{id}`, `POST /topics/{id}/label`,
-  `POST /dossiers/{id}/summaries`, `POST /reprocess`;
+  `POST /dossiers/{id}/summaries`, `POST /reprocess`, and `POST /ingest`
+  (since #526: an upload writes documents and dossier memberships every
+  reader then sees, and uses OCR, NER and embedding time);
 - every console page that shows the corpus, `/console/combinations` included.
 
 On the API routes the check is declared on the route, so it runs **before**
@@ -66,6 +67,12 @@ parameter validation and before any lookup: a caller without corpus read gets
 the same `403 caller not authorized for corpus read` for an id that exists, one
 that does not, and a request with a parameter missing. (A body that is not JSON
 still answers 422 first, to anyone; that says nothing about the corpus.)
+`POST /ingest` refuses even earlier: before the upload is read at all, so a
+caller without corpus read cannot make the server spool his files.
+
+Whoever calls `/ingest` (the thin client, a connector, an orchestrator) needs a
+key whose label is on the read list. With the read list empty, any key still
+ingests, as before.
 
 **The issuer list** guards `GET/POST /roles` and the role changes,
 `POST /grants`, `POST /grants/{id}/revoke`, `POST /datasets/pseudonymize` (a
