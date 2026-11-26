@@ -68,7 +68,9 @@ the same `403 caller not authorized for corpus read` for an id that exists, one
 that does not, and a request with a parameter missing. (A body that is not JSON
 still answers 422 first, to anyone; that says nothing about the corpus.)
 `POST /ingest` refuses even earlier: before the upload is read at all, so a
-caller without corpus read cannot make the server spool his files.
+caller without corpus read cannot make the server spool his PDFs. (Only
+`/ingest` does this; other routes with a body, `POST /datasets/pseudonymize`
+included, still read it before they refuse, and nothing they read is kept.)
 
 Whoever calls `/ingest` (the thin client, a connector, an orchestrator) needs a
 key whose label is on the read list. With the read list empty, any key still

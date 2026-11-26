@@ -178,7 +178,7 @@ def test_removing_the_gate_from_ingest_fails():
         ("POST", "/ingest")}
 
 
-@pytest.mark.parametrize("policy", ["any-key", "open"])
+@pytest.mark.parametrize("policy", ["any-key", "open", "grant"])
 def test_a_write_route_recorded_as_unrefused_fails(policy):
     rows = [r for r in ROWS if r.path != "/ingest"] + [
         Row("POST", "/ingest", policy, "scratch")]
@@ -194,3 +194,8 @@ def test_a_new_write_route_cannot_pass_as_any_key():
 
     rows = ROWS + [Row("DELETE", "/scratch-write", "any-key", "scratch")]
     assert ungated_writes(collect_routes(app), rows) == {("DELETE", "/scratch-write")}
+
+
+def test_grant_rows_are_exactly_the_two_reveal_routes():
+    from route_inventory import GRANT_DECIDED
+    assert {(r.method, r.path) for r in ROWS if r.policy == "grant"} == GRANT_DECIDED

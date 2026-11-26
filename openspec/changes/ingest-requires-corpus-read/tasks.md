@@ -37,9 +37,12 @@ pass.
       `tests/test_route_refusal.py` (the row is refused as `derde`;
       `::test_the_refusal_suite_fails_when_ingest_loses_its_gate`).
 - [x] `ungated_writes`: a writing route recorded as any-key or open fails,
-      except `POST /console/login`. Proved by:
+      except `POST /console/login`; `grant` counts only for the two reveal
+      routes (`GRANT_DECIDED`), since no refusal test requests a `grant` row
+      (review of #528). Proved by:
       `tests/test_route_inventory.py::test_a_write_route_recorded_as_unrefused_fails`
-      and `::test_a_new_write_route_cannot_pass_as_any_key`.
+      (any-key, open, grant), `::test_a_new_write_route_cannot_pass_as_any_key`
+      and `::test_grant_rows_are_exactly_the_two_reveal_routes`.
 
 ## 4. Docs and rollout
 - [x] `docs/how-to/api-auth.md`: ingest under the read list, refused before

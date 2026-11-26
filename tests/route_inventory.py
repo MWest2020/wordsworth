@@ -151,9 +151,16 @@ def undeclared_gates(routes: dict, rows=ROWS) -> set:
             and gate_name(routes[(r.method, r.path)]) != r.policy}
 
 
-#: Policies under which a route refuses a caller on no list (403), or is
-#: decided by the grant presented.
-REFUSING = ("corpus-read", "grant-read", "grant-admin", "delete", "grant")
+#: Policies under which a route refuses a caller on no list (403).
+REFUSING = ("corpus-read", "grant-read", "grant-admin", "delete")
+
+#: The only routes decided by the grant presented rather than by the caller.
+#: A row saying `grant` counts as a check only here: the refusal suite never
+#: requests a `grant` row, so elsewhere it would be a check nobody verifies.
+GRANT_DECIDED = {
+    ("POST", "/documents/{document_id}/reveal"),
+    ("POST", "/documents/{document_id}/reveal.pdf"),
+}
 
 #: The only writing routes no check refuses, each with its reason.
 OPEN_WRITES = {
@@ -168,6 +175,7 @@ def ungated_writes(routes: dict, rows=ROWS) -> set:
     written down here, not a row nobody looked at."""
     return {(r.method, r.path) for r in rows
             if r.method not in ("GET", "HEAD") and r.policy not in REFUSING
+            and not (r.policy == "grant" and (r.method, r.path) in GRANT_DECIDED)
             and (r.method, r.path) in routes
             and (r.method, r.path) not in OPEN_WRITES}
 
