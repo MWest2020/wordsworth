@@ -81,7 +81,14 @@ sees the new registry row or the mapping is stored again after it.
 
 Request (JSON): `{"document_id": UUID, "domain": str, "items": [{"type": LABEL,
 "value": str}, ...]}`. `items` may be empty (that registers the document and
-its domain). At most `KEYSERVICE_PSEUDONYMISE_MAX_ITEMS` (default 10 000).
+its domain). At most `KEYSERVICE_PSEUDONYMISE_MAX_ITEMS` (default 1 000, and
+the setting is refused at startup above 5 000). The cap is there because lock 1
+(4781) is held for the whole batch: 10 000 items held it long enough to stall
+every other writer. Rejected: keeping 10 000 and shortening the lock by
+committing in chunks, which would break "nothing committed" on a 503 and the
+one-audit-record-per-call rule. A larger document sends several calls. The
+measurement of how long lock 1 is held at the cap is taken at cutover (see
+`tasks.md`), and the default is revisited from it.
 
 | Case | Status | Body |
 |---|---|---|
@@ -122,7 +129,7 @@ Order and answers:
 |---|---|---|
 | no or unknown service token | 401 | none |
 | purpose missing or not in the list; malformed query | 422 | none |
-| over the caller's rate | 429, `Retry-After` | `open_refused`, purpose, `reason = "rate"` |
+| over the caller's rate | 429, `Retry-After` | one `open_refused` record per caller per 60-second window, with `reason = "rate"` and the number of refusals so far in that window (see below) |
 | no key row for `object_key` under this document | 404 `{"detail": "no key for this object"}` | `open_refused`, `reason = "no_key"` |
 | Transit unreachable or sealed | 503 `{"detail": "key service unavailable"}` | none (nothing was decided) |
 | the wrapped key does not unwrap, or the envelope does not authenticate (tampered) | 409 `{"detail": "sealed object does not open"}` | `open_failed`, `reason = "unwrap"` or `"envelope"` |
@@ -133,6 +140,18 @@ The rate limit is a token bucket per service caller
 default 30), in the service's own `rate_limit_buckets`, keyed on the caller
 label, not the path. A 404 here is no oracle: only a calling service with a
 token reaches this route, and it is the one that stored the object.
+
+A 429 costs no hash-chained write per refusal: a caller hammering the route
+would otherwise turn every refusal into a write under the chain lock (4782),
+slowing the audit for everyone. Every refusal is counted in
+`keyservice_open_refusals_total`; the audit gets the first refusal of a caller
+in a window as an `open_refused` record, and the window's final count is
+written into one `open_refused_summary` record when the window closes or the
+caller's next window opens. Rejected: one record per refusal (the write
+amplification above); no audit at all (a refused burst is the signal an
+investigation looks for). The other refusals (`no_key`, `unwrap`, `envelope`)
+stay one record each: they are not caller-driven floods and each says
+something about one object.
 
 ## `DELETE /v1/originals/{document_id}`
 
@@ -161,7 +180,11 @@ covers a deleted document and hears 410.
 
 ## Volume
 
-`GET /metrics` (no service token, no values, no document ids) exposes
+`GET /metrics` sits behind the service token like every other route (401
+without it; no values, no document ids in the output). The caller labels and
+purposes it exposes say who opens how much, which is not for anyone who can
+reach the port. Rejected: an open `/metrics` guarded by network policy alone.
+The scraper in the homelab manifest gets a service token of its own. It exposes
 `keyservice_opens_total{service_caller, purpose}` and
 `keyservice_open_refusals_total{service_caller, reason}`, so an alert on open
 volume can be set. The alert rule itself belongs to the homelab manifest and

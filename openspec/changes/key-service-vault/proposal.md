@@ -31,6 +31,24 @@ wordsworth supplies (ADR-0009, amended 2026-11-26).
 - Docs: these endpoints in `docs/reference/key-service-api.md`, the rate limit
   and purposes in `docs/how-to/key-service.md`.
 
+## Amended after architect FAIL (wordsworth#532)
+
+Decided: 429 refusals are counted in metrics and audited once per caller per
+window; `/metrics` is behind the service token; the pseudonymise batch is
+capped at 1 000 by default so lock 4781 is not held long, with the hold time
+measured at cutover.
+
+## Open questions
+
+- The architect's verdict names eight points where a builder has to guess. The
+  finding is cut off in issue #532 and the branch
+  `habitat/architect/key-service-vault-20261126-113937-12838` could not be
+  fetched from this session (not on origin, no local copy), so the eight points
+  are not yet listed or resolved in `design.md` and `tasks.md`. A session that
+  can read that branch and its verdict file must list them and resolve each
+  with a decision and the rejected alternative. Default: the builder does not
+  start until this is done.
+
 ## Out of scope
 
 Reveal and identity (`key-service-reveal`), traffic from wordsworth and moving
