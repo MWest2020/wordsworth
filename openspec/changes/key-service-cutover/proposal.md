@@ -11,7 +11,8 @@ mappings, roles, groups, grants and their audit move into its database.
   service's API (configuration), keeping the old in-process drivers available
   for rollback.
 - A migration copies the key vault, document keys, mappings, the token
-  registry (`document_pseudonyms` → `document_tokens`, `source = copied`),
+  registry (`document_pseudonyms` → `document_tokens`, provenance kept as
+  `copied_minted` / `copied_backfilled`, complete or aborted),
   every document's id and domain (→ `known_documents`, tombstones for deleted
   ones), roles, group mappings, grants and the key-lifecycle stream into the
   service's database, verified: row counts per table; every mapping decrypts

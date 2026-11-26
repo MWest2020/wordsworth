@@ -21,23 +21,40 @@ the registry and the types with the authorisation.
 
 ## Identity
 
-The person's assertion is the raw JWT wordsworth received from the identity
-provider (the bearer behind oauth2-proxy, or `cf-access-jwt-assertion`),
-forwarded in the body field `assertion`. The service verifies it with
-`access_identity.Verifier` configured from `KEYSERVICE_OIDC_ISSUER`,
-`KEYSERVICE_OIDC_AUDIENCE` (one value) and, optionally,
-`KEYSERVICE_OIDC_JWKS_URL` (discovered from the issuer otherwise): signature,
-algorithm, issuer, audience, `exp` and `nbf`. The caller label is the claim
-wordsworth's `Identity` uses for its label, so grant recipients keep matching.
-Groups in the assertion are not used by a reveal (the default of #495: a group
-role never authorises a reveal).
+The person's assertion is the raw JWT wordsworth received from Keycloak (the
+bearer behind oauth2-proxy), forwarded in the body field `assertion`. The
+service accepts one issuer, `KEYSERVICE_OIDC_ISSUER`; in this installation
+that is Keycloak (realm `westerweel`). Cloudflare Access assertions are not
+accepted for reveal: an Access session lasts up to 24 hours, and that would be
+the replay window (ADR-0009 residuals).
 
-Audience: the recommended value is a dedicated audience,
-`wordsworth-keyservice`, added to the tokens Keycloak issues for wordsworth
-with an audience mapper. Where the identity provider cannot add an audience
-(Cloudflare Access), it is set to wordsworth's own audience; the how-to says
-what that costs (every token issued for wordsworth is accepted by the service;
-it still needs a valid signature and a grant).
+Verification wraps wordsworth's code rather than changing it:
+`access_identity.Verifier.oidc(issuer, audience)` (with
+`KEYSERVICE_OIDC_JWKS_URL` when discovery must be bypassed, as in the
+cluster) and `access_identity.email_from` check signature, algorithm, issuer,
+audience, `exp`, a usable `email` and `email_verified: true`. `email_from`
+does not check `nbf`; the service's wrapper then reads the payload of the
+token it has just verified and refuses one whose `nbf` lies in the future.
+wordsworth's `Verifier` is not changed. The caller label is the verified email,
+the label wordsworth uses, so grant recipients keep matching. Groups in the
+assertion are not used by a reveal (the default of #495: a group role never
+authorises a reveal).
+
+Audience: the service accepts only tokens whose `aud` holds
+`KEYSERVICE_OIDC_AUDIENCE`, recommended `wordsworth-keyservice`. What that
+separates depends on how Keycloak adds it, and the how-to says so plainly:
+
+- with an audience mapper on wordsworth's client, every token wordsworth
+  receives carries it. The audience then keeps out tokens issued to other
+  clients of the realm, and nothing more: any live wordsworth session token
+  is accepted by the service (it still needs a valid signature and a grant);
+- with an optional client scope requested only when a person reveals, only
+  tokens obtained for a reveal carry it, so a token wordsworth could replay
+  exists only around a reveal. That needs a step-up request in the console
+  and is the cutover's choice, not built here.
+
+The service checks the audience either way; this change does not decide the
+Keycloak side.
 
 The service has no "authentication off" mode for reveal: the recipient is
 always checked (`authorize(..., auth_enabled=True)`). Without
@@ -85,9 +102,15 @@ Both endpoints take JSON:
 ```
 
 `types` null or absent means "everything the grant permits". `/v1/reveal`
-adds `"tokens": [...]` (the tokens in the document's current text, at most
-`KEYSERVICE_REVEAL_MAX_TOKENS`, default 10 000, each matching the token shape)
-and `"view": "text" | "pdf"`.
+adds `"tokens": [...]` (the distinct tokens in the document's current text,
+each matching the token shape) and `"view": "text" | "pdf"`. At most
+`KEYSERVICE_REVEAL_MAX_TOKENS` tokens (default 10 000); more is answered 413
+`{"detail": "too many tokens (limit N)"}` before anything else is checked
+except the service token. One reveal is one call and one audit record, so
+wordsworth does not split a request: a document with more distinct tokens than
+the limit cannot be revealed until the limit is raised, and wordsworth tells a
+covered caller so (409, below). The how-to names the limit and how to raise
+it.
 
 ## Order inside the service (both endpoints)
 
@@ -159,6 +182,7 @@ leaves no trace of its cause" holds in the service too.
 |---|---|---|
 | no or unknown service token | 401 `invalid or missing service token` | same |
 | malformed body | 422 | same |
+| more tokens than the limit | (no tokens) | 413 `too many tokens (limit N)` |
 | identity not configured | 503 `reveal not configured` | same |
 | assertion missing, forged, expired, not yet valid, wrong issuer, foreign audience | 401 `assertion not accepted` | same |
 | unknown grant, revoked, expired, other recipient, other document, global grant not allowed, inactive role, unknown document, other domain | 403 `grant not applicable` | same |
@@ -175,8 +199,9 @@ For `POST /documents/{id}/reveal` and `.../reveal.pdf` with the service
 driver:
 
 1. wordsworth's own authentication (401) and validation (422), as today.
-2. If the caller has no signed assertion to forward (an API key, the console
-   cookie, authentication off): 403 `{"detail": "reveal needs a signed
+2. If the caller has no Keycloak assertion to forward (an API key, the
+   console cookie, authentication off, or only a Cloudflare Access
+   assertion): 403 `{"detail": "reveal needs a signed
    identity"}`, before any read and the same whatever the grant or document.
    This is the default of a question to Mark (#524).
 3. Call `/v1/reveal/decide`. No row about the document is read before its
@@ -184,7 +209,14 @@ driver:
 4. Only after a 200: read the state (none → 403 refusal; deleted → 410),
    supersession (409 naming the survivor), for the PDF the box map (409), the
    anonymized text (none → 409), in that order: today's order and bodies.
-5. Call `/v1/reveal` with the tokens of the current text and the view.
+   A document registered in wordsworth that the service has not seen yet (no
+   `seal` or `pseudonymise` reached it, for instance because the seal failed)
+   never gets here: the service answered the uniform 403 in step 3, also to a
+   caller whose grant would cover it. Today such a caller gets 409 "not yet
+   de-identified"; afterwards 403. Nothing can be revealed from such a
+   document either way, and the 403 tells nobody that it exists.
+5. Call `/v1/reveal` with the distinct tokens of the current text and the
+   view.
 6. Text: put each returned value in place of its token; every other token
    stays. PDF: draw the resolved tokens in clear from the original (opened
    with purpose `reveal_pdf`). Append wordsworth's `deanonymize` record to the
@@ -200,6 +232,7 @@ Mapping the service's answers, for both calls:
 | 403 `grant not applicable` | 403 `grant not applicable` |
 | 403 `vc rejected: …` | the same |
 | 410 | 410 `document deleted` |
+| 413 (`reveal` only) | 409 `{"detail": "document has more distinct tokens than one reveal allows (limit N)"}` |
 | 401 `assertion not accepted` | 401 `assertion not accepted` |
 | anything else (401 service token, 422, 503, 5xx, timeout, refused connection) | 503 `{"detail": "reveal unavailable"}`; never a fallback to an in-process reveal |
 
@@ -215,6 +248,8 @@ service, passed on unchanged; wordsworth reads no document row before the
 service says "covered", so neither its answer nor its timing depends on the
 document. The service decides "unknown document" and "document outside the
 scope" with the same reads (grant, then `known_documents`), as `reveal_gate`
-does today. 410 and 409 reach only covered callers, in today's order. An
-outage (503) happens before any document read and does not depend on the
-document either.
+does today. 410 and 409 reach only covered callers, in today's order. A
+document the service has not seen is, to everyone, the uniform 403. A grant
+scoped to a document is deleted with it (`key-service-vault`), so its former
+recipient gets 403, not 410. An outage (503) happens before any document read
+and does not depend on the document either.

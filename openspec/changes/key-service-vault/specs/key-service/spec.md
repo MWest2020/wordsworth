@@ -49,11 +49,12 @@ closed.
 - **THEN** the open is refused, no plaintext is returned, and the failure is
   audited
 
-### Requirement: Deleting a document removes its keys, tokens and orphaned values
+### Requirement: Deleting a document removes its keys, tokens, orphaned values and scoped grants
 
 Deleting a document in the key service SHALL destroy its data keys, remove its
-registry rows and every encrypted value no other document is registered for,
-and keep only a tombstone with the document's id and domain. A value another
+registry rows, every encrypted value no other document is registered for and
+every grant scoped to that document, and keep only a tombstone with the
+document's id and domain. A value another
 document still holds SHALL survive, also when that other document is being
 pseudonymised at the same moment.
 
@@ -67,3 +68,21 @@ pseudonymised at the same moment.
 
 - **WHEN** a document's originals are opened after its deletion
 - **THEN** the service answers 404 and decrypts nothing
+
+#### Scenario: Grants scoped to the document go with it
+
+- **WHEN** a document with a grant scoped to it and an unscoped grant is
+  deleted
+- **THEN** the scoped grant is gone, the unscoped one remains, and the answer
+  reports one grant deleted
+
+### Requirement: Only reveal returns a clear value
+
+No route of the key service other than reveal SHALL return a clear value from
+the mapping store, and reveal SHALL need a verified person.
+
+#### Scenario: No value without a person
+
+- **WHEN** a calling service uses every route of the service with only its
+  service token
+- **THEN** no response contains a clear value from the mapping store

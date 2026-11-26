@@ -13,14 +13,32 @@ wordsworth's: `MappingStore`, `KeyProvider`, `DocumentKeys`' interface),
 `audit.py`, `rate_limit.py`. The token derivation, normalisation and
 encryption are wordsworth's own functions (`Pseudonymizer.pseudonym`,
 `normalization`, `crypto`, `originals_envelope`), called with the service's
-stores; nothing about how a token is made changes.
+stores; nothing about how a token is made changes. The import rules of
+`key-service-skeleton` ("Reuse and imports") apply: `document_keys.kek_name_for`
+gets the domain → KEK mapping as an argument and `DocumentKeys` gets its cache
+size and TTL from the service's settings (`KEYSERVICE_ORIGINALS_KEK`,
+`KEYSERVICE_ORIGINALS_KEK_BY_DOMAIN`, `KEYSERVICE_DOCUMENT_KEY_CACHE_SIZE`,
+`KEYSERVICE_KEY_CACHE_TTL`), wordsworth's call sites keeping their defaults;
+the tests of this change run under the fixture that makes `config.settings`
+raise.
+
+## Only reveal returns a clear value
+
+No route of the service returns a clear mapping value to a calling service
+without a verified person. The routes here return tokens, sealed bytes, opened
+originals (for processing, audited and rate-limited) and counts; the only
+route that returns mapping values is `/v1/reveal` (`key-service-reveal`), and
+it needs a person's assertion and a grant. A later need for clear values
+without a person (the box map, `key-service-cutover`) is met from the values
+in memory during processing, not by a new route.
 
 ## The token registry
 
 The registry is the service's. A row (`document_id`, `token`) exists only
 because the service itself returned that token from `pseudonymise` for that
 document (`source = minted`), or because the cutover copied it
-(`source = copied`). Nothing else writes it. A reveal (`key-service-reveal`)
+(`source = copied_minted` or `copied_backfilled`, keeping wordsworth's
+provenance). Nothing else writes it. A reveal (`key-service-reveal`)
 reveals only tokens registered for the document it is asked about.
 
 This is what makes the registry trustworthy against a compromised wordsworth:
@@ -127,15 +145,39 @@ unwrap cache (crypto-shredding, ADR-0008). 200 `{"destroyed": n}`; idempotent
 
 Under lock 1: destroy the document's keys (as above), delete its
 `document_tokens` rows, delete every `pii_mappings` row whose token no other
-document is registered for, and set `known_documents.deleted_at` (the row keeps
-id and domain; no value, no token). 200 `{"keys": n, "tokens": n,
-"mappings": n}`. An unknown or already tombstoned document gives 200 with
-zeros. Audit: `event = "delete_document"` with the counts.
+document is registered for, delete every grant scoped to the document
+(`grants.document_id` = the id, as `deletion.py` does in wordsworth today),
+and set `known_documents.deleted_at` (the row keeps id and domain; no value,
+no token). 200 `{"keys": n, "tokens": n, "mappings": n, "grants": n}`. An
+unknown or already tombstoned document gives 200 with zeros, and its scoped
+grants are deleted all the same. Audit: `event = "delete_document"` with the
+counts; the grant deletions also go to `key_lifecycle_events`, as a grant
+change does today.
 
-## Known residual
+Deleting the scoped grants keeps a promise of reveal-api: the former recipient
+of a grant on a deleted document gets the uniform 403, not 410. Only a grant
+that survives the deletion (unscoped where allowed, or under a global role)
+covers a deleted document and hears 410.
 
-`pseudonymise` turns any value into its token for whoever holds a service
-token. A compromised wordsworth can therefore confirm whether a guessed value
-occurs in its own index. Every call is audited with its document and counts,
-and ADR-0009's residuals say so; it is not prevented, because ingest needs
-exactly this operation.
+## Volume
+
+`GET /metrics` (no service token, no values, no document ids) exposes
+`keyservice_opens_total{service_caller, purpose}` and
+`keyservice_open_refusals_total{service_caller, reason}`, so an alert on open
+volume can be set. The alert rule itself belongs to the homelab manifest and
+is not built in any of the key-service changes; until it exists, "alerting on
+volume" (ADR-0009) is a counter nobody watches.
+
+## Known residuals
+
+Written into ADR-0009's threat model:
+
+- `pseudonymise` turns any value into its token for whoever holds a service
+  token, so a compromised wordsworth can confirm whether a guessed value
+  occurs in its own index. Audited; not prevented, because ingest needs it.
+- At the default rate a service caller can open about 170 000 originals a day
+  (120 a minute). Audited and counted; bounded, not prevented.
+- The service credential alone can crypto-shred any document
+  (`DELETE /v1/originals`, `DELETE /v1/documents`): no person is asked.
+  Audited; recovery is only from a backup of the service database taken
+  before.

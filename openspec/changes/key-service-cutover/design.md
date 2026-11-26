@@ -13,8 +13,15 @@ before it is built; they are written here so its own architect pass starts
 from them.
 
 - **The registry is copied once, then the service's.** The copy trusts
-  wordsworth's `document_pseudonyms` at that moment (ADR-0009 residual). After
-  the switch only the service's `pseudonymise` registers tokens. wordsworth
+  wordsworth's `document_pseudonyms` at that moment (ADR-0009 residual) and
+  keeps its provenance: `minted` rows become `copied_minted`, `backfilled`
+  rows `copied_backfilled` (those were read off stored text after the fact
+  and were already less certain than minted ones). The copy is complete or it
+  aborts: every token in every live document's current anonymized text must
+  be in the copied registry for that document, else the cutover stops, names
+  the count of missing pairs (never a value) and leaves the old drivers
+  active. After the switch only the service's `pseudonymise` registers
+  tokens. wordsworth
   may keep `document_pseudonyms` as its own copy for what is not a reveal
   (console type counts, `measure_combinations`, `reprocess_counts`, deletion
   counts); no reveal reads it.
@@ -29,10 +36,14 @@ from them.
   changes the reveal-api requirement "Without caller authentication nothing
   changes", so this change's spec must modify that requirement.
 - **Decryption outside reveal.** `pdf_redaction._clear_values` decrypts
-  mappings to build a box map. After the switch wordsworth holds no key, so
-  the box map must be built from the values while they are in memory during
-  processing (they come from the opened original), or by another route this
-  change names. Open until this change's architect pass.
+  mappings to build a box map. After the switch wordsworth holds no key, and
+  no route of the service may return a clear mapping value to the service
+  credential without a person (`key-service-vault`, "Only reveal returns a
+  clear value"). So the box map is built from the values while they are in
+  memory during processing (they come from the opened original and are sent
+  to `pseudonymise`); rebuilding a box map later means reprocessing from the
+  original. How exactly is this change's to settle; a decrypting route is
+  ruled out.
 - **Audit.** wordsworth's historic `deanonymize` records stay in its document
   chain (they hold tokens, no value, and moving them would break the chain).
   New reveals are recorded in the service's `access_audit`, with a

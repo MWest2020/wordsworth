@@ -6,7 +6,13 @@
    and `type` (and the usual `dossier`, `topic`).
 2. wordsworth calls the key service `POST /v1/tokens/lookup {type, value}` with
    the caller's verified identity (the same token-forwarding as reveal).
-3. The key service checks the right (grant/role/group for `type`), normalises
+3. The key service checks the right: the caller must be the recipient of an
+   unscoped grant, active and unexpired, that allows `type` (itself or
+   through its role), where unscoped grants are allowed (the deployment
+   allows them, or the grant's role is global). A lookup names no document,
+   so a grant scoped to a document never applies; and a role held only
+   through a group never authorises (the default of #495, as for reveal).
+   It then normalises
    `value` with the ingest profile of the current `norm_version`, derives
    `HMAC(key(domain, type), label + ":" + normalised)` for EVERY active key
    version of that type (a corpus pseudonymised under an older key version

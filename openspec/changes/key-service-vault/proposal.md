@@ -21,7 +21,12 @@ wordsworth supplies (ADR-0009, amended 2026-11-26).
   service.
 - `DELETE /v1/originals/{document_id}` (destroy the document's data keys) and
   `DELETE /v1/documents/{document_id}` (keys, registry rows, every mapping no
-  other document is registered for; a tombstone keeps id and domain).
+  other document is registered for, every grant scoped to the document; a
+  tombstone keeps id and domain).
+- No route here returns a clear value: only reveal does, and it needs a
+  person (`key-service-reveal`).
+- Open counts as metrics, so an alert on volume can be set (the alert itself
+  is a homelab follow-up).
 - The service's own audit stream (`access_audit`) for all of the above.
 - Docs: these endpoints in `docs/reference/key-service-api.md`, the rate limit
   and purposes in `docs/how-to/key-service.md`.

@@ -28,12 +28,15 @@ the calling service sends SHALL widen what is revealed.
 
 The key service SHALL verify the person's signed assertion itself (signature,
 issuer, its own configured audience, validity window) and SHALL NOT accept an
-identity from a header or from the calling service's token. It SHALL always
-check that the person is the grant's recipient.
+identity from a header or from the calling service's token. It SHALL accept
+assertions from one configured issuer only, SHALL require a verified email as
+the person's label, and SHALL always check that the person is the grant's
+recipient.
 
 #### Scenario: A forged identity is refused
 
-- **WHEN** a reveal carries a forged, expired or foreign-audience assertion
+- **WHEN** a reveal carries a forged, expired, not-yet-valid,
+  foreign-audience or other-issuer assertion
 - **THEN** the service answers 401, reads no grant, document or mapping, and
   decrypts nothing
 
@@ -65,6 +68,18 @@ without relying on an earlier decision.
 - **WHEN** a caller who is not covered asks about an unknown document, a
   document in another domain and a deleted document
 - **THEN** every answer has the same status, body and content type
+
+#### Scenario: A grant on a deleted document is refused, not told
+
+- **WHEN** the former recipient of a grant scoped to a document reveals it
+  after the document was deleted in the service
+- **THEN** the answer is the uniform refusal, not 410
+
+#### Scenario: A document the service has not seen
+
+- **WHEN** a caller whose grant names a document reveals it before the service
+  has seen that document
+- **THEN** the answer is the uniform refusal
 
 #### Scenario: A grant revoked between the calls
 

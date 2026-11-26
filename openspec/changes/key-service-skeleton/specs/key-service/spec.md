@@ -6,8 +6,9 @@ The key-and-reveal service SHALL run as a separate process with its own
 configuration and its own database, which the rest of wordsworth cannot read.
 It SHALL refuse to start when it has no database configured, when its database
 is the one wordsworth is configured with, or when its database holds a table
-only wordsworth has. It SHALL take no configuration value from wordsworth's
-settings.
+only wordsworth has. It SHALL NOT read wordsworth's settings module; it SHALL
+read wordsworth's database URL from the environment only in order to refuse
+it.
 
 #### Scenario: Pointed at wordsworth's database
 
@@ -26,12 +27,19 @@ settings.
 - **WHEN** both `WORDSWORTH_*` and `KEYSERVICE_*` values are set and differ
 - **THEN** the service uses the `KEYSERVICE_*` values
 
+#### Scenario: wordsworth's settings module is never read
+
+- **WHEN** the service's tests run with wordsworth's `config.settings` made to
+  raise on every access
+- **THEN** they pass
+
 ### Requirement: The key service's schema is its own
 
-The service SHALL create its schema from its own metadata, separate from
-wordsworth's, with no reference to any wordsworth table. Its audit tables
+The service SHALL create its schema from its own metadata, which SHALL
+contain no table of wordsworth's metadata and no reference to any wordsworth
+table. Its audit tables
 SHALL be append-only. Tables whose rows the cutover copies from wordsworth
-SHALL keep wordsworth's column names and types.
+SHALL keep wordsworth's column names, types and nullability.
 
 #### Scenario: Init creates only the service's tables
 
@@ -46,8 +54,8 @@ SHALL keep wordsworth's column names and types.
 
 #### Scenario: A drifted copy is caught
 
-- **WHEN** a copied table's column differs in name or type from wordsworth's
-  model
+- **WHEN** a copied table's column differs in name, type or nullability from
+  wordsworth's model
 - **THEN** the drift test fails and names the column
 
 ### Requirement: Only an authenticated calling service reaches the API

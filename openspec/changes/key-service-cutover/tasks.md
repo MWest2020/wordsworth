@@ -9,8 +9,15 @@
       grant table (they are gone or revoked). Proved by: a test after the
       drop command; the drop refuses inside the verification window.
 - [ ] The registry and every document's domain are copied and verified (row
-      counts; each document's domain equals its `register` record). Proved
-      by: tests, including an injected mismatch.
+      counts per provenance, `copied_minted` / `copied_backfilled`; each
+      document's domain equals its `register` record; every token in every
+      live document's current text is in the copied registry). Proved by:
+      tests, including an injected mismatch and a missing registry row, each
+      aborting the cutover.
+- [ ] wordsworth holds no key material with the service drivers: no key
+      provider, Transit client or OpenBao credential is built, and no route
+      of the service returns a clear value to the service credential. Proved
+      by: tests.
 - [ ] wordsworth's reveal routes with the service driver follow
       `key-service-reveal` ("Order on wordsworth's side"): no document row is
       read before `decide` answers; every service refusal maps to the same

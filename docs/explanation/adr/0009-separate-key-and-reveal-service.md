@@ -79,10 +79,20 @@ from the identity provider, which the service verifies itself):
 - `DELETE /v1/originals/{document_id}` — destroy the document's data key
   (crypto-shredding, ADR-0008).
 - `DELETE /v1/documents/{document_id}` — a document deletion: its data keys,
-  its registry rows and every mapping no other document is registered for;
-  the document's id and domain stay as a tombstone (no value, no token).
+  its registry rows, every mapping no other document is registered for, and
+  every grant scoped to the document (so its former recipient gets the uniform
+  refusal, as today); the document's id and domain stay as a tombstone (no
+  value, no token).
+- `POST /v1/tokens/lookup` — a typed value in, its tokens out, for a person
+  holding an unscoped grant for that type (change `search-by-value`).
+- Management of roles, the group → role mapping and grants (change
+  `key-service-cutover`); wordsworth's grant and role routes and the console
+  call it.
 - `POST /v1/export` — wrapped key export (ADR-0008 consequences; change
   `key-export-escrow`).
+
+No route returns a clear value from the mapping store to a calling service
+without a verified person: reveal is the only route that returns values.
 
 **Authorisation is data in one place.** Which group maps to which role, which
 role reveals which PII types or level, which grants exist: rows in the service,
@@ -96,27 +106,46 @@ no reveal rules in code.
 | wordsworth's database | pseudonymised text, document metadata, the audit of processing | any clear PII value, any key, any original |
 | the search index | pseudonymised text and vectors | clear values |
 | the object store (or a backup of it) | ciphertext | originals (no DEKs, no KEK) |
-| wordsworth's process and its service credential | the ability to open originals for processing (audited, rate-limited, alerting on volume) and to pseudonymise | reveal of clear PII values (needs a user's signed assertion with a matching grant, and reaches only tokens the service registered for that document) |
+| wordsworth's process and its service credential | the ability to open any original (audited, rate-limited, counted; the alert on volume is not built yet), to pseudonymise, and to crypto-shred a document | reveal of clear PII values (needs a user's signed assertion with a matching grant, and reaches only tokens the service registered for that document) |
 | the key service's database alone | wrapped keys and encrypted values | anything readable (the KEK stays in OpenBao) |
 | OpenBao alone | the KEK | the wrapped keys and the ciphertext it would unwrap |
 
 The honest residuals:
 
 - Whoever controls wordsworth's process can read the originals it processes,
-  because processing needs them; the service makes that visible (every open
-  audited with a purpose) and bounded (rate limits), not impossible.
+  because processing needs them, and with the service credential it can open
+  any original, not only the ones it is processing. The service makes that
+  visible (every open audited with a purpose) and bounded (a rate limit per
+  caller, 120 a minute by default: still about 170 000 a day), not
+  impossible. The opens are counted as metrics, but no alert on volume is
+  built in any of the key-service changes; until the homelab alert exists,
+  nobody is told.
 - A user's signed assertion passes through wordsworth on its way to the
   service. Whoever controls wordsworth's process can replay a live assertion
   for as long as it is valid, and reveal what that user is entitled to (the
   grant still has to cover it, and the service audits it under that user).
-  Bounded by the assertion's lifetime and audience, not prevented.
+  Bounded by the assertion's lifetime, not prevented. The service accepts
+  only Keycloak's assertions, whose access tokens live minutes; a Cloudflare
+  Access session lasts up to 24 hours and is not accepted for reveal. The
+  service's own audience does not narrow this as long as Keycloak adds it to
+  every token wordsworth receives: it then only keeps out tokens issued to
+  other clients. It narrows it only if the audience is requested at reveal
+  time (an optional client scope), which is the cutover's choice.
+- The service credential alone can crypto-shred any document
+  (`DELETE /v1/originals`, `DELETE /v1/documents`): no person is asked. This
+  is a loss of data, not a disclosure; it is audited, and recovery is only
+  from a backup of the service's database taken before.
 - `pseudonymise` turns any value into its token for whoever holds the service
   credential, so a compromised wordsworth can confirm whether a guessed value
   occurs in its own index. Every call is audited; ingest needs the operation,
   so it is visible, not prevented.
 - The registry is copied from wordsworth once, at the cutover. A registry
   wordsworth had already corrupted before that moment carries over; after it,
-  only the service registers tokens.
+  only the service registers tokens. The copy keeps its provenance
+  (`copied_minted`, `copied_backfilled`): backfilled rows were read off stored
+  text after the fact and were already less certain than minted ones. The
+  copy aborts unless every token in every live document's current text is in
+  the copied registry, so it cannot come out smaller than what reveal needs.
 
 Reading clear *PII values* out of tokens is impossible without a user entitled
 to them, and then only that user's documents and types.
@@ -174,13 +203,18 @@ findings touched this ADR:
   any document row, and wordsworth's own answers (410 deleted, 409 superseded,
   409 not yet de-identified) must come before anything is decrypted. Hence
   `decide` then `reveal`.
-- **Residuals were missing.** Assertion replay through wordsworth,
-  `pseudonymise` as a guess-confirmation for the service credential, and the
-  one-time registry copy are now written down.
+- **Residuals were missing.** Opening any original at the rate limit with no
+  alert built, assertion replay through wordsworth (and what the audience
+  does and does not separate), `pseudonymise` as a guess-confirmation, crypto-
+  shredding by the service credential alone, and the one-time registry copy
+  are now written down.
 
 Open for Mark, with defaults the builds proceed on: the residuals as written
 (#525), and reveal requiring a signed identity after the cutover (#524).
 
-Added endpoint: `DELETE /v1/documents/{document_id}`, because removing a
-document's registry rows and orphaned mappings is now the service's work.
+Added to the contract: `DELETE /v1/documents/{document_id}`, because removing
+a document's registry rows, orphaned mappings and scoped grants is now the
+service's work; `POST /v1/tokens/lookup` and the management of roles, group
+mappings and grants, which the later changes already assumed; and the rule
+that only reveal returns a clear value.
 

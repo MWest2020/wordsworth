@@ -6,8 +6,11 @@ trust (the pattern of wordsworth's existing identity tests). Grants and roles
 are seeded as rows; no management endpoint is built here. No traffic from
 wordsworth.
 
-- [ ] Identity: `KEYSERVICE_OIDC_*` settings; a forged signature, an expired
-      or not-yet-valid token, a wrong issuer and a foreign audience each get
+- [ ] Identity: `KEYSERVICE_OIDC_*` settings; verification wraps
+      `Verifier.oidc` and `email_from` and adds the `nbf` check without
+      changing wordsworth's `Verifier`; a forged signature, an expired or
+      not-yet-valid token, a wrong issuer, a foreign audience, a missing or
+      unverified email and a Cloudflare Access assertion each get
       401 `assertion not accepted` with the same body, and no statement reads
       `grants`, `known_documents`, `document_tokens` or `pii_mappings`.
       Without issuer and audience configured both routes answer 503. Proved
@@ -24,8 +27,17 @@ wordsworth.
       give 403 with the identical body `{"detail": "grant not applicable"}`,
       on both routes. Proved by: a test comparing status, body and content
       type.
-- [ ] Covered callers: a tombstoned document gives 410; a rejected VC gives
-      403 `vc rejected: …` and never 410. Proved by: tests.
+- [ ] Covered callers: a tombstoned document gives 410 to a grant that
+      survived the deletion (unscoped where allowed, or under a global role);
+      a rejected VC gives 403 `vc rejected: …` and never 410. Proved by:
+      tests.
+- [ ] A grant on a deleted document gives 403, not 410: after
+      `DELETE /v1/documents/{id}`, its former recipient's decide and reveal
+      both get the uniform refusal. Proved by: a test.
+- [ ] A document the service has not seen gives the uniform 403 also to a
+      caller whose grant names it. Proved by: a test.
+- [ ] More tokens than `KEYSERVICE_REVEAL_MAX_TOKENS` gives 413 and decrypts
+      nothing. Proved by: a test with a small configured limit.
 - [ ] `/v1/reveal` reveals only requested tokens that are registered for the
       document and of an authorised type: a token registered only for document
       B, sent in a reveal of document A by a caller covered for A with that
@@ -51,6 +63,7 @@ wordsworth.
       document's token, once without an assertion. Proved by: the commands and
       output in the PR description.
 - [ ] Docs: both endpoints with every status code in
-      `docs/reference/key-service-api.md`; the identity settings, the audience
-      choice and its cost, and the replay residual in
+      `docs/reference/key-service-api.md`; the identity settings, what the
+      audience separates under a mapper and under an optional client scope,
+      the token limit and how to raise it, and the replay residual in
       `docs/how-to/key-service.md`.

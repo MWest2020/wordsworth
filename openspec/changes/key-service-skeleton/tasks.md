@@ -9,11 +9,16 @@ the service after this change.
       `pyproject.toml`. Proved by: `uv run ruff check src/ tests/` and the
       tests below.
 - [ ] Its own settings: `KEYSERVICE_DATABASE_URL` (required) and
-      `KEYSERVICE_SERVICE_TOKENS`; reused functions that read wordsworth's
-      `config.settings` (`document_keys.kek_name_for`, `DocumentKeys` cache
-      defaults) take their values as arguments in the service, wordsworth's
-      call sites unchanged. Proved by: a test that sets conflicting
+      `KEYSERVICE_SERVICE_TOKENS`; `WORDSWORTH_DATABASE_URL` read from
+      `os.environ` only by the refuse-to-start check, never through
+      `wordsworth.config`. Proved by: a test that sets conflicting
       `WORDSWORTH_*` values and shows the service uses `KEYSERVICE_*`.
+- [ ] The import rules of `design.md` ("Reuse and imports"): the `Table`
+      objects of `KeyServiceBase.metadata` and wordsworth's `Base.metadata`
+      are disjoint; a fixture that makes `config.settings` raise (in
+      `wordsworth.config` and in every module that bound it by name) is
+      available to the service's tests, and this change's tests run under
+      it. Proved by: tests.
 - [ ] `KeyServiceBase` with the tables of `design.md` ("Schema"), including
       the token registry `document_tokens` and `known_documents`; no foreign
       key to a wordsworth table; neither metadata imports the other. Proved
@@ -21,15 +26,17 @@ the service after this change.
       tables and none of wordsworth's; a second init is a no-op.
 - [ ] Append-only `access_audit` and `key_lifecycle_events`: UPDATE and DELETE
       raise. Proved by: a test.
-- [ ] Drift check: for every copied table, the service's column names and
-      types equal wordsworth's model. Proved by: a test that fails naming the
+- [ ] Drift check: for every copied table, the service's column names,
+      types and nullability equal wordsworth's model (foreign keys not
+      compared). Proved by: a test that fails naming the
       column (shown failing once by a deliberately altered copy in the test).
 - [ ] Refuse to start (the three rules of `design.md`): no URL; the same
       database as `WORDSWORTH_DATABASE_URL`; a database holding
       `audit_records` or `document_texts`. Proved by: a test per rule, for both
       the server and the init entrypoint.
-- [ ] Service token, fail-closed: `/v1/*` without a token, with an unknown
-      token, or with an empty token set answers 401 before any database read;
+- [ ] Service token, fail-closed, as a pure ASGI middleware on `/v1/`:
+      without a token, with an unknown token, or with an empty token set the
+      answer is 401 before the body is read and before any database read;
       `/health` answers without a token. Proved by: tests (the "before any
       read" part by counting statements).
 - [ ] Test fixture: a private service test database; dropping and creating
