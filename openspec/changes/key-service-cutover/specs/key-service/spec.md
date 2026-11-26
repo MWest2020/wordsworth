@@ -16,3 +16,23 @@ old tables are dropped after a verification window.
 
 - **WHEN** the old tables are dropped after the window
 - **THEN** wordsworth's database user can read no key, mapping or grant
+
+### Requirement: After the switch the key service is the only component holding key material
+
+Once wordsworth uses the key service's drivers, the key service SHALL be the
+only component that holds key material, talks to the key-encryption service,
+or can turn a token into a value. wordsworth SHALL hold no key provider,
+Transit client or OpenBao credential, and no route SHALL return a clear value
+to wordsworth's service credential without a verified person.
+
+#### Scenario: wordsworth holds no key
+
+- **WHEN** wordsworth runs with the key service's drivers
+- **THEN** it builds no key provider, Transit client or OpenBao credential,
+  and every key operation goes through the key service
+
+#### Scenario: The copied registry is complete
+
+- **WHEN** a live document's current text holds a token that is missing from
+  the copied registry for that document
+- **THEN** the cutover aborts and wordsworth keeps the old drivers

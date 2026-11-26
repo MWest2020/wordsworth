@@ -17,8 +17,10 @@ compute the token for a typed value, and the search runs on the token.
 ## What changes
 
 - **The key service translates a value to its token**, for one type, for an
-  authorised caller only: the caller must hold a grant or a role (directly or
-  through a group) that allows that type. It normalises the value with the
+  authorised caller only: the caller must hold an unscoped grant that allows
+  that type, itself or through its role. A document-scoped grant does not
+  apply (a lookup names no document), and a role held only through a group
+  does not authorise (#495). It normalises the value with the
   same versioned profile ingest uses, derives the token under the type's
   current key and domain, and returns only the token.
 - **Refusal is indistinguishable from "no hits"** to the end user: wordsworth

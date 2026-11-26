@@ -2,10 +2,11 @@
 
 ### Requirement: The key service translates a value to its token for an authorised caller
 
-The key service SHALL, for a caller holding a grant, role or group mapping
-that allows a PII type, normalise a typed value with the ingest normalisation
-profile and return the tokens it yields under every active key version of
-that type and domain. It SHALL refuse the translation with 403 for any other
+The key service SHALL, for a caller who is the recipient of an active,
+unexpired, unscoped grant that allows a PII type (itself or through its
+role), normalise a typed value with the ingest normalisation profile and
+return the tokens it yields under every active key version of that type and
+domain. It SHALL refuse the translation with 403 for any other
 caller, and SHALL return only tokens, never the value.
 
 #### Scenario: An authorised caller gets the token ingest produced
@@ -16,12 +17,14 @@ caller, and SHALL return only tokens, never the value.
 
 #### Scenario: A caller without the right is refused
 
-- **WHEN** a caller with no grant, role or group for PERSON looks up a value
+- **WHEN** a caller with no unscoped grant for PERSON looks up a value, also
+  when they hold a grant for PERSON scoped to one document, or a role that
+  allows PERSON only through a group
 - **THEN** the key service answers 403 and returns no token
 
-#### Scenario: A revoked group stops translating
+#### Scenario: A revoked grant stops translating
 
-- **WHEN** the group that gave a caller PERSON is unmapped
+- **WHEN** the grant that gave a caller PERSON is revoked
 - **THEN** the next lookup by that caller is refused
 
 ### Requirement: A value lookup is audited without the value

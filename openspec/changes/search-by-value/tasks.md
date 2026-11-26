@@ -1,13 +1,15 @@
 # Tasks
 
-- [ ] Key service: `POST /tokens/lookup {type, value}` returns the tokens for
+- [ ] Key service: `POST /v1/tokens/lookup {type, value}` returns the tokens for
       every active key version of the type, for an authorised caller only.
       Proved by: tests (authorised → tokens equal to what ingest produced for
       the same value; several key versions → all returned).
-- [ ] Refusal: no grant/role/group for the type → 403 from the key service;
+- [ ] Refusal: no unscoped grant for the type (a document-scoped grant and a
+      role held only through a group do not count) → 403 from the key service;
       wordsworth returns an empty result with the same shape as "no hits".
       Proved by: a test comparing the two responses field by field.
-- [ ] A revoked group or an expired grant no longer translates. Proved by:
+- [ ] A revoked or expired grant, or a role switched off, no longer
+      translates. Proved by:
       tests.
 - [ ] Normalisation equivalences: `Jansen`/`jansen`/` Jansen `, BSN with
       dots and without, a date in two notations yield the same tokens; an

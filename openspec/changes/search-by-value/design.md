@@ -4,13 +4,23 @@
 
 1. The console or an API client calls wordsworth `GET /search` with `value`
    and `type` (and the usual `dossier`, `topic`).
-2. wordsworth calls the key service `POST /tokens/lookup {type, value}` with
+2. wordsworth calls the key service `POST /v1/tokens/lookup {type, value}` with
    the caller's verified identity (the same token-forwarding as reveal).
-3. The key service checks the right (grant/role/group for `type`), normalises
+3. The key service checks the right: the caller must be the recipient of an
+   unscoped grant, active and unexpired, that allows `type` (itself or
+   through its role), where unscoped grants are allowed (the deployment
+   allows them, or the grant's role is global). A lookup names no document,
+   so a grant scoped to a document never applies; and a role held only
+   through a group never authorises (the default of #495, as for reveal).
+   It then normalises
    `value` with the ingest profile of the current `norm_version`, derives
    `HMAC(key(domain, type), label + ":" + normalised)` for EVERY active key
    version of that type (a corpus pseudonymised under an older key version
-   still matches), audits, and answers `{tokens:[…]}` or 403.
+   still matches), audits, and answers `{tokens:[…]}` or 403. The caller is
+   verified exactly as for reveal (`key-service-reveal`, "Identity"): the
+   signed assertion in the body, the service token at the door. The number
+   of matching documents in the audit record is counted in the service's own
+   token registry (`document_tokens`), never returned.
 4. wordsworth runs the existing search with the tokens as exact terms (BM25
    term query on the pseudonymised text field, OR over the versions), scoped
    as asked, and returns the normal result list. No vector query: a token
