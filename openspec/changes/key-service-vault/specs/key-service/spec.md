@@ -36,7 +36,9 @@ closed.
 #### Scenario: A burst is refused
 
 - **WHEN** a calling service opens originals faster than its limit
-- **THEN** the excess is refused with 429 and each refusal is audited
+- **THEN** the excess is refused with 429, every refusal is counted in the
+  metrics, and the audit records the burst once per caller per window with its
+  count
 
 #### Scenario: No purpose, no open
 
