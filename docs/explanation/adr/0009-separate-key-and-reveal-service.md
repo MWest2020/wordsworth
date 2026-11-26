@@ -1,11 +1,12 @@
 ---
 status: accepted
-last_reviewed: 2026-10-30
+last_reviewed: 2026-11-26
 ---
 
 # ADR 0009 — A separate key-and-reveal service
 
-- Status: accepted (Mark, 2026-10-30)
+- Status: accepted (Mark, 2026-10-30); amended 2026-11-26 (see
+  [Amendment](#amendment-2026-11-26), from the architect's FAIL on #522)
 - Date: 2026-10-30
 - Context: data autonomy, least privilege, and an application layer with as
   little business logic as possible
@@ -40,8 +41,19 @@ wordsworth's database user cannot read):
 - the key vault: the wrapped data keys per PII type (ADR-0002) and the wrapped
   data key per original document (ADR-0008);
 - the mapping store: the encrypted clear value behind every token;
+- the token registry: which tokens belong to which document, and the domain
+  of every document it has seen. A token is registered for a document only
+  when the service itself returned it from `pseudonymise` for that document;
+  a document is known from its first `pseudonymise` or `seal`, which carries
+  its domain. Reveal decides from this registry, never from a list wordsworth
+  supplies;
 - the authorisation facts for reveal: roles, the group → role mapping, grants;
 - the reveal audit stream and the key-lifecycle stream.
+
+wordsworth may keep its own `document_pseudonyms` copy for what is not a reveal
+(type counts in the console, measurements, deletion counts): it holds no value
+and can be read off wordsworth's own pseudonymised text anyway. It is never
+consulted by a reveal.
 
 **API contract** (versioned, `/v1`, mutual TLS or a service token between
 wordsworth and the service; callers' identities travel as the signed assertion
@@ -50,16 +62,25 @@ from the identity provider, which the service verifies itself):
 - `POST /v1/pseudonymise` — per document, a batch of (type, value) pairs in;
   tokens out. The service derives the keyed token, stores the encrypted value,
   returns only tokens. wordsworth never holds a key.
-- `POST /v1/reveal` — document id, the requested types, the caller's verified
-  assertion (and a grant id where one is used); the service decides against
-  roles, groups and grants, decrypts what is allowed, audits, returns values.
-  wordsworth can't reveal anything the caller isn't entitled to, even if
-  wordsworth itself is compromised.
+- `POST /v1/reveal/decide` and `POST /v1/reveal` — document id, grant id, the
+  requested types and the caller's signed assertion (plus, for `reveal`, the
+  tokens of the document's current text and the view). The service decides
+  against its grants, roles and token registry; `decide` answers "covered, and
+  which types" without decrypting anything, `reveal` decides afresh, decrypts
+  only tokens registered for that document, audits, and returns values. Two
+  calls because wordsworth must not read a document row before the grant is
+  decided (reveal-authorize-first), and must not have values decrypted for a
+  request it then answers 409 or 410. wordsworth can't reveal anything the
+  caller isn't entitled to, even if wordsworth itself is compromised. The
+  contract, with every status code, is in the change `key-service-reveal`.
 - `POST /v1/originals/{document_id}/seal` and `.../open` — encrypt an original
   for storage, and decrypt it for processing (pipeline, OCR, PDF rendering).
   Every open is audited with its purpose and rate-limited.
 - `DELETE /v1/originals/{document_id}` — destroy the document's data key
   (crypto-shredding, ADR-0008).
+- `DELETE /v1/documents/{document_id}` — a document deletion: its data keys,
+  its registry rows and every mapping no other document is registered for;
+  the document's id and domain stay as a tombstone (no value, no token).
 - `POST /v1/export` — wrapped key export (ADR-0008 consequences; change
   `key-export-escrow`).
 
@@ -75,15 +96,30 @@ no reveal rules in code.
 | wordsworth's database | pseudonymised text, document metadata, the audit of processing | any clear PII value, any key, any original |
 | the search index | pseudonymised text and vectors | clear values |
 | the object store (or a backup of it) | ciphertext | originals (no DEKs, no KEK) |
-| wordsworth's process and its service credential | the ability to open originals for processing (audited, rate-limited, alerting on volume) and to pseudonymise | reveal of clear PII values (needs a user's verified assertion with a matching role or grant) |
+| wordsworth's process and its service credential | the ability to open originals for processing (audited, rate-limited, alerting on volume) and to pseudonymise | reveal of clear PII values (needs a user's signed assertion with a matching grant, and reaches only tokens the service registered for that document) |
 | the key service's database alone | wrapped keys and encrypted values | anything readable (the KEK stays in OpenBao) |
 | OpenBao alone | the KEK | the wrapped keys and the ciphertext it would unwrap |
 
-The honest residual: whoever controls wordsworth's process can read the
-originals it processes, because processing needs them; the service makes that
-visible (every open audited with a purpose) and bounded (rate limits), not
-impossible. Reading clear *PII values* out of tokens is impossible without a
-user entitled to them.
+The honest residuals:
+
+- Whoever controls wordsworth's process can read the originals it processes,
+  because processing needs them; the service makes that visible (every open
+  audited with a purpose) and bounded (rate limits), not impossible.
+- A user's signed assertion passes through wordsworth on its way to the
+  service. Whoever controls wordsworth's process can replay a live assertion
+  for as long as it is valid, and reveal what that user is entitled to (the
+  grant still has to cover it, and the service audits it under that user).
+  Bounded by the assertion's lifetime and audience, not prevented.
+- `pseudonymise` turns any value into its token for whoever holds the service
+  credential, so a compromised wordsworth can confirm whether a guessed value
+  occurs in its own index. Every call is audited; ingest needs the operation,
+  so it is visible, not prevented.
+- The registry is copied from wordsworth once, at the cutover. A registry
+  wordsworth had already corrupted before that moment carries over; after it,
+  only the service registers tokens.
+
+Reading clear *PII values* out of tokens is impossible without a user entitled
+to them, and then only that user's documents and types.
 
 ## Why only this service
 
@@ -96,10 +132,14 @@ nothing from being separate services; they stay in the monolith.
 
 ## Migration
 
-1. The service ships first without traffic (`key-service-skeleton`): its own
-   database, the API contract, tests against a fake Transit.
-2. Cutover (`key-service-cutover`): the key vault, mappings, roles, grants and
-   their audit move into the service's database with a verified copy (row
+1. The service ships first without traffic, in three builds:
+   `key-service-skeleton` (its own process, settings, database and schema,
+   service authentication), `key-service-vault` (pseudonymise with the token
+   registry, seal/open/delete, its audit stream and rate limit) and
+   `key-service-reveal` (the reveal contract and identity verification), all
+   tested against a fake Transit.
+2. Cutover (`key-service-cutover`): the key vault, mappings, the token
+   registry with every document's domain, roles, grants and their audit move into the service's database with a verified copy (row
    counts, every mapping decrypts to the same value under the moved keys, a
    sample reveal before and after); wordsworth switches its key, mapping and
    reveal drivers to the service's API; the old tables are dropped only after a
@@ -118,3 +158,26 @@ nothing from being separate services; they stay in the monolith.
   not in the unwrap cache.
 - **Network partition between wordsworth and the service**: as service down;
   wordsworth never falls back to holding keys.
+
+## Amendment 2026-11-26
+
+The first build of `key-service-skeleton` stopped at the architect (FAIL,
+[#522](https://github.com/MWest2020/wordsworth/issues/522)). Three of its
+findings touched this ADR:
+
+- **The token registry was not listed.** Without it the service would reveal
+  whatever tokens wordsworth put in front of it, and a compromised wordsworth
+  holding one user's assertion would reach every value of that user's types in
+  any document, which contradicts the threat-model row above. The registry now
+  belongs to the service (Decision), so the row holds.
+- **Reveal was one call.** The grant has to be decided before wordsworth reads
+  any document row, and wordsworth's own answers (410 deleted, 409 superseded,
+  409 not yet de-identified) must come before anything is decrypted. Hence
+  `decide` then `reveal`.
+- **Residuals were missing.** Assertion replay through wordsworth,
+  `pseudonymise` as a guess-confirmation for the service credential, and the
+  one-time registry copy are now written down.
+
+Added endpoint: `DELETE /v1/documents/{document_id}`, because removing a
+document's registry rows and orphaned mappings is now the service's work.
+

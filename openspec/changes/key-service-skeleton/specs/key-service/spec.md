@@ -1,38 +1,69 @@
 ## ADDED Requirements
 
-### Requirement: One service holds keys, values and the reveal decision
+### Requirement: The key service runs as its own process on its own database
 
-The key-and-reveal service SHALL be the only component that holds key material,
-talks to the key-encryption service, stores the encrypted values behind tokens,
-or decides a reveal. It SHALL use its own database, which the rest of
-wordsworth cannot read.
+The key-and-reveal service SHALL run as a separate process with its own
+configuration and its own database, which the rest of wordsworth cannot read.
+It SHALL refuse to start when it has no database configured, when its database
+is the one wordsworth is configured with, or when its database holds a table
+only wordsworth has. It SHALL take no configuration value from wordsworth's
+settings.
 
-#### Scenario: Pseudonymising returns tokens only
+#### Scenario: Pointed at wordsworth's database
 
-- **WHEN** a batch of values is pseudonymised through the service
-- **THEN** the response contains tokens and no value
+- **WHEN** the service or its init entrypoint is configured with wordsworth's
+  database
+- **THEN** it refuses to start, names the rule, and creates nothing
 
-#### Scenario: Its own database
+#### Scenario: A database that holds wordsworth's tables
 
-- **WHEN** the service is configured with wordsworth's database
-- **THEN** it refuses to start
+- **WHEN** the configured database contains `audit_records` or
+  `document_texts`
+- **THEN** the service refuses to start
 
-### Requirement: The service verifies identity itself
+#### Scenario: wordsworth's settings are ignored
 
-The service SHALL authenticate its service callers and SHALL verify a caller's
-identity assertion itself; it SHALL NOT accept an identity from a header.
+- **WHEN** both `WORDSWORTH_*` and `KEYSERVICE_*` values are set and differ
+- **THEN** the service uses the `KEYSERVICE_*` values
 
-#### Scenario: A forged identity is refused
+### Requirement: The key service's schema is its own
 
-- **WHEN** a reveal carries a forged, expired or foreign-audience assertion
-- **THEN** it is refused and nothing is decrypted
+The service SHALL create its schema from its own metadata, separate from
+wordsworth's, with no reference to any wordsworth table. Its audit tables
+SHALL be append-only. Tables whose rows the cutover copies from wordsworth
+SHALL keep wordsworth's column names and types.
 
-### Requirement: Opening an original is audited
+#### Scenario: Init creates only the service's tables
 
-Every opening of an original SHALL be audited with its purpose and SHALL be
-subject to a rate limit per service caller.
+- **WHEN** the init entrypoint runs on an empty database
+- **THEN** exactly the service's tables exist, including the token registry,
+  and no wordsworth table does
 
-#### Scenario: A burst is refused
+#### Scenario: The audit cannot be changed
 
-- **WHEN** a service caller opens originals faster than its limit
-- **THEN** the excess is refused and the refusals are audited
+- **WHEN** an UPDATE or DELETE is issued on the service's audit tables
+- **THEN** the database refuses it
+
+#### Scenario: A drifted copy is caught
+
+- **WHEN** a copied table's column differs in name or type from wordsworth's
+  model
+- **THEN** the drift test fails and names the column
+
+### Requirement: Only an authenticated calling service reaches the API
+
+Every `/v1` route SHALL require a service token from the configured set and
+SHALL refuse a missing or unknown token with 401 before reading the request
+body or the database. With no token configured, every `/v1` call SHALL be
+refused. A service token SHALL identify a calling service, never a person.
+
+#### Scenario: No token
+
+- **WHEN** a `/v1` route is called without a service token or with an unknown
+  one
+- **THEN** the service answers 401 and reads nothing from its database
+
+#### Scenario: Nothing configured means closed
+
+- **WHEN** the service runs with no service token configured
+- **THEN** every `/v1` call is refused with 401

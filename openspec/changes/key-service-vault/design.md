@@ -1,0 +1,141 @@
+# Design
+
+All routes below sit behind the skeleton's service token (401 first, before
+the body is parsed). The caller is a service (`service_caller`, the token's
+label); no person is involved and no user assertion is read. Request logging
+drops the body and the response of every route here: no value, original byte
+or key byte reaches a log.
+
+Modules (each ≤ 200 lines): `api_pseudonymise.py`, `api_originals.py`,
+`api_documents.py`, `stores.py` (the service's mapping store, key vault and
+document keys over `KeyServiceBase`, implementing the same protocols as
+wordsworth's: `MappingStore`, `KeyProvider`, `DocumentKeys`' interface),
+`audit.py`, `rate_limit.py`. The token derivation, normalisation and
+encryption are wordsworth's own functions (`Pseudonymizer.pseudonym`,
+`normalization`, `crypto`, `originals_envelope`), called with the service's
+stores; nothing about how a token is made changes.
+
+## The token registry
+
+The registry is the service's. A row (`document_id`, `token`) exists only
+because the service itself returned that token from `pseudonymise` for that
+document (`source = minted`), or because the cutover copied it
+(`source = copied`). Nothing else writes it. A reveal (`key-service-reveal`)
+reveals only tokens registered for the document it is asked about.
+
+This is what makes the registry trustworthy against a compromised wordsworth:
+to bind a token to a document it must send the value, and a value it already
+knows is no secret. A value it does not know cannot be registered anywhere.
+
+Registering never removes a token: re-pseudonymising a document adds the new
+tokens and keeps the old ones, as `pseudonym_registry.register` does today (a
+reveal in flight must not see the registry shrink). Only
+`DELETE /v1/documents/{id}` removes rows.
+
+wordsworth's own `document_pseudonyms` is not touched by this change.
+
+## `known_documents`
+
+The service knows a document from its first `pseudonymise` or `seal`, both of
+which carry `domain`. The first call records (`id`, `domain`); a later call
+for the same id with a different domain is refused (409), and a call for a
+tombstoned id is refused (410). The domain recorded here is the one reveal
+judges a grant against; wordsworth cannot change it afterwards.
+
+## Locks
+
+One order inside the service's database, for every writer below:
+
+1. the registry advisory lock (`pg_advisory_xact_lock(4781)`, the service's
+   own key) — taken by `pseudonymise`, `seal` and `DELETE /v1/documents`;
+2. the `known_documents` row;
+3. `document_keys` rows, by `object_key`, `FOR UPDATE`;
+4. `pii_mappings` rows, by token: inserted `ON CONFLICT DO NOTHING` by
+   `pseudonymise`, `FOR UPDATE` by a deletion;
+5. the `access_audit` chain lock (its own advisory key, 4782), last.
+
+This is the service-side twin of #465: a deletion decides "no other document
+holds this token" under lock 1, and a pseudonymise of the same value for
+another document stores the mapping under lock 1 too, so either the deletion
+sees the new registry row or the mapping is stored again after it.
+
+## `POST /v1/pseudonymise`
+
+Request (JSON): `{"document_id": UUID, "domain": str, "items": [{"type": LABEL,
+"value": str}, ...]}`. `items` may be empty (that registers the document and
+its domain). At most `KEYSERVICE_PSEUDONYMISE_MAX_ITEMS` (default 10 000).
+
+| Case | Status | Body |
+|---|---|---|
+| no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` |
+| malformed body, unknown type label, too many items | 422 | validation detail, never echoing a value |
+| document known in another domain | 409 | `{"detail": "document is registered in another domain"}` |
+| document tombstoned | 410 | `{"detail": "document deleted"}` |
+| a key is needed and Transit is unreachable or sealed | 503 | `{"detail": "key service unavailable"}`, nothing committed |
+| otherwise | 200 | `{"document_id": UUID, "tokens": [str, ...]}`, one token per item, same order |
+
+The response contains no value, no hash of a value and no key id. One
+`access_audit` record per call: `event = "pseudonymise"`, the document, the
+service caller, the number of items per type and the number of new registry
+rows; no value, no token.
+
+## `POST /v1/originals/{document_id}/seal`
+
+Request: the original's bytes as `application/octet-stream`; query
+`domain` and `object_key`. At most `KEYSERVICE_MAX_ORIGINAL_BYTES` (413
+beyond). The service checks `known_documents` exactly as `pseudonymise` does
+(409 other domain, 410 tombstoned, else record it), then mints and wraps a
+data key and seals the bytes with the semantics of
+`OriginalsStore.put_original` today, minus the object-store write: the
+response is the sealed bytes (`application/octet-stream`, header `X-Key-Id`),
+and wordsworth stores them. 503 when Transit is unreachable. Audit:
+`event = "seal"`, document, `object_key`, key id.
+
+## `POST /v1/originals/{document_id}/open`
+
+Request: the sealed bytes as `application/octet-stream`; query `object_key`
+and `purpose`. The purpose is one of `process`, `reanonymize`,
+`ocr_recovery`, `redacted_pdf`, `reveal_pdf`, `seal_verify` (the readers of
+`docs/reference/originals-readers.md` plus verification).
+
+Order and answers:
+
+| Case | Status | Audit |
+|---|---|---|
+| no or unknown service token | 401 | none |
+| purpose missing or not in the list; malformed query | 422 | none |
+| over the caller's rate | 429, `Retry-After` | `open_refused`, purpose, `reason = "rate"` |
+| no key row for `object_key` under this document | 404 `{"detail": "no key for this object"}` | `open_refused`, `reason = "no_key"` |
+| Transit unreachable or sealed | 503 `{"detail": "key service unavailable"}` | none (nothing was decided) |
+| the wrapped key does not unwrap, or the envelope does not authenticate (tampered) | 409 `{"detail": "sealed object does not open"}` | `open_failed`, `reason = "unwrap"` or `"envelope"` |
+| otherwise | 200, the plaintext | `open`, document, `object_key`, purpose |
+
+The rate limit is a token bucket per service caller
+(`KEYSERVICE_OPEN_RATE_PER_MINUTE`, default 120; `KEYSERVICE_OPEN_BURST`,
+default 30), in the service's own `rate_limit_buckets`, keyed on the caller
+label, not the path. A 404 here is no oracle: only a calling service with a
+token reaches this route, and it is the one that stored the object.
+
+## `DELETE /v1/originals/{document_id}`
+
+Destroys every `document_keys` row of the document and evicts them from the
+unwrap cache (crypto-shredding, ADR-0008). 200 `{"destroyed": n}`; idempotent
+(n = 0 the second time). A key-lifecycle event records the count. After it,
+`open` answers 404.
+
+## `DELETE /v1/documents/{document_id}`
+
+Under lock 1: destroy the document's keys (as above), delete its
+`document_tokens` rows, delete every `pii_mappings` row whose token no other
+document is registered for, and set `known_documents.deleted_at` (the row keeps
+id and domain; no value, no token). 200 `{"keys": n, "tokens": n,
+"mappings": n}`. An unknown or already tombstoned document gives 200 with
+zeros. Audit: `event = "delete_document"` with the counts.
+
+## Known residual
+
+`pseudonymise` turns any value into its token for whoever holds a service
+token. A compromised wordsworth can therefore confirm whether a guessed value
+occurs in its own index. Every call is audited with its document and counts,
+and ADR-0009's residuals say so; it is not prevented, because ingest needs
+exactly this operation.

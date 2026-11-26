@@ -1,6 +1,6 @@
 # Tasks
 
-- [ ] Key service: `POST /tokens/lookup {type, value}` returns the tokens for
+- [ ] Key service: `POST /v1/tokens/lookup {type, value}` returns the tokens for
       every active key version of the type, for an authorised caller only.
       Proved by: tests (authorised → tokens equal to what ingest produced for
       the same value; several key versions → all returned).
