@@ -164,7 +164,9 @@ nothing from being separate services; they stay in the monolith.
 1. The service ships first without traffic, in three builds:
    `key-service-skeleton` (its own process, settings, database and schema,
    service authentication), `key-service-vault` (pseudonymise with the token
-   registry, seal/open/delete, its audit stream and rate limit) and
+   registry, seal/open/delete, its audit stream and rate limit; built as four
+   changes, `key-service-pseudonymise`, `key-service-originals`,
+   `key-service-open-limits` and `key-service-delete`) and
    `key-service-reveal` (the reveal contract and identity verification), all
    tested against a fake Transit.
 2. Cutover (`key-service-cutover`): the key vault, mappings, the token

@@ -38,7 +38,7 @@ from them.
 - **Decryption outside reveal.** `pdf_redaction._clear_values` decrypts
   mappings to build a box map. After the switch wordsworth holds no key, and
   no route of the service may return a clear mapping value to the service
-  credential without a person (`key-service-vault`, "Only reveal returns a
+  credential without a person (`key-service-pseudonymise`, "Only reveal returns a
   clear value"). So the box map is built from the values while they are in
   memory during processing (they come from the opened original and are sent
   to `pseudonymise`); rebuilding a box map later means reprocessing from the

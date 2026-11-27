@@ -40,5 +40,6 @@ wordsworth calling these endpoints (`key-service-cutover`); search on a value
 
 ## Depends on
 
-`key-service-vault` (the registry, `known_documents`, the mapping store and
-the audit stream).
+`key-service-pseudonymise` (the registry, the known-documents table, the
+mapping store and the audit stream) and `key-service-delete` (scoped grants
+deleted with their document); both from the split of key-service-vault.

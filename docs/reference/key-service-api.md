@@ -11,7 +11,8 @@ deployment, its database and failure modes.
 
 In this change (`key-service-skeleton`) the surface is deliberately minimal:
 the process boundary and its authentication, nothing else yet.
-`key-service-vault` and `key-service-reveal` add the endpoints below the
+`key-service-pseudonymise`, `key-service-originals`, `key-service-open-limits`,
+`key-service-delete` and `key-service-reveal` add the endpoints below the
 `/v1` prefix.
 
 ## `GET /health`
@@ -47,5 +48,6 @@ separately.
 ## Not in this change
 
 - Every key, mapping, token-registry and reveal operation — see
-  `key-service-vault` and `key-service-reveal`.
+  `key-service-pseudonymise`, `key-service-originals`,
+  `key-service-open-limits`, `key-service-delete` and `key-service-reveal`.
 - `POST /v1/export` — see `key-export-escrow`.
