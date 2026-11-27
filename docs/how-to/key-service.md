@@ -8,8 +8,10 @@ last_reviewed: 2026-11-26
 ADR-0009: one service holds the keys, the encrypted values, the token
 registry and the reveal decision; the rest of wordsworth sees tokens only.
 This change (`key-service-skeleton`) ships the process boundary with **no
-traffic** — nothing in wordsworth calls it yet. `key-service-vault` and
-`key-service-reveal` fill it in.
+traffic** — nothing in wordsworth calls it yet. The four changes split
+from `key-service-vault` (`key-service-pseudonymise`, `key-service-originals`,
+`key-service-open-limits`, `key-service-delete`) and `key-service-reveal` fill
+it in.
 
 ## Deploying it
 

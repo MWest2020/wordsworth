@@ -250,6 +250,6 @@ document. The service decides "unknown document" and "document outside the
 scope" with the same reads (grant, then `known_documents`), as `reveal_gate`
 does today. 410 and 409 reach only covered callers, in today's order. A
 document the service has not seen is, to everyone, the uniform 403. A grant
-scoped to a document is deleted with it (`key-service-vault`), so its former
+scoped to a document is deleted with it (`key-service-delete`), so its former
 recipient gets 403, not 410. An outage (503) happens before any document read
 and does not depend on the document either.

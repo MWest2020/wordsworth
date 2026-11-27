@@ -30,6 +30,7 @@ mappings, roles, groups, grants and their audit move into its database.
 
 ## Depends on
 
-`key-service-skeleton`, `key-service-vault`, `key-service-reveal`, `originals-ingest-switch` (with the changes before
+`key-service-skeleton`, `key-service-pseudonymise`, `key-service-originals`,
+`key-service-open-limits`, `key-service-delete`, `key-service-reveal`, `originals-ingest-switch` (with the changes before
 it; they replaced `originals-envelope-encryption`),
 `keycloak-groups-to-roles`.
