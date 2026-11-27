@@ -36,8 +36,7 @@ the service's key-lifecycle chain, and the race that #465 fixed in wordsworth.
   row's `document_id` is the document the service sealed it for; how
   wordsworth's shared objects reach the service is settled in
   `key-service-cutover` before any traffic, and this change's endpoints may
-  change shape there. Asked as wordsworth `waiting-on-mark` issue (see the PR
-  that split `key-service-vault`).
+  change shape there. Asked in wordsworth#540 (`waiting-on-mark`).
 
 ## Out of scope
 
