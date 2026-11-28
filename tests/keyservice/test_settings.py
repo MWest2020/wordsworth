@@ -81,3 +81,44 @@ def test_pseudonymise_max_items_defaults_to_1000(monkeypatch):
 def test_pseudonymise_max_items_reads_its_own_setting(monkeypatch):
     monkeypatch.setenv("KEYSERVICE_PSEUDONYMISE_MAX_ITEMS", "250")
     assert Settings().pseudonymise_max_items == 250
+
+
+def test_originals_kek_defaults_to_transit_kek(monkeypatch):
+    monkeypatch.delenv("KEYSERVICE_ORIGINALS_KEK", raising=False)
+    monkeypatch.setenv("KEYSERVICE_TRANSIT_KEK", "keyservice-kek")
+    assert Settings().originals_kek == "keyservice-kek"
+
+
+def test_originals_kek_reads_its_own_setting(monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_ORIGINALS_KEK", "originals-kek")
+    assert Settings().originals_kek == "originals-kek"
+
+
+def test_originals_kek_by_domain_empty_by_default(monkeypatch):
+    monkeypatch.delenv("KEYSERVICE_ORIGINALS_KEK_BY_DOMAIN", raising=False)
+    assert Settings().originals_kek_by_domain == {}
+
+
+def test_originals_kek_by_domain_parses_json(monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_ORIGINALS_KEK_BY_DOMAIN", '{"acme": "acme-kek"}')
+    assert Settings().originals_kek_by_domain == {"acme": "acme-kek"}
+
+
+def test_document_key_cache_size_defaults_to_1024(monkeypatch):
+    monkeypatch.delenv("KEYSERVICE_DOCUMENT_KEY_CACHE_SIZE", raising=False)
+    assert Settings().document_key_cache_size == 1024
+
+
+def test_document_key_cache_size_reads_its_own_setting(monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_DOCUMENT_KEY_CACHE_SIZE", "64")
+    assert Settings().document_key_cache_size == 64
+
+
+def test_max_original_bytes_defaults_to_100_mib(monkeypatch):
+    monkeypatch.delenv("KEYSERVICE_MAX_ORIGINAL_BYTES", raising=False)
+    assert Settings().max_original_bytes == 100 * 1024 * 1024
+
+
+def test_max_original_bytes_reads_its_own_setting(monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_MAX_ORIGINAL_BYTES", "1024")
+    assert Settings().max_original_bytes == 1024

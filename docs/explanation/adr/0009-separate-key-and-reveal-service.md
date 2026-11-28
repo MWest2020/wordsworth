@@ -151,6 +151,11 @@ The honest residuals:
   text after the fact and were already less certain than minted ones. The
   copy aborts unless every token in every live document's current text is in
   the copied registry, so it cannot come out smaller than what reveal needs.
+- `open` returns, and `seal` receives, the original in **plaintext over HTTP**
+  on the link between wordsworth and the service: whoever can read that link
+  reads originals in transit, which encryption at rest does not cover. Not
+  prevented by `key-service-originals`; the deployment's TLS (mutual TLS or
+  the service token's transport) is the mitigation.
 
 Reading clear *PII values* out of tokens is impossible without a user entitled
 to them, and then only that user's documents and types.
