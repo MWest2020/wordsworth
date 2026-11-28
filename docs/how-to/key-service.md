@@ -1,6 +1,6 @@
 ---
 status: draft
-last_reviewed: 2026-11-26
+last_reviewed: 2026-11-28
 ---
 
 # Runbook — the key service
@@ -23,12 +23,27 @@ wordsworth-keyservice-init   # once, before first start: creates the schema
 wordsworth-keyservice        # serves /health and the (still empty) /v1 surface
 ```
 
-It needs its own two environment variables, set independently of wordsworth's:
+It needs its own environment variables, set independently of wordsworth's:
 
 - `KEYSERVICE_DATABASE_URL` — required, no default. The `postgresql+psycopg://`
   scheme is required, same as wordsworth's own database URL.
 - `KEYSERVICE_SERVICE_TOKENS` — `label:token` comma-separated pairs, one per
   calling service. A secret: inject via SOPS+age or OpenBao, never commit it.
+- `KEYSERVICE_OPENBAO_URL` — required, no default. The OpenBao base URL the
+  service wraps/unwraps mapping keys against.
+- `KEYSERVICE_OPENBAO_TOKEN` — required, no default. A scoped token, Transit
+  wrap/unwrap only, never root. A secret: inject via SOPS+age or OpenBao,
+  never commit it.
+- `KEYSERVICE_TRANSIT_KEK` — default `wordsworth`. The KEK that wraps the
+  service's own PII mapping keys; must be the KEK wordsworth's existing
+  `key_vault` rows are wrapped under, since those rows carry no KEK name of
+  their own — the default is wordsworth's own default, so the cutover's
+  copy unwraps unchanged.
+- `KEYSERVICE_KEY_CACHE_TTL` — default `300`. Seconds an unwrapped mapping
+  key stays in memory.
+- `KEYSERVICE_PSEUDONYMISE_MAX_ITEMS` — default `1000`. Max (type, value)
+  items per `POST /v1/pseudonymise` call; refused at startup above `5000`
+  (see "Refuses to start" below).
 
 ## Its database and role
 
@@ -57,6 +72,13 @@ anything:
    (tables that exist only in wordsworth's schema) — refuses. Catches the
    real thing: pointing the service at wordsworth's database however the
    rest of the environment is configured.
+4. **No `KEYSERVICE_OPENBAO_URL` or no `KEYSERVICE_OPENBAO_TOKEN`** (either
+   unset or empty) — refuses, naming which one. Not checked when the
+   process was wired with its own `transit_for` factory directly (tests
+   only); every real deployment goes through this rule.
+5. **`KEYSERVICE_PSEUDONYMISE_MAX_ITEMS` above `5000`** — refuses, naming
+   the configured value. The registry advisory lock (4781) is held for the
+   whole batch; a cap this high would stall every other writer too long.
 
 Each refusal is an exception naming the rule, never a warning; the process
 exits non-zero. There is no override.
@@ -71,12 +93,11 @@ optional, open-by-default API keys: **an empty token set refuses every
 service is the one thing the process split exists to prevent.
 
 `/health` needs no token. It says only that the process is up and its own
-database is reachable — it does not say anything about `/v1`, which (in this
-change) does nothing yet beyond refusing without a token.
+database is reachable — it does not say anything about `/v1`.
 
 ## Failure modes
 
-- **Process does not start**: one of the three refuse-to-start rules fired —
+- **Process does not start**: one of the five refuse-to-start rules fired —
   check the exception message, it names which one.
 - **`/health` returns 503**: the process is up but its database is not
   reachable (network, credentials, or the database is down). This is not a
@@ -84,6 +105,9 @@ change) does nothing yet beyond refusing without a token.
 - **Every `/v1` call returns 401**: either no token was sent, the token does
   not match any configured pair, or `KEYSERVICE_SERVICE_TOKENS` is empty
   (every call fails-closed in that case, by design).
+- **`POST /v1/pseudonymise` returns 503**: OpenBao is unreachable or sealed
+  when a mapping key was needed. Nothing is committed — no mapping, no
+  registry row, no `known_documents` row, no audit record.
 
 ## Not yet enforced
 

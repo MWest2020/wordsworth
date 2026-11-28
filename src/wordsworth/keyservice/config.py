@@ -31,5 +31,36 @@ class Settings:
 
         return parse_api_keys(os.environ.get("KEYSERVICE_SERVICE_TOKENS", ""))
 
+    @property
+    def openbao_url(self) -> str:
+        """Required, no default (design.md "Settings and the Transit seam").
+        Empty means the service refuses to start, unless a ``transit_for``
+        factory was passed to ``create_app`` directly (tests)."""
+        return os.environ.get("KEYSERVICE_OPENBAO_URL", "")
+
+    @property
+    def openbao_token(self) -> str:
+        """Required, no default. Transit wrap/unwrap only -- never root."""
+        return os.environ.get("KEYSERVICE_OPENBAO_TOKEN", "")
+
+    @property
+    def transit_kek(self) -> str:
+        """The KEK that wraps the service's own PII mapping keys. Defaults to
+        wordsworth's own default KEK name, so the cutover's copy unwraps
+        unchanged."""
+        return os.environ.get("KEYSERVICE_TRANSIT_KEK", "wordsworth")
+
+    @property
+    def key_cache_ttl(self) -> int:
+        """Seconds an unwrapped mapping key stays in memory."""
+        return int(os.environ.get("KEYSERVICE_KEY_CACHE_TTL", "300"))
+
+    @property
+    def pseudonymise_max_items(self) -> int:
+        """Max (type, value) items per ``POST /v1/pseudonymise`` call --
+        bounds how long the registry advisory lock (4781) is held for one
+        batch. Refused at startup above 5000 (``db.check_pseudonymise_cap``)."""
+        return int(os.environ.get("KEYSERVICE_PSEUDONYMISE_MAX_ITEMS", "1000"))
+
 
 settings = Settings()

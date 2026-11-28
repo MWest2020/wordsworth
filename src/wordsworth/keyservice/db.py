@@ -39,6 +39,12 @@ _APPEND_ONLY = [
 _WORDSWORTH_ONLY_TABLES = ("audit_records", "document_texts")
 
 
+#: Above this, the registry advisory lock (4781) held for one
+#: ``pseudonymise`` batch stalls every other writer too long (design.md
+#: "POST /v1/pseudonymise").
+_PSEUDONYMISE_MAX_ITEMS_CEILING = 5000
+
+
 class RefuseToStart(Exception):
     """Raised by ``check_refuse_to_start``. Callers (``serve.py``'s startup
     event, ``bootstrap.main``) let it propagate so the process exits
@@ -79,6 +85,28 @@ def check_refuse_to_start(database_url: str) -> None:
         engine.dispose()
     if found:
         raise RefuseToStart(f"rule 3: database already holds wordsworth tables {found}")
+
+
+def check_openbao_refuse_to_start(openbao_url: str, openbao_token: str) -> None:
+    """The Transit settings are required to wrap/unwrap a mapping key
+    (design.md "Settings and the Transit seam"). Not called when
+    ``create_app`` was given a ``transit_for`` factory directly (tests):
+    that caller supplies its own ``Transit``, so these settings are never
+    read."""
+    if not openbao_url:
+        raise RefuseToStart("KEYSERVICE_OPENBAO_URL is unset or empty")
+    if not openbao_token:
+        raise RefuseToStart("KEYSERVICE_OPENBAO_TOKEN is unset or empty")
+
+
+def check_pseudonymise_cap_refuse_to_start(max_items: int) -> None:
+    """KEYSERVICE_PSEUDONYMISE_MAX_ITEMS above the ceiling held lock 4781
+    long enough to stall every other writer when measured at 10 000
+    (design.md "POST /v1/pseudonymise")."""
+    if max_items > _PSEUDONYMISE_MAX_ITEMS_CEILING:
+        raise RefuseToStart(
+            "KEYSERVICE_PSEUDONYMISE_MAX_ITEMS must be at most "
+            f"{_PSEUDONYMISE_MAX_ITEMS_CEILING}, got {max_items}")
 
 
 def make_engine(url: str | None = None) -> Engine:

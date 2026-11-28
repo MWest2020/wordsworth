@@ -18,6 +18,10 @@ _KEYSERVICE_MODULES = [
     "wordsworth.keyservice.auth",
     "wordsworth.keyservice.bootstrap",
     "wordsworth.keyservice.serve",
+    "wordsworth.keyservice.stores_pii",
+    "wordsworth.keyservice.known",
+    "wordsworth.keyservice.audit",
+    "wordsworth.keyservice.api_pseudonymise",
 ]
 
 
