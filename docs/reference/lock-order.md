@@ -1,6 +1,6 @@
 ---
 status: current
-last_reviewed: 2026-11-25
+last_reviewed: 2026-11-28
 ---
 
 # Lock order
@@ -118,6 +118,39 @@ to settle on this page first, not an order to improvise.
 - **The `dossiers` row is not in the order yet.** Adding a membership takes
   a key-share lock on it (the foreign key) and then appends; a dossier
   deletion appends first and deletes the row last (#510).
+
+## The key service's database
+
+A different database from wordsworth's (ADR-0009): its own lock order, on
+its own rows. Nothing above this section changes -- wordsworth's "never
+together with 4771" is about wordsworth's database, and does not apply here.
+The service's advisory keys (4781, 4782, 4783) are likewise its own; they
+coexist with wordsworth's 4771 and 4772 only in the sense that both
+databases use the `pg_advisory_xact_lock` mechanism, never in the same
+transaction (the two databases never share one).
+
+| # | Lock | Mode | Taken by |
+|---|------|------|----------|
+| 1 | the registry advisory lock (key 4781) | `pg_advisory_xact_lock` | `pseudonymise` (`key-service-pseudonymise`), `seal` (`key-service-originals`), `DELETE /v1/documents` (`key-service-delete`) |
+| 2 | the `known_documents` row | plain read/insert under lock 1 | the same three writers |
+| 3 | `document_keys` rows, by `object_key` | `FOR UPDATE` | `seal`/`open` (`key-service-originals`), `DELETE /v1/originals` and `DELETE /v1/documents` (`key-service-delete`) |
+| 4 | `pii_mappings` rows, by `pseudonym` | inserted `ON CONFLICT DO NOTHING` by `pseudonymise`; `FOR UPDATE` by a deletion | `pseudonymise` (`key-service-pseudonymise`); `DELETE /v1/documents` (`key-service-delete`) |
+| 5 | the `key_lifecycle_events` chain lock (key 4783) | `pg_advisory_xact_lock` | a writer that records a key-lifecycle event (`key-service-delete`, first writer of that chain) |
+| 6 | the `access_audit` chain lock (key 4782) | `pg_advisory_xact_lock` | `append_access`, last -- the audit is the terminal leaf, nothing is taken after it (`key-service-pseudonymise`) |
+
+`key-service-pseudonymise` (this change) takes rows 1, 2, 4 and 6: it holds
+the registry lock for the whole batch (bounded by
+`KEYSERVICE_PSEUDONYMISE_MAX_ITEMS`), records or checks the
+`known_documents` row under it, inserts `pii_mappings` rows under it too
+(no separate buffering step is needed here, unlike wordsworth's chain lock:
+the registry lock is already held before any mapping row is written), and
+takes the audit lock last, after the registry lock is released by commit.
+
+Row 5's trigger-corrected key is 4783, not the skeleton's `AccessAudit`
+docstring value of 4772: that number belongs to wordsworth's own
+key-lifecycle stream (`key_audit_pg.py`), in wordsworth's database, and was
+a placeholder in the skeleton build. `key-service-delete`, the first writer
+of the service's own key-lifecycle chain, corrects the docstring.
 
 ## Testing a lock order
 

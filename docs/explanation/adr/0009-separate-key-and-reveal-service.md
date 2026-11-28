@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-11-26
+last_reviewed: 2026-11-28
 ---
 
 # ADR 0009 — A separate key-and-reveal service
@@ -138,7 +138,12 @@ The honest residuals:
 - `pseudonymise` turns any value into its token for whoever holds the service
   credential, so a compromised wordsworth can confirm whether a guessed value
   occurs in its own index. Every call is audited; ingest needs the operation,
-  so it is visible, not prevented.
+  so it is visible, not prevented. A batch is capped
+  (`KEYSERVICE_PSEUDONYMISE_MAX_ITEMS`, 1 000 by default, refused at startup
+  above 5 000): the cap bounds how long the registry lock is held for one
+  call, not how many guesses a caller may confirm across many calls -- the
+  audit trail, not the cap, is what makes that volume visible
+  (`key-service-pseudonymise`).
 - The registry is copied from wordsworth once, at the cutover. A registry
   wordsworth had already corrupted before that moment carries over; after it,
   only the service registers tokens. The copy keeps its provenance

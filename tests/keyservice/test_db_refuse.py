@@ -6,7 +6,10 @@ from __future__ import annotations
 import pytest
 
 from wordsworth.keyservice import bootstrap, serve
-from wordsworth.keyservice.db import RefuseToStart, check_refuse_to_start
+from wordsworth.keyservice.db import (RefuseToStart, check_openbao_refuse_to_start,
+                                      check_pseudonymise_cap_refuse_to_start,
+                                      check_refuse_to_start)
+from wordsworth.transit import FakeTransit
 
 
 def test_rule1_refuses_empty_url():
@@ -58,4 +61,72 @@ def test_init_entrypoint_calls_the_check(monkeypatch):
 
     monkeypatch.setattr(bootstrap, "check_refuse_to_start", boom)
     with pytest.raises(RefuseToStart):
+        bootstrap.main()
+
+
+def test_openbao_refuses_empty_url():
+    with pytest.raises(RefuseToStart, match="KEYSERVICE_OPENBAO_URL"):
+        check_openbao_refuse_to_start("", "a-token")
+
+
+def test_openbao_refuses_empty_token():
+    with pytest.raises(RefuseToStart, match="KEYSERVICE_OPENBAO_TOKEN"):
+        check_openbao_refuse_to_start("http://bao:8200", "")
+
+
+def test_openbao_allows_both_set():
+    check_openbao_refuse_to_start("http://bao:8200", "a-token")  # does not raise
+
+
+def test_openbao_ignores_wordsworths_settings(monkeypatch):
+    # design.md "Settings and the Transit seam": KEYSERVICE_* only, no
+    # fallback to WORDSWORTH_* -- exercised here through the check itself,
+    # which never reads any environment variable at all.
+    monkeypatch.setenv("WORDSWORTH_OPENBAO_URL", "http://wordsworth-bao:8200")
+    monkeypatch.setenv("WORDSWORTH_OPENBAO_TOKEN", "wordsworth-token")
+    check_openbao_refuse_to_start("http://keyservice-bao:8200", "keyservice-token")
+
+
+def test_cap_refuses_above_ceiling():
+    with pytest.raises(RefuseToStart, match="KEYSERVICE_PSEUDONYMISE_MAX_ITEMS"):
+        check_pseudonymise_cap_refuse_to_start(5001)
+
+
+def test_cap_allows_the_ceiling():
+    check_pseudonymise_cap_refuse_to_start(5000)  # does not raise
+
+
+def test_server_startup_calls_the_openbao_check_when_transit_for_is_none(
+        keyservice_database_url, monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_DATABASE_URL", keyservice_database_url)
+    monkeypatch.delenv("WORDSWORTH_DATABASE_URL", raising=False)
+    monkeypatch.delenv("KEYSERVICE_OPENBAO_URL", raising=False)
+    monkeypatch.delenv("KEYSERVICE_OPENBAO_TOKEN", raising=False)
+    app = serve.create_app(service_tokens={})
+    from fastapi.testclient import TestClient
+
+    with pytest.raises(RefuseToStart, match="KEYSERVICE_OPENBAO_URL"):
+        with TestClient(app):
+            pass
+
+
+def test_server_startup_skips_the_openbao_check_when_transit_for_is_passed(
+        keyservice_database_url, monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_DATABASE_URL", keyservice_database_url)
+    monkeypatch.delenv("WORDSWORTH_DATABASE_URL", raising=False)
+    monkeypatch.delenv("KEYSERVICE_OPENBAO_URL", raising=False)
+    monkeypatch.delenv("KEYSERVICE_OPENBAO_TOKEN", raising=False)
+    app = serve.create_app(service_tokens={}, transit_for=lambda kek: FakeTransit())
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        resp = client.get("/health")
+    assert resp.status_code == 200
+
+
+def test_init_entrypoint_calls_the_openbao_check(monkeypatch):
+    monkeypatch.delenv("KEYSERVICE_OPENBAO_URL", raising=False)
+    monkeypatch.delenv("KEYSERVICE_OPENBAO_TOKEN", raising=False)
+    monkeypatch.setattr(bootstrap, "check_refuse_to_start", lambda url: None)
+    with pytest.raises(RefuseToStart, match="KEYSERVICE_OPENBAO_URL"):
         bootstrap.main()

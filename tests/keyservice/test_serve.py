@@ -7,12 +7,17 @@ from fastapi.testclient import TestClient
 
 from wordsworth.keyservice import serve
 from wordsworth.keyservice.db import make_engine
+from wordsworth.transit import FakeTransit
 
 
 def _running_app(keyservice_database_url, monkeypatch, tokens=None):
     monkeypatch.setenv("KEYSERVICE_DATABASE_URL", keyservice_database_url)
     monkeypatch.delenv("WORDSWORTH_DATABASE_URL", raising=False)
-    return serve.create_app(service_tokens=tokens if tokens is not None else {})
+    # A transit_for stub, never called by these tests: design.md "Settings
+    # and the Transit seam" -- passing one means the OpenBao settings are
+    # not required, which is what these /health and auth tests care about.
+    return serve.create_app(service_tokens=tokens if tokens is not None else {},
+                            transit_for=lambda kek: FakeTransit())
 
 
 def test_health_ok_with_reachable_database(keyservice_database_url, monkeypatch):
@@ -25,7 +30,8 @@ def test_health_ok_with_reachable_database(keyservice_database_url, monkeypatch)
 
 def test_health_503_when_database_unreachable(monkeypatch):
     app = serve.create_app(
-        engine=make_engine("postgresql+psycopg://nobody:nobody@127.0.0.1:1/nope"))
+        engine=make_engine("postgresql+psycopg://nobody:nobody@127.0.0.1:1/nope"),
+        transit_for=lambda kek: FakeTransit())
     resp = TestClient(app).get("/health")
     assert resp.status_code == 503
 
