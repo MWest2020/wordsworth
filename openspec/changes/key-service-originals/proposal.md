@@ -27,6 +27,12 @@ until the cutover no caller reaches the service.
 - Docs: both endpoints in `docs/reference/key-service-api.md`, the settings
   and the wire in `docs/how-to/key-service.md`.
 
+- Amendment after the reviewer's FAIL on wordsworth#544 (`api_originals.py`
+  at 202 lines, over the 200-line invariant): seal stays in
+  `api_originals.py`, open lives in `api_open.py`, with the line-limit check
+  as a task; the real-artefact smoke (seal and open against the OpenBao of
+  the pseudonymise smoke run) is required PR evidence.
+
 No wordsworth module changes: the service has its own `kek_for(domain)` over
 its own settings, so `document_keys.kek_name_for` and `DocumentKeys` keep
 their signatures.

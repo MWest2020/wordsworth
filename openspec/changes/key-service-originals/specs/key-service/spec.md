@@ -18,6 +18,12 @@ first sight and refuse a different domain afterwards, as pseudonymising does.
 - **THEN** the open is refused, no plaintext is returned, and the failure is
   audited
 
+#### Scenario: Seal and open stay in separate modules within the line limit
+
+- **WHEN** the service's originals routes are built
+- **THEN** seal is in `api_originals.py` and open is in `api_open.py`, and
+  every module of the change is at most 200 lines
+
 #### Scenario: A sealed document keeps its domain
 
 - **WHEN** a document first pseudonymised or sealed in domain A is sealed in
