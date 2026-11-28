@@ -1,8 +1,11 @@
 """``POST /v1/originals/{document_id}/open`` (design.md "POST
 /v1/originals/{document_id}/open"). Sealed bytes in, plaintext out, for a
 purpose from a fixed list; audited; a tampered key or envelope fails closed
-and is audited, an unreachable Transit is a 503. Seal lives in
-``api_originals.py`` (design.md "Modules") -- this file holds open only."""
+and is audited, an unreachable Transit is a 503. Rate-limited per calling
+service, after the purpose and query are validated, so the order is 401,
+422, 429, then the rest of this table (``limits.py``, design.md "The rate
+limit"). Seal lives in ``api_originals.py`` (design.md "Modules") -- this
+file holds open only."""
 from __future__ import annotations
 
 from uuid import UUID
@@ -14,7 +17,7 @@ from starlette.responses import Response
 
 from wordsworth import originals_envelope
 
-from . import audit
+from . import audit, limits
 from .config import settings
 from .db import make_engine, make_session_factory
 from .doc_keys import DocumentKeys, KeyBackendUnavailable, KeyDoesNotUnwrap
@@ -72,6 +75,15 @@ async def open_original(document_id: UUID, object_key: str, purpose: str,
 
     service_caller = request.state.service_caller
     session_factory = _session_factory(request)
+
+    decision = limits.check(
+        session_factory, caller=service_caller,
+        rate_per_minute=settings.open_rate_per_minute, burst=settings.open_burst)
+    if not decision.allowed:
+        raise HTTPException(
+            429, detail="rate limit exceeded",
+            headers={"Retry-After": str(decision.retry_after)})
+
     doc_keys = _doc_keys_for(request)
 
     with session_factory() as session:

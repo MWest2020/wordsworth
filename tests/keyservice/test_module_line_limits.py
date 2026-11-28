@@ -5,12 +5,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import wordsworth.keyservice.api_metrics as api_metrics
 import wordsworth.keyservice.api_open as api_open
 import wordsworth.keyservice.api_originals as api_originals
 import wordsworth.keyservice.config as config
 import wordsworth.keyservice.doc_keys as doc_keys
+import wordsworth.keyservice.limits as limits
+import wordsworth.keyservice.state as state
 
-_CHECKED = [doc_keys, api_originals, api_open, config]
+_CHECKED = [doc_keys, api_originals, api_open, config, state, limits, api_metrics]
 
 
 def _line_count(module) -> int:

@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, String
+from sqlalchemy import BigInteger, Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -103,15 +103,3 @@ class AccessAudit(KeyServiceBase):
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     prev_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-
-
-class RateLimitBucket(KeyServiceBase):
-    """Copied from ``wordsworth.models.RateLimitBucket``."""
-
-    __tablename__ = "rate_limit_buckets"
-
-    bucket: Mapped[str] = mapped_column(String, primary_key=True)
-    client: Mapped[str] = mapped_column(String, primary_key=True)
-    tokens: Mapped[float] = mapped_column(Float, nullable=False)
-    allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
