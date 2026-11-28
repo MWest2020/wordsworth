@@ -37,6 +37,14 @@ def lock_registry(session: Session) -> None:
                     {"k": REGISTRY_LOCK_KEY})
 
 
+def lookup(session: Session, document_id: UUID) -> KnownDocument | None:
+    """This document's own row, or ``None`` if the service has never seen
+    it. Read only once a grant already permits something (design.md "Order
+    inside the service", ``key-service-reveal``) -- never earlier, or an
+    unknown grant and an unknown document would cost different reads."""
+    return session.get(KnownDocument, document_id)
+
+
 def ensure_known(session: Session, document_id: UUID, domain: str) -> None:
     """Record ``document_id``'s domain on first sight. Raises
     ``DomainConflict`` for a later call with a different domain, and

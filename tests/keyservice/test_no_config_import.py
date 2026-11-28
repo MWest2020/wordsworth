@@ -25,6 +25,12 @@ _KEYSERVICE_MODULES = [
     "wordsworth.keyservice.doc_keys",
     "wordsworth.keyservice.api_originals",
     "wordsworth.keyservice.api_open",
+    "wordsworth.keyservice.api_reveal",
+    "wordsworth.keyservice.identity",
+    "wordsworth.keyservice.roles",
+    "wordsworth.keyservice.grants",
+    "wordsworth.keyservice.reveal_gate",
+    "wordsworth.keyservice.reveal_resolve",
 ]
 
 

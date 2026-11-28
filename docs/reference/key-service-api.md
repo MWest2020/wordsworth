@@ -13,8 +13,8 @@ The surface grows one change at a time: the process boundary and its
 authentication (`key-service-skeleton`), `POST /v1/pseudonymise`
 (`key-service-pseudonymise`), seal and open (`key-service-originals`), the
 rate limit, its 429 audit and `GET /v1/metrics` (`key-service-open-limits`),
-the two deletions and the key-lifecycle chain (`key-service-delete`, this
-one), then `key-service-reveal`.
+the two deletions and the key-lifecycle chain (`key-service-delete`), and
+the two reveal routes below (`key-service-reveal`, this one).
 
 ## `GET /health`
 
@@ -204,6 +204,106 @@ No value, document id or object key appears in the output.
 | no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` |
 | otherwise | 200 | Prometheus text |
 
+## `POST /v1/reveal/decide`
+
+Is this caller covered for this document, and for which types. Decides
+only — decrypts nothing, writes no record (design.md "Requests", "Order
+inside the service"). wordsworth calls this before reading anything of its
+own about the document (`key-service-cutover`); this change ships the
+route with no traffic.
+
+Request (JSON):
+
+```json
+{
+  "document_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "grant_id": "a1b2c3",
+  "types": ["PERSON"],
+  "assertion": "<the raw Keycloak JWT wordsworth received>",
+  "vc": null
+}
+```
+
+`types` null or absent means "everything the grant permits". The person is
+identified by `assertion` — a signed assertion the service verifies itself
+(see the how-to's "Identity" section) — never by the calling service's
+token, which only names *which service* is calling.
+
+| Case | Status | Body |
+|---|---|---|
+| no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` |
+| malformed body | 422 | validation detail |
+| `KEYSERVICE_OIDC_ISSUER` or `KEYSERVICE_OIDC_AUDIENCE` unset | 503 | `{"detail": "reveal not configured"}` |
+| assertion missing, forged, expired, not yet valid, wrong issuer, or foreign audience | 401 | `{"detail": "assertion not accepted"}`, the same body for every reason |
+| unknown grant, revoked, expired, scoped to another document or recipient, another domain, unknown document, or a global grant not allowed | 403 | `{"detail": "grant not applicable"}` |
+| covered, a presented VC is rejected | 403 | `{"detail": "vc rejected: <reason>"}` |
+| covered, document tombstoned | 410 | `{"detail": "document deleted"}` |
+| otherwise | 200 | `{"document_id": "...", "authorized_types": [...], "withheld_types": [...]}` |
+
+Never 404 or 409. No statement reads `known_documents`, `document_tokens`,
+`pii_mappings` or `key_vault` for a grant that fails before the document is
+read (design.md "Order inside the service").
+
+## `POST /v1/reveal`
+
+Decides again, from scratch — no decision id, no state shared with a
+prior `decide` call — and reveals the requested tokens that are
+registered for the document and of an authorised type. Request: the
+`decide` body plus `tokens` (the distinct tokens in the document's current
+text) and `view` (`"text"` or `"pdf"`).
+
+```json
+{
+  "document_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "grant_id": "a1b2c3",
+  "types": null,
+  "assertion": "<the raw Keycloak JWT>",
+  "vc": null,
+  "tokens": ["[PERSON:5c93c3df]"],
+  "view": "text"
+}
+```
+
+At most `KEYSERVICE_REVEAL_MAX_TOKENS` (default 10000) tokens; more is
+answered 413, checked before anything else but the service token.
+
+| Case | Status | Body |
+|---|---|---|
+| no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` |
+| malformed body | 422 | validation detail |
+| more tokens than the limit | 413 | `{"detail": "too many tokens (limit N)"}`, nothing decrypted |
+| not configured / assertion rejected / grant refusal / VC rejected / tombstoned | same as `decide`, above | same |
+| covered, Transit unreachable or sealed | 503 | `{"detail": "key service unavailable"}`, no record |
+| otherwise | 200 | see below |
+
+A token not registered for this document, not of an authorised type, with
+no mapping, or whose key does not resolve, is left out of the answer
+silently — the response never says whether it exists elsewhere. 200 body:
+
+```json
+{
+  "document_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "authorized_types": ["PERSON"],
+  "withheld_types": [],
+  "resolved_tokens": ["[PERSON:5c93c3df]"],
+  "resolved_types": ["PERSON"],
+  "values": {"[PERSON:5c93c3df]": "Jan Jansen"},
+  "audit": {"seq": 1, "hash": "...", "actor": "ontvanger@example.com",
+            "grant_id": "a1b2c3", "caller": "ontvanger@example.com"}
+}
+```
+
+`values` is present only for `view = "text"`; the PDF view's body has no
+`values` key at all — the PDF is drawn from the original page, never
+assembled here. One `access_audit` record per successful call
+(`event = "reveal"`): the document, the calling service, the verified
+caller, the grant's recipient (`actor`), `grant_id` (and `role` /
+`global_by_role` where the grant has a role), `view`, `requested_types`,
+`requested_all`, `authorized_types`, the resolved `pseudonyms`, their
+`types` and AVG `categories` — never a clear value. A refusal (any status
+above but 200) writes no record and no log line names its cause, an id, or
+the document's existence or state.
+
 ## Not in this change
 
 - `service_state`'s own schema and drift test — see the how-to.
@@ -212,5 +312,7 @@ No value, document id or object key appears in the output.
 - Which key rows a deletion destroys when an object key is shared between
   documents, and wordsworth calling these routes — both
   `key-service-cutover`.
-- Reveal and identity verification — see `key-service-reveal`.
+- Grant/role *management* endpoints (issue, revoke, create role, toggle a
+  role) — `key-service-cutover`; grants and roles are seeded as rows until
+  then.
 - `POST /v1/export` — see `key-export-escrow`.
