@@ -88,7 +88,7 @@ class AccessAudit(KeyServiceBase):
     ``event`` replaces wordsworth's ``from_state``/``to_state`` -- this
     stream has no document state machine, only events. Append-only,
     hash-chained under its own advisory lock, never wordsworth's 4771 or
-    its own key-lifecycle lock 4772 (``key-service-vault`` is the first
+    its own key-lifecycle lock 4783 (``key-service-vault`` is the first
     change to write here)."""
 
     __tablename__ = "access_audit"

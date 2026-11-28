@@ -12,8 +12,9 @@ deployment, its database and failure modes.
 The surface grows one change at a time: the process boundary and its
 authentication (`key-service-skeleton`), `POST /v1/pseudonymise`
 (`key-service-pseudonymise`), seal and open (`key-service-originals`), the
-rate limit, its 429 audit and `GET /v1/metrics` (`key-service-open-limits`,
-this one), then `key-service-delete` and `key-service-reveal`.
+rate limit, its 429 audit and `GET /v1/metrics` (`key-service-open-limits`),
+the two deletions and the key-lifecycle chain (`key-service-delete`, this
+one), then `key-service-reveal`.
 
 ## `GET /health`
 
@@ -133,6 +134,57 @@ Rate-limited per calling service: a token bucket,
 | the wrapped key or the sealed object does not authenticate | 409 | `{"detail": "sealed object does not open"}` | `open_failed`, `reason = "unwrap"` or `"envelope"` |
 | otherwise | 200 | the plaintext | `open`, document, `object_key`, purpose |
 
+## `DELETE /v1/originals/{document_id}`
+
+Crypto-shredding (ADR-0008): destroys every `document_keys` row sealed for
+`document_id` and evicts them from this process's unwrap cache. Idempotent —
+a second call destroys nothing. Which rows a deletion destroys when an
+object key is shared between documents is an open question of
+`key-service-delete`'s proposal, settled before `key-service-cutover` sends
+any traffic; today every row the service sealed for the document goes.
+
+| Case | Status | Body |
+|---|---|---|
+| no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` |
+| otherwise | 200 | `{"destroyed": n}` — `n` is 0 the second time |
+
+After this call, `POST /v1/originals/{document_id}/open` for any of this
+document's object keys answers 404 (`key-service-originals`).
+
+One `access_audit` record per call (`event = "delete_originals"`, the
+count) and one key-lifecycle event (`action = "keys_destroyed"`, the
+document, the destroyed key ids) — both in the transaction that destroys
+the keys.
+
+## `DELETE /v1/documents/{document_id}`
+
+Destroys the document's keys (as above), removes its token-registry rows,
+every `pii_mappings` row no other document is still registered for, and
+every grant scoped to the document (`grants.document_id` = the id) — an
+unscoped grant survives. Leaves a tombstone that keeps only the document's
+id and domain.
+
+| Case | Status | Body |
+|---|---|---|
+| no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` |
+| document already tombstoned | 200 | `{"keys": 0, "tokens": 0, "mappings": 0, "grants": n}` — the tombstone is unchanged; `grants` counts any scoped grant created since (normally 0) |
+| document never seen (no `known_documents` row) | 200 | `{"keys": 0, "tokens": 0, "mappings": 0, "grants": n}` — no tombstone is written (the service does not know a domain to write); a grant may still name the id and is deleted and counted; a later `pseudonymise` of the id registers it fresh |
+| otherwise | 200 | `{"keys": n, "tokens": n, "mappings": n, "grants": n}` |
+
+A value another document still holds survives, also when that other
+document is being pseudonymised at the same moment (the registry lock
+decides "no other document holds this token" the same way for both, so the
+mapping is kept whichever commits first). After this call, `POST
+/v1/pseudonymise` or `POST /v1/originals/{document_id}/seal` of the same id
+answers 410.
+
+One `access_audit` record per call (`event = "delete_document"`, the
+counts) and one key-lifecycle event (`action = "document_deleted"`, the
+document, the destroyed key ids, the deleted grant ids) — both in the
+transaction that does the deletion. Never a 404: a deletion must not be
+blockable, and wordsworth may delete a document that was never
+pseudonymised.
+
 ## `GET /v1/metrics`
 
 Prometheus text format, behind the same service token as every other `/v1`
@@ -157,6 +209,8 @@ No value, document id or object key appears in the output.
 - `service_state`'s own schema and drift test — see the how-to.
 - The alert on open volume (a homelab manifest) and the scraper's own
   service token (a homelab PR) — see the how-to.
-- The two deletions and the key-lifecycle chain — see `key-service-delete`.
+- Which key rows a deletion destroys when an object key is shared between
+  documents, and wordsworth calling these routes — both
+  `key-service-cutover`.
 - Reveal and identity verification — see `key-service-reveal`.
 - `POST /v1/export` — see `key-export-escrow`.

@@ -25,7 +25,7 @@ from starlette.responses import JSONResponse
 
 from wordsworth.transit import Transit
 
-from . import api_metrics, api_open, api_originals, api_pseudonymise
+from . import api_documents, api_metrics, api_open, api_originals, api_pseudonymise
 from .auth import ServiceTokenMiddleware
 from .config import settings
 from .db import (check_openbao_refuse_to_start,
@@ -84,6 +84,7 @@ def create_app(engine: Engine | None = None, *,
     app.include_router(api_pseudonymise.router)
     app.include_router(api_originals.router)
     app.include_router(api_open.router)
+    app.include_router(api_documents.router)
     app.include_router(api_metrics.router)
     return app
 
