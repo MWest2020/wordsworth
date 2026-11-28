@@ -47,11 +47,22 @@ the service's own test database, under the fixture that makes
       `config.py` is ≤ 200 (the reviewer's FAIL on wordsworth#544 was
       `api_originals.py` at 202), and a grep that the open route is defined
       in `api_open.py` and not in `api_originals.py`.
-- [ ] The real artefact, required PR evidence (not optional; the PR is not
-      done without it): against the OpenBao of `key-service-pseudonymise`'s
-      smoke run, seal one original and open it again with a purpose, and the
-      bytes come back identical. Proved by: the commands and their output
-      pasted in the PR description.
+- [ ] Round trip against a Transit-compatible fake: seal one original, open it
+      with a purpose, and the bytes come back identical; the same test then
+      covers both open failure modes (tampered wrapped key → 409 `unwrap`,
+      tampered envelope → 409 `envelope`). This replaces the real-OpenBao
+      smoke as the build's gate: the builder's sandbox has no `bao`/`vault`
+      binary and no reachable OpenBao (as in the archived
+      `key-service-pseudonymise`). Proved by: the test, run in CI.
+- [ ] Smoke run against the real OpenBao: seal one original and open it again
+      with a purpose, bytes identical. Not a build gate and not part of this
+      PR: it is a post-deploy task of `key-service-cutover` (#524), where its
+      commands and output are required as evidence. Proved by: that task
+      being listed in `key-service-cutover`'s tasks.md (see the proposal's
+      open questions); the evidence is that change's.
+- [ ] PR description: states that the 413 is enforced after FastAPI has
+      buffered the body, and why that is acceptable (design.md Risks). Proved
+      by: a grep for `buffered` in the PR description.
 - [ ] ADR-0009: one risk line, the wire (`open` returns and `seal` receives
       plaintext over HTTP; the deployment's TLS is the mitigation). Proved by:
       the ADR diff and a grep for `plaintext over HTTP` in it.

@@ -145,3 +145,19 @@ FAIL on wordsworth#544, where a single `api_originals.py` holding both routes
 came out at 202 lines: the split is the design, not a fallback. Seal stays in
 `api_originals.py`, open lives in `api_open.py`; neither route is moved back
 to make a file shorter or longer.
+
+## Risks
+
+- **The 413 comes after the body is buffered.** `KEYSERVICE_MAX_ORIGINAL_BYTES`
+  is enforced once FastAPI has read the whole body into memory, so an
+  oversized request still costs that memory before it is refused. Accepted:
+  every caller is wordsworth, behind a service token, and the ingress body
+  limit is the real bound. The same sentence goes in the PR description.
+
+## Open questions
+
+- **`open` does not check `known_documents.deleted_at`** (for
+  `key-service-delete`, #540). It is unreachable now: nothing tombstones a
+  document yet. It must be settled before deletion can tombstone without
+  destroying every key row; until then no requirement says `open` refuses a
+  tombstoned document.

@@ -30,8 +30,15 @@ until the cutover no caller reaches the service.
 - Amendment after the reviewer's FAIL on wordsworth#544 (`api_originals.py`
   at 202 lines, over the 200-line invariant): seal stays in
   `api_originals.py`, open lives in `api_open.py`, with the line-limit check
-  as a task; the real-artefact smoke (seal and open against the OpenBao of
-  the pseudonymise smoke run) is required PR evidence.
+  as a task.
+- Second amendment after the architect's FAIL on wordsworth#546: the
+  real-OpenBao smoke is no longer a build gate (the builder's sandbox has no
+  `bao`/`vault` binary and no reachable OpenBao). It is replaced by an
+  automated seal→open round trip against a Transit-compatible fake, covering
+  both open failure modes, and by a smoke run against the real OpenBao that
+  belongs in `key-service-cutover` (#524) as a post-deploy task with
+  evidence. The 413-after-buffering risk is recorded in design.md and goes in
+  the PR description.
 
 No wordsworth module changes: the service has its own `kek_for(domain)` over
 its own settings, so `document_keys.kek_name_for` and `DocumentKeys` keep
@@ -43,6 +50,14 @@ The rate limit, the 429 audit, `service_state` and `/v1/metrics`
 (`key-service-open-limits`); destroying keys (`key-service-delete`); which of
 `put_original`'s rules wordsworth keeps after the switch
 (`key-service-cutover`, `originals-ingest-switch`).
+
+## Open questions
+
+- `key-service-cutover` (#524) must list the real-OpenBao smoke run as a
+  post-deploy task with evidence; this change cannot write there.
+- `key-service-delete` (#540): `open` does not check
+  `known_documents.deleted_at`. Unreachable now; to settle before deletion can
+  tombstone without destroying every key row (design.md, Open questions).
 
 ## Next
 
