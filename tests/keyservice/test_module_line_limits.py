@@ -1,19 +1,24 @@
 """design.md "Modules" and AGENTS.md's 200-line invariant: seal stays in
 ``api_originals.py``, open lives in ``api_open.py`` -- the reviewer's FAIL on
-wordsworth#544 was a combined ``api_originals.py`` at 202 lines."""
+wordsworth#544 was a combined ``api_originals.py`` at 202 lines. Both
+deletions stay in ``api_documents.py``, the key-lifecycle chain in
+``lifecycle.py`` (design.md "Modules", ``key-service-delete``)."""
 from __future__ import annotations
 
 from pathlib import Path
 
+import wordsworth.keyservice.api_documents as api_documents
 import wordsworth.keyservice.api_metrics as api_metrics
 import wordsworth.keyservice.api_open as api_open
 import wordsworth.keyservice.api_originals as api_originals
 import wordsworth.keyservice.config as config
 import wordsworth.keyservice.doc_keys as doc_keys
+import wordsworth.keyservice.lifecycle as lifecycle
 import wordsworth.keyservice.limits as limits
 import wordsworth.keyservice.state as state
 
-_CHECKED = [doc_keys, api_originals, api_open, config, state, limits, api_metrics]
+_CHECKED = [doc_keys, api_originals, api_open, api_documents, lifecycle,
+           config, state, limits, api_metrics]
 
 
 def _line_count(module) -> int:
