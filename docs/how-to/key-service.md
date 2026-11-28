@@ -44,6 +44,26 @@ It needs its own environment variables, set independently of wordsworth's:
 - `KEYSERVICE_PSEUDONYMISE_MAX_ITEMS` — default `1000`. Max (type, value)
   items per `POST /v1/pseudonymise` call; refused at startup above `5000`
   (see "Refuses to start" below).
+- `KEYSERVICE_ORIGINALS_KEK` — default the value of `KEYSERVICE_TRANSIT_KEK`.
+  The KEK that wraps original-document data keys (`seal`/`open`).
+- `KEYSERVICE_ORIGINALS_KEK_BY_DOMAIN` — default empty. A JSON object
+  (`{"domain": "kek-name"}`) overriding the originals KEK per domain.
+- `KEYSERVICE_DOCUMENT_KEY_CACHE_SIZE` — default `1024`. Max entries in the
+  unwrap cache for original-document data keys.
+- `KEYSERVICE_MAX_ORIGINAL_BYTES` — default `104857600` (100 MiB). `seal` and
+  `open` both hold the whole request body in memory up to this bound; a
+  larger body is refused with 413 — enforced only after FastAPI has already
+  buffered the whole body into memory, so an oversized request still costs
+  that memory before it is refused. Every caller is wordsworth behind a
+  service token, and the ingress body limit is the real bound.
+
+## The wire between wordsworth and the service
+
+`open` returns the original in plaintext over HTTP on this link, and `seal`
+receives it the same way — encryption at rest does not cover it. The link's
+transport (mutual TLS or a service token) is a deployment choice; the token
+alone does not encrypt it. Deploy TLS on this link, or accept that whoever
+can read it reads originals in transit.
 
 ## Its database and role
 
@@ -108,6 +128,13 @@ database is reachable — it does not say anything about `/v1`.
 - **`POST /v1/pseudonymise` returns 503**: OpenBao is unreachable or sealed
   when a mapping key was needed. Nothing is committed — no mapping, no
   registry row, no `known_documents` row, no audit record.
+- **`seal` returns 503**: OpenBao is unreachable or sealed when a data key
+  was needed to mint or reuse. Nothing is committed.
+- **`open` returns 503**: the key backend gave no answer about the wrapped
+  key (connect/timeout, or an HTTP 5xx) — no audit record is written, since
+  nothing was decided. A 409 instead means the backend answered and refused
+  it, or the sealed object itself does not authenticate; both are audited as
+  `open_failed`.
 
 ## Not yet enforced
 

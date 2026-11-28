@@ -22,6 +22,9 @@ _KEYSERVICE_MODULES = [
     "wordsworth.keyservice.known",
     "wordsworth.keyservice.audit",
     "wordsworth.keyservice.api_pseudonymise",
+    "wordsworth.keyservice.doc_keys",
+    "wordsworth.keyservice.api_originals",
+    "wordsworth.keyservice.api_open",
 ]
 
 

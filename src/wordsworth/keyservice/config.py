@@ -62,5 +62,33 @@ class Settings:
         batch. Refused at startup above 5000 (``db.check_pseudonymise_cap``)."""
         return int(os.environ.get("KEYSERVICE_PSEUDONYMISE_MAX_ITEMS", "1000"))
 
+    @property
+    def originals_kek(self) -> str:
+        """Name of the Transit KEK that wraps original-document data keys, by
+        default the same KEK as this service's own PII mapping keys."""
+        return os.environ.get("KEYSERVICE_ORIGINALS_KEK", self.transit_kek)
+
+    @property
+    def originals_kek_by_domain(self) -> dict[str, str]:
+        """Optional per-domain override of the originals KEK, from
+        ``KEYSERVICE_ORIGINALS_KEK_BY_DOMAIN`` as a JSON object (domain -> KEK
+        name). Empty (default) means every domain uses ``originals_kek``."""
+        raw = os.environ.get("KEYSERVICE_ORIGINALS_KEK_BY_DOMAIN", "")
+        if not raw:
+            return {}
+        import json
+        return json.loads(raw)
+
+    @property
+    def document_key_cache_size(self) -> int:
+        """Max entries in the unwrap cache for original-document data keys."""
+        return int(os.environ.get("KEYSERVICE_DOCUMENT_KEY_CACHE_SIZE", "1024"))
+
+    @property
+    def max_original_bytes(self) -> int:
+        """Size bound for a seal or open body; 413 beyond it. Enforced once
+        FastAPI has buffered the whole body into memory (design.md "Risks")."""
+        return int(os.environ.get("KEYSERVICE_MAX_ORIGINAL_BYTES", str(100 * 1024 * 1024)))
+
 
 settings = Settings()
