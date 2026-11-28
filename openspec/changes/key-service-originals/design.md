@@ -139,6 +139,9 @@ as the mitigation.
 
 ## Modules
 
-`doc_keys.py`, `api_originals.py` (seal and open), and the additions to
-`config.py`. Each ≤ 200 lines; if `api_originals.py` would pass it, open goes
-to `api_open.py`.
+`doc_keys.py`, `api_originals.py` (seal only), `api_open.py` (open only), and
+the additions to `config.py`. Each ≤ 200 lines. Decided after the reviewer's
+FAIL on wordsworth#544, where a single `api_originals.py` holding both routes
+came out at 202 lines: the split is the design, not a fallback. Seal stays in
+`api_originals.py`, open lives in `api_open.py`; neither route is moved back
+to make a file shorter or longer.
