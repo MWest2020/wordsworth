@@ -16,12 +16,12 @@ from fastapi.websockets import WebSocket
 from starlette.routing import Route
 from starlette.staticfiles import StaticFiles
 
-from inventory_app import full_app, ungated_search_app
+from inventory_app import full_app, ungated_ingest_app, ungated_search_app
 from route_inventory import (ROWS, AnyMethodRoute, Row, UnknownRouteType,
                              UnmountedParameter, WebSocketRouteFound,
                              collect_routes, count_registrations, missing_rows,
                              orphan_rows, registration_mismatch,
-                             undeclared_gates)
+                             undeclared_gates, ungated_writes)
 from wordsworth.api import create_app
 
 SRC = Path(__file__).parent.parent / "src" / "wordsworth"
@@ -32,6 +32,7 @@ def test_the_walk_on_the_real_application():
     assert missing_rows(routes) == set()
     assert orphan_rows(routes) == set()
     assert undeclared_gates(routes) == set()
+    assert ungated_writes(routes) == set()
     assert registration_mismatch(count_registrations(SRC)) == 0
 
 
@@ -169,3 +170,32 @@ def test_head_folds_into_get_and_a_head_only_route_has_its_own_row():
         return {}
 
     assert set(collect_routes(app)) == {("GET", "/both"), ("HEAD", "/head-only")}
+
+
+# (g) ingest-requires-corpus-read (#526): a writing route no check refuses
+def test_removing_the_gate_from_ingest_fails():
+    assert undeclared_gates(collect_routes(ungated_ingest_app())) == {
+        ("POST", "/ingest")}
+
+
+@pytest.mark.parametrize("policy", ["any-key", "open", "grant"])
+def test_a_write_route_recorded_as_unrefused_fails(policy):
+    rows = [r for r in ROWS if r.path != "/ingest"] + [
+        Row("POST", "/ingest", policy, "scratch")]
+    assert ungated_writes(collect_routes(full_app()), rows) == {("POST", "/ingest")}
+
+
+def test_a_new_write_route_cannot_pass_as_any_key():
+    app = full_app()
+
+    @app.delete("/scratch-write")
+    def scratch():
+        return {}
+
+    rows = ROWS + [Row("DELETE", "/scratch-write", "any-key", "scratch")]
+    assert ungated_writes(collect_routes(app), rows) == {("DELETE", "/scratch-write")}
+
+
+def test_grant_rows_are_exactly_the_two_reveal_routes():
+    from route_inventory import GRANT_DECIDED
+    assert {(r.method, r.path) for r in ROWS if r.policy == "grant"} == GRANT_DECIDED

@@ -9,7 +9,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from inventory_app import VALID_ID, call, full_app, ungated_search_app
+from inventory_app import (VALID_ID, call, full_app, ungated_ingest_app,
+                           ungated_search_app)
 from route_inventory import ROWS, collect_routes
 
 REFUSED = ("corpus-read", "grant-read", "grant-admin", "delete")
@@ -49,6 +50,13 @@ def test_the_refusal_suite_fails_when_search_loses_its_gate():
     client = TestClient(ungated_search_app(), raise_server_exceptions=False)
     row = next(r for r in ROWS if r.path == "/search")
     assert call(client, row).status_code != 403
+
+
+def test_the_refusal_suite_fails_when_ingest_loses_its_gate():
+    """#526: on main `POST /ingest` reached validation for a caller on no list."""
+    client = TestClient(ungated_ingest_app(), raise_server_exceptions=False)
+    row = next(r for r in ROWS if r.path == "/ingest")
+    assert call(client, row).status_code == 422
 
 
 _SEARCH = "caller not authorized for corpus read"

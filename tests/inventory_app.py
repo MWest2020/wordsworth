@@ -99,6 +99,30 @@ def ungated_search_app():
     return app
 
 
+def _rebuilt_ingest_app(**route_kwargs):
+    """The real application with `POST /ingest` rebuilt as a plain `APIRoute`
+    (no `GateFirst`), with whatever `dependencies` the caller passes."""
+    app = full_app()
+    i, old = next((i, r) for i, r in enumerate(app.router.routes)
+                  if isinstance(r, APIRoute) and r.path == "/ingest")
+    app.router.routes[i] = APIRoute(old.path, old.endpoint, methods=old.methods,
+                                    **route_kwargs)
+    return app
+
+
+def ungated_ingest_app():
+    """`POST /ingest` as it was on main before #526: no gate at all."""
+    return _rebuilt_ingest_app()
+
+
+def declared_only_ingest_app():
+    """`POST /ingest` with its gate declared but without `GateFirst`: the 403
+    still comes, after FastAPI has read the upload."""
+    old = next(r for r in full_app().router.routes
+               if isinstance(r, APIRoute) and r.path == "/ingest")
+    return _rebuilt_ingest_app(dependencies=old.dependencies)
+
+
 #: A declared gate runs before validation, so any well-formed id works. A
 #: body-call guard runs after it, so those rows need a valid body to be reached.
 VALID_ID = "11111111-1111-1111-1111-111111111111"
