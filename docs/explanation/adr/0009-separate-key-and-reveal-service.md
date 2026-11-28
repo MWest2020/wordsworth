@@ -1,6 +1,6 @@
 ---
 status: accepted
-last_reviewed: 2026-11-26
+last_reviewed: 2026-11-28
 ---
 
 # ADR 0009 — A separate key-and-reveal service
@@ -117,7 +117,11 @@ The honest residuals:
   any original, not only the ones it is processing. The service makes that
   visible (every open audited with a purpose) and bounded (a rate limit per
   caller, 120 a minute by default: still about 170 000 a day), not
-  impossible. The opens are counted as metrics, but no alert on volume is
+  impossible. The opens are counted as metrics, and so are refusals, at
+  `GET /v1/metrics` behind its own service token; a burst of refusals is
+  audited once per caller per 60-second window, as `open_refused_summary`,
+  not once per refusal -- the coarser record is what an investigation finds,
+  not a flood of chained writes under the audit lock. No alert on volume is
   built in any of the key-service changes; until the homelab alert exists,
   nobody is told.
 - A user's signed assertion passes through wordsworth on its way to the
@@ -138,7 +142,12 @@ The honest residuals:
 - `pseudonymise` turns any value into its token for whoever holds the service
   credential, so a compromised wordsworth can confirm whether a guessed value
   occurs in its own index. Every call is audited; ingest needs the operation,
-  so it is visible, not prevented.
+  so it is visible, not prevented. A batch is capped
+  (`KEYSERVICE_PSEUDONYMISE_MAX_ITEMS`, 1 000 by default, refused at startup
+  above 5 000): the cap bounds how long the registry lock is held for one
+  call, not how many guesses a caller may confirm across many calls -- the
+  audit trail, not the cap, is what makes that volume visible
+  (`key-service-pseudonymise`).
 - The registry is copied from wordsworth once, at the cutover. A registry
   wordsworth had already corrupted before that moment carries over; after it,
   only the service registers tokens. The copy keeps its provenance
@@ -146,6 +155,11 @@ The honest residuals:
   text after the fact and were already less certain than minted ones. The
   copy aborts unless every token in every live document's current text is in
   the copied registry, so it cannot come out smaller than what reveal needs.
+- `open` returns, and `seal` receives, the original in **plaintext over HTTP**
+  on the link between wordsworth and the service: whoever can read that link
+  reads originals in transit, which encryption at rest does not cover. Not
+  prevented by `key-service-originals`; the deployment's TLS (mutual TLS or
+  the service token's transport) is the mitigation.
 
 Reading clear *PII values* out of tokens is impossible without a user entitled
 to them, and then only that user's documents and types.
@@ -164,7 +178,9 @@ nothing from being separate services; they stay in the monolith.
 1. The service ships first without traffic, in three builds:
    `key-service-skeleton` (its own process, settings, database and schema,
    service authentication), `key-service-vault` (pseudonymise with the token
-   registry, seal/open/delete, its audit stream and rate limit) and
+   registry, seal/open/delete, its audit stream and rate limit; built as four
+   changes, `key-service-pseudonymise`, `key-service-originals`,
+   `key-service-open-limits` and `key-service-delete`) and
    `key-service-reveal` (the reveal contract and identity verification), all
    tested against a fake Transit.
 2. Cutover (`key-service-cutover`): the key vault, mappings, the token

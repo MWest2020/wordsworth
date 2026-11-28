@@ -191,9 +191,15 @@ _REGISTRATION = re.compile(
 
 def count_registrations(src: Path) -> int:
     """Route decorators, `add_*route` calls and path mounts in every `.py`
-    file under `src`, subpackages included."""
+    file under `src`, subpackages included -- except `keyservice`: a second,
+    separate FastAPI application (ADR-0009, `key-service-skeleton`) with its
+    own process, its own database and its own inventory. This walk audits
+    `wordsworth.api`'s application tree; the key service's two routes
+    (`/health`, and whatever `/v1` grows) are out of its scope by
+    construction, not an oversight."""
     return sum(len(_REGISTRATION.findall(p.read_text()))
-               for p in sorted(src.rglob("*.py")))
+               for p in sorted(src.rglob("*.py"))
+               if "keyservice" not in p.relative_to(src).parts)
 
 
 def registration_mismatch(count: int, rows=ROWS) -> int:
