@@ -18,6 +18,18 @@ The interface is one level up, at the operations the service already exposes:
 Reveal (`decide`, `reveal`) is not in it; its switch waits for #524. Names and
 signatures beyond these operations are fixed in the build.
 
+### Transaction contract
+
+The in-process driver works on wordsworth's own session, so a pseudonymise or
+delete is part of the caller's transaction and rolls back with it. A service
+driver is a call to another process with its own database: it commits before
+it answers and cannot join the caller's transaction. A caller that rolls back
+afterwards leaves the service's effect in place. The interface says this
+instead of hiding it: each operation is atomic on its own, and no caller may
+assume a shared transaction. The contract tests prove both sides. Rejected:
+pretending the service driver joins the caller's transaction (it cannot, and a
+test that passes in-process would hide the difference until the switch).
+
 Rejected: widening `KeyProvider` and `MappingStore` with service methods (a
 driver that raises on half its interface is a fallback in disguise); one
 interface including reveal now (it pulls the open question into the seam).
@@ -49,9 +61,17 @@ The migration copies state and verifies it; ingest and grant changes during
 the copy would make the copy inconsistent. So there is a mode in which those
 writes are refused with a retryable answer that names maintenance, while
 search and the console keep working. It lives in the seam so it is built and
-tested before anything depends on it. Rejected: stopping the process (search
-and the console would go down with it); locking tables (a long lock that hides
-the reason from callers).
+tested before anything depends on it.
+
+It is a runtime switch in shared state, not an environment flag: the switch
+migration turns it on from a script and must not restart the replicas to do
+so, and an env flag is per process and read at start. The refusal is a gate
+that runs before the body is read, like the `/ingest` read gate
+(`read_gate.GateFirst`), so a refused upload is not spooled to disk.
+
+Rejected: an environment flag (needs a restart, differs per replica); stopping
+the process (search and the console would go down with it); locking tables (a
+long lock that hides the reason from callers).
 
 ## The roadmap
 
