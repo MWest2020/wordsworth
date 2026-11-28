@@ -11,7 +11,8 @@ This change (`key-service-skeleton`) ships the process boundary with **no
 traffic** — nothing in wordsworth calls it yet. The four changes split
 from `key-service-vault` (`key-service-pseudonymise`, `key-service-originals`,
 `key-service-open-limits`, `key-service-delete`) and `key-service-reveal` fill
-it in.
+it in. `key-service-open-limits` adds the rate limit on `open`, its 429
+audit and `GET /v1/metrics`.
 
 ## Deploying it
 
@@ -50,6 +51,11 @@ It needs its own environment variables, set independently of wordsworth's:
   (`{"domain": "kek-name"}`) overriding the originals KEK per domain.
 - `KEYSERVICE_DOCUMENT_KEY_CACHE_SIZE` — default `1024`. Max entries in the
   unwrap cache for original-document data keys.
+- `KEYSERVICE_OPEN_RATE_PER_MINUTE` — default `120`. Refill rate of the
+  per-calling-service token bucket on `open`.
+- `KEYSERVICE_OPEN_BURST` — default `30`. Capacity of that bucket; a burst
+  past it is refused with 429 and a `Retry-After` header (seconds until the
+  next token).
 - `KEYSERVICE_MAX_ORIGINAL_BYTES` — default `104857600` (100 MiB). `seal` and
   `open` both hold the whole request body in memory up to this bound; a
   larger body is refused with 413 — enforced only after FastAPI has already
@@ -78,6 +84,16 @@ disjoint from wordsworth's: no table it creates has a foreign key to a
 wordsworth table, and no migration path exists yet. Until the cutover
 (`key-service-cutover`) the database holds no data, so a schema change today
 is made by dropping and recreating it, not by migrating.
+
+`service_state` is the one table for state that only the service has, that
+is not a copy of a wordsworth table and not derived from `access_audit`: the
+open-rate bucket, the coarse 429 audit's refusal window, and every
+Prometheus counter the service keeps outside the audit. A table, not
+process memory, because the service runs more than one replica
+(`2026-09-20-hoge-beschikbaarheid`) and a counter that restarts at zero on a
+crash hides exactly the burst an investigation looks for. Written only by
+`state.py`; `tests/keyservice/test_service_state_drift.py` fails and names
+any other table that grows a counter or rate-limit column.
 
 ## Refuses to start
 
@@ -114,6 +130,25 @@ service is the one thing the process split exists to prevent.
 
 `/health` needs no token. It says only that the process is up and its own
 database is reachable — it does not say anything about `/v1`.
+
+## The open rate limit and its metrics
+
+`open` is rate-limited per calling service (`KEYSERVICE_OPEN_RATE_PER_MINUTE`,
+`KEYSERVICE_OPEN_BURST`, above); a burst past it is a 429 with
+`Retry-After`. A refusal is audited coarsely, not once per refusal: the
+first refusal of each 60-second window writes one `open_refused` record
+(`reason = "rate"`), and — if a previous window existed — one
+`open_refused_summary` naming that window's count. A caller never refused
+again after a window leaves it without a summary; the count still shows up
+in `/v1/metrics` and in the counter itself.
+
+`GET /v1/metrics` exposes opens and refusals in Prometheus text format,
+behind the same service token as every other `/v1` route, and is never
+rate-limited itself — there is no limiter middleware in this app to exempt
+it from. Its caller (the scraper) therefore needs its own service token in
+`KEYSERVICE_SERVICE_TOKENS`; wiring that into the homelab's scrape config is
+a homelab PR, not part of this change, and no alert on open or refusal
+volume is built in any key-service change yet (see ADR-0009's residuals).
 
 ## Failure modes
 

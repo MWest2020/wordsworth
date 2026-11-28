@@ -18,6 +18,7 @@ from wordsworth.db_migrations import _FORBID_FUNCTION_SQL
 from .config import settings
 from .models import KeyServiceBase
 from . import models_access  # noqa: F401 -- registers its tables on KeyServiceBase.metadata
+from . import state  # noqa: F401 -- registers service_state on KeyServiceBase.metadata
 
 log = logging.getLogger(__name__)
 

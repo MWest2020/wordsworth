@@ -85,6 +85,17 @@ class Settings:
         return int(os.environ.get("KEYSERVICE_DOCUMENT_KEY_CACHE_SIZE", "1024"))
 
     @property
+    def open_rate_per_minute(self) -> int:
+        """Refill rate of the ``open`` route's per-caller token bucket
+        (design.md "The rate limit")."""
+        return int(os.environ.get("KEYSERVICE_OPEN_RATE_PER_MINUTE", "120"))
+
+    @property
+    def open_burst(self) -> int:
+        """Capacity of the ``open`` route's per-caller token bucket."""
+        return int(os.environ.get("KEYSERVICE_OPEN_BURST", "30"))
+
+    @property
     def max_original_bytes(self) -> int:
         """Size bound for a seal or open body; 413 beyond it. Enforced once
         FastAPI has buffered the whole body into memory (design.md "Risks")."""

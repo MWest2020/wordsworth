@@ -117,7 +117,11 @@ The honest residuals:
   any original, not only the ones it is processing. The service makes that
   visible (every open audited with a purpose) and bounded (a rate limit per
   caller, 120 a minute by default: still about 170 000 a day), not
-  impossible. The opens are counted as metrics, but no alert on volume is
+  impossible. The opens are counted as metrics, and so are refusals, at
+  `GET /v1/metrics` behind its own service token; a burst of refusals is
+  audited once per caller per 60-second window, as `open_refused_summary`,
+  not once per refusal -- the coarser record is what an investigation finds,
+  not a flood of chained writes under the audit lock. No alert on volume is
   built in any of the key-service changes; until the homelab alert exists,
   nobody is told.
 - A user's signed assertion passes through wordsworth on its way to the

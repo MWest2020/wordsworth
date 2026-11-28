@@ -114,6 +114,26 @@ def test_document_key_cache_size_reads_its_own_setting(monkeypatch):
     assert Settings().document_key_cache_size == 64
 
 
+def test_open_rate_per_minute_defaults_to_120(monkeypatch):
+    monkeypatch.delenv("KEYSERVICE_OPEN_RATE_PER_MINUTE", raising=False)
+    assert Settings().open_rate_per_minute == 120
+
+
+def test_open_rate_per_minute_reads_its_own_setting(monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_OPEN_RATE_PER_MINUTE", "60")
+    assert Settings().open_rate_per_minute == 60
+
+
+def test_open_burst_defaults_to_30(monkeypatch):
+    monkeypatch.delenv("KEYSERVICE_OPEN_BURST", raising=False)
+    assert Settings().open_burst == 30
+
+
+def test_open_burst_reads_its_own_setting(monkeypatch):
+    monkeypatch.setenv("KEYSERVICE_OPEN_BURST", "10")
+    assert Settings().open_burst == 10
+
+
 def test_max_original_bytes_defaults_to_100_mib(monkeypatch):
     monkeypatch.delenv("KEYSERVICE_MAX_ORIGINAL_BYTES", raising=False)
     assert Settings().max_original_bytes == 100 * 1024 * 1024

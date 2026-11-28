@@ -11,9 +11,9 @@ deployment, its database and failure modes.
 
 The surface grows one change at a time: the process boundary and its
 authentication (`key-service-skeleton`), `POST /v1/pseudonymise`
-(`key-service-pseudonymise`), seal and open (`key-service-originals`, this
-one), then `key-service-open-limits`, `key-service-delete` and
-`key-service-reveal`.
+(`key-service-pseudonymise`), seal and open (`key-service-originals`), the
+rate limit, its 429 audit and `GET /v1/metrics` (`key-service-open-limits`,
+this one), then `key-service-delete` and `key-service-reveal`.
 
 ## `GET /health`
 
@@ -117,20 +117,46 @@ The sealed bytes as `application/octet-stream`; query `object_key` and
 `reveal_pdf`, `seal_verify`. Fails closed: a tampered wrapped key or a
 tampered sealed object never returns plaintext.
 
+Rate-limited per calling service: a token bucket,
+`KEYSERVICE_OPEN_RATE_PER_MINUTE` (default 120) refill,
+`KEYSERVICE_OPEN_BURST` (default 30) capacity, checked after `purpose` and
+`object_key` are validated — so the order is 401, then 422, then 429.
+
 | Case | Status | Body | Audit |
 |---|---|---|---|
 | no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` | none |
 | `purpose` missing or not in the list; malformed query | 422 | validation detail | none |
 | body over `KEYSERVICE_MAX_ORIGINAL_BYTES` | 413 | `{"detail": "sealed object exceeds the configured size bound"}` | none |
+| over the calling service's rate limit | 429, `Retry-After` header | `{"detail": "rate limit exceeded"}` | counted always; the window's *first* refusal writes `open_refused` (`reason = "rate"`); that refusal also writes `open_refused_summary` (window start, count) for the *previous* window, if one existed — never one record per refusal |
 | no key row for `object_key` under this `document_id` | 404 | `{"detail": "no key for this object"}` | `open_refused`, `reason = "no_key"` |
 | the key backend gave no answer (connect/timeout, HTTP 5xx) | 503 | `{"detail": "key service unavailable"}` | none |
 | the wrapped key or the sealed object does not authenticate | 409 | `{"detail": "sealed object does not open"}` | `open_failed`, `reason = "unwrap"` or `"envelope"` |
 | otherwise | 200 | the plaintext | `open`, document, `object_key`, purpose |
 
+## `GET /v1/metrics`
+
+Prometheus text format, behind the same service token as every other `/v1`
+route — no change to `ServiceTokenMiddleware`, since it already covers every
+path under `/v1/`. Never rate-limited: the app mounts no path-keyed limiter
+middleware, so there is no rule for this route to be exempt from.
+
+- `keyservice_opens_total{caller,purpose}` — counted from `access_audit`
+  `open` records at scrape time.
+- `keyservice_open_refusals_total{caller,reason}` — the service's own
+  refusal counters (`service_state`).
+
+No value, document id or object key appears in the output.
+
+| Case | Status | Body |
+|---|---|---|
+| no or unknown service token | 401 | `{"detail": "invalid or missing service token"}` |
+| otherwise | 200 | Prometheus text |
+
 ## Not in this change
 
-- The rate limit on `open`, `service_state`, `/v1/metrics` — see
-  `key-service-open-limits`.
+- `service_state`'s own schema and drift test — see the how-to.
+- The alert on open volume (a homelab manifest) and the scraper's own
+  service token (a homelab PR) — see the how-to.
 - The two deletions and the key-lifecycle chain — see `key-service-delete`.
 - Reveal and identity verification — see `key-service-reveal`.
 - `POST /v1/export` — see `key-export-escrow`.

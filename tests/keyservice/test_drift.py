@@ -22,8 +22,6 @@ _COPIED_PAIRS = [
     (wordsworth_models.GroupRole.__table__, keyservice_models_access.GroupRole.__table__),
     (wordsworth_models.KeyLifecycleEvent.__table__,
      keyservice_models_access.KeyLifecycleEvent.__table__),
-    (wordsworth_models.RateLimitBucket.__table__,
-     keyservice_models_access.RateLimitBucket.__table__),
 ]
 
 
