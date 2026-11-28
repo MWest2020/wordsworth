@@ -8,11 +8,13 @@ last_reviewed: 2026-11-28
 ADR-0009: one service holds the keys, the encrypted values, the token
 registry and the reveal decision; the rest of wordsworth sees tokens only.
 This change (`key-service-skeleton`) ships the process boundary with **no
-traffic** — nothing in wordsworth calls it yet. The four changes split
+traffic** — nothing in wordsworth calls it yet. The five changes split
 from `key-service-vault` (`key-service-pseudonymise`, `key-service-originals`,
-`key-service-open-limits`, `key-service-delete`) and `key-service-reveal` fill
+`key-service-open-limits`, `key-service-delete`, `key-service-reveal`) fill
 it in. `key-service-open-limits` adds the rate limit on `open`, its 429
-audit and `GET /v1/metrics`.
+audit and `GET /v1/metrics`. `key-service-reveal` adds the two reveal
+routes, identity verification and the service's own grants/roles — still
+with no traffic from wordsworth; that is `key-service-cutover`.
 
 ## Deploying it
 
@@ -62,6 +64,77 @@ It needs its own environment variables, set independently of wordsworth's:
   buffered the whole body into memory, so an oversized request still costs
   that memory before it is refused. Every caller is wordsworth behind a
   service token, and the ingress body limit is the real bound.
+- `KEYSERVICE_OIDC_ISSUER` / `KEYSERVICE_OIDC_AUDIENCE` — required for
+  reveal; both empty (the default) means both reveal routes answer 503
+  before reading anything. See "Identity", below.
+- `KEYSERVICE_OIDC_JWKS_URL` — default empty (discovered from the issuer).
+  Set this to bypass discovery, e.g. to reach Keycloak at its in-cluster
+  address while `KEYSERVICE_OIDC_ISSUER` stays the public realm URL.
+- `KEYSERVICE_ALLOW_GLOBAL_GRANTS` — default `false`. Whether an unscoped
+  grant (no `document_id`) may authorize a reveal on every document.
+- `KEYSERVICE_VC_PUBLIC_KEY` / `KEYSERVICE_VC_EXPECTED_VCT` /
+  `KEYSERVICE_VC_EXPECTED_ISSUER` / `KEYSERVICE_VC_REQUIRED` — the optional
+  EUDI-aligned VC gate (ADR-0003), narrowing a grant further when a
+  presentation is sent in a reveal request's `vc` field. The public key is
+  off (and the gate inert) unless `KEYSERVICE_VC_PUBLIC_KEY` is set.
+- `KEYSERVICE_REVEAL_MAX_TOKENS` — default `10000`. Max distinct tokens per
+  `POST /v1/reveal` call; 413 beyond it, checked before anything else but
+  the service token. A document with more distinct tokens cannot be
+  revealed until this is raised.
+
+## Identity
+
+A reveal names a *person*, separately from the service token that names
+the *calling service*: the raw Keycloak JWT wordsworth received (the
+bearer behind oauth2-proxy), forwarded in the request body's `assertion`
+field — never trusted from a header. The service verifies it itself, under
+its own `KEYSERVICE_OIDC_*` settings, reusing wordsworth's
+`access_identity.Verifier.oidc` and `email_from` unchanged and adding the
+one check that module does not perform: a token whose `nbf` lies in the
+future is refused too. Every refusal — missing, forged, expired,
+not-yet-valid, wrong issuer, or foreign audience — is the same
+`401 {"detail": "assertion not accepted"}`, so a caller cannot distinguish
+them. A Cloudflare Access assertion is refused the same way: this
+service's `Verifier` only ever names one OIDC issuer (Keycloak), and an
+Access token simply fails that issuer/audience check like any other.
+
+`KEYSERVICE_OIDC_AUDIENCE` (recommended `wordsworth-keyservice`) separates
+differently depending on how Keycloak adds it to a token:
+
+- with an audience mapper on wordsworth's client, every token wordsworth
+  receives carries it — the audience then keeps out tokens issued to other
+  clients of the realm, and nothing more: any live wordsworth session
+  token is accepted by the service once it has a valid signature and a
+  grant;
+- with an optional client scope requested only when a person reveals, only
+  tokens obtained for a reveal carry it, so a token wordsworth could replay
+  exists only around a reveal. That needs a step-up request in the console
+  and is the cutover's choice, not built here.
+
+**The replay residual**: a session token forwarded for a reveal is a
+bearer credential for as long as it is valid — up to Keycloak's token
+lifetime with the first (mapper) choice, or until the step-up scope's
+token expires with the second. Neither this service nor wordsworth
+invalidates a token after one use; treat the forwarding path (wordsworth
+to the service) as carrying a short-lived but replayable secret, and keep
+it off any log.
+
+There is no "authentication off" mode for reveal: the recipient is always
+checked. Without `KEYSERVICE_OIDC_ISSUER` and `KEYSERVICE_OIDC_AUDIENCE`
+both routes answer 503 before reading anything.
+
+## Grants and roles
+
+The service decides a reveal from its own `grants` and `roles` tables —
+copies of wordsworth's shape, enforced by the same pure
+`wordsworth.grants.authorize`/`permitted_types` and
+`wordsworth.vc.apply_vc_gate`, reused unchanged. `wordsworth-keyservice-init`
+ensures the admin role (`beheerder`) exists, with every known PII type,
+the same way `wordsworth.bootstrap.ensure_admin_role` does on wordsworth's
+own database — an existing role, active or not, is left untouched. No
+management endpoint exists yet to issue a grant, revoke one, or create or
+toggle a role: until `key-service-cutover`, those are rows seeded
+directly (an operator task, or a test fixture).
 
 ## The wire between wordsworth and the service
 
@@ -170,6 +243,18 @@ volume is built in any key-service change yet (see ADR-0009's residuals).
   nothing was decided. A 409 instead means the backend answered and refused
   it, or the sealed object itself does not authenticate; both are audited as
   `open_failed`.
+- **Both reveal routes return 503 `reveal not configured`**:
+  `KEYSERVICE_OIDC_ISSUER` or `KEYSERVICE_OIDC_AUDIENCE` is unset — there is
+  no override, by design.
+- **A reveal returns 401 `assertion not accepted`**: the caller's identity
+  provider token failed verification for one of several reasons (see
+  "Identity", above) — the body never says which one.
+- **`POST /v1/reveal` returns 503 `key service unavailable`**: OpenBao gave
+  no answer about a mapping key needed to resolve a requested token; no
+  audit record is written, since nothing was decided. A reveal that
+  resolves zero tokens (a wrong grant/document combination, or tokens none
+  of which are registered or authorised) is still a 200 — that silence is
+  the point (design.md "Why the existence oracle stays closed").
 
 ## Not yet enforced
 

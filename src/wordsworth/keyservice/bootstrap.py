@@ -1,13 +1,15 @@
-"""``wordsworth-keyservice-init``: create the service's schema and nothing
-else -- no admin role (roles arrive with ``key-service-reveal``). Refuses
-first (design.md "Refuse to start"), the same check ``serve.py`` runs on
-startup."""
+"""``wordsworth-keyservice-init``: create the service's schema and ensure
+the admin role (design.md "Identity", mirrors
+``wordsworth.bootstrap.ensure_admin_role``). Refuses first (design.md
+"Refuse to start"), the same check ``serve.py`` runs on startup."""
 from __future__ import annotations
 
+from . import roles
 from .config import settings
 from .db import (check_openbao_refuse_to_start,
                  check_pseudonymise_cap_refuse_to_start,
-                 check_refuse_to_start, init_schema, make_engine)
+                 check_refuse_to_start, init_schema, make_engine,
+                 make_session_factory)
 
 
 def main() -> int:
@@ -17,6 +19,10 @@ def main() -> int:
     engine = make_engine()
     init_schema(engine)
     print("key-service schema ready")
+    session_factory = make_session_factory(engine)
+    with session_factory() as session:
+        print(roles.ensure_admin_role(session, actor="installation"))
+        session.commit()
     return 0
 
 

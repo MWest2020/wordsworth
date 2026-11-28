@@ -101,5 +101,65 @@ class Settings:
         FastAPI has buffered the whole body into memory (design.md "Risks")."""
         return int(os.environ.get("KEYSERVICE_MAX_ORIGINAL_BYTES", str(100 * 1024 * 1024)))
 
+    # --- key-service-reveal: identity, roles and the VC gate ---
+    @property
+    def oidc_issuer(self) -> str:
+        """The one issuer a reveal assertion is accepted from (design.md
+        "Identity"), e.g. Keycloak's realm URL. Empty (default, with
+        ``oidc_audience``) means both reveal routes answer 503 before
+        reading anything -- there is no "authentication off" mode for
+        reveal."""
+        return os.environ.get("KEYSERVICE_OIDC_ISSUER", "")
+
+    @property
+    def oidc_audience(self) -> str:
+        """The ``aud`` a reveal assertion must carry, e.g.
+        ``wordsworth-keyservice``. Empty (default) means reveal is not
+        configured (503), same as an empty ``oidc_issuer``."""
+        return os.environ.get("KEYSERVICE_OIDC_AUDIENCE", "")
+
+    @property
+    def oidc_jwks_url(self) -> str:
+        """Bypasses OIDC discovery when set, e.g. to reach Keycloak at its
+        in-cluster address while ``oidc_issuer`` stays the public name
+        (design.md "Identity"). Empty (default) discovers it from
+        ``oidc_issuer``."""
+        return os.environ.get("KEYSERVICE_OIDC_JWKS_URL", "")
+
+    @property
+    def allow_global_grants(self) -> bool:
+        """Whether an unscoped grant (no ``document_id``) may authorize a
+        reveal on every document. Default false, mirroring wordsworth's own
+        setting of the same name (design.md "Identity")."""
+        return os.environ.get(
+            "KEYSERVICE_ALLOW_GLOBAL_GRANTS", "false").lower() == "true"
+
+    @property
+    def vc_public_key_pem(self) -> str:
+        """PEM of the trusted VC issuer's EC public key. Empty (default) →
+        the VC gate is off and reveal is grant-only (design.md "Identity")."""
+        return os.environ.get("KEYSERVICE_VC_PUBLIC_KEY", "")
+
+    @property
+    def vc_expected_vct(self) -> str:
+        return os.environ.get("KEYSERVICE_VC_EXPECTED_VCT", "")
+
+    @property
+    def vc_expected_issuer(self) -> str:
+        return os.environ.get("KEYSERVICE_VC_EXPECTED_ISSUER", "")
+
+    @property
+    def vc_required(self) -> bool:
+        """When true (and the gate is on), a reveal without a valid VC is
+        denied. Default false: a VC only narrows a grant when presented."""
+        return os.environ.get("KEYSERVICE_VC_REQUIRED", "false").lower() == "true"
+
+    @property
+    def reveal_max_tokens(self) -> int:
+        """Max distinct tokens per ``POST /v1/reveal`` call; 413 beyond it,
+        checked before anything else but the service token (design.md
+        "Requests")."""
+        return int(os.environ.get("KEYSERVICE_REVEAL_MAX_TOKENS", "10000"))
+
 
 settings = Settings()

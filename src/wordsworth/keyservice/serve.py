@@ -25,7 +25,8 @@ from starlette.responses import JSONResponse
 
 from wordsworth.transit import Transit
 
-from . import api_documents, api_metrics, api_open, api_originals, api_pseudonymise
+from . import (api_documents, api_metrics, api_open, api_originals,
+              api_pseudonymise, api_reveal)
 from .auth import ServiceTokenMiddleware
 from .config import settings
 from .db import (check_openbao_refuse_to_start,
@@ -55,6 +56,9 @@ def create_app(engine: Engine | None = None, *,
     # One `DocumentKeys` per process (api_originals.py, api_open.py): its
     # unwrap cache is process-lifetime, so it is never rebuilt per request.
     app.state.doc_keys = None
+    # One `Identity` per process (api_reveal.py): its JWKS cache is
+    # process-lifetime, so it is never rebuilt per request.
+    app.state.identity = None
 
     tokens = service_tokens if service_tokens is not None else settings.service_tokens
     app.add_middleware(ServiceTokenMiddleware, tokens=tokens)
@@ -86,6 +90,7 @@ def create_app(engine: Engine | None = None, *,
     app.include_router(api_open.router)
     app.include_router(api_documents.router)
     app.include_router(api_metrics.router)
+    app.include_router(api_reveal.router)
     return app
 
 
