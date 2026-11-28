@@ -47,5 +47,8 @@ pass.
 ## 4. Docs and rollout
 - [x] `docs/how-to/api-auth.md`: ingest under the read list, refused before
       the upload is read; a connector's key has to be on the read list.
-- [ ] Deployed, and the self-scan check `ww-ingest-gate` reports `held` in
+- [x] Deployed, and the self-scan check `ww-ingest-gate` reports `held` in
       production; then moved from the private checks into `layer2.py`.
+      Proved by: deployed 2026-11-28 (MWest2020/homelab#103, digest
+      sha256:a610303e…), the check answered 403 (`held`), and it is public
+      since MWest2020/homelab#105.

@@ -121,15 +121,15 @@ a dossier's topics and summaries, and the declared combinations.
 
 A route that changes what a reader sees of the corpus SHALL require the same:
 recording detection feedback on a document, computing or renaming topics,
-labelling a topic, computing summaries, and re-de-identifying documents
-(`POST /reprocess`). A refused write SHALL leave no trace: no audit record, no
-changed row.
+labelling a topic, computing summaries, re-de-identifying documents
+(`POST /reprocess`), and adding documents (`POST /ingest`), which creates
+documents and dossiers and puts documents into dossiers that readers search.
+A refused write SHALL leave no trace: no audit record, no changed row, no
+stored object.
 
 Where the corpus-read list is empty the scope is off and behaviour SHALL be
 unchanged. Where no caller authentication is configured behaviour SHALL be
 unchanged. A caller on the list SHALL get the answers he got before.
-
-`POST /ingest` is not covered by this requirement.
 
 #### Scenario: A caller on no list is refused on every reading route
 
@@ -150,6 +150,14 @@ unchanged. A caller on the list SHALL get the answers he got before.
 - **THEN** each answers 403, no audit record, topic or summary was written or
   changed, and no document was re-de-identified
 
+#### Scenario: A caller on no list cannot add documents
+
+- **WHEN** a corpus-read list is configured and an authenticated caller who is
+  not on it, a grant issuer who is no reader included, uploads a PDF to
+  `POST /ingest`, into a new dossier or an existing one
+- **THEN** the answer is 403, and no document, dossier, dossier membership,
+  audit record or stored object was written
+
 #### Scenario: A reader is unaffected
 
 - **WHEN** a caller on the corpus-read list requests the same routes
@@ -158,15 +166,15 @@ unchanged. A caller on the list SHALL get the answers he got before.
 #### Scenario: The key the thin client and an orchestrator use still works
 
 - **WHEN** a caller whose label is on the corpus-read list, as the `cli` and
-  `console` labels are, searches, exports, reads a document's state and starts
-  a reprocess run, and a caller with any valid key uploads a document to
-  `POST /ingest`
+  `console` labels are, searches, exports, reads a document's state, starts
+  a reprocess run and uploads a document to `POST /ingest`
 - **THEN** every one of those requests is answered as before
 
 #### Scenario: An empty list changes nothing
 
 - **WHEN** no corpus-read list is configured
-- **THEN** every authenticated caller gets the answers he got before
+- **THEN** every authenticated caller gets the answers he got before, an
+  upload to `POST /ingest` included
 
 ### Requirement: A corpus-read refusal comes before the lookup
 
@@ -213,13 +221,18 @@ object of a kind the comparison does not know is present, and when a WebSocket
 route is present, since those are not authenticated. `HEAD` SHALL be treated as
 the `GET` of the same route.
 
+A route that writes (any method other than `GET` and `HEAD`) SHALL be recorded
+behind a check that refuses a caller on no list, or as decided by a grant. The
+suite SHALL fail for a writing route recorded as any authenticated caller or
+as open, unless it is named, with its reason, among the open writes; the only
+open write is the console's login form.
+
 Routes that need no corpus read SHALL be exactly those the inventory records
 as such, each with its reason:
 
 - without any key: the liveness probe, the metrics endpoint, the login page
   and the console's static assets;
-- for any authenticated caller: logout, the root redirect, the API schema, and
-  `POST /ingest`;
+- for any authenticated caller: logout, the root redirect and the API schema;
 - behind another check: the routes that issue, revoke and inspect grants and
   manage roles, `POST /datasets/pseudonymize` (grant issue), the two delete
   routes (delete), and the two reveal routes (the grant itself).
@@ -234,6 +247,12 @@ as such, each with its reason:
 - **WHEN** the corpus-read check is removed from a route the inventory records
   as corpus read
 - **THEN** the test suite fails
+
+#### Scenario: A writing route without a check fails the suite
+
+- **WHEN** a route that writes is recorded in the inventory as open to any
+  authenticated caller, and is not the console's login form
+- **THEN** the test suite fails and names the route
 
 #### Scenario: A backend the test does not mount fails the suite
 
@@ -318,3 +337,22 @@ It SHALL still start, and SHALL answer as before.
 
 - **WHEN** the application starts with a corpus-read list
 - **THEN** no such warning is logged
+
+### Requirement: An upload is refused before it is read
+
+A caller who may not ingest SHALL be refused by `POST /ingest` before the
+request body is read or parsed, so that the upload of a refused caller is not
+spooled, validated or processed. A missing or unknown key SHALL still be
+answered 401, as before.
+
+#### Scenario: The upload of a refused caller is not read
+
+- **WHEN** an authenticated caller who is not on the corpus-read list sends a
+  multipart upload to `POST /ingest`
+- **THEN** the answer is 403 and the request body was not parsed
+
+#### Scenario: No key is still 401
+
+- **WHEN** authentication is configured and a request to `POST /ingest`
+  carries no key and no verified identity
+- **THEN** the answer is 401, as before
